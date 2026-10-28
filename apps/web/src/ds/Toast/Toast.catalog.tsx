@@ -41,7 +41,7 @@ export default defineCatalog({
             </div>
           </Row>
         </Sub>
-        <Sub title="ToastViewport · 하단 내비 위 16 (큐·타이머는 다음 단계에서 호스트가 붙인다)">
+        <Sub title="ToastViewport · 하단 내비 위 16 (큐·타이머는 src/notifications의 ToastHost — 아래 ToastHost 항목)">
           <Row>
             {SAMPLES.map((s) => (
               <Button

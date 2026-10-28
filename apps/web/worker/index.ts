@@ -1,3 +1,5 @@
+import { ERRORS, type ApiErrorBody } from '@yeojeong/shared'
+
 // jinyeojeong.com/api/* 요청만 이 Worker를 거친다(wrangler.jsonc의 run_worker_first). 나머지는 정적 자산이 바로 응답한다.
 interface Env {
   API_ORIGIN: string
@@ -19,6 +21,23 @@ const DROPPED_REQUEST_HEADERS = [
 ]
 
 const DROPPED_RESPONSE_HEADERS = ['server', 'via', 'alt-svc', 'x-cloud-trace-context']
+
+// API 서버에 닿지 못했을 때도 서버와 같은 에러 형식으로 답한다. 요청 ID는 Worker가 만들고 로그에 같이 남긴다(wrangler tail).
+function upstreamUnavailable(error: unknown): Response {
+  const requestId = crypto.randomUUID()
+  console.error(
+    JSON.stringify({ message: 'upstream fetch failed', requestId, error: error instanceof Error ? error.message : String(error) }),
+  )
+  const body: ApiErrorBody = {
+    code: 'UPSTREAM_UNAVAILABLE',
+    message: ERRORS.UPSTREAM_UNAVAILABLE.message,
+    requestId,
+  }
+  return Response.json(body, {
+    status: ERRORS.UPSTREAM_UNAVAILABLE.status,
+    headers: { 'x-request-id': requestId, 'cache-control': 'no-store' },
+  })
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -48,8 +67,8 @@ export default {
         redirect: 'manual',
         cache: 'no-store',
       })
-    } catch {
-      return Response.json({ statusCode: 502, message: 'Bad Gateway' }, { status: 502 })
+    } catch (error) {
+      return upstreamUnavailable(error)
     }
 
     const response = new Response(upstream.body, upstream)

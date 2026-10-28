@@ -1,29 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import type { HealthResponse } from '@yeojeong/shared'
+import { apiFetch } from './api'
 import { Logo } from './ds'
 
 type Check = 'checking' | 'up' | 'down'
 
 function App() {
-  const [server, setServer] = useState<Check>('checking')
-  const [db, setDb] = useState<Check>('checking')
-
-  useEffect(() => {
-    // 운영에서는 같은 origin의 Cloudflare Worker가, 로컬에서는 Vite 프록시가 /api를 API 서버로 넘긴다
-    fetch('/api/health')
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json() as Promise<HealthResponse>
-      })
-      .then((health) => {
-        setServer('up')
-        setDb(health.db)
-      })
-      .catch(() => {
-        setServer('down')
-        setDb('down')
-      })
-  }, [])
+  // 실패하면(연결·5xx는 두 번 더 시도한 뒤) 전역 처리기가 「다시 시도」 토스트를 띄운다
+  const health = useQuery({
+    queryKey: ['health'],
+    queryFn: ({ signal }) => apiFetch<HealthResponse>('/health', { signal }),
+  })
+  const server: Check = health.isSuccess ? 'up' : health.isError ? 'down' : 'checking'
+  const db: Check = health.isSuccess ? health.data.db : health.isError ? 'down' : 'checking'
 
   return (
     <main className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-10 px-6">

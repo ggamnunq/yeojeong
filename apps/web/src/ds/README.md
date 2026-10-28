@@ -40,7 +40,7 @@ Figma 「여정」 v1.3 디자인 시스템을 코드로 옮긴 것. 원본 문�
 - `BottomSheet`·`Dialog`는 네이티브 `<dialog>.showModal()`(최상위 레이어 + 배경 inert) 위에 `useModalDialog`가 ESC·Tab 가두기·포커스 되돌리기·스크롤 잠금을 더한다. 열림 상태는 부모가 쥐고(`open`), 닫기 요청은 `onClose`/`onCancel`로만 알린다. 시트는 딤을 누르면 닫히고, 다이얼로그는 딤으로 닫히지 않는다.
 - 모션은 시트 200ms·다이얼로그 150ms이고 `prefers-reduced-motion`이면 없다.
 - 내용이 필요한 Figma BOOLEAN은 객체를 넘기면 켜진다: BottomSheet `CTA` → `cta={{ label, onClick }}`, Toast `Action` → `action={{ label, onClick }}`, TopHeader Back의 `action` 버튼. `Type=SharedToPersonal`처럼 붙어 있는 값은 kebab-case(`type="shared-to-personal"`).
-- `Toast`는 겉모습만, `ToastViewport`는 자리(내비 위 16)만 잡는다. 큐·타이머·자동 닫힘은 쓰는 쪽이 붙인다.
+- `Toast`는 겉모습만, `ToastViewport`는 자리(내비 위 16)만 잡는다. 큐·타이머·자동 닫힘은 쓰는 쪽이 붙인다. 화면 코드는 `src/notifications`의 `toast.*`를 쓰고(`ToastHost`가 그린다) DS Toast를 직접 그리지 않는다. 사용법은 `src/api/README.md`.
 - 카탈로그에서 열린 모습을 고정해 보여 줄 때는 `BottomSheetPanel`·`DialogPanel`(모달 동작 없는 겉모습)과 `catalog/PhoneFrame`을 쓴다. 화면 코드에서는 쓰지 않는다.
 
 ## 카탈로그
