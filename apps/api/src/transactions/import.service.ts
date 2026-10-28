@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { splitEvenly, type ExpenseOrigin } from '@yeojeong/shared';
+import { splitEvenly } from '@yeojeong/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import { normalizeMerchantKey } from '../payment-methods/masking.js';
 import type { ProviderTransaction } from '../payment-methods/providers/payment-provider.adapter.js';
 import { CipherPurpose, TokenCipher } from '../payment-methods/token-cipher.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { DuplicateFlagger } from './duplicate-suspicion.service.js';
+import { DuplicateFlagger } from './duplicate-flagger.js';
 import {
   NEAR_WINDOW_MS,
   absScaled,
@@ -542,82 +542,6 @@ export class ImportService {
       }
     }
     return attached;
-  }
-
-  /**
-   * 기간 외 결제 추가(FR-408)의 장부 반영. S2B-2(expenses)의 POST …/out-of-period-expenses가
-   * Trip을 잠근 트랜잭션 안에서 부른다(OutOfPeriodService.add가 이 흐름을 한 번에 해 준다).
-   * 각 거래 → Expense(PENDING, OUT_OF_PERIOD) + ExpenseChangeLog(OUT_OF_PERIOD_ADDED), 이미 있는 취소는 자식으로 붙인다.
-   * @returns 만든 부모 Expense ID(요청 순서)
-   */
-  async addOutOfPeriodExpenses(
-    tx: Tx,
-    input: {
-      trip: LockedTrip;
-      payerMembershipId: string;
-      transactionIds: readonly string[];
-      now?: Date;
-    },
-  ): Promise<string[]> {
-    const { trip } = input;
-    const txs = await tx.transaction.findMany({
-      where: { id: { in: [...input.transactionIds] } },
-    });
-    const rates = new SpotRateCache(tx);
-    const ids: string[] = [];
-    let userId: string | null = null;
-    for (const id of input.transactionIds) {
-      const t = txs.find((x) => x.id === id);
-      if (!t) continue;
-      userId = t.userId;
-      const krw = computeKrw(
-        {
-          originalAmount: t.originalAmount.toFixed(4),
-          originalCurrency: t.originalCurrency,
-          providerKrwAmount: t.providerKrwAmount,
-          billedKrwAmount: t.billedKrwAmount,
-        },
-        trip,
-        await rates.find(t.originalCurrency, t.occurredAt),
-        input.now,
-      );
-      if (!krw) continue;
-      const origin: ExpenseOrigin = 'OUT_OF_PERIOD';
-      const expense = await tx.expense.create({
-        data: {
-          tripId: trip.id,
-          transactionId: t.id,
-          payerMembershipId: input.payerMembershipId,
-          status: 'PENDING',
-          origin,
-          occurredAt: t.occurredAt,
-          merchantName: t.merchantNameRaw,
-          originalAmount: t.originalAmount,
-          originalCurrency: t.originalCurrency,
-          krwAmount: krw.krwAmount,
-          netKrwAmount: krw.krwAmount,
-          fxPolicyApplied: krw.fxPolicyApplied,
-          fxRate: krw.fxRate,
-          fxRateUnit: krw.fxRateUnit,
-          fxRateSource: krw.fxRateSource,
-          fxRateAt: krw.fxRateAt,
-        },
-        select: { id: true },
-      });
-      await tx.expenseChangeLog.create({
-        data: {
-          expenseId: expense.id,
-          tripId: trip.id,
-          actorMembershipId: input.payerMembershipId,
-          action: 'OUT_OF_PERIOD_ADDED',
-          before: undefined,
-          after: { status: 'PENDING', netKrwAmount: krw.krwAmount },
-        },
-      });
-      ids.push(expense.id);
-    }
-    if (userId) await this.attachRefunds(tx, trip, userId);
-    return ids;
   }
 }
 

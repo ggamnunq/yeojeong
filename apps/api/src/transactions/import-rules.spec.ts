@@ -1,7 +1,6 @@
 import {
   findSameUserDuplicates,
   fromScaled,
-  isSuspectedDuplicate,
   isWithinTrip,
   matchCancel,
   parentNetKrw,
@@ -10,7 +9,6 @@ import {
   toScaled,
   type DedupeTx,
   type MatchTx,
-  type SuspectExpense,
 } from './import-rules.js';
 
 const at = (iso: string) => new Date(`${iso}+09:00`);
@@ -227,66 +225,5 @@ describe('cancel matching (4-1-4)', () => {
       originalCurrency: 'KRW',
     });
     expect(matchCancel(cancel, [tx('a', {})])).toBeNull();
-  });
-});
-
-describe('duplicate suspicion (4-1-5, FR-407)', () => {
-  const e = (id: string, over: Partial<SuspectExpense>): SuspectExpense => ({
-    id,
-    status: 'SHARED',
-    payerMembershipId: `payer-${id}`,
-    merchantKey: '오사카성천수각',
-    originalAmount: '4800',
-    originalCurrency: 'JPY',
-    occurredAt: at('2026-11-13T10:30:00'),
-    refundOfExpenseId: null,
-    duplicateDismissedAt: null,
-    ...over,
-  });
-
-  it('flags two shared payments by different payers within 120 seconds (AC1)', () => {
-    expect(
-      isSuspectedDuplicate(
-        e('subin', {}),
-        e('minji', { occurredAt: at('2026-11-13T10:31:00') }),
-      ),
-    ).toBe(true);
-    expect(
-      isSuspectedDuplicate(e('a', { originalAmount: '4800.0000' }), e('b', {})),
-    ).toBe(true);
-  });
-
-  it('does not flag the same payer, pending, other amounts or 121 seconds (AC2·AC3)', () => {
-    const base = e('subin', {});
-    expect(
-      isSuspectedDuplicate(
-        base,
-        e('x', { payerMembershipId: base.payerMembershipId }),
-      ),
-    ).toBe(false);
-    expect(isSuspectedDuplicate(base, e('x', { status: 'PENDING' }))).toBe(
-      false,
-    );
-    expect(isSuspectedDuplicate(base, e('x', { originalAmount: '4801' }))).toBe(
-      false,
-    );
-    expect(
-      isSuspectedDuplicate(base, e('x', { originalCurrency: 'KRW' })),
-    ).toBe(false);
-    expect(
-      isSuspectedDuplicate(base, e('x', { merchantKey: '오사카성' })),
-    ).toBe(false);
-    expect(
-      isSuspectedDuplicate(
-        base,
-        e('x', { occurredAt: at('2026-11-13T10:32:01') }),
-      ),
-    ).toBe(false);
-    expect(
-      isSuspectedDuplicate(base, e('x', { duplicateDismissedAt: new Date() })),
-    ).toBe(false);
-    expect(isSuspectedDuplicate(base, e('x', { refundOfExpenseId: 'p' }))).toBe(
-      false,
-    );
   });
 });

@@ -2,19 +2,17 @@ import { Module } from '@nestjs/common';
 import { PaymentProvidersModule } from '../payment-methods/providers/payment-providers.module.js';
 import {
   DuplicateFlagger,
-  DuplicateSuspicionService,
-} from './duplicate-suspicion.service.js';
+  expensesDuplicateFlagger,
+} from './duplicate-flagger.js';
 import { ImportService } from './import.service.js';
 import { InternalJobGuard } from './internal-job.guard.js';
 import { JobsController } from './jobs.controller.js';
-import { OutOfPeriodService } from './out-of-period.service.js';
 import { SyncService } from './sync.service.js';
 import { TripEventsListener } from './trip-events.listener.js';
 
 /**
  * 거래 동기화·인입(기능명세 1-2의 imports + jobs/sync). 문서는 src/payment-methods/README.md.
- * S2B-2(expenses)는 이 모듈을 import해서 OutOfPeriodService·ImportService를 쓴다.
- * DuplicateFlagger는 통합 때 S2B-2의 flagDuplicates로 바꿔 끼운다(useValue: { flagDuplicates }).
+ * 기간 외 후보·추가 API는 S2B-2(expenses)가 저장된 Transaction으로 처리하고, 이 모듈은 그 거래를 가져와 보관한다.
  */
 @Module({
   imports: [PaymentProvidersModule],
@@ -22,18 +20,10 @@ import { TripEventsListener } from './trip-events.listener.js';
   providers: [
     SyncService,
     ImportService,
-    DuplicateSuspicionService,
-    { provide: DuplicateFlagger, useExisting: DuplicateSuspicionService },
-    OutOfPeriodService,
     TripEventsListener,
     InternalJobGuard,
+    { provide: DuplicateFlagger, useValue: expensesDuplicateFlagger },
   ],
-  exports: [
-    SyncService,
-    ImportService,
-    DuplicateFlagger,
-    DuplicateSuspicionService,
-    OutOfPeriodService,
-  ],
+  exports: [SyncService, ImportService],
 })
 export class TransactionsModule {}

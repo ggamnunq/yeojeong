@@ -6,7 +6,7 @@ import type {
   PaymentMethodType,
   Provider,
   SyncStatus,
-} from "../domain.js";
+} from '../domain.js';
 
 // 결제수단·토스 연결·동기화 API 타입(기능명세 6-3 "지갑", FR-801~804·402·408).
 // 시각은 ISO 8601 문자열, 원화는 정수, 원통화 금액은 문자열 decimal.
@@ -38,7 +38,7 @@ export interface PaymentMethodView {
   maskedNumber: string;
   last4: string;
   /** EXPIRED면 행을 흐리게 */
-  status: Exclude<PaymentMethodStatus, "REMOVED">;
+  status: Exclude<PaymentMethodStatus, 'REMOVED'>;
   lastSyncedAt: string | null;
 }
 
@@ -55,7 +55,7 @@ export interface PaymentMethodsResponse {
 
 /** POST /api/payment-connections */
 export interface StartConnectionRequest {
-  provider: "TOSS";
+  provider: 'TOSS';
   purpose: AttemptPurpose;
   /** purpose = RECONNECT일 때 다시 연결할 연결 ID */
   reconnectConnectionId?: string;
@@ -100,7 +100,7 @@ export interface ConfirmConnectionResponse {
 }
 
 /** 수동 동기화를 건너뛴 이유. 진행 중 여정이 없으면 제공자를 부르지 않는다(최소 수집) */
-export type ManualSyncSkipReason = "NO_ACTIVE_TRIP";
+export type ManualSyncSkipReason = 'NO_ACTIVE_TRIP';
 
 /**
  * POST /api/payment-methods/sync. 동기화를 시작하면 202, 진행 중 여정이 없어 건너뛰면 200 + skipped.
@@ -126,19 +126,4 @@ export interface SyncJobResult {
   imported: number;
   /** 10분이 지나 만료 처리한 연결 시도 수 */
   expiredAttempts: number;
-}
-
-export type OutOfPeriodSide = "BEFORE" | "AFTER";
-
-/** 기간 외 결제 후보(FR-408, WF-43). 응답으로만 쓰고 고른 건만 Transaction으로 저장한다 */
-export interface OutOfPeriodCandidate {
-  candidateId: string;
-  occurredAt: string;
-  merchantName: string;
-  /** 여정 환율 정책으로 계산한 원화. 계산할 수 없으면 null */
-  krwAmount: number | null;
-  originalAmount: string;
-  currency: string;
-  /** "토스뱅크 체크카드 1934" (본인에게만) */
-  paymentMethodLabel: string;
 }

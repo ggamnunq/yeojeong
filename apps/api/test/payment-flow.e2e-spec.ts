@@ -3,9 +3,8 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import type { AuthUser } from './../src/common/auth/index.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
-import { DuplicateSuspicionService } from './../src/transactions/duplicate-suspicion.service.js';
+import { DuplicateFlagger } from './../src/transactions/duplicate-flagger.js';
 import { INTERNAL_JOB_SECRET_HEADER } from './../src/transactions/internal-job.guard.js';
-import { OutOfPeriodService } from './../src/transactions/out-of-period.service.js';
 import { TripEventsListener } from './../src/transactions/trip-events.listener.js';
 import { createTestAuth, TEST_ORIGIN, type TestAuth } from './auth-helpers.js';
 import {
@@ -22,6 +21,8 @@ import {
 const TEST_DB = process.env.PAYMENT_TEST_DATABASE_URL;
 const JOB_SECRET = 'test-internal-job-secret-0123456789';
 const DOC_HASH = 'a'.repeat(64);
+/** 여정 전 결제(기간 외 후보)를 보관하는 범위: 시작 60일 전 */
+const LOOKBACK_MS = 60 * 24 * 60 * 60 * 1000;
 
 describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
   let app: NestExpressApplication;
@@ -193,7 +194,8 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
     });
     expect(pending[2].originalAmount.toFixed(0)).toBe('1280');
     const txs = await prisma.transaction.findMany({ where: { userId: me.id } });
-    expect(txs).toHaveLength(10); // 여정 전 결제는 가져오지 않는다(최소 수집)
+    // 기간 내 10건 + 여정 전 4건(기간 외 후보로 Transaction에만 보관, 장부에는 없음)
+    expect(txs).toHaveLength(14);
     expect(txs.filter((t) => t.sameUserDuplicateOfId)).toHaveLength(4);
     expect(
       txs.every(
@@ -221,10 +223,12 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
         trigger: 'METHOD_ADDED',
         status: 'OK',
         importedCount: 6,
-        fetchedCount: 10,
+        fetchedCount: 14,
       },
     ]);
-    expect(runs[0].fromAt).toEqual(seed.startAt);
+    expect(runs[0].fromAt).toEqual(
+      new Date(seed.startAt.getTime() - LOOKBACK_MS),
+    );
 
     const list = await request(server())
       .get('/api/payment-methods')
@@ -260,7 +264,7 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
     await runJob();
     expect(await expensesOf(seed.tripId, jy.membershipId!)).toHaveLength(6);
     expect(await prisma.transaction.count({ where: { userId: me.id } })).toBe(
-      10,
+      14,
     );
 
     // 마지막이 아닌 결제수단: purge 불가, 해제는 결제를 남긴다
@@ -482,7 +486,9 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
       where: { connectionId: sbConn.id, status: 'OK' },
     });
     expect(scheduled).toMatchObject({ trigger: 'SCHEDULED', importedCount: 2 });
-    expect(scheduled.fromAt).toEqual(seed.startAt);
+    expect(scheduled.fromAt).toEqual(
+      new Date(seed.startAt.getTime() - LOOKBACK_MS),
+    );
 
     // 잡을 한 번 더, 같은 이벤트를 다시(같은 eventSeq는 무시, 새 eventSeq도 멱등)
     await runJob();
@@ -540,21 +546,22 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
       '간사이공항 보테쥬',
     ]);
 
-    // 중복 의심(S2B-2가 공동 확정 때 부르는 서비스): 수빈 10:30 · 민지 10:31 오사카성 ¥4,800
+    // 중복 의심(인입이 부르는 DuplicateFlagger = S2B-2 flagDuplicates): 수빈 10:30 · 민지 10:31 오사카성 ¥4,800
     const pair = [sbExpenses[0].id, mjExpenses[1].id];
     await prisma.expense.updateMany({
       where: { id: { in: pair } },
       data: { status: 'SHARED' },
     });
-    const groupId = await prisma.$transaction((tx) =>
-      app.get(DuplicateSuspicionService).evaluate(tx, pair[1]),
+    const flaggedIds = await prisma.$transaction((tx) =>
+      app.get(DuplicateFlagger).flagDuplicates(tx, pair[1]),
     );
-    expect(groupId).toEqual(expect.any(String));
+    expect([...flaggedIds].sort()).toEqual([...pair].sort());
     const flagged = await prisma.expense.findMany({
       where: { id: { in: pair } },
       select: { duplicateGroupId: true },
     });
-    expect(flagged.every((e) => e.duplicateGroupId === groupId)).toBe(true);
+    expect(flagged[0].duplicateGroupId).not.toBeNull();
+    expect(flagged[1].duplicateGroupId).toBe(flagged[0].duplicateGroupId);
 
     // 나간 멤버: 이후 인입 대상에서 빠진다(기존 결제는 그대로)
     await prisma.membership.update({
@@ -576,7 +583,7 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
     ).toBe(1);
   });
 
-  it('expires on auth errors and backfills the gap on reconnect; out-of-period candidates are not stored until added (FR-805·404 AC2·408)', async () => {
+  it('expires on auth errors and backfills the gap on reconnect; pre-trip transactions are kept for out-of-period candidates (FR-805·404 AC2·408)', async () => {
     const seed = await seedTrip(prisma, {
       members: [{ nickname: '준용' }],
       status: 'ONGOING',
@@ -647,58 +654,19 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
       }),
     ).toMatchObject({ trigger: 'RECONNECT' });
 
-    // 기간 외 후보: 제공자 즉시 조회, 저장하지 않음 → 고른 것만 저장·추가
-    const oop = app.get(OutOfPeriodService);
-    const before = await prisma.transaction.count({ where: { userId: me.id } });
-    const candidatesBefore = await oop.listCandidates(
-      me.id,
-      seed.tripId,
-      'BEFORE',
-    );
-    expect(
-      candidatesBefore.map((c) => [
-        c.merchantName,
-        c.krwAmount,
-        c.paymentMethodLabel,
-      ]),
-    ).toEqual([
-      ['아고다', 486000, '신한카드 1102'],
-      ['제주항공 4매', 1032400, '신한카드 1102'],
-      ['KKday', 412800, '신한카드 1102'],
-      ['인천공항 장기주차', 36000, '신한카드 1102'],
-    ]);
-    expect(candidatesBefore[0].occurredAt).toMatch(/\+09:00$/);
-    expect(await prisma.transaction.count({ where: { userId: me.id } })).toBe(
-      before,
-    );
-    expect(await oop.listCandidates(me.id, seed.tripId, 'AFTER')).toEqual([]);
-
-    const added = await oop.add(me.id, seed.tripId, [
-      candidatesBefore[0].candidateId,
-      candidatesBefore[1].candidateId,
-    ]);
-    expect(added).toHaveLength(2);
-    const addedRows = await prisma.expense.findMany({
-      where: { id: { in: added } },
+    // 기간 외 후보(S2B-2 기간 외 추가가 고르는 원천): 여정 전 60일 거래는 Transaction으로만 보관, 장부에는 없다
+    const preTrip = await prisma.transaction.findMany({
+      where: { userId: me.id, occurredAt: { lt: seed.startAt } },
       orderBy: { occurredAt: 'asc' },
+      include: { expenses: { select: { id: true } } },
     });
-    expect(
-      addedRows.map((e) => [e.merchantName, e.status, e.origin, e.krwAmount]),
-    ).toEqual([
-      ['아고다', 'PENDING', 'OUT_OF_PERIOD', 486000],
-      ['제주항공 4매', 'PENDING', 'OUT_OF_PERIOD', 1032400],
+    expect(preTrip.map((t) => t.merchantNameRaw)).toEqual([
+      '아고다',
+      '제주항공 4매',
+      'KKday',
+      '인천공항 장기주차',
     ]);
-    expect(await prisma.transaction.count({ where: { userId: me.id } })).toBe(
-      before + 2,
-    );
-    expect(
-      (await oop.listCandidates(me.id, seed.tripId, 'BEFORE')).map(
-        (c) => c.merchantName,
-      ),
-    ).toEqual(['KKday', '인천공항 장기주차']);
-    await expect(
-      oop.add(me.id, seed.tripId, [candidatesBefore[0].candidateId]),
-    ).rejects.toMatchObject({ code: 'OUT_OF_PERIOD_CANDIDATE_INVALID' });
+    expect(preTrip.every((t) => t.expenses.length === 0)).toBe(true);
   });
 
   it('runs a FINAL sync on trip.auto-ending (FR-305)', async () => {

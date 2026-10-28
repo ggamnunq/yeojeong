@@ -2,11 +2,11 @@
 
 토스 연결(지갑)과 거래 동기화·인입. 기능명세 3-3, 4-1, 4-2, 5-4(FR-401~408), 5-8(FR-801~804·809), 6-3 "지갑", 7-2, 8-1~8-4.
 
-| 폴더                             | 모듈                                          | 하는 일                                                                          |
-| -------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------- |
-| `src/payment-methods/`           | `PaymentMethodsModule`(app.module에 이 한 줄) | 연결 시도·콜백·후보·확정, 결제수단 목록·해제, 수동 동기화                        |
-| `src/payment-methods/providers/` | `PaymentProvidersModule`                      | 제공자 어댑터(env로 선택), 토큰 암호화, 금융 접근 로그                           |
-| `src/transactions/`              | `TransactionsModule`                          | 동기화(SyncRun)·인입·환불 매칭·중복 제거, 기간 외 후보, S2A 이벤트 구독, 내부 잡 |
+| 폴더                             | 모듈                                          | 하는 일                                                                               |
+| -------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `src/payment-methods/`           | `PaymentMethodsModule`(app.module에 이 한 줄) | 연결 시도·콜백·후보·확정, 결제수단 목록·해제, 수동 동기화                             |
+| `src/payment-methods/providers/` | `PaymentProvidersModule`                      | 제공자 어댑터(env로 선택), 토큰 암호화, 금융 접근 로그                                |
+| `src/transactions/`              | `TransactionsModule`                          | 동기화(SyncRun)·인입·환불 매칭·중복 제거, 여정 전 거래 보관, S2A 이벤트 구독, 내부 잡 |
 
 ## 엔드포인트
 
@@ -52,7 +52,7 @@
 ## 동기화·인입 규칙
 
 - **대상**: 활성 멤버인 ONGOING 여정이 있는 사용자의 ACTIVE 연결만(최소 수집). 연결당 하나만 돈다(`pg_try_advisory_xact_lock` + 진행 중 SyncRun, 5분 지나면 STALE).
-- **조회 창**(`sync-window.ts`): `[max(lastSyncedAt − 72h, 가장 이른 startAt), now]`. 새 결제수단이 있으면 가장 이른 startAt부터. 소급 트리거는 요청 시작까지. 진행 중 여정 기간 밖은 가져오지 않는다.
+- **조회 창**(`sync-window.ts`): `[max(lastSyncedAt − 72h, 가장 이른 startAt − 60일), now]`. 새 결제수단이 있으면 가장 이른 startAt − 60일부터. 소급 트리거는 요청 시작까지. 진행 중 여정 기간과 그 전 60일(기간 외 후보) 밖은 가져오지 않는다.
 - **자가 복구**: 성공(OK) SyncRun의 `[fromAt, toAt]` 구간들이 각 여정 `[startAt, min(now, autoEndAt)]`을 덮지 못하면 처음 덮이지 않은 시각부터 넓힌다. TRIP_START·JOIN만이 아니라 모든 성공 구간을 쓴다(따라잡은 주기 실행도 덮은 것으로 쳐야 매번 전체를 다시 가져오지 않는다). 스키마 변경 없음.
 - **저장**: `Transaction` upsert 키 `(paymentMethodId, externalRef)`. 취소는 음수, 원문은 AES-256-GCM(`rawPayloadEnc`).
 - **동일 사용자 중복 제거**: 계좌 출금 ↔ 그 계좌에 연결된 체크카드 승인(같은 원화·±2분) → 계좌 쪽 `sameUserDuplicateOfId`. 계좌 쪽이 이미 확정됐으면 반대로 카드 쪽을 뺀다.
@@ -74,14 +74,14 @@
 
 실패하면 error 로그(`event, listener, tripId, errorCode`) + SyncRun FAILED로 남고, 10분 잡이 위 자가 복구로 따라잡는다. `eventSeq`가 이미 본 것 이하면 버린다(인스턴스 메모리).
 
-## S2B-2(expenses)가 쓰는 것
+## S2B-2(expenses)와의 경계
 
-- `OutOfPeriodService.listCandidates(userId, tripId, side)` → `OutOfPeriodCandidate[]`(즉시 조회 결과는 저장하지 않음), `add(userId, tripId, candidateIds)` → 만든 Expense ID(`PENDING, OUT_OF_PERIOD` + `OUT_OF_PERIOD_ADDED` 로그 + 취소 자식). 직접 트랜잭션을 잡으려면 `resolveCandidates` + `ImportService.addOutOfPeriodExpenses(tx, …)`.
-- `DuplicateFlagger`: 인입이 공동 결제 순액을 바꿀 때 부르는 자리. 통합 때 S2B-2 `flagDuplicates`를 `{ provide: DuplicateFlagger, useValue: { flagDuplicates } }`로 끼우고 임시 구현 `DuplicateSuspicionService`는 지운다.
+- **기간 외 결제**: 후보·추가 API(`GET …/out-of-period-candidates`, `POST …/out-of-period-expenses`)는 S2B-2가 **저장된 Transaction**에서 고른다. 그래서 동기화가 진행 중 여정의 시작 60일 전(`OUT_OF_PERIOD_LOOKBACK_DAYS`)부터 가져와 **Transaction으로만 보관**한다(장부 Expense는 사용자가 추가할 때 S2B-2가 만든다). 이 구간도 성공 SyncRun 커버리지로 판정해 한 번 덮이면 다시 가져오지 않는다.
+- **중복 의심**: 인입이 공동 결제의 순액을 바꾸면(환불 첨부) `DuplicateFlagger`를 부르고, 기본 구현은 `expenses/duplicates.ts`의 `flagDuplicates`다(`duplicate-flagger.ts`).
 - `ImportService.lockTrip(tx, tripId)`: Trip `FOR SHARE` + 환율 정책.
 
 ## 테스트
 
 - 단위: `import-rules.spec.ts`(중복 제거·취소 매칭·자식 원화·중복 의심), `krw.spec.ts`, `sync-window.spec.ts`, `masking.spec.ts`, `token-cipher.spec.ts`, `demo-toss.adapter.spec.ts`, `event-seq.spec.ts`
 - e2e(DB 없이, CI): `test/payment-methods.e2e-spec.ts` — 동의 403, 로그인, 잡 시크릿·CSRF
-- e2e(실DB, `PAYMENT_TEST_DATABASE_URL`이 있을 때만, DB 이름은 `_test`로 끝나야 함 · S2A의 `TEST_DATABASE_URL`은 시작 때 TRUNCATE하므로 다른 DB): `test/payment-flow.e2e-spec.ts` — 연결 → 선택 → 목록 → PENDING → 수동 동기화 → 해제 → purge, 환불, SH-2 자가 복구·이벤트 멱등·참여 소급·나간 멤버, 만료 → 재연결 소급, 기간 외 후보, FINAL
+- e2e(실DB, `PAYMENT_TEST_DATABASE_URL`이 있을 때만, DB 이름은 `_test`로 끝나야 함 · S2A의 `TEST_DATABASE_URL`은 시작 때 TRUNCATE하므로 다른 DB): `test/payment-flow.e2e-spec.ts` — 연결 → 선택 → 목록 → PENDING → 수동 동기화 → 해제 → purge, 환불, SH-2 자가 복구·이벤트 멱등·참여 소급·나간 멤버, 만료 → 재연결 소급, 여정 전 거래 보관, FINAL

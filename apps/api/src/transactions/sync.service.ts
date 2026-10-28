@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { SyncJobResult, SyncTrigger } from '@yeojeong/shared';
+import {
+  OUT_OF_PERIOD_LOOKBACK_DAYS,
+  type SyncJobResult,
+  type SyncTrigger,
+} from '@yeojeong/shared';
 import { Prisma, type SyncRun } from '../generated/prisma/client.js';
 import {
   PaymentProviderAdapter,
@@ -14,6 +18,8 @@ import { SYNC_OVERLAP_MS, computeSyncWindow } from './sync-window.js';
 
 /** 이 시간이 지나도 끝나지 않은 SyncRun은 죽은 것으로 보고 FAILED(STALE) 처리 */
 const STALE_RUN_MS = 5 * 60 * 1000;
+/** 여정 전 결제(기간 외 후보)를 보관하는 범위. S2B-2 기간 외 추가가 저장된 Transaction에서 후보를 고른다 */
+const LOOKBACK_MS = OUT_OF_PERIOD_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
 /** 결제수단 하나에서 한 번에 받을 최대 페이지(무한 루프 방지) */
 const MAX_PAGES = 200;
 
@@ -147,7 +153,8 @@ export class SyncService {
       // 진행 중 여정이 없으면 제공자 조회를 하지 않는다(최소 수집, FR-401 AC2)
       return { skipped: 'NO_ONGOING_TRIP', syncRunId: null };
     }
-    const earliest = Math.min(...memberships.map((m) => m.startAt.getTime()));
+    const earliest =
+      Math.min(...memberships.map((m) => m.startAt.getTime())) - LOOKBACK_MS;
     const succeededRuns = await this.prisma.syncRun.findMany({
       where: { connectionId, status: 'OK', toAt: { gte: new Date(earliest) } },
       select: { fromAt: true, toAt: true },
@@ -159,6 +166,7 @@ export class SyncService {
       hasUnsyncedMethod: connection.methods.some((m) => !m.lastSyncedAt),
       requestedFromAt: options.requestedFromAt ?? null,
       succeededRuns,
+      lookbackMs: LOOKBACK_MS,
     });
     if (!window) return { skipped: 'NO_ONGOING_TRIP', syncRunId: null };
 

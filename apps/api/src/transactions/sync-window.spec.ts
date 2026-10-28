@@ -129,4 +129,30 @@ describe('computeSyncWindow (4-1-1)', () => {
       })?.fromAt,
     ).toEqual(trip.startAt);
   });
+
+  it('keeps the pre-trip lookback (out-of-period candidates) until it is covered once', () => {
+    const lookbackMs = 60 * 24 * 60 * 60 * 1000;
+    const lookbackFrom = new Date(trip.startAt.getTime() - lookbackMs);
+    expect(
+      computeSyncWindow({
+        now,
+        trips: [trip],
+        lastSyncedAt: null,
+        hasUnsyncedMethod: true,
+        succeededRuns: [],
+        lookbackMs,
+      })?.fromAt,
+    ).toEqual(lookbackFrom);
+    const last = t('2026-11-13T19:50:00');
+    expect(
+      computeSyncWindow({
+        now,
+        trips: [trip],
+        lastSyncedAt: last,
+        hasUnsyncedMethod: false,
+        succeededRuns: [{ fromAt: lookbackFrom, toAt: last }],
+        lookbackMs,
+      })?.fromAt,
+    ).toEqual(new Date(last.getTime() - SYNC_OVERLAP_MS));
+  });
 });

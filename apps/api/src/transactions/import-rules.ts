@@ -1,7 +1,7 @@
 // 인입 규칙(기능명세 4-1) 중 DB와 무관한 판정. 서비스는 이 함수들로 판정하고 결과만 저장한다.
 // 금액은 부동소수점을 피하려고 원통화 decimal 문자열을 소수 4자리 정수(BigInt)로 바꿔 계산한다.
 
-/** ±2분: 동일 사용자 중복 제거(4-1-3)·중복 의심(4-1-5) 공통 */
+/** ±2분: 동일 사용자 중복 제거(4-1-3) */
 export const NEAR_WINDOW_MS = 120_000;
 
 const SCALE = 4;
@@ -228,43 +228,4 @@ export function matchCancel(
     return b.occurredAt.getTime() - a.occurredAt.getTime();
   });
   return candidates[0]?.id ?? null;
-}
-
-// ─── 4-1-5 중복 의심(멤버 간) ───
-
-export interface SuspectExpense {
-  id: string;
-  status: 'PENDING' | 'PERSONAL' | 'SHARED';
-  payerMembershipId: string;
-  merchantKey: string;
-  originalAmount: string;
-  originalCurrency: string;
-  occurredAt: Date;
-  refundOfExpenseId: string | null;
-  duplicateDismissedAt: Date | null;
-}
-
-/**
- * 같은 여정의 두 공동 결제가 결제자가 다르고, 가맹점 키·원통화·원통화 금액이 같고, 120초 안이면 중복 의심.
- * 원화가 아니라 원통화로 비교한다(반올림 차이를 피함). 미확정·개인·취소 자식은 판정하지 않는다.
- * 표시 해제(duplicateDismissedAt)된 결제는 다시 묶지 않는다(미결 Q-20).
- */
-export function isSuspectedDuplicate(
-  a: SuspectExpense,
-  b: SuspectExpense,
-): boolean {
-  return (
-    a.id !== b.id &&
-    a.status === 'SHARED' &&
-    b.status === 'SHARED' &&
-    a.refundOfExpenseId === null &&
-    b.refundOfExpenseId === null &&
-    a.duplicateDismissedAt === null &&
-    b.duplicateDismissedAt === null &&
-    a.payerMembershipId !== b.payerMembershipId &&
-    a.merchantKey === b.merchantKey &&
-    a.originalCurrency === b.originalCurrency &&
-    toScaled(a.originalAmount) === toScaled(b.originalAmount) &&
-    Math.abs(a.occurredAt.getTime() - b.occurredAt.getTime()) <= NEAR_WINDOW_MS
-  );
 }
