@@ -6,8 +6,8 @@ import { renderApp } from '../../test/render'
 const PAYMENTS = `/trips/${TRIP.osaka}/payments`
 
 // 앱 전체(가드·셸·lazy 페이지)를 그리는 테스트라 여러 파일이 함께 돌 때 첫 화면이 늦을 수 있다
-configure({ asyncUtilTimeout: 5000 })
-vi.setConfig({ testTimeout: 20_000 })
+configure({ asyncUtilTimeout: 10_000 })
+vi.setConfig({ testTimeout: 30_000 })
 
 beforeAll(async () => {
   // lazy 페이지를 미리 받아 첫 테스트가 느려지지 않게

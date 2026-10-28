@@ -90,8 +90,6 @@ export default function PaymentsPage() {
 
   return (
     <div className="flex flex-1 flex-col bg-surface">
-      {/* 헤더에는 그룹명이 보이므로 화면 이름은 화면리더에만 */}
-      <h2 className="sr-only">결제내역</h2>
       {ongoing && trip.me.connectionExpired && (
         <div className="px-gutter pt-2">
           {/* 다시 연결(WF-06 RECONNECT)은 지갑 플로우가 시작한다 — 지갑 화면의 연결 만료 카드로 보낸다 */}
