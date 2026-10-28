@@ -23,7 +23,7 @@ export type ControlRowProps = {
 export function ControlRow({ pendingCount, filterOn, onToggleFilter, view, onViewChange }: ControlRowProps) {
   const label = `확인 필요 ${pendingCount}건`
   return (
-    <div className="flex items-center justify-between gap-3 px-5 pt-1.5 pb-0.5">
+    <div className="flex items-center justify-between gap-3 px-5 pb-0.5">
       {pendingCount > 0 ? (
         filterOn ? (
           <div className="flex min-w-0 items-center gap-1 rounded-md border border-strong pr-1 pl-3">
