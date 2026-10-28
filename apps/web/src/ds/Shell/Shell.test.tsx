@@ -97,4 +97,23 @@ describe('ShellOnboarding', () => {
     expect(screen.queryByRole('progressbar')).toBeNull()
     expect(screen.queryAllByRole('button')).toHaveLength(0)
   })
+
+  it('skip + skipLabel은 헤더 오른쪽 텍스트 버튼이고 클릭·disabled를 전달한다', () => {
+    const onSkip = vi.fn()
+    const { rerender } = render(
+      <ShellOnboarding back={false} skip skipLabel="나중에" onSkip={onSkip}>
+        연결
+      </ShellOnboarding>,
+    )
+    const skip = screen.getByRole('button', { name: '나중에' })
+    expect(screen.getByRole('banner').contains(skip)).toBe(true)
+    fireEvent.click(skip)
+    expect(onSkip).toHaveBeenCalledTimes(1)
+    rerender(
+      <ShellOnboarding back={false} skip skipDisabled onSkip={onSkip}>
+        연결
+      </ShellOnboarding>,
+    )
+    expect((screen.getByRole('button', { name: '건너뛰기' }) as HTMLButtonElement).disabled).toBe(true)
+  })
 })

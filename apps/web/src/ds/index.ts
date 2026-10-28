@@ -22,9 +22,10 @@ export { BottomSheet, type BottomSheetCta, type BottomSheetProps } from './Botto
 export { BudgetProgress, type BudgetProgressProps } from './BudgetProgress/BudgetProgress'
 export { BUDGET_CAUTION_RATIO, budgetPercent, budgetRatio, budgetState, type BudgetProgressState } from './BudgetProgress/rules'
 export { Button, type ButtonProps, type ButtonSize, type ButtonState, type ButtonType } from './Button/Button'
+export { CardHeroTone, type CardHeroToneAction, type CardHeroToneProps } from './Card/HeroTone'
 export { Callout, type CalloutProps, type CalloutStyle, type CalloutTone } from './Callout/Callout'
 export { Checkbox, type CheckboxProps } from './Checkbox/Checkbox'
-export { Chip, type ChipProps } from './Chip/Chip'
+export { Chip, type ChipProps, type ChipStyle } from './Chip/Chip'
 export { DateHeader, type DateHeaderProps } from './DateHeader/DateHeader'
 export { Dialog, type DialogProps, type DialogType } from './Dialog/Dialog'
 export { Divider, type DividerProps, type DividerType } from './Divider/Divider'
@@ -56,6 +57,7 @@ export { KakaoLoginButton, type KakaoLoginButtonProps, type KakaoLoginButtonSize
 export { ListItem, type ListItemProps, type ListItemType } from './ListItem/ListItem'
 export { AppIcon, type AppIconProps } from './Logo/AppIcon'
 export { Logo, type LogoProps, type LogoVariant } from './Logo/Logo'
+export { MetricBar, type MetricBarProps, type MetricBarType } from './MetricBar/MetricBar'
 export { NavItem, type NavItemProps, type NavItemState } from './NavItem/NavItem'
 export { PanelSide, PanelSidePanel, type PanelSidePanelProps, type PanelSideProps } from './Panel/Side'
 export { PaymentRow, type PaymentRowProps, type PaymentRowType } from './PaymentRow/PaymentRow'
@@ -77,6 +79,7 @@ export { RowConsent, type RowConsentChevron, type RowConsentProps } from './Row/
 export { RowMember, type RowMemberProps } from './Row/Member'
 export { RowMemberAmount, type RowMemberAmountProps } from './Row/MemberAmount'
 export { RowOption, type RowOptionProps } from './Row/Option'
+export { RowTone, type RowToneAction, type RowToneProps } from './Row/Tone'
 export { Screen, type ScreenBackground, type ScreenCta, type ScreenProps } from './Screen/Screen'
 export {
   SegmentedControl,

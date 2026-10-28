@@ -5,12 +5,24 @@ import { SettlementRow } from './SettlementRow'
 
 describe('settlementNet · formatSettlement', () => {
   it('받을 돈은 +와 "받을 돈", 보낼 돈은 −(U+2212)와 "보낼 돈"', () => {
-    expect(formatSettlement(161000)).toEqual({ net: 'receive', amount: '+₩161,000', label: '받을 돈' })
-    expect(formatSettlement(-48250)).toEqual({ net: 'send', amount: '−₩48,250', label: '보낼 돈' })
+    expect(formatSettlement(161000)).toEqual({
+      net: 'receive',
+      amount: '+₩161,000',
+      label: '받을 돈',
+    })
+    expect(formatSettlement(-48250)).toEqual({
+      net: 'send',
+      amount: '−₩48,250',
+      label: '보낼 돈',
+    })
   })
 
   it('0(반올림 포함)은 부호 없이 "정산 끝"', () => {
-    expect(formatSettlement(0)).toEqual({ net: 'even', amount: '₩0', label: '정산 끝' })
+    expect(formatSettlement(0)).toEqual({
+      net: 'even',
+      amount: '₩0',
+      label: '정산 끝',
+    })
     expect(settlementNet(0.4)).toBe('even')
     expect(settlementNet(-0.4)).toBe('even')
   })
@@ -45,5 +57,12 @@ describe('SettlementRow', () => {
     render(<SettlementRow person={{ name: '태현', left: true }} paid={0} share={0} />)
     expect(screen.getByText('나간 멤버')).toBeTruthy()
     expect(screen.getByText('정산 끝')).toBeTruthy()
+  })
+
+  it('tappable={false}면 버튼이 아니고 ›를 그리지 않는다', () => {
+    const { container } = render(<SettlementRow person={{ name: '탈퇴한 멤버' }} paid={0} share={0} tappable={false} />)
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(container.querySelector('svg.lucide-chevron-right')).toBeNull()
+    expect(screen.getByText('탈퇴한 멤버')).toBeTruthy()
   })
 })
