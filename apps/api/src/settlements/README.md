@@ -52,13 +52,19 @@ await this.events.emitAsync(TRIP_ENDED_EVENT, { tripId } satisfies TripEndedEven
 ## 계산 규칙
 
 - 금액은 모두 정수(원). 외화 → 원화는 10원 단위 half-up(`toKrw`와 같은 bigint 계산), KRW 결제는 그대로.
-- `Expense.fxRate`는 **1단위당 원**(ExchangeRate.rate와 같음), `fxRateUnit`은 고시 단위. 화면 표시 = rate × unit.
+- **환율 저장 단위 = 원통화 1단위당 원(KRW per 1 unit, Decimal(18,6))**: `ExchangeRate.rate`, `Expense.fxRate`, `convertToKrw`의 `spot.rate`·`ConvertResult.rate` 모두 JPY `9.192000`처럼 1엔당 원이다. `fxRateUnit`에는 고시 단위(JPY 100)를 넣는다. 고시 단위 표기(100엔 = 919.20원)는 `GET /api/fx`·`…/fx-policy` 응답(`displayRate`·`label`)과 화면에서만 만든다(`displayRate(rate, unit)`).
+- 예외는 그룹장 입력값 하나: `Trip.fxFixedRate`는 고시 단위당 원(919.20, 스키마 주석). 환산할 때 `ratePerUnit(fixed, unit)`로 1단위당으로 바꿔 `Expense.fxRate`에 넣는다.
 - SPOT: `effectiveAt ≤ occurredAt`인 가장 최근 고시. 고시를 모으기 전 결제는 가장 이른 고시.
 - CARD_BILLED: 청구 확정 원화 → 제공자 원화 → 매매기준율(임시, `provisional`).
 - FIXED: 금액 × 고정 환율 ÷ 고시 단위. 고정 환율은 고시 단위당 원, 소수 둘째 자리까지.
 - 재계산은 원화가 바뀐 결제만 쓰고 version을 올린다. 부모 순액 = max(0, 부모 + Σ자식), SHARED는 같은 부담 인원으로 `splitEvenly` 재분할, 이력 `FX_RECALCULATED`, `changedAfterShared`는 그대로.
 - 예산 상태는 정수 비교(`spent × 10 < budget × 8` → NORMAL, `spent ≤ budget` → CAUTION, 그 위 OVER). `budgetRatio`는 표시용 소수 넷째 자리.
 - N빵 1인 = round_half_up(total / N). 송금 권장안은 명세 4-4 그리디(재정렬 없음, 최대 N−1건).
+
+## 통합 예정(S2B-2)
+
+- 기간 외 결제 등 인입 환산은 임시 `krw.ts` 대신 `FxRatesService.convertForTrip`(DB 고시 조회 포함) 또는 순수 함수 `convertToKrw`로 바꾼다.
+- 멤버별 내역·개인 건수는 지금 Prisma로 직접 읽는다(`settlements.service.ts`, `ledger.ts`의 `countPersonalByMember`). expenses 모듈의 `ExpenseQueryService.paymentsByPayer`·`ExpenseStatsService.personalCountsByPayer`가 들어오면 그쪽으로 바꾼다.
 
 ## 가시성
 
