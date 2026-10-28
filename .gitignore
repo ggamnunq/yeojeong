@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-ssr
+dist-catalog
 coverage
 .wrangler/
 *.tsbuildinfo
@@ -38,3 +39,8 @@ override.tf.json
 # 디자인 세션 작업물 중 비공개 자료(기획안·노션 사본)와 캐시
 docs/design/context/
 .icon_cache/
+
+# 비공개: 디자인·명세 문서는 로컬에만 둔다 (공개 레포에는 코드만)
+docs/design/
+docs/spec/
+docs/legal/

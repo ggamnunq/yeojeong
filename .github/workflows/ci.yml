@@ -29,5 +29,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # api의 type-aware 린트가 shared 빌드 결과를 참조하므로 빌드를 먼저 한다
       - run: pnpm build
+      - run: pnpm --filter @yeojeong/web ds:tokens:check
       - run: pnpm lint
       - run: pnpm test
