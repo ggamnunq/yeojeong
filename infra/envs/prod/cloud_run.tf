@@ -43,6 +43,17 @@ resource "google_cloud_run_v2_service" "api" {
         startup_cpu_boost = true
       }
 
+      # 비밀이 아닌 설정. 화면과 API가 같은 origin(jinyeojeong.com)이다.
+      env {
+        name  = "WEB_BASE_URL"
+        value = "https://${var.domain}"
+      }
+
+      env {
+        name  = "KAKAO_REDIRECT_URI"
+        value = "https://${var.domain}/api/auth/kakao/callback"
+      }
+
       env {
         name = "DATABASE_URL"
         value_source {

@@ -1,10 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { HealthResponse } from '@yeojeong/shared';
+import { Public } from '../common/auth/index.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { HealthResponseDto } from './health-response.dto.js';
 
 @ApiTags('health')
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}

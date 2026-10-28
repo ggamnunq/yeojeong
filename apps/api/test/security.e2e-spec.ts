@@ -3,7 +3,9 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ERRORS } from '@yeojeong/shared';
 import { IsString, MaxLength } from 'class-validator';
 import request from 'supertest';
+import { Public } from './../src/common/auth/index.js';
 import { StrictThrottle } from './../src/common/throttle.js';
+import { TEST_ORIGIN } from './auth-helpers.js';
 import { createTestApp } from './create-test-app.js';
 
 class CreateNoteDto {
@@ -12,6 +14,7 @@ class CreateNoteDto {
   title: string;
 }
 
+@Public()
 @Controller('security-probe')
 class SecurityProbeController {
   @Post('notes')
@@ -63,6 +66,7 @@ describe('Security baseline (e2e)', () => {
     it('accepts a body that matches the DTO', () => {
       return request(app.getHttpServer())
         .post('/api/security-probe/notes')
+        .set('Origin', TEST_ORIGIN)
         .send({ title: '오사카' })
         .expect(201)
         .expect({ title: '오사카' });
@@ -71,6 +75,7 @@ describe('Security baseline (e2e)', () => {
     it('rejects fields outside the DTO whitelist', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/security-probe/notes')
+        .set('Origin', TEST_ORIGIN)
         .send({ title: '오사카', isAdmin: true })
         .expect(400);
       expect(JSON.stringify(res.body)).toContain('isAdmin');
@@ -79,6 +84,7 @@ describe('Security baseline (e2e)', () => {
     it('rejects invalid values', () => {
       return request(app.getHttpServer())
         .post('/api/security-probe/notes')
+        .set('Origin', TEST_ORIGIN)
         .send({ title: 123 })
         .expect(400);
     });
@@ -86,6 +92,7 @@ describe('Security baseline (e2e)', () => {
     it('does not parse form-encoded bodies', () => {
       return request(app.getHttpServer())
         .post('/api/security-probe/notes')
+        .set('Origin', TEST_ORIGIN)
         .type('form')
         .send('title=오사카')
         .expect(400);
@@ -108,6 +115,7 @@ describe('Security baseline (e2e)', () => {
     it('rejects malformed JSON without a stack trace', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/security-probe/notes')
+        .set('Origin', TEST_ORIGIN)
         .set('Content-Type', 'application/json')
         .send('{"title": ')
         .expect(400);
@@ -117,6 +125,7 @@ describe('Security baseline (e2e)', () => {
     it('rejects bodies over the size limit', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/security-probe/notes')
+        .set('Origin', TEST_ORIGIN)
         .send({ title: 'x'.repeat(200 * 1024) })
         .expect(413);
       expectNoLeak(res.text);
