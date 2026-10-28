@@ -18,6 +18,7 @@ import {
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SyncService } from '../transactions/sync.service.js';
+import { waitAtMost } from '../transactions/wait.js';
 import { FinancialAccessLog } from './access-log.js';
 import {
   assertSafelyMasked,
@@ -54,14 +55,6 @@ interface StoredCandidate {
 
 const hashState = (state: string) =>
   createHash('sha256').update(state).digest('hex');
-
-export function waitAtMost<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<undefined>((resolve) => {
-    timer = setTimeout(() => resolve(undefined), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-}
 
 /**
  * 토스 연결 흐름(HF-05~08, FR-801·802·805): 시작(ConnectionAttempt) → 외부 인증 → 콜백(토큰 교환·후보) → 선택 확정.

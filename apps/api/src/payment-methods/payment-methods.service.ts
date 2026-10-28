@@ -6,8 +6,8 @@ import type {
 import { AppException, NotFoundError } from '../common/errors/index.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SyncService } from '../transactions/sync.service.js';
+import { waitAtMost } from '../transactions/wait.js';
 import { FinancialAccessLog } from './access-log.js';
-import { waitAtMost } from './connections.service.js';
 
 /** 수동 동기화 사용자당 간격(제안 60초) */
 export const MANUAL_SYNC_INTERVAL_MS = 60_000;

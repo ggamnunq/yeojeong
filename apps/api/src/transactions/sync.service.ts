@@ -434,6 +434,33 @@ export class SyncService {
     return this.backfillUsers([membership.userId], 'JOIN', membership.group.trip.startAt);
   }
 
+  /**
+   * 자동 종료 직전 FINAL 동기화(FR-305, trip.auto-ending). 여정이 아직 ONGOING일 때 활성 멤버의 ACTIVE 연결을 한 번 더 가져온다.
+   * 종료 후 인입 금지라 이 동기화가 마지막 인입이다. 실패해도 종료는 막지 않는다(결과는 SyncRun에 남는다).
+   */
+  async finalSync(tripId: string): Promise<SyncOutcome[]> {
+    const trip = await this.prisma.trip.findFirst({
+      where: { id: tripId, deletedAt: null, status: 'ONGOING' },
+      select: {
+        group: {
+          select: {
+            memberships: {
+              where: { leftAt: null, userId: { not: null } },
+              select: { userId: true },
+            },
+          },
+        },
+      },
+    });
+    if (!trip) return [];
+    const userIds = trip.group.memberships.flatMap((m) => (m.userId ? [m.userId] : []));
+    const connections = await this.prisma.paymentConnection.findMany({
+      where: { userId: { in: userIds }, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    return Promise.all(connections.map((c) => this.run(c.id, 'FINAL')));
+  }
+
   private async backfillUsers(
     userIds: string[],
     trigger: 'TRIP_START' | 'JOIN',

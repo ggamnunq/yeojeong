@@ -91,7 +91,7 @@ export class DemoTossAdapter extends PaymentProviderAdapter {
     return url.toString();
   }
 
-  exchangeCode(input: { code: string }): Promise<ProviderTokens> {
+  exchangeCode(input: { code: string; redirectUri: string }): Promise<ProviderTokens> {
     const grant = input.code.startsWith('demo.')
       ? decode<DemoGrant>(input.code.slice(5))
       : null;
@@ -108,7 +108,12 @@ export class DemoTossAdapter extends PaymentProviderAdapter {
   }
 
   listPaymentMethods(tokens: ProviderTokens): Promise<ProviderPaymentMethod[]> {
-    const grant = this.requireGrant(tokens);
+    let grant: DemoGrant;
+    try {
+      grant = this.requireGrant(tokens);
+    } catch (error) {
+      return Promise.reject(error as Error);
+    }
     const ref = (key: string) => `demo.${grant.p}.${key}`;
     return Promise.resolve(
       DEMO_METHODS[grant.p].map((m) => ({
