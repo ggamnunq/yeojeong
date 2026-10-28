@@ -33,6 +33,16 @@ Figma 「여정」 v1.3 디자인 시스템을 코드로 옮긴 것. 원본 문�
 - 스타일은 Tailwind 유틸 + 토큰만. raw hex·임의 색 금지. 클래스 합치기는 `clsx`.
 - 접근성: 진짜 `<button>`/`<input>`, 라벨 연결, 아이콘만 있으면 `label`(aria-label) 필수, 포커스 링은 `styles.ts`의 `focusRing`, 보이는 크기가 44px보다 작으면 `touchTarget`으로 누르는 영역만 넓힌다.
 
+## 레이아웃 · 오버레이
+
+- 화면은 `Screen`으로 조립한다(spec 7-1): `header`(TopHeader) → 본문(`gutter` 좌우 20, 기본 on) → `cta`(Button Primary L FILL) → `nav`(BottomNav). 390 폭 가운데 정렬, 바탕 `bg/canvas`. 스크롤은 문서가 하고 헤더·하단은 sticky.
+- 안전영역: `index.html`의 `viewport-fit=cover`가 있어야 `env(safe-area-inset-*)`가 잡힌다. 위는 Screen 헤더 자리, 아래는 BottomNav(없으면 CTA나 본문)와 BottomSheet가 채운다.
+- `BottomSheet`·`Dialog`는 네이티브 `<dialog>.showModal()`(최상위 레이어 + 배경 inert) 위에 `useModalDialog`가 ESC·Tab 가두기·포커스 되돌리기·스크롤 잠금을 더한다. 열림 상태는 부모가 쥐고(`open`), 닫기 요청은 `onClose`/`onCancel`로만 알린다. 시트는 딤을 누르면 닫히고, 다이얼로그는 딤으로 닫히지 않는다.
+- 모션은 시트 200ms·다이얼로그 150ms이고 `prefers-reduced-motion`이면 없다.
+- 내용이 필요한 Figma BOOLEAN은 객체를 넘기면 켜진다: BottomSheet `CTA` → `cta={{ label, onClick }}`, Toast `Action` → `action={{ label, onClick }}`, TopHeader Back의 `action` 버튼. `Type=SharedToPersonal`처럼 붙어 있는 값은 kebab-case(`type="shared-to-personal"`).
+- `Toast`는 겉모습만, `ToastViewport`는 자리(내비 위 16)만 잡는다. 큐·타이머·자동 닫힘은 쓰는 쪽이 붙인다.
+- 카탈로그에서 열린 모습을 고정해 보여 줄 때는 `BottomSheetPanel`·`DialogPanel`(모달 동작 없는 겉모습)과 `catalog/PhoneFrame`을 쓴다. 화면 코드에서는 쓰지 않는다.
+
 ## 카탈로그
 
 - `pnpm --filter @yeojeong/web catalog` → http://localhost:5173/catalog.html (`catalog:build`는 `dist-catalog/`로 따로 빌드).
