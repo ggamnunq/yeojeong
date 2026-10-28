@@ -1,6 +1,6 @@
 import { INVITE_CODE_LENGTH, formatInviteCode as formatInviteCodeFull } from '@yeojeong/shared'
 import type { TripStatus } from '../../api'
-import { formatKrw } from '../../ds'
+import { formatKrw } from '../../ds/format'
 import type {
   PlaceInput,
   TripEditableField,
