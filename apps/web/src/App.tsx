@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { HealthResponse } from '@yeojeong/shared'
+import { Logo } from './ds'
 
 type Check = 'checking' | 'up' | 'down'
 
@@ -27,12 +28,12 @@ function App() {
   return (
     <main className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-10 px-6">
       <header>
-        <h1 className="text-4xl font-bold tracking-tight text-gray-900">
-          여정
+        <h1>
+          <Logo height={40} />
         </h1>
-        <p className="mt-2 text-gray-500">여행 공동 지갑 · 화면 준비 중</p>
+        <p className="mt-3 text-body-m text-secondary">여행 공동 지갑 · 화면 준비 중</p>
       </header>
-      <dl className="divide-y divide-gray-100 rounded-2xl border border-gray-200">
+      <dl className="divide-y divide-default rounded-lg border border-default bg-surface">
         <StatusRow label="서버" value={server} />
         <StatusRow label="DB" value={db} />
       </dl>
@@ -41,16 +42,16 @@ function App() {
 }
 
 const dotColor: Record<Check, string> = {
-  checking: 'bg-gray-300',
-  up: 'bg-emerald-500',
-  down: 'bg-red-500',
+  checking: 'bg-neutral-300',
+  up: 'bg-success-500',
+  down: 'bg-error-500',
 }
 
 function StatusRow({ label, value }: { label: string; value: Check }) {
   return (
     <div className="flex items-center justify-between px-5 py-4">
-      <dt className="text-gray-700">{label}</dt>
-      <dd className="flex items-center gap-2 text-sm text-gray-500">
+      <dt className="text-body-m text-primary">{label}</dt>
+      <dd className="flex items-center gap-2 text-body-s text-secondary">
         <span className={`size-2 rounded-full ${dotColor[value]}`} />
         {value}
       </dd>

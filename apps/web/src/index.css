@@ -1,1 +1,21 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/noto-sans-kr/wght.css';
+@import './styles/fonts.css';
+@import './styles/tokens.css';
+
+@utility font-amount {
+  font-family: var(--font-amount);
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-primary;
+  }
+}

@@ -1,0 +1,238 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`gen-tokens > 출력 스냅샷 1`] = `
+"/* 자동 생성 파일 — 직접 고치지 말 것. 원본: apps/web/design-tokens/*.json
+ * 다시 만들기: pnpm --filter @yeojeong/web ds:tokens
+ * 간격(space/N)은 Tailwind 기본 4px 스케일을 쓴다: space/2=0.5 space/4=1 space/8=2 space/12=3 space/16=4 space/20=5 space/24=6 space/32=8 space/40=10 space/48=12 space/64=16 */
+
+@theme static {
+  --color-*: initial;
+  --color-primary-50: #f4f3ff;
+  --color-primary-100: #e8e6ff;
+  --color-primary-200: #d0ccff;
+  --color-primary-300: #aea7ff;
+  --color-primary-400: #8a80fa;
+  --color-primary-500: #5b4cf5;
+  --color-primary-600: #4935d4;
+  --color-primary-700: #3a24b0;
+  --color-primary-800: #2a1789;
+  --color-primary-900: #1c0b63;
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #f9f9fc;
+  --color-neutral-100: #f3f3f7;
+  --color-neutral-200: #e6e6ec;
+  --color-neutral-300: #d4d4dc;
+  --color-neutral-400: #a8a8b3;
+  --color-neutral-500: #70707e;
+  --color-neutral-600: #5c5c69;
+  --color-neutral-700: #42424f;
+  --color-neutral-800: #292935;
+  --color-neutral-900: #14141e;
+  --color-sunset-50: #fff1ec;
+  --color-sunset-100: #ffe0d6;
+  --color-sunset-300: #ffb49e;
+  --color-sunset-500: #ff7a59;
+  --color-sunset-700: #c4411e;
+  --color-success-50: #e8f7ee;
+  --color-success-500: #16a34a;
+  --color-success-700: #0f7a3a;
+  --color-warning-50: #fff5e1;
+  --color-warning-500: #f59e0b;
+  --color-warning-700: #b45309;
+  --color-error-50: #feedee;
+  --color-error-500: #e5484d;
+  --color-error-700: #c0262d;
+  --color-error-800: #9e1b21;
+  --color-info-50: #eaf3ff;
+  --color-info-500: #2f80ed;
+  --color-info-700: #1a5dc0;
+
+  --color-bg-canvas: var(--color-neutral-50); /* 앱 전체 배경(화면 바탕) */
+  --color-bg-surface: var(--color-neutral-0); /* 카드·시트·리스트 바탕 */
+  --color-bg-subtle: var(--color-neutral-100); /* 입력창·비활성·보조 영역 바탕 */
+  --color-bg-muted: var(--color-neutral-200); /* 트랙·스켈레톤·구분 블록 */
+  --color-bg-brand: var(--color-primary-500); /* 주요 버튼·활성 탭·강조 면 */
+  --color-bg-brand-pressed: var(--color-primary-600); /* 주요 버튼 눌림 */
+  --color-bg-brand-subtle: var(--color-primary-50); /* 선택된 항목·브랜드 연한 면 */
+  --color-bg-inverse: var(--color-neutral-900); /* 토스트·반전 면 */
+  --color-bg-danger: var(--color-error-700); /* 파괴적 버튼(삭제·나가기·강퇴) 바탕 (흰 글자 5.9:1) */
+  --color-bg-danger-pressed: var(--color-error-800); /* 파괴적 버튼 눌림 */
+  --color-bg-pressed: var(--color-neutral-100); /* Secondary·리스트 행 눌림 */
+  --color-bg-dim: rgb(20 20 30 / 0.48); /* 바텀시트·다이얼로그 뒤 딤 */
+  --color-border-default: var(--color-neutral-200); /* 카드·입력창 기본 테두리, 디바이더 */
+  --color-border-strong: var(--color-neutral-300); /* 강조 테두리·Secondary 버튼 */
+  --color-border-focus: var(--color-primary-500); /* 포커스 링·선택 테두리 */
+  --color-border-error: var(--color-error-500); /* 오류 입력 테두리 */
+  --color-text-primary: var(--color-neutral-900); /* 본문·제목 (18.3:1) */
+  --color-text-secondary: var(--color-neutral-600); /* 보조 설명·메타 정보 (6.6:1) */
+  --color-text-tertiary: var(--color-neutral-500); /* 플레이스홀더·시각 표기 (4.9:1) */
+  --color-text-disabled: var(--color-neutral-400); /* 비활성 텍스트 (장식 수준) */
+  --color-text-inverse: var(--color-neutral-0); /* 진한 면 위 텍스트 */
+  --color-text-brand: var(--color-primary-600); /* 브랜드 강조 텍스트·링크 (7.7:1) */
+  --color-text-error: var(--color-error-700); /* 오류 메시지 */
+  --color-text-success: var(--color-success-700); /* 완료·성공 메시지 */
+  --color-icon-default: var(--color-neutral-700); /* 기본 아이콘 */
+  --color-icon-subtle: var(--color-neutral-500); /* 보조·비활성 탭 아이콘 */
+  --color-icon-disabled: var(--color-neutral-400); /* 비활성 아이콘 */
+  --color-icon-brand: var(--color-primary-500); /* 활성 탭·브랜드 아이콘 */
+  --color-icon-inverse: var(--color-neutral-0); /* 진한 면 위 아이콘 */
+  --color-brand-accent: var(--color-sunset-500); /* 로고 도착점·일러스트 포인트(장식 전용) */
+  --color-expense-shared-bg: var(--color-primary-50); /* 공동 지출 태그 바탕 */
+  --color-expense-shared-fg: var(--color-primary-600); /* 공동 지출 태그 글자·아이콘 */
+  --color-expense-shared-solid: var(--color-primary-500); /* 공동 지출 차트·바·점 */
+  --color-expense-personal-bg: var(--color-neutral-100); /* 개인 지출 태그 바탕 */
+  --color-expense-personal-fg: var(--color-neutral-600); /* 개인 지출 태그 글자·아이콘 */
+  --color-expense-personal-solid: var(--color-neutral-400); /* 개인 지출 차트·바·점 */
+  --color-expense-pending-bg: var(--color-neutral-100); /* 미확정 태그 바탕(조용한 회색) */
+  --color-expense-pending-fg: var(--color-neutral-600); /* 미확정 태그 글자 (6.6:1) */
+  --color-expense-pending-border: var(--color-neutral-200); /* 미확정 배너·타임라인 카드 테두리(실선 1px) */
+  --color-expense-pending-dot: var(--color-warning-500); /* 미확정 표시 점 — 미확정에서 주황은 이 점 하나뿐 */
+  --color-trip-upcoming-bg: var(--color-info-50); /* 여정 시작 전 배지 바탕 */
+  --color-trip-upcoming-fg: var(--color-info-700); /* 여정 시작 전 배지 글자 */
+  --color-trip-upcoming-dot: var(--color-info-500); /* 여정 시작 전 점 */
+  --color-trip-active-bg: var(--color-primary-500); /* 여정 진행 중 배지 바탕(솔리드) */
+  --color-trip-active-fg: var(--color-neutral-0); /* 여정 진행 중 배지 글자 */
+  --color-trip-active-dot: var(--color-sunset-300); /* 여정 진행 중 라이브 점 */
+  --color-trip-ended-bg: var(--color-neutral-200); /* 여정 종료 배지 바탕 */
+  --color-trip-ended-fg: var(--color-neutral-700); /* 여정 종료 배지 글자 */
+  --color-trip-ended-dot: var(--color-neutral-500); /* 여정 종료 점 */
+  --color-feedback-info-bg: var(--color-info-50); /* Info 배너(Callout) 바탕 */
+  --color-feedback-info-fg: var(--color-info-700); /* Info 배너 아이콘·강조 */
+  --color-feedback-info-border: var(--color-info-500); /* Info 배너 테두리 */
+  --color-feedback-warning-bg: var(--color-warning-50); /* Warning 배너 바탕 (예산 주의 등) */
+  --color-feedback-warning-fg: var(--color-warning-700); /* Warning 배너 아이콘·강조 */
+  --color-feedback-warning-border: var(--color-warning-500); /* Warning 배너 테두리(실선) */
+  --color-feedback-error-bg: var(--color-error-50); /* Error 배너·중복 의심 태그 바탕 */
+  --color-feedback-error-fg: var(--color-error-700); /* Error 배너·중복 의심 태그 글자·아이콘 */
+  --color-feedback-error-border: var(--color-error-500); /* Error 배너 테두리 (연동 끊김) */
+  --color-amount-receive: var(--color-primary-600); /* 정산: 받을 금액(+) */
+  --color-amount-send: var(--color-sunset-700); /* 정산: 보낼 금액(−) */
+  --color-amount-default: var(--color-neutral-900); /* 일반 금액 */
+  --color-budget-track: var(--color-neutral-200); /* 예산 바 트랙 */
+  --color-budget-fill: var(--color-primary-500); /* 예산 사용(정상) */
+  --color-budget-caution: var(--color-warning-500); /* 예산 80% 이상 */
+  --color-budget-over: var(--color-error-500); /* 예산 초과 */
+
+  --radius-*: initial;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 999px;
+
+  --shadow-*: initial;
+  --shadow-elevation-1: 0 1px 2px 0 rgb(20 20 30 / 0.06), 0 2px 6px 0 rgb(20 20 30 / 0.04);
+  --shadow-elevation-2: 0 4px 16px 0 rgb(20 20 30 / 0.08), 0 1px 4px 0 rgb(20 20 30 / 0.04);
+  --shadow-elevation-3: 0 12px 32px 0 rgb(20 20 30 / 0.16), 0 2px 8px 0 rgb(20 20 30 / 0.06);
+  --shadow-focus-ring: 0 0 0 3px var(--color-primary-200);
+
+  --spacing-screen-width: 390px;
+  --spacing-gutter: 20px;
+  --spacing-header-height: 56px;
+  --spacing-nav-height: 64px;
+  --spacing-touch-min: 44px;
+
+  --font-sans: 'Noto Sans KR Variable', 'Noto Sans KR', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-amount: 'IBM Plex Sans KR', 'Noto Sans KR Variable', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+
+  --text-*: initial;
+  --text-display: 32px;
+  --text-display--line-height: 42px;
+  --text-display--letter-spacing: -0.8px;
+  --text-display--font-weight: 700;
+  --text-h1: 26px;
+  --text-h1--line-height: 36px;
+  --text-h1--letter-spacing: -0.6px;
+  --text-h1--font-weight: 700;
+  --text-h2: 22px;
+  --text-h2--line-height: 30px;
+  --text-h2--letter-spacing: -0.4px;
+  --text-h2--font-weight: 700;
+  --text-h3: 18px;
+  --text-h3--line-height: 26px;
+  --text-h3--letter-spacing: -0.3px;
+  --text-h3--font-weight: 700;
+  --text-body-l: 16px;
+  --text-body-l--line-height: 24px;
+  --text-body-l--letter-spacing: -0.2px;
+  --text-body-l--font-weight: 400;
+  --text-body-l-strong: 16px;
+  --text-body-l-strong--line-height: 24px;
+  --text-body-l-strong--letter-spacing: -0.2px;
+  --text-body-l-strong--font-weight: 500;
+  --text-body-m: 15px;
+  --text-body-m--line-height: 22px;
+  --text-body-m--letter-spacing: -0.15px;
+  --text-body-m--font-weight: 400;
+  --text-body-m-strong: 15px;
+  --text-body-m-strong--line-height: 22px;
+  --text-body-m-strong--letter-spacing: -0.15px;
+  --text-body-m-strong--font-weight: 500;
+  --text-body-s: 13px;
+  --text-body-s--line-height: 19px;
+  --text-body-s--letter-spacing: -0.1px;
+  --text-body-s--font-weight: 400;
+  --text-body-s-strong: 13px;
+  --text-body-s-strong--line-height: 19px;
+  --text-body-s-strong--letter-spacing: -0.1px;
+  --text-body-s-strong--font-weight: 500;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-caption--letter-spacing: 0;
+  --text-caption--font-weight: 400;
+  --text-label-l: 16px;
+  --text-label-l--line-height: 22px;
+  --text-label-l--letter-spacing: -0.2px;
+  --text-label-l--font-weight: 700;
+  --text-label-m: 14px;
+  --text-label-m--line-height: 20px;
+  --text-label-m--letter-spacing: -0.1px;
+  --text-label-m--font-weight: 700;
+  --text-label-s: 12px;
+  --text-label-s--line-height: 16px;
+  --text-label-s--letter-spacing: 0;
+  --text-label-s--font-weight: 500;
+  --text-amount-l: 32px;
+  --text-amount-l--line-height: 40px;
+  --text-amount-l--letter-spacing: -0.6px;
+  --text-amount-l--font-weight: 700;
+  --text-amount-m: 20px;
+  --text-amount-m--line-height: 28px;
+  --text-amount-m--letter-spacing: -0.3px;
+  --text-amount-m--font-weight: 600;
+  --text-amount-s: 15px;
+  --text-amount-s--line-height: 20px;
+  --text-amount-s--letter-spacing: -0.1px;
+  --text-amount-s--font-weight: 600;
+}
+
+@theme inline {
+  --background-color-canvas: var(--color-bg-canvas);
+  --background-color-surface: var(--color-bg-surface);
+  --background-color-subtle: var(--color-bg-subtle);
+  --background-color-muted: var(--color-bg-muted);
+  --background-color-brand: var(--color-bg-brand);
+  --background-color-brand-pressed: var(--color-bg-brand-pressed);
+  --background-color-brand-subtle: var(--color-bg-brand-subtle);
+  --background-color-inverse: var(--color-bg-inverse);
+  --background-color-danger: var(--color-bg-danger);
+  --background-color-danger-pressed: var(--color-bg-danger-pressed);
+  --background-color-pressed: var(--color-bg-pressed);
+  --background-color-dim: var(--color-bg-dim);
+  --border-color-default: var(--color-border-default);
+  --border-color-strong: var(--color-border-strong);
+  --border-color-focus: var(--color-border-focus);
+  --border-color-error: var(--color-border-error);
+  --text-color-primary: var(--color-text-primary);
+  --text-color-secondary: var(--color-text-secondary);
+  --text-color-tertiary: var(--color-text-tertiary);
+  --text-color-disabled: var(--color-text-disabled);
+  --text-color-inverse: var(--color-text-inverse);
+  --text-color-brand: var(--color-text-brand);
+  --text-color-error: var(--color-text-error);
+  --text-color-success: var(--color-text-success);
+}
+"
+`;

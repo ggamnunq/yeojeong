@@ -7,23 +7,36 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "test": "vitest run",
+    "preview": "vite preview",
+    "catalog": "vite --open /catalog.html",
+    "catalog:build": "vite build --mode catalog",
+    "ds:tokens": "node scripts/gen-tokens.mjs",
+    "ds:tokens:check": "node scripts/gen-tokens.mjs --check"
   },
   "dependencies": {
+    "@fontsource-variable/noto-sans-kr": "^5.3.1",
+    "@fontsource/ibm-plex-sans-kr": "^5.3.0",
     "@yeojeong/shared": "workspace:*",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.62.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^30.1.3",
     "oxlint": "^1.89.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
     "vite": "^8.3.5",
+    "vitest": "^5.0.5",
     "wrangler": "^4.153.0"
   }
 }

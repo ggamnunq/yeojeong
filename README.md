@@ -37,9 +37,11 @@ pnpm dev     # 화면 http://localhost:5173 · 서버 http://localhost:3000/api
 | ---------------------------------------- | --------------------------------- |
 | `pnpm build`                             | 전체 빌드                         |
 | `pnpm lint`                              | 린트 (oxlint)                     |
-| `pnpm test`                              | API 단위 테스트 + e2e 테스트      |
+| `pnpm test`                              | 화면·API 단위 테스트 + API e2e    |
 | `pnpm db:down`                           | DB 중지 (데이터는 볼륨에 남음)    |
 | `pnpm --filter @yeojeong/api db:migrate` | Prisma 스키마 변경을 DB에 반영    |
+| `pnpm --filter @yeojeong/web catalog`    | 디자인 시스템 카탈로그(개발용)    |
+| `pnpm --filter @yeojeong/web ds:tokens`  | 디자인 토큰 → `tokens.css` 재생성 |
 
 ## 배포
 
