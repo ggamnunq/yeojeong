@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-ssr
+dist-catalog
 coverage
 .wrangler/
 *.tsbuildinfo
@@ -42,3 +43,4 @@ docs/design/context/
 # 비공개: 디자인·명세 문서는 로컬에만 둔다 (공개 레포에는 코드만)
 docs/design/
 docs/spec/
+docs/legal/
