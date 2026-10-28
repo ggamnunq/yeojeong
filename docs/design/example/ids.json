@@ -1,0 +1,40 @@
+{
+  "section": "24:9887",
+  "ex01": {
+    "frame": "24:25388",
+    "header": "24:25394",
+    "scroll": "24:25416",
+    "banner": "24:25418",
+    "seg": "24:25426",
+    "nav": "24:25988"
+  },
+  "ex01b": {
+    "frame": "24:26006",
+    "sheet": "24:26042",
+    "dim": "24:26041"
+  },
+  "count": {
+    "ex01Placed": 22,
+    "ex01AllInstances": 105,
+    "ex01Kinds": 15,
+    "ex01bPlaced": 23,
+    "ex01bAllInstances": 126,
+    "ex01bKinds": 19,
+    "ex01cPlaced": 23,
+    "ex01cAllInstances": 110,
+    "ex01cKinds": 17
+  },
+  "caption": {
+    "card": "24:29715",
+    "head": "24:29709",
+    "labelEx01": "24:29712",
+    "labelEx01b": "24:29713",
+    "labelEx01c": "24:29714"
+  },
+  "dsVersion": "v1.2",
+  "ex01c": {
+    "frame": "24:26487",
+    "dialog": "24:26523",
+    "dim": "24:26522"
+  }
+}
