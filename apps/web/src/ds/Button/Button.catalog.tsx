@@ -14,7 +14,7 @@ export default defineCatalog({
     return (
       <div className="flex flex-col gap-8">
         {TYPES.map((type) => (
-          <Sub key={type} title={`type="${type}" · Pressed는 눌러서 확인`}>
+          <Sub key={type} title={`type="${type}" · Pressed는 눌러서 확인 · Loading(v1.5)은 라벨 투명 + 스피너`}>
             {SIZES.map((size) => (
               <Row key={size}>
                 <Variant name={`size="${size}"`}>
@@ -28,6 +28,9 @@ export default defineCatalog({
                 </Variant>
                 <Variant name="leadingIcon · disabled">
                   <Button type={type} size={size} label="여정 시작하기" leadingIcon disabled />
+                </Variant>
+                <Variant name='state="loading"'>
+                  <Button type={type} size={size} label="여정 시작하기" state="loading" />
                 </Variant>
               </Row>
             ))}
