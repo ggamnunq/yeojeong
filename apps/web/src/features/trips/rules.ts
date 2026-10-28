@@ -1,4 +1,12 @@
-import { INVITE_CODE_LENGTH, formatInviteCode as formatInviteCodeFull } from '@yeojeong/shared'
+import {
+  formatInviteCode as formatInviteCodeFull,
+  GROUP_NAME_MAX_LENGTH,
+  INVITE_CODE_LENGTH,
+  TRIP_BUDGET_MAX_KRW,
+  TRIP_EDITABLE_FIELDS,
+  TRIP_MAX_DAYS,
+  TRIP_START_PAST_LIMIT_DAYS,
+} from '@yeojeong/shared'
 import type { TripStatus } from '../../api'
 import { formatKrw } from '../../ds/format'
 import type {
@@ -13,21 +21,8 @@ import type {
 // 여정 생성·참여·여정 정보의 순수 규칙(기능명세 4-7·4-8, FR-201~209·301~304). 화면 없이 테스트한다.
 // 날짜는 KST 달력 날짜 문자열("2026-11-12")로만 다룬다.
 
-// ── 상수(S2A shared api/trips.ts와 같은 값) ────────────────────────
-
-export const GROUP_NAME_MAX_LENGTH = 20
-/** 시작일·종료일 포함 최대 일수(미결 Q-29 추천안) */
-export const TRIP_MAX_DAYS = 31
-/** 시작일은 오늘로부터 며칠 전까지(미결 Q-29 추천안) */
-export const TRIP_START_PAST_LIMIT_DAYS = 30
-export const TRIP_BUDGET_MAX_KRW = 1_000_000_000
-
-/** 단계별로 그룹장이 고칠 수 있는 항목(FR-302, 미결 Q-14 추천안). 진행 중 종료일은 오늘 이후로만 */
-export const TRIP_EDITABLE_FIELDS: Readonly<Record<TripStatus, readonly TripEditableField[]>> = {
-  UPCOMING: ['groupName', 'place', 'startDate', 'endDate', 'budgetKrw'],
-  ONGOING: ['groupName', 'budgetKrw', 'endDate'],
-  ENDED: [],
-}
+// 기간·예산·그룹명 한도와 단계별 수정 항목은 서버와 같은 값(@yeojeong/shared api/trips.ts)
+export { GROUP_NAME_MAX_LENGTH, TRIP_BUDGET_MAX_KRW, TRIP_EDITABLE_FIELDS, TRIP_MAX_DAYS, TRIP_START_PAST_LIMIT_DAYS }
 
 export const COPY = {
   copied: '복사했어요',

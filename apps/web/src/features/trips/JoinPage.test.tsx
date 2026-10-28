@@ -40,7 +40,7 @@ describe('HF-12 초대코드로 참여 /join', () => {
     fireEvent.click(joinButton())
     await waitFor(() => expect(path(router)).toBe('/trips/trip-tokyo/info'))
     expect(activeMembership('trip-tokyo', db.meUserId)).toMatchObject({ role: 'MEMBER', joinOrder: 4 })
-    expect(await screen.findByText('그룹원 4명')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '그룹원 4명' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '여정 시작' })).toBeNull()
     expect(screen.queryByRole('button', { name: '그룹 삭제' })).toBeNull()
   })

@@ -12,6 +12,8 @@ setupMockToday()
 
 const path = (router: ReturnType<typeof renderApp>['router']) => router.state.location.pathname
 const button = (name: string) => screen.queryByRole('button', { name })
+// 셸의 그룹원 패널(닫힌 dialog)에도 초대코드·인원 글자가 있어 본문(main)으로 좁힌다
+const main = () => within(screen.getByRole('main'))
 const expirebusan = () => Object.assign(findTrip(TRIP.busan)!, { startDate: '2026-11-01', endDate: '2026-11-02' })
 
 describe('HF-16 시작 전 여정 정보', () => {
@@ -24,7 +26,7 @@ describe('HF-16 시작 전 여정 정보', () => {
     expect(screen.getByText('12.27 (일)')).toBeTruthy()
     expect(screen.getByText('부산 · 예산 ₩600,000')).toBeTruthy()
     expect(screen.getByRole('heading', { name: '그룹원 3명' })).toBeTruthy()
-    expect(screen.getByText('B8N-4RT')).toBeTruthy()
+    expect(main().getByText('B8N-4RT')).toBeTruthy()
     expect(button('여정 정보 수정')).toBeTruthy()
     expect(button('여정 시작')).toBeTruthy()
     expect(button('그룹 삭제')).toBeTruthy()
@@ -41,7 +43,8 @@ describe('HF-16 시작 전 여정 정보', () => {
 
   it('멤버: 연필 · 「여정 시작」 · 「그룹 삭제」 없음(초대코드는 있음)', async () => {
     renderApp('/trips/trip-busan/info')
-    expect(await screen.findByText('B8N-4RT')).toBeTruthy()
+    await screen.findByText('출발까지')
+    expect(main().getByText('B8N-4RT')).toBeTruthy()
     expect(button('여정 정보 수정')).toBeNull()
     expect(button('여정 시작')).toBeNull()
     expect(button('그룹 삭제')).toBeNull()
@@ -137,7 +140,7 @@ describe('HF-23 진행 중 여정 정보', () => {
     expect(screen.getByText('일본 오사카 · 예산 ₩1,200,000')).toBeTruthy()
     expect(screen.getByRole('heading', { name: '그룹원 4명' })).toBeTruthy()
     expect(button('추가')).toBeTruthy()
-    expect(screen.getByText('K7M-2QX')).toBeTruthy()
+    expect(main().getByText('K7M-2QX')).toBeTruthy()
     expect(button('여정 종료하기')).toBeTruthy()
     expect(button('여정 정보 수정')).toBeTruthy()
     expect(button('여정 시작')).toBeNull()
@@ -199,7 +202,7 @@ describe('종료 후 여정 정보', () => {
     expect(await screen.findByText('2박 3일')).toBeTruthy()
     expect(screen.getByRole('img', { name: '도착' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: '그룹원 2명' })).toBeTruthy()
-    expect(screen.queryByText('초대코드')).toBeNull()
+    expect(main().queryByText('초대코드')).toBeNull()
     for (const name of ['추가', '여정 정보 수정', '여정 시작', '그룹 삭제', '여정 종료하기']) expect(button(name)).toBeNull()
   })
 })
