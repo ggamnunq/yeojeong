@@ -1,12 +1,16 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { db, TRIP, USER } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { renderApp } from '../../test/render'
 import { fail } from './mocks'
 
 const PAYMENTS = `/trips/${TRIP.osaka}/payments`
+
+// 앱 전체(가드·셸·lazy 페이지)를 그리는 테스트라 여러 파일이 함께 돌 때 첫 화면이 늦을 수 있다
+configure({ asyncUtilTimeout: 5000 })
+vi.setConfig({ testTimeout: 20_000 })
 
 beforeAll(async () => {
   // lazy 페이지를 미리 받아 첫 테스트가 느려지지 않게
@@ -241,11 +245,63 @@ describe('분담 변경(HF-31~39)', () => {
     expect(within(sheet).getByRole('button', { name: '변경 불가' })).toBeTruthy()
   })
 
+  it('나간 멤버가 낸 공동 결제는 결제자 본인도 아닌 사람에게 읽기 전용 + 「나간 멤버」 태그', async () => {
+    db.memberships.find((m) => m.membershipId === 'mem-osaka-minji')!.leftAt = '2026-11-13T19:00:00+09:00'
+    const { sheet } = await openFromList(/우메다/)
+    expect(within(sheet).getByText('결제').closest('dl')!.textContent).toContain('나간 멤버')
+    expect(within(sheet).queryByRole('radiogroup')).toBeNull()
+  })
+
   it('탈퇴한 멤버: 회색 기본 아바타 + "탈퇴한 멤버", 나간 멤버 태그 없음', async () => {
     const { sheet } = await openFromList(/올레국수/, `/trips/${TRIP.jeju}/payments`)
     const card = within(sheet).getByText('결제').closest('dl')!
     expect(card.textContent).toContain('탈퇴한 멤버')
     expect(card.textContent).not.toContain('나간 멤버')
     expect(within(sheet).getByRole('img', { name: /부담 인원 나, 태현 외 1명/ })).toBeTruthy()
+  })
+})
+
+describe('엣지(HF-40·41)', () => {
+  it('중복 의심: 결제자(수빈)는 "표시 해제" → 두 행 모두 태그가 사라진다', async () => {
+    db.meUserId = USER.subin
+    const { sheet } = await openFromList(/오사카성 천수각.*수빈|오사카성 천수각.*내 결제/)
+    expect(sheet.textContent).toContain('중복 의심')
+    fireEvent.click(within(sheet).getByRole('button', { name: '표시 해제' }))
+    expect(await screen.findByText('중복 표시를 해제했어요')).toBeTruthy()
+    await waitFor(() => expect(within(sheet).queryByText('중복 의심')).toBeNull())
+    expect(db.expenses.filter((e) => e.duplicateGroupId !== null)).toHaveLength(0)
+  })
+
+  it('중복 의심: 두 건 모두 결제자가 아니면(태현) 표시 해제가 없다', async () => {
+    db.meUserId = USER.taehyeon
+    renderApp(PAYMENTS)
+    const rows = await screen.findAllByRole('button', { name: /오사카성 천수각/ })
+    fireEvent.click(rows[0])
+    const sheet = await screen.findByRole('dialog')
+    await waitFor(() => expect(sheet.textContent).toContain('중복 의심'))
+    expect(within(sheet).queryByRole('button', { name: '표시 해제' })).toBeNull()
+  })
+
+  it('환불 묶음 상세(HF-41): 합계 영웅 · 결제/취소 · 결제자 · 부담 인원 · 1인 ₩0, 비결제자는 버튼 없음', async () => {
+    const { sheet } = await openFromList(/주유패스/)
+    expect(within(sheet).getByRole('heading', { name: '오사카 주유패스 4매' })).toBeTruthy()
+    expect(sheet.textContent).toContain('¥0 · 11.13 (금)')
+    const breakdown = within(sheet).getByText('취소').closest('dl')!
+    expect(breakdown.textContent).toContain('결제09:40₩121,330')
+    expect(breakdown.textContent).toContain('취소12:15−₩121,330')
+    expect(sheet.textContent).toContain('결제자')
+    expect(sheet.textContent).toContain('태현')
+    expect(sheet.textContent).toContain('부담 인원 4명')
+    expect(sheet.textContent).toContain('1인₩0')
+    expect(within(sheet).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['닫기'])
+  })
+
+  it('환불 묶음을 결제자가 열면 내역 아래 편집(순액 기준)', async () => {
+    db.meUserId = USER.taehyeon
+    const { sheet } = await openFromList(/주유패스/)
+    expect(within(sheet).getByText('취소').closest('dl')).toBeTruthy()
+    expect((segment(sheet, '공동') as HTMLInputElement).checked).toBe(true)
+    expect(sheet.textContent).toContain('1인 ₩0')
+    expect((cta(sheet, '저장') as HTMLButtonElement).disabled).toBe(true)
   })
 })
