@@ -1,4 +1,5 @@
 export {
+  CLIENT_ERRORS,
   COMMON_ERRORS,
   ERRORS,
   ErrorCode,
@@ -8,6 +9,7 @@ export {
 export type {
   ApiErrorBody,
   ApiErrorDetails,
+  ClientErrorCode,
   ErrorDefinition,
   FieldError,
 } from './errors.js';
