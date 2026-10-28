@@ -70,12 +70,14 @@ export class TokenCipher {
   }
 
   private get key(): Buffer {
-    if (!this.keys) throw new Error('운영에서는 TOKEN_ENCRYPTION_KEY가 필요합니다');
+    if (!this.keys)
+      throw new Error('운영에서는 TOKEN_ENCRYPTION_KEY가 필요합니다');
     return this.keys.key;
   }
 
   private get refKey(): Buffer {
-    if (!this.keys) throw new Error('운영에서는 TOKEN_ENCRYPTION_KEY가 필요합니다');
+    if (!this.keys)
+      throw new Error('운영에서는 TOKEN_ENCRYPTION_KEY가 필요합니다');
     return this.keys.refKey;
   }
 

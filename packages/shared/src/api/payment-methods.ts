@@ -6,7 +6,7 @@ import type {
   PaymentMethodType,
   Provider,
   SyncStatus,
-} from '../domain.js';
+} from "../domain.js";
 
 // 결제수단·토스 연결·동기화 API 타입(기능명세 6-3 "지갑", FR-801~804·402·408).
 // 시각은 ISO 8601 문자열, 원화는 정수, 원통화 금액은 문자열 decimal.
@@ -38,7 +38,7 @@ export interface PaymentMethodView {
   maskedNumber: string;
   last4: string;
   /** EXPIRED면 행을 흐리게 */
-  status: Exclude<PaymentMethodStatus, 'REMOVED'>;
+  status: Exclude<PaymentMethodStatus, "REMOVED">;
   lastSyncedAt: string | null;
 }
 
@@ -55,7 +55,7 @@ export interface PaymentMethodsResponse {
 
 /** POST /api/payment-connections */
 export interface StartConnectionRequest {
-  provider: 'TOSS';
+  provider: "TOSS";
   purpose: AttemptPurpose;
   /** purpose = RECONNECT일 때 다시 연결할 연결 ID */
   reconnectConnectionId?: string;
@@ -120,7 +120,7 @@ export interface SyncJobResult {
   expiredAttempts: number;
 }
 
-export type OutOfPeriodSide = 'BEFORE' | 'AFTER';
+export type OutOfPeriodSide = "BEFORE" | "AFTER";
 
 /** 기간 외 결제 후보(FR-408, WF-43). 응답으로만 쓰고 고른 건만 Transaction으로 저장한다 */
 export interface OutOfPeriodCandidate {

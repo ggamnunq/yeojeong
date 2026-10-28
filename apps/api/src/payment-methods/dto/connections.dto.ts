@@ -24,15 +24,25 @@ import {
 } from 'class-validator';
 
 export class StartConnectionDto implements StartConnectionRequest {
-  @ApiProperty({ enum: ['TOSS'], description: '화면은 항상 TOSS. 실제 어댑터는 서버 env(PAYMENT_PROVIDER)가 고른다' })
+  @ApiProperty({
+    enum: ['TOSS'],
+    description:
+      '화면은 항상 TOSS. 실제 어댑터는 서버 env(PAYMENT_PROVIDER)가 고른다',
+  })
   @IsIn(['TOSS'], { message: '지원하지 않는 제공자예요' })
   provider: 'TOSS';
 
-  @ApiProperty({ enum: ATTEMPT_PURPOSE_VALUES, description: 'SIGNUP(WF-05) · WALLET_ADD(WF-28) · RECONNECT(WF-42)' })
+  @ApiProperty({
+    enum: ATTEMPT_PURPOSE_VALUES,
+    description: 'SIGNUP(WF-05) · WALLET_ADD(WF-28) · RECONNECT(WF-42)',
+  })
   @IsIn(ATTEMPT_PURPOSE_VALUES, { message: '연결 목적을 다시 확인해 주세요' })
   purpose: AttemptPurpose;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'purpose = RECONNECT일 때 필수' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'purpose = RECONNECT일 때 필수',
+  })
   @IsOptional()
   @IsUUID('all', { message: '연결 ID 형식이 아니에요' })
   reconnectConnectionId?: string;

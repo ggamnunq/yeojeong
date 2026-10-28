@@ -24,19 +24,40 @@ const SELECT = {
 } as const;
 
 /**
- * 멤버 간 중복 의심(기능명세 4-1-5, FR-407). 판정 시점은 결제가 SHARED가 될 때와 SHARED 순액이 바뀔 때다.
- * - 인입 중 환불이 공동 결제에 붙으면 이 모듈이 부른다.
- * - 공동 확정·개인→공동(S2B-2 expenses)도 같은 트랜잭션 안에서 evaluate(tx, expenseId)를 부르면 된다.
- * 해제(공동→개인, 표시 해제)는 S2B-2 몫이다.
+ * 인입이 공동 결제의 순액을 바꿨을 때(환불 첨부) 중복 의심을 다시 판정하는 자리.
+ * S2B-2(expenses, PR #24)의 `flagDuplicates(tx, expenseId): Promise<string[]>`와 같은 모양이다.
+ * 통합 때 TransactionsModule에서 `{ provide: DuplicateFlagger, useValue: { flagDuplicates } }`로 바꿔 끼우고
+ * 아래 DuplicateSuspicionService(임시 구현)는 지운다.
+ */
+export abstract class DuplicateFlagger {
+  /** 새로 묶인 결제 ID(이 결제 포함). 호출 측이 같은 트랜잭션에서 여정 잠금을 잡고 있어야 한다 */
+  abstract flagDuplicates(tx: Tx, expenseId: string): Promise<string[]>;
+}
+
+/**
+ * 멤버 간 중복 의심(기능명세 4-1-5, FR-407)의 임시 구현. 판정 시점은 결제가 SHARED가 될 때와 SHARED 순액이 바뀔 때다.
+ * 공동 확정·해제는 S2B-2(expenses) 몫이고, 이 클래스는 S2B-2 코드가 main에 들어오기 전까지 인입의 재판정에만 쓴다.
  */
 @Injectable()
-export class DuplicateSuspicionService {
+export class DuplicateSuspicionService extends DuplicateFlagger {
+  async flagDuplicates(tx: Tx, expenseId: string): Promise<string[]> {
+    const result = await this.flag(tx, expenseId);
+    return result?.flaggedIds ?? [];
+  }
+
+  /** @returns 묶음 ID. 해당 없으면 null */
+  async evaluate(tx: Tx, expenseId: string): Promise<string | null> {
+    return (await this.flag(tx, expenseId))?.groupId ?? null;
+  }
+
   /**
    * 이 결제와 중복 의심인 같은 여정의 공동 결제를 찾아 같은 duplicateGroupId로 묶는다.
    * 이미 묶인 쪽이 있으면 그 묶음 ID를 쓴다. 새로 묶인 결제마다 ExpenseChangeLog(DUPLICATE_FLAGGED, 시스템).
-   * @returns 묶음 ID. 해당 없으면 null
    */
-  async evaluate(tx: Tx, expenseId: string): Promise<string | null> {
+  private async flag(
+    tx: Tx,
+    expenseId: string,
+  ): Promise<{ groupId: string; flaggedIds: string[] } | null> {
     const target = await tx.expense.findUnique({
       where: { id: expenseId },
       select: { ...SELECT, tripId: true },
@@ -96,6 +117,6 @@ export class DuplicateSuspicionService {
         })),
       });
     }
-    return groupId;
+    return { groupId, flaggedIds: newlyFlagged.map((e) => e.id) };
   }
 }

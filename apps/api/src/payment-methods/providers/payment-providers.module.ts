@@ -15,7 +15,9 @@ import { TossPaymentAdapter } from './toss.adapter.js';
 export type PaymentProviderName = 'demo' | 'toss';
 
 /** env PAYMENT_PROVIDER(demo | toss). 비우면 운영은 toss, 그 밖에는 demo */
-export function resolveProviderName(config: ConfigService): PaymentProviderName {
+export function resolveProviderName(
+  config: ConfigService,
+): PaymentProviderName {
   const raw = config.get<string>('PAYMENT_PROVIDER')?.trim().toLowerCase();
   if (!raw) {
     return config.get<string>('NODE_ENV') === 'production' ? 'toss' : 'demo';
@@ -39,7 +41,9 @@ export function prismaDemoAnchor(prisma: PrismaService): DemoAnchorResolver {
         group: { deletedAt: null, trip: { deletedAt: null } },
       },
       select: {
-        group: { select: { trip: { select: { status: true, startDate: true } } } },
+        group: {
+          select: { trip: { select: { status: true, startDate: true } } },
+        },
       },
     });
     const trips = rows.flatMap((r) => (r.group.trip ? [r.group.trip] : []));

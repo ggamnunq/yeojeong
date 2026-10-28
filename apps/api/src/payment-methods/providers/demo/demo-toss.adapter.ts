@@ -47,9 +47,7 @@ function decode<T>(value: string): T | null {
 function isGrant(value: unknown): value is DemoGrant {
   const v = value as Partial<DemoGrant> | null;
   return (
-    !!v &&
-    typeof v.u === 'string' &&
-    DEMO_PERSONAS.includes(v.p as DemoPersona)
+    !!v && typeof v.u === 'string' && DEMO_PERSONAS.includes(v.p as DemoPersona)
   );
 }
 
@@ -85,13 +83,19 @@ export class DemoTossAdapter extends PaymentProviderAdapter {
     hint: AuthorizeHint;
   }): string {
     const url = new URL(input.redirectUri);
-    const grant: DemoGrant = { p: personaFor(input.hint), u: input.hint.userId };
+    const grant: DemoGrant = {
+      p: personaFor(input.hint),
+      u: input.hint.userId,
+    };
     url.searchParams.set('code', `demo.${encode(grant)}`);
     url.searchParams.set('state', input.state);
     return url.toString();
   }
 
-  exchangeCode(input: { code: string; redirectUri: string }): Promise<ProviderTokens> {
+  exchangeCode(input: {
+    code: string;
+    redirectUri: string;
+  }): Promise<ProviderTokens> {
     const grant = input.code.startsWith('demo.')
       ? decode<DemoGrant>(input.code.slice(5))
       : null;
@@ -122,7 +126,9 @@ export class DemoTossAdapter extends PaymentProviderAdapter {
         institutionName: m.institutionName,
         productName: m.productName,
         maskedNumber: m.maskedNumber,
-        ...(m.linkedAccountKey && { linkedAccountRef: ref(m.linkedAccountKey) }),
+        ...(m.linkedAccountKey && {
+          linkedAccountRef: ref(m.linkedAccountKey),
+        }),
       })),
     );
   }

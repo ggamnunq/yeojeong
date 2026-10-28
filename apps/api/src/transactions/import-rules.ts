@@ -16,7 +16,8 @@ export function toScaled(value: string): bigint {
   const [int, frac = ''] = v.replace('-', '').split('.');
   const trimmed = frac.replace(/0+$/, '');
   if (trimmed.length > SCALE) throw new RangeError('소수 4자리를 넘습니다');
-  const scaled = BigInt(int) * SCALE_FACTOR + BigInt(trimmed.padEnd(SCALE, '0'));
+  const scaled =
+    BigInt(int) * SCALE_FACTOR + BigInt(trimmed.padEnd(SCALE, '0'));
   return negative ? -scaled : scaled;
 }
 
@@ -60,7 +61,11 @@ export function roundToWon(value: bigint): number {
  * 예) 주유패스 ¥13,200 = ₩121,330, 부분 취소 ¥3,300 → −₩30,330
  */
 export function refundChildKrw(
-  parent: { krwAmount: number; originalAmount: string; originalCurrency: string },
+  parent: {
+    krwAmount: number;
+    originalAmount: string;
+    originalCurrency: string;
+  },
   cancelAmount: string,
 ): number {
   const cancel = absScaled(toScaled(cancelAmount));
@@ -73,7 +78,10 @@ export function refundChildKrw(
 
 /** 부모 순액 = max(0, 부모 원화 + Σ자식 원화) (4-1-4 단계 6) */
 export function parentNetKrw(parentKrw: number, childKrws: readonly number[]) {
-  return Math.max(0, childKrws.reduce((sum, k) => sum + k, parentKrw));
+  return Math.max(
+    0,
+    childKrws.reduce((sum, k) => sum + k, parentKrw),
+  );
 }
 
 /** 기간 판정: startAt ≤ occurredAt ≤ autoEndAt (KST 경계, 미결 Q-11) */
@@ -119,10 +127,13 @@ export function findSameUserDuplicates(
   txs: readonly DedupeTx[],
 ): { accountTxId: string; cardTxId: string }[] {
   const cards = txs.filter(
-    (t) => t.methodType === 'CARD' && t.kind === 'APPROVAL' && t.linkedAccountRef,
+    (t) =>
+      t.methodType === 'CARD' && t.kind === 'APPROVAL' && t.linkedAccountRef,
   );
   const usedCards = new Set(
-    txs.flatMap((t) => (t.sameUserDuplicateOfId ? [t.sameUserDuplicateOfId] : [])),
+    txs.flatMap((t) =>
+      t.sameUserDuplicateOfId ? [t.sameUserDuplicateOfId] : [],
+    ),
   );
   const pairs: { accountTxId: string; cardTxId: string }[] = [];
   const accounts = txs
@@ -184,10 +195,16 @@ export function matchCancel(
   approvals: readonly MatchTx[],
   matchedAbs: ReadonlyMap<string, bigint> = new Map(),
 ): string | null {
-  const pool = approvals.filter((a) => a.kind === 'APPROVAL' && a.id !== cancel.id);
+  const pool = approvals.filter(
+    (a) => a.kind === 'APPROVAL' && a.id !== cancel.id,
+  );
   if (cancel.providerApprovalRef) {
-    const exact = pool.filter((a) => a.externalRef === cancel.providerApprovalRef);
-    const sameMethod = exact.find((a) => a.paymentMethodId === cancel.paymentMethodId);
+    const exact = pool.filter(
+      (a) => a.externalRef === cancel.providerApprovalRef,
+    );
+    const sameMethod = exact.find(
+      (a) => a.paymentMethodId === cancel.paymentMethodId,
+    );
     if (sameMethod ?? exact[0]) return (sameMethod ?? exact[0]).id;
   }
   const amount = absScaled(toScaled(cancel.originalAmount));
@@ -232,7 +249,10 @@ export interface SuspectExpense {
  * 원화가 아니라 원통화로 비교한다(반올림 차이를 피함). 미확정·개인·취소 자식은 판정하지 않는다.
  * 표시 해제(duplicateDismissedAt)된 결제는 다시 묶지 않는다(미결 Q-20).
  */
-export function isSuspectedDuplicate(a: SuspectExpense, b: SuspectExpense): boolean {
+export function isSuspectedDuplicate(
+  a: SuspectExpense,
+  b: SuspectExpense,
+): boolean {
   return (
     a.id !== b.id &&
     a.status === 'SHARED' &&

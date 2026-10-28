@@ -5,7 +5,7 @@ import { normalizeMerchantKey } from '../payment-methods/masking.js';
 import type { ProviderTransaction } from '../payment-methods/providers/payment-provider.adapter.js';
 import { CipherPurpose, TokenCipher } from '../payment-methods/token-cipher.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { DuplicateSuspicionService } from './duplicate-suspicion.service.js';
+import { DuplicateFlagger } from './duplicate-suspicion.service.js';
 import {
   NEAR_WINDOW_MS,
   absScaled,
@@ -49,7 +49,7 @@ export class ImportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cipher: TokenCipher,
-    private readonly duplicates: DuplicateSuspicionService,
+    private readonly duplicates: DuplicateFlagger,
   ) {}
 
   /**
@@ -71,7 +71,10 @@ export class ImportService {
     });
     if (rows.length === 0) return 0;
     const existing = await this.prisma.transaction.findMany({
-      where: { paymentMethodId, externalRef: { in: rows.map((r) => r.externalRef) } },
+      where: {
+        paymentMethodId,
+        externalRef: { in: rows.map((r) => r.externalRef) },
+      },
       select: {
         id: true,
         externalRef: true,
@@ -126,7 +129,8 @@ export class ImportService {
       return null;
     }
     // 긴 ref는 그대로 담지 못하니 HMAC으로 바꾼다(같은 ref → 같은 값이라 멱등성 유지)
-    const ref = item.ref.length <= 128 ? item.ref : this.cipher.hmacRef(item.ref);
+    const ref =
+      item.ref.length <= 128 ? item.ref : this.cipher.hmacRef(item.ref);
     const approvalRef =
       item.approvalRef && item.approvalRef.length > 128
         ? this.cipher.hmacRef(item.approvalRef)
@@ -146,7 +150,10 @@ export class ImportService {
       billedKrwAmount: item.billedKrwAmount ?? null,
       billedAt: item.billedAt ?? null,
       providerApprovalRef: approvalRef,
-      rawPayloadEnc: this.cipher.encryptJson(item.raw, CipherPurpose.RAW_PAYLOAD),
+      rawPayloadEnc: this.cipher.encryptJson(
+        item.raw,
+        CipherPurpose.RAW_PAYLOAD,
+      ),
     };
   }
 
@@ -257,8 +264,12 @@ export class ImportService {
         OR: [
           ...(refs.length > 0 ? [{ externalRef: { in: refs } }] : []),
           {
-            paymentMethodId: { in: [...new Set(cancels.map((c) => c.paymentMethodId))] },
-            merchantKey: { in: [...new Set(cancels.map((c) => c.merchantKey))] },
+            paymentMethodId: {
+              in: [...new Set(cancels.map((c) => c.paymentMethodId))],
+            },
+            merchantKey: {
+              in: [...new Set(cancels.map((c) => c.merchantKey))],
+            },
           },
         ],
       },
@@ -325,7 +336,8 @@ export class ImportService {
       startAt: row.start_at,
       autoEndAt: row.auto_end_at,
       fxPolicy: row.fx_policy,
-      fxFixedRate: row.fx_fixed_rate === null ? null : row.fx_fixed_rate.toString(),
+      fxFixedRate:
+        row.fx_fixed_rate === null ? null : row.fx_fixed_rate.toString(),
       fxPolicyChangedAt: row.fx_policy_changed_at,
     };
   }
@@ -347,7 +359,9 @@ export class ImportService {
       FOR SHARE`;
     if (member.length === 0) return 0;
 
-    const until = new Date(Math.min(trip.autoEndAt.getTime(), input.now.getTime()));
+    const until = new Date(
+      Math.min(trip.autoEndAt.getTime(), input.now.getTime()),
+    );
     const candidates = await tx.transaction.findMany({
       where: {
         userId: input.userId,
@@ -375,7 +389,10 @@ export class ImportService {
       );
       if (!krw) {
         // 환율도 제공자 원화도 없으면 다음 동기화에서 다시 시도한다
-        this.logger.warn({ transactionId: t.id }, '원화를 정하지 못해 인입을 미룸');
+        this.logger.warn(
+          { transactionId: t.id },
+          '원화를 정하지 못해 인입을 미룸',
+        );
         continue;
       }
       data.push({
@@ -410,7 +427,11 @@ export class ImportService {
    * 자식의 상태·결제자는 부모와 같다(I-5). 공동이면 같은 부담 인원으로 다시 나눈다("변경됨" 표시 없음).
    * 원 결제가 여정에 없으면(기간 외·미추가) 붙이지 않는다 — 나중에 원 결제를 추가하면 그때 붙는다.
    */
-  async attachRefunds(tx: Tx, trip: LockedTrip, userId: string): Promise<number> {
+  async attachRefunds(
+    tx: Tx,
+    trip: LockedTrip,
+    userId: string,
+  ): Promise<number> {
     if (trip.status !== 'ONGOING') return 0;
     const cancels = await tx.transaction.findMany({
       where: {
@@ -418,7 +439,9 @@ export class ImportService {
         kind: 'CANCEL',
         cancelOfTransactionId: { not: null },
         expenses: { none: { tripId: trip.id } },
-        cancelOf: { expenses: { some: { tripId: trip.id, refundOfExpenseId: null } } },
+        cancelOf: {
+          expenses: { some: { tripId: trip.id, refundOfExpenseId: null } },
+        },
       },
       orderBy: { occurredAt: 'asc' },
     });
@@ -514,7 +537,8 @@ export class ImportService {
         },
       });
       if (parent.status === 'SHARED') {
-        await this.duplicates.evaluate(tx, parent.id);
+        // 순액이 바뀐 공동 결제는 중복 의심을 다시 판정한다(통합 후 S2B-2 flagDuplicates)
+        await this.duplicates.flagDuplicates(tx, parent.id);
       }
     }
     return attached;
@@ -610,7 +634,12 @@ class SpotRateCache {
     const row = await this.tx.exchangeRate.findFirst({
       where: { quoteCurrency: currency, effectiveAt: { lte: at } },
       orderBy: { effectiveAt: 'desc' },
-      select: { rate: true, displayUnit: true, source: true, effectiveAt: true },
+      select: {
+        rate: true,
+        displayUnit: true,
+        source: true,
+        effectiveAt: true,
+      },
     });
     const rate = row
       ? {

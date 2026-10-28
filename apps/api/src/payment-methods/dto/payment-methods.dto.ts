@@ -103,7 +103,8 @@ export class ManualSyncResponseDto implements ManualSyncResponse {
 export class RemovePaymentMethodQueryDto {
   @ApiPropertyOptional({
     enum: ['true', 'false'],
-    description: '연결의 마지막 결제수단일 때만 true 허용: 내 미확정·개인 결제와 거래 원본까지 지운다',
+    description:
+      '연결의 마지막 결제수단일 때만 true 허용: 내 미확정·개인 결제와 거래 원본까지 지운다',
   })
   @IsOptional()
   @IsIn(['true', 'false'], { message: 'true 또는 false로 보내 주세요' })

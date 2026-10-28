@@ -109,7 +109,9 @@ export class ConnectionsController {
     return this.connections.getCandidates(user.id, attemptIdOf(attemptId));
   }
 
-  @ApiOperation({ summary: '고른 계좌·카드 연결(FR-802). 진행 중 여정이 있으면 바로 동기화' })
+  @ApiOperation({
+    summary: '고른 계좌·카드 연결(FR-802). 진행 중 여정이 있으면 바로 동기화',
+  })
   @ApiCreatedResponse({ type: ConfirmConnectionResponseDto })
   @ApiErrorResponse(400, 'VALIDATION_FAILED')
   @ApiErrorResponse(403, 'CONSENT_REQUIRED')

@@ -44,7 +44,11 @@ interface SyncOptions {
 interface PreparedRun {
   run: SyncRun;
   userId: string;
-  tokens: { access: Uint8Array; refresh: Uint8Array | null; expiresAt: Date | null };
+  tokens: {
+    access: Uint8Array;
+    refresh: Uint8Array | null;
+    expiresAt: Date | null;
+  };
   methods: { id: string; externalRef: string }[];
   trips: TripMembership[];
 }
@@ -91,7 +95,11 @@ export class SyncService {
         imported: 0,
         errorCode: prepared.skipped,
       };
-      return { connectionId, syncRunId: prepared.syncRunId, done: Promise.resolve(outcome) };
+      return {
+        connectionId,
+        syncRunId: prepared.syncRunId,
+        done: Promise.resolve(outcome),
+      };
     }
     return {
       connectionId,
@@ -124,7 +132,11 @@ export class SyncService {
         },
       },
     });
-    if (!connection || connection.status !== 'ACTIVE' || !connection.accessTokenEnc) {
+    if (
+      !connection ||
+      connection.status !== 'ACTIVE' ||
+      !connection.accessTokenEnc
+    ) {
       return { skipped: 'NOT_ACTIVE', syncRunId: null };
     }
     if (connection.methods.length === 0) {
@@ -168,7 +180,12 @@ export class SyncService {
       });
       if (running) return null;
       return tx.syncRun.create({
-        data: { connectionId, trigger, fromAt: window.fromAt, toAt: window.toAt },
+        data: {
+          connectionId,
+          trigger,
+          fromAt: window.fromAt,
+          toAt: window.toAt,
+        },
       });
     });
     if (!run) {
@@ -199,7 +216,10 @@ export class SyncService {
         expiresAt: connection.tokenExpiresAt,
       },
       methods: connection.methods,
-      trips: memberships.map((m) => ({ tripId: m.tripId, membershipId: m.membershipId })),
+      trips: memberships.map((m) => ({
+        tripId: m.tripId,
+        membershipId: m.membershipId,
+      })),
     };
   }
 
@@ -220,12 +240,25 @@ export class SyncService {
       for (const method of p.methods) {
         let items: ProviderTransaction[];
         try {
-          items = await this.fetchAll(tokens, method.externalRef, run.fromAt, run.toAt);
+          items = await this.fetchAll(
+            tokens,
+            method.externalRef,
+            run.fromAt,
+            run.toAt,
+          );
         } catch (error) {
           if (isAuthError(error) && !refreshed) {
             await refresh();
-            items = await this.fetchAll(tokens, method.externalRef, run.fromAt, run.toAt);
-          } else if (error instanceof ProviderError && error.code === 'INVALID_REQUEST') {
+            items = await this.fetchAll(
+              tokens,
+              method.externalRef,
+              run.fromAt,
+              run.toAt,
+            );
+          } else if (
+            error instanceof ProviderError &&
+            error.code === 'INVALID_REQUEST'
+          ) {
             this.logger.warn(
               { syncRunId: run.id, paymentMethodId: method.id },
               '제공자가 요청을 거부해 이 결제수단을 건너뜀',
@@ -236,7 +269,11 @@ export class SyncService {
           }
         }
         fetched += items.length;
-        await this.importer.upsertProviderTransactions(p.userId, method.id, items);
+        await this.importer.upsertProviderTransactions(
+          p.userId,
+          method.id,
+          items,
+        );
         synced.push(method.id);
       }
 
@@ -250,11 +287,20 @@ export class SyncService {
       await this.prisma.$transaction([
         this.prisma.syncRun.update({
           where: { id: run.id },
-          data: { status: 'OK', fetchedCount: fetched, importedCount: imported, finishedAt },
+          data: {
+            status: 'OK',
+            fetchedCount: fetched,
+            importedCount: imported,
+            finishedAt,
+          },
         }),
         this.prisma.paymentConnection.update({
           where: { id: run.connectionId },
-          data: { lastSyncedAt: run.toAt, lastSyncStatus: 'OK', lastSyncErrorCode: null },
+          data: {
+            lastSyncedAt: run.toAt,
+            lastSyncStatus: 'OK',
+            lastSyncErrorCode: null,
+          },
         }),
         this.prisma.paymentMethod.updateMany({
           where: { id: { in: synced } },
@@ -269,15 +315,28 @@ export class SyncService {
         await this.expire(run.connectionId, errorCode, now);
         await this.prisma.syncRun.update({
           where: { id: run.id },
-          data: { status: 'EXPIRED', errorCode, fetchedCount: fetched, finishedAt },
+          data: {
+            status: 'EXPIRED',
+            errorCode,
+            fetchedCount: fetched,
+            finishedAt,
+          },
         });
-        this.logger.warn({ syncRunId: run.id, connectionId: run.connectionId, errorCode }, '연결 만료');
+        this.logger.warn(
+          { syncRunId: run.id, connectionId: run.connectionId, errorCode },
+          '연결 만료',
+        );
         return { ...base, status: 'EXPIRED', fetched, imported: 0, errorCode };
       }
       await this.prisma.$transaction([
         this.prisma.syncRun.update({
           where: { id: run.id },
-          data: { status: 'FAILED', errorCode, fetchedCount: fetched, finishedAt },
+          data: {
+            status: 'FAILED',
+            errorCode,
+            fetchedCount: fetched,
+            finishedAt,
+          },
         }),
         this.prisma.paymentConnection.update({
           where: { id: run.connectionId },
@@ -286,10 +345,18 @@ export class SyncService {
       ]);
       // 제공자 장애는 다음 주기에 다시 한다. 그 밖의 오류는 스택과 함께 남긴다(거래 내용 없음)
       if (error instanceof ProviderError) {
-        this.logger.warn({ syncRunId: run.id, connectionId: run.connectionId, errorCode }, '동기화 실패');
+        this.logger.warn(
+          { syncRunId: run.id, connectionId: run.connectionId, errorCode },
+          '동기화 실패',
+        );
       } else {
         this.logger.error(
-          { syncRunId: run.id, connectionId: run.connectionId, errorCode, err: error },
+          {
+            syncRunId: run.id,
+            connectionId: run.connectionId,
+            errorCode,
+            err: error,
+          },
           '동기화 실패',
         );
       }
@@ -306,7 +373,12 @@ export class SyncService {
     const items: ProviderTransaction[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < MAX_PAGES; page += 1) {
-      const result = await this.adapter.listTransactions(tokens, { methodRef, from, to, cursor });
+      const result = await this.adapter.listTransactions(tokens, {
+        methodRef,
+        from,
+        to,
+        cursor,
+      });
       items.push(...result.items);
       if (!result.nextCursor || result.nextCursor === cursor) return items;
       cursor = result.nextCursor;
@@ -318,14 +390,20 @@ export class SyncService {
     return {
       accessToken: this.cipher.decrypt(enc.access, CipherPurpose.ACCESS_TOKEN),
       ...(enc.refresh && {
-        refreshToken: this.cipher.decrypt(enc.refresh, CipherPurpose.REFRESH_TOKEN),
+        refreshToken: this.cipher.decrypt(
+          enc.refresh,
+          CipherPurpose.REFRESH_TOKEN,
+        ),
       }),
       ...(enc.expiresAt && { expiresAt: enc.expiresAt }),
     };
   }
 
   /** 토큰 갱신 후 암호화 저장. 실패하면 AUTH_EXPIRED로 던져 연결을 만료시킨다 */
-  private async refresh(connectionId: string, tokens: ProviderTokens): Promise<ProviderTokens> {
+  private async refresh(
+    connectionId: string,
+    tokens: ProviderTokens,
+  ): Promise<ProviderTokens> {
     let next: ProviderTokens;
     try {
       next = await this.adapter.refreshTokens(tokens);
@@ -336,7 +414,10 @@ export class SyncService {
     await this.prisma.paymentConnection.update({
       where: { id: connectionId },
       data: {
-        accessTokenEnc: this.cipher.encrypt(next.accessToken, CipherPurpose.ACCESS_TOKEN),
+        accessTokenEnc: this.cipher.encrypt(
+          next.accessToken,
+          CipherPurpose.ACCESS_TOKEN,
+        ),
         refreshTokenEnc: next.refreshToken
           ? this.cipher.encrypt(next.refreshToken, CipherPurpose.REFRESH_TOKEN)
           : null,
@@ -351,7 +432,11 @@ export class SyncService {
    * 연결 만료(3-3 ACTIVE → EXPIRED): 연결과 결제수단 EXPIRED, expiredAt 기록, 토큰 즉시 삭제(8-2).
    * 다시 연결하면 [min(expiredAt, lastSyncedAt) − 72시간, now]를 소급한다.
    */
-  async expire(connectionId: string, errorCode: string, now: Date = new Date()): Promise<void> {
+  async expire(
+    connectionId: string,
+    errorCode: string,
+    now: Date = new Date(),
+  ): Promise<void> {
     await this.prisma.$transaction([
       this.prisma.paymentConnection.update({
         where: { id: connectionId },
@@ -378,11 +463,18 @@ export class SyncService {
       where: {
         userId,
         leftAt: null,
-        group: { deletedAt: null, trip: { status: 'ONGOING', deletedAt: null } },
+        group: {
+          deletedAt: null,
+          trip: { status: 'ONGOING', deletedAt: null },
+        },
       },
       select: {
         id: true,
-        group: { select: { trip: { select: { id: true, startAt: true, autoEndAt: true } } } },
+        group: {
+          select: {
+            trip: { select: { id: true, startAt: true, autoEndAt: true } },
+          },
+        },
       },
     });
     return rows.flatMap((r) =>
@@ -409,13 +501,18 @@ export class SyncService {
         startAt: true,
         group: {
           select: {
-            memberships: { where: { leftAt: null, userId: { not: null } }, select: { userId: true } },
+            memberships: {
+              where: { leftAt: null, userId: { not: null } },
+              select: { userId: true },
+            },
           },
         },
       },
     });
     if (!trip) return [];
-    const userIds = trip.group.memberships.flatMap((m) => (m.userId ? [m.userId] : []));
+    const userIds = trip.group.memberships.flatMap((m) =>
+      m.userId ? [m.userId] : [],
+    );
     return this.backfillUsers(userIds, 'TRIP_START', trip.startAt);
   }
 
@@ -426,12 +523,22 @@ export class SyncService {
         id: membershipId,
         leftAt: null,
         userId: { not: null },
-        group: { deletedAt: null, trip: { status: 'ONGOING', deletedAt: null } },
+        group: {
+          deletedAt: null,
+          trip: { status: 'ONGOING', deletedAt: null },
+        },
       },
-      select: { userId: true, group: { select: { trip: { select: { startAt: true } } } } },
+      select: {
+        userId: true,
+        group: { select: { trip: { select: { startAt: true } } } },
+      },
     });
     if (!membership?.userId || !membership.group.trip) return [];
-    return this.backfillUsers([membership.userId], 'JOIN', membership.group.trip.startAt);
+    return this.backfillUsers(
+      [membership.userId],
+      'JOIN',
+      membership.group.trip.startAt,
+    );
   }
 
   /**
@@ -453,7 +560,9 @@ export class SyncService {
       },
     });
     if (!trip) return [];
-    const userIds = trip.group.memberships.flatMap((m) => (m.userId ? [m.userId] : []));
+    const userIds = trip.group.memberships.flatMap((m) =>
+      m.userId ? [m.userId] : [],
+    );
     const connections = await this.prisma.paymentConnection.findMany({
       where: { userId: { in: userIds }, status: 'ACTIVE' },
       select: { id: true },
@@ -475,7 +584,9 @@ export class SyncService {
     for (const c of connections) {
       outcomes.push(await this.run(c.id, trigger, { requestedFromAt: fromAt }));
     }
-    const failed = outcomes.filter((o) => o.status === 'FAILED' || o.status === 'EXPIRED');
+    const failed = outcomes.filter(
+      (o) => o.status === 'FAILED' || o.status === 'EXPIRED',
+    );
     if (failed.length > 0) {
       throw new BackfillFailedError(trigger, failed);
     }
@@ -483,8 +594,13 @@ export class SyncService {
   }
 
   /** 다시 연결 확정 직후(FR-805 → FR-404): [min(expiredAt, lastSyncedAt) − 72시간, now] */
-  reconnectFromAt(expiredAt: Date | null, lastSyncedAt: Date | null): Date | null {
-    const times = [expiredAt, lastSyncedAt].flatMap((t) => (t ? [t.getTime()] : []));
+  reconnectFromAt(
+    expiredAt: Date | null,
+    lastSyncedAt: Date | null,
+  ): Date | null {
+    const times = [expiredAt, lastSyncedAt].flatMap((t) =>
+      t ? [t.getTime()] : [],
+    );
     if (times.length === 0) return null;
     return new Date(Math.min(...times) - SYNC_OVERLAP_MS);
   }
@@ -503,7 +619,10 @@ export class SyncService {
           memberships: {
             some: {
               leftAt: null,
-              group: { deletedAt: null, trip: { status: 'ONGOING', deletedAt: null } },
+              group: {
+                deletedAt: null,
+                trip: { status: 'ONGOING', deletedAt: null },
+              },
             },
           },
         },
@@ -526,7 +645,10 @@ export class SyncService {
       try {
         outcome = await this.run(c.id, 'SCHEDULED');
       } catch (error) {
-        this.logger.error({ connectionId: c.id, errorCode: errorCodeOf(error), err: error }, '주기 동기화 실패');
+        this.logger.error(
+          { connectionId: c.id, errorCode: errorCodeOf(error), err: error },
+          '주기 동기화 실패',
+        );
         result.failed += 1;
         continue;
       }
@@ -546,7 +668,10 @@ export class SyncService {
    */
   async sweepAttempts(now: Date = new Date()): Promise<number> {
     const stale = await this.prisma.connectionAttempt.findMany({
-      where: { status: { in: ['WAITING', 'AUTHORIZED'] }, expiresAt: { lt: now } },
+      where: {
+        status: { in: ['WAITING', 'AUTHORIZED'] },
+        expiresAt: { lt: now },
+      },
       select: { id: true, connectionId: true, purpose: true },
     });
     if (stale.length === 0) return 0;
@@ -555,18 +680,35 @@ export class SyncService {
       data: { status: 'EXPIRED', candidates: Prisma.DbNull },
     });
     const orphanIds = [
-      ...new Set(stale.flatMap((a) => (a.connectionId ? [a.connectionId] : []))),
+      ...new Set(
+        stale.flatMap((a) => (a.connectionId ? [a.connectionId] : [])),
+      ),
     ];
     for (const id of orphanIds) {
       const conn = await this.prisma.paymentConnection.findUnique({
         where: { id },
-        select: { status: true, accessTokenEnc: true, refreshTokenEnc: true, _count: { select: { methods: true } } },
+        select: {
+          status: true,
+          accessTokenEnc: true,
+          refreshTokenEnc: true,
+          _count: { select: { methods: true } },
+        },
       });
-      if (!conn || conn._count.methods > 0 || conn.status === 'REVOKED') continue;
-      await this.revokeAtProvider(id, conn.accessTokenEnc, conn.refreshTokenEnc);
+      if (!conn || conn._count.methods > 0 || conn.status === 'REVOKED')
+        continue;
+      await this.revokeAtProvider(
+        id,
+        conn.accessTokenEnc,
+        conn.refreshTokenEnc,
+      );
       await this.prisma.paymentConnection.update({
         where: { id },
-        data: { status: 'REVOKED', accessTokenEnc: null, refreshTokenEnc: null, tokenExpiresAt: null },
+        data: {
+          status: 'REVOKED',
+          accessTokenEnc: null,
+          refreshTokenEnc: null,
+          tokenExpiresAt: null,
+        },
       });
     }
     return stale.length;
@@ -580,9 +722,14 @@ export class SyncService {
   ): Promise<void> {
     if (!access) return;
     try {
-      await this.adapter.revoke(this.decryptTokens({ access, refresh, expiresAt: null }));
+      await this.adapter.revoke(
+        this.decryptTokens({ access, refresh, expiresAt: null }),
+      );
     } catch (error) {
-      this.logger.warn({ connectionId, errorCode: errorCodeOf(error) }, '제공자 토큰 폐기 실패');
+      this.logger.warn(
+        { connectionId, errorCode: errorCodeOf(error) },
+        '제공자 토큰 폐기 실패',
+      );
     }
   }
 }

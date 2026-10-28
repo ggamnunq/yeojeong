@@ -30,7 +30,8 @@ export function maskCardNumber(raw: string): string {
  */
 export function maskAccountNumber(raw: string): string {
   const total = digitsOf(raw).length;
-  if (total < 8 || total > 20) throw new RangeError('계좌 번호 형식이 아닙니다');
+  if (total < 8 || total > 20)
+    throw new RangeError('계좌 번호 형식이 아닙니다');
   let seen = 0;
   return raw
     .trim()

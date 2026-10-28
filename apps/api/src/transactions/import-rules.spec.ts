@@ -32,7 +32,11 @@ describe('decimal helpers', () => {
 });
 
 describe('refund child (4-1-4)', () => {
-  const pass = { krwAmount: 121330, originalAmount: '13200', originalCurrency: 'JPY' };
+  const pass = {
+    krwAmount: 121330,
+    originalAmount: '13200',
+    originalCurrency: 'JPY',
+  };
 
   it('full cancel nets exactly to zero', () => {
     const child = refundChildKrw(pass, '-13200');
@@ -47,14 +51,21 @@ describe('refund child (4-1-4)', () => {
   });
 
   it('KRW cancel is the amount as is and net never goes below zero', () => {
-    const parent = { krwAmount: 36000, originalAmount: '36000', originalCurrency: 'KRW' };
+    const parent = {
+      krwAmount: 36000,
+      originalAmount: '36000',
+      originalCurrency: 'KRW',
+    };
     expect(refundChildKrw(parent, '-10000')).toBe(-10000);
     expect(parentNetKrw(36000, [-30000, -10000])).toBe(0);
   });
 });
 
 describe('period (4-1-2, KST boundary)', () => {
-  const trip = { startAt: at('2026-11-12T00:00:00'), autoEndAt: at('2026-11-15T23:59:59') };
+  const trip = {
+    startAt: at('2026-11-12T00:00:00'),
+    autoEndAt: at('2026-11-15T23:59:59'),
+  };
   it('includes both ends and excludes the evening before', () => {
     expect(isWithinTrip(at('2026-11-12T00:00:00'), trip)).toBe(true);
     expect(isWithinTrip(at('2026-11-15T23:59:59'), trip)).toBe(true);
@@ -64,7 +75,12 @@ describe('period (4-1-2, KST boundary)', () => {
 });
 
 describe('same-user dedupe (4-1-3, FR-405)', () => {
-  const card = (id: string, time: string, krw: number, over: Partial<DedupeTx> = {}): DedupeTx => ({
+  const card = (
+    id: string,
+    time: string,
+    krw: number,
+    over: Partial<DedupeTx> = {},
+  ): DedupeTx => ({
     id,
     kind: 'APPROVAL',
     occurredAt: at(time),
@@ -77,7 +93,12 @@ describe('same-user dedupe (4-1-3, FR-405)', () => {
     sameUserDuplicateOfId: null,
     ...over,
   });
-  const account = (id: string, time: string, krw: number, over: Partial<DedupeTx> = {}): DedupeTx => ({
+  const account = (
+    id: string,
+    time: string,
+    krw: number,
+    over: Partial<DedupeTx> = {},
+  ): DedupeTx => ({
     id,
     kind: 'APPROVAL',
     occurredAt: at(time),
@@ -105,7 +126,9 @@ describe('same-user dedupe (4-1-3, FR-405)', () => {
         card('c1', '2026-11-13T08:50:00', 11770),
         account('a1', '2026-11-13T08:52:01', 11770), // 121초
         account('a2', '2026-11-13T08:50:10', 11780), // 금액 다름
-        account('a3', '2026-11-13T08:50:10', 11770, { methodRef: 'other-account' }),
+        account('a3', '2026-11-13T08:50:10', 11770, {
+          methodRef: 'other-account',
+        }),
       ]),
     ).toEqual([]);
     // 연결 계좌 정보가 없는 카드는 묶지 않는다(미결 Q-31)
@@ -154,27 +177,55 @@ describe('cancel matching (4-1-4)', () => {
       providerApprovalRef: 'ref-b',
       merchantKey: '다른가맹점',
     });
-    expect(matchCancel(cancel, [tx('a', {}), tx('b', { paymentMethodId: 'pm2' })])).toBe('b');
+    expect(
+      matchCancel(cancel, [tx('a', {}), tx('b', { paymentMethodId: 'pm2' })]),
+    ).toBe('b');
   });
 
   it('infers by method, merchant, currency and remaining amount; exact amount then most recent', () => {
     const approvals = [
       tx('old', { occurredAt: at('2026-11-14T08:00:00') }),
       tx('recent', { occurredAt: at('2026-11-14T09:40:00') }),
-      tx('bigger', { occurredAt: at('2026-11-14T10:00:00'), originalAmount: '20000' }),
+      tx('bigger', {
+        occurredAt: at('2026-11-14T10:00:00'),
+        originalAmount: '20000',
+      }),
       tx('later', { occurredAt: at('2026-11-14T13:00:00') }), // 취소보다 늦음
       tx('other', { paymentMethodId: 'pm2' }),
     ];
-    const cancel = tx('c', { kind: 'CANCEL', occurredAt: at('2026-11-14T12:15:00'), originalAmount: '-13200' });
+    const cancel = tx('c', {
+      kind: 'CANCEL',
+      occurredAt: at('2026-11-14T12:15:00'),
+      originalAmount: '-13200',
+    });
     expect(matchCancel(cancel, approvals)).toBe('recent');
     // 이미 전액 매칭된 원 결제는 건너뛴다
-    expect(matchCancel(cancel, approvals, new Map([['recent', 132_000_000n]]))).toBe('old');
-    const partial = tx('p', { kind: 'CANCEL', occurredAt: at('2026-11-14T12:15:00'), originalAmount: '-3300' });
-    expect(matchCancel(partial, approvals, new Map([['recent', 132_000_000n], ['old', 132_000_000n]]))).toBe('bigger');
+    expect(
+      matchCancel(cancel, approvals, new Map([['recent', 132_000_000n]])),
+    ).toBe('old');
+    const partial = tx('p', {
+      kind: 'CANCEL',
+      occurredAt: at('2026-11-14T12:15:00'),
+      originalAmount: '-3300',
+    });
+    expect(
+      matchCancel(
+        partial,
+        approvals,
+        new Map([
+          ['recent', 132_000_000n],
+          ['old', 132_000_000n],
+        ]),
+      ),
+    ).toBe('bigger');
   });
 
   it('returns null when nothing fits', () => {
-    const cancel = tx('c', { kind: 'CANCEL', occurredAt: at('2026-11-14T12:15:00'), originalCurrency: 'KRW' });
+    const cancel = tx('c', {
+      kind: 'CANCEL',
+      occurredAt: at('2026-11-14T12:15:00'),
+      originalCurrency: 'KRW',
+    });
     expect(matchCancel(cancel, [tx('a', {})])).toBeNull();
   });
 });
@@ -194,19 +245,48 @@ describe('duplicate suspicion (4-1-5, FR-407)', () => {
   });
 
   it('flags two shared payments by different payers within 120 seconds (AC1)', () => {
-    expect(isSuspectedDuplicate(e('subin', {}), e('minji', { occurredAt: at('2026-11-13T10:31:00') }))).toBe(true);
-    expect(isSuspectedDuplicate(e('a', { originalAmount: '4800.0000' }), e('b', {}))).toBe(true);
+    expect(
+      isSuspectedDuplicate(
+        e('subin', {}),
+        e('minji', { occurredAt: at('2026-11-13T10:31:00') }),
+      ),
+    ).toBe(true);
+    expect(
+      isSuspectedDuplicate(e('a', { originalAmount: '4800.0000' }), e('b', {})),
+    ).toBe(true);
   });
 
   it('does not flag the same payer, pending, other amounts or 121 seconds (AC2·AC3)', () => {
     const base = e('subin', {});
-    expect(isSuspectedDuplicate(base, e('x', { payerMembershipId: base.payerMembershipId }))).toBe(false);
-    expect(isSuspectedDuplicate(base, e('x', { status: 'PENDING' }))).toBe(false);
-    expect(isSuspectedDuplicate(base, e('x', { originalAmount: '4801' }))).toBe(false);
-    expect(isSuspectedDuplicate(base, e('x', { originalCurrency: 'KRW' }))).toBe(false);
-    expect(isSuspectedDuplicate(base, e('x', { merchantKey: '오사카성' }))).toBe(false);
-    expect(isSuspectedDuplicate(base, e('x', { occurredAt: at('2026-11-13T10:32:01') }))).toBe(false);
-    expect(isSuspectedDuplicate(base, e('x', { duplicateDismissedAt: new Date() }))).toBe(false);
-    expect(isSuspectedDuplicate(base, e('x', { refundOfExpenseId: 'p' }))).toBe(false);
+    expect(
+      isSuspectedDuplicate(
+        base,
+        e('x', { payerMembershipId: base.payerMembershipId }),
+      ),
+    ).toBe(false);
+    expect(isSuspectedDuplicate(base, e('x', { status: 'PENDING' }))).toBe(
+      false,
+    );
+    expect(isSuspectedDuplicate(base, e('x', { originalAmount: '4801' }))).toBe(
+      false,
+    );
+    expect(
+      isSuspectedDuplicate(base, e('x', { originalCurrency: 'KRW' })),
+    ).toBe(false);
+    expect(
+      isSuspectedDuplicate(base, e('x', { merchantKey: '오사카성' })),
+    ).toBe(false);
+    expect(
+      isSuspectedDuplicate(
+        base,
+        e('x', { occurredAt: at('2026-11-13T10:32:01') }),
+      ),
+    ).toBe(false);
+    expect(
+      isSuspectedDuplicate(base, e('x', { duplicateDismissedAt: new Date() })),
+    ).toBe(false);
+    expect(isSuspectedDuplicate(base, e('x', { refundOfExpenseId: 'p' }))).toBe(
+      false,
+    );
   });
 });

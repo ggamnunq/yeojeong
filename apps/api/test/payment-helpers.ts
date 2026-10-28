@@ -35,7 +35,11 @@ export class FaultyDemoAdapter extends PaymentProviderAdapter {
     super();
   }
 
-  buildAuthorizeUrl(input: { state: string; redirectUri: string; hint: AuthorizeHint }) {
+  buildAuthorizeUrl(input: {
+    state: string;
+    redirectUri: string;
+    hint: AuthorizeHint;
+  }) {
     return this.inner.buildAuthorizeUrl(input);
   }
 
@@ -44,7 +48,8 @@ export class FaultyDemoAdapter extends PaymentProviderAdapter {
   }
 
   refreshTokens(tokens: ProviderTokens) {
-    if (this.failRefresh) return Promise.reject(new ProviderError(this.failRefresh));
+    if (this.failRefresh)
+      return Promise.reject(new ProviderError(this.failRefresh));
     return this.inner.refreshTokens(tokens);
   }
 
@@ -61,19 +66,20 @@ export class FaultyDemoAdapter extends PaymentProviderAdapter {
     return this.inner.listTransactions(tokens, input);
   }
 
-  revoke(tokens: ProviderTokens) {
-    return this.inner.revoke(tokens);
+  revoke() {
+    return this.inner.revoke();
   }
 }
 
 /** S2A가 app.module에 EventEmitterModule.forRoot()를 넣기 전/후 모두 동작하게 한 번만 등록한다 */
 function eventEmitterIfMissing(): DynamicModule[] {
   const imports = (Reflect.getMetadata('imports', AppModule) ?? []) as (
-    | Type
-    | DynamicModule
+    Type | DynamicModule
   )[];
   const has = imports.some(
-    (m) => (m as DynamicModule).module === EventEmitterModule || m === EventEmitterModule,
+    (m) =>
+      (m as DynamicModule).module === EventEmitterModule ||
+      m === EventEmitterModule,
   );
   return has ? [] : [EventEmitterModule.forRoot()];
 }
@@ -104,7 +110,8 @@ export async function createPaymentTestApp(options: {
       .useValue(options.prisma ?? { $queryRaw: vi.fn().mockResolvedValue([]) });
   }
   const moduleFixture = await builder.compile();
-  const app = moduleFixture.createNestApplication<NestExpressApplication>(APP_OPTIONS);
+  const app =
+    moduleFixture.createNestApplication<NestExpressApplication>(APP_OPTIONS);
   setupApp(app);
   await app.init();
   return { app, adapter: app.get(PaymentProviderAdapter) };
@@ -155,7 +162,11 @@ export async function seedTrip(
     () => INVITE_CHARS[Math.floor(Math.random() * INVITE_CHARS.length)],
   ).join('');
   const group = await prisma.group.create({
-    data: { name: 'S2B 테스트', inviteCode: code, createdByUserId: users[0].id },
+    data: {
+      name: 'S2B 테스트',
+      inviteCode: code,
+      createdByUserId: users[0].id,
+    },
   });
   const startAt = kstDateTime(startDate, 0, '00:00');
   const trip = await prisma.trip.create({
@@ -199,14 +210,24 @@ export async function cleanupSeed(prisma: PrismaService, seeds: SeededTrip[]) {
   const tripIds = seeds.map((s) => s.tripId);
   const groupIds = seeds.map((s) => s.groupId);
   const userIds = seeds.flatMap((s) => s.users.map((u) => u.id));
-  await prisma.expenseChangeLog.deleteMany({ where: { tripId: { in: tripIds } } });
-  await prisma.expenseShare.deleteMany({ where: { expense: { tripId: { in: tripIds } } } });
-  await prisma.expense.deleteMany({ where: { tripId: { in: tripIds }, refundOfExpenseId: { not: null } } });
+  await prisma.expenseChangeLog.deleteMany({
+    where: { tripId: { in: tripIds } },
+  });
+  await prisma.expenseShare.deleteMany({
+    where: { expense: { tripId: { in: tripIds } } },
+  });
+  await prisma.expense.deleteMany({
+    where: { tripId: { in: tripIds }, refundOfExpenseId: { not: null } },
+  });
   await prisma.expense.deleteMany({ where: { tripId: { in: tripIds } } });
   await prisma.transaction.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.paymentMethod.deleteMany({ where: { userId: { in: userIds } } });
-  await prisma.connectionAttempt.deleteMany({ where: { userId: { in: userIds } } });
-  await prisma.paymentConnection.deleteMany({ where: { userId: { in: userIds } } });
+  await prisma.connectionAttempt.deleteMany({
+    where: { userId: { in: userIds } },
+  });
+  await prisma.paymentConnection.deleteMany({
+    where: { userId: { in: userIds } },
+  });
   await prisma.accessLog.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.userConsent.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.membership.deleteMany({ where: { groupId: { in: groupIds } } });

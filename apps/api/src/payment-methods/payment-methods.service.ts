@@ -59,7 +59,11 @@ export class PaymentMethodsService {
         },
       },
     });
-    await this.accessLog.record(userId, 'VIEW_PAYMENT_METHODS', 'payment_method');
+    await this.accessLog.record(
+      userId,
+      'VIEW_PAYMENT_METHODS',
+      'payment_method',
+    );
     const methods = connections.flatMap((c) =>
       c.methods.map((m) => ({
         ...m,
@@ -176,7 +180,9 @@ export class PaymentMethodsService {
         },
       });
       // SHARED Expense는 transactionId가 ON DELETE SET NULL로 비워지고 복사해 둔 값으로 남는다
-      await tx.transaction.deleteMany({ where: { id: { in: transactionIds } } });
+      await tx.transaction.deleteMany({
+        where: { id: { in: transactionIds } },
+      });
       await tx.paymentMethod.deleteMany({ where: { id: { in: methodIds } } });
     });
 
@@ -187,9 +193,19 @@ export class PaymentMethodsService {
         method.connection.refreshTokenEnc,
       );
     }
-    await this.accessLog.record(userId, 'DISCONNECT', 'payment_method', method.id);
+    await this.accessLog.record(
+      userId,
+      'DISCONNECT',
+      'payment_method',
+      method.id,
+    );
     this.logger.log(
-      { userId, paymentMethodId: method.id, revoked: isLast, purged: purgeImported },
+      {
+        userId,
+        paymentMethodId: method.id,
+        revoked: isLast,
+        purged: purgeImported,
+      },
       '결제수단 연결 해제',
     );
   }
@@ -204,7 +220,9 @@ export class PaymentMethodsService {
       where: {
         trigger: 'MANUAL',
         connection: { userId },
-        startedAt: { gt: new Date(startedAt.getTime() - MANUAL_SYNC_INTERVAL_MS) },
+        startedAt: {
+          gt: new Date(startedAt.getTime() - MANUAL_SYNC_INTERVAL_MS),
+        },
       },
       select: { id: true },
     });

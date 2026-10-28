@@ -37,7 +37,10 @@ export class TripEventsListener {
   /** 여정 시작 → 전 멤버 소급 인입(FR-303 → FR-404, [startAt, now]) */
   @OnEvent(TRIP_STARTED, LISTENER_OPTIONS)
   onTripStarted(event: TripStartedEvent): Promise<void> {
-    if (!event?.tripId || !this.seq.accept(`trip.started:${event.tripId}`, event.eventSeq)) {
+    if (
+      !event?.tripId ||
+      !this.seq.accept(`trip.started:${event.tripId}`, event.eventSeq)
+    ) {
       return Promise.resolve();
     }
     this.background(TRIP_STARTED, 'backfillTripStart', event.tripId, () =>
@@ -49,7 +52,10 @@ export class TripEventsListener {
   /** 진행 중 여정 참여·재참여 → 새 멤버 소급 인입(FR-204 → FR-404). tripStatus는 참고만 하고 DB로 다시 확인한다 */
   @OnEvent(MEMBERSHIP_JOINED, LISTENER_OPTIONS)
   onMembershipJoined(event: MembershipJoinedEvent): Promise<void> {
-    if (!event?.membershipId || !this.seq.accept(`membership:${event.membershipId}`, event.eventSeq)) {
+    if (
+      !event?.membershipId ||
+      !this.seq.accept(`membership:${event.membershipId}`, event.eventSeq)
+    ) {
       return Promise.resolve();
     }
     this.background(MEMBERSHIP_JOINED, 'backfillJoin', event.tripId, () =>
@@ -112,7 +118,8 @@ export class TripEventsListener {
       await fn();
     } catch (error) {
       const errorCode =
-        (error as { code?: unknown } | null)?.code?.toString().slice(0, 40) ?? 'INTERNAL';
+        (error as { code?: unknown } | null)?.code?.toString().slice(0, 40) ??
+        'INTERNAL';
       this.logger.error(
         { event, listener, tripId, errorCode },
         '이벤트 리스너 실패(다음 sync 잡이 따라잡는다)',

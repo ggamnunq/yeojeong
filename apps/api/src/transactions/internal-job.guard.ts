@@ -36,7 +36,8 @@ export class InternalJobGuard implements CanActivate {
     if (!this.secret || typeof given !== 'string' || given.length === 0) {
       throw new ForbiddenError();
     }
-    if (!timingSafeEqual(digest(given), this.secret)) throw new ForbiddenError();
+    if (!timingSafeEqual(digest(given), this.secret))
+      throw new ForbiddenError();
     return true;
   }
 }

@@ -8,10 +8,16 @@ export function kstDate(at: Date): string {
 }
 
 /** "YYYY-MM-DD" + n일 + "HH:mm[:ss]"(KST) → Date */
-export function kstDateTime(date: string, dayOffset: number, time: string): Date {
+export function kstDateTime(
+  date: string,
+  dayOffset: number,
+  time: string,
+): Date {
   const [y, m, d] = date.split('-').map(Number);
   const [hh, mm, ss = 0] = time.split(':').map(Number);
-  return new Date(Date.UTC(y, m - 1, d + dayOffset, hh, mm, ss) - KST_OFFSET_MS);
+  return new Date(
+    Date.UTC(y, m - 1, d + dayOffset, hh, mm, ss) - KST_OFFSET_MS,
+  );
 }
 
 /** Prisma @db.Date 값(UTC 자정) → "YYYY-MM-DD" */

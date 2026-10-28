@@ -52,7 +52,10 @@ function scaledRate(rate: string): bigint {
   }
   const trimmed = frac.replace(/0+$/, '');
   if (trimmed.length > RATE_SCALE) throw new RangeError('환율 소수 6자리 초과');
-  return BigInt(int) * 10n ** BigInt(RATE_SCALE) + BigInt(trimmed.padEnd(RATE_SCALE, '0'));
+  return (
+    BigInt(int) * 10n ** BigInt(RATE_SCALE) +
+    BigInt(trimmed.padEnd(RATE_SCALE, '0'))
+  );
 }
 
 function rateToString(scaled: bigint): string {
@@ -113,7 +116,8 @@ export function computeKrw(
         fxPolicyApplied: 'CARD_BILLED',
         fxRate: null,
         fxRateUnit: null,
-        fxRateSource: input.billedKrwAmount !== null ? '카드사 청구' : '제공자 원화',
+        fxRateSource:
+          input.billedKrwAmount !== null ? '카드사 청구' : '제공자 원화',
         fxRateAt: null,
       };
     }

@@ -3,7 +3,10 @@ import type { OutOfPeriodCandidate, OutOfPeriodSide } from '@yeojeong/shared';
 import { AppException } from '../common/errors/index.js';
 import { FinancialAccessLog } from '../payment-methods/access-log.js';
 import { toKstIso } from '../payment-methods/kst.js';
-import { normalizeMerchantKey, paymentMethodLabel } from '../payment-methods/masking.js';
+import {
+  normalizeMerchantKey,
+  paymentMethodLabel,
+} from '../payment-methods/masking.js';
 import {
   PaymentProviderAdapter,
   ProviderError,
@@ -118,10 +121,16 @@ export class OutOfPeriodService {
     candidateIds: readonly string[],
     now: Date = new Date(),
   ): Promise<string[]> {
-    const transactionIds = await this.resolveCandidates(userId, tripId, candidateIds, now);
+    const transactionIds = await this.resolveCandidates(
+      userId,
+      tripId,
+      candidateIds,
+      now,
+    );
     return this.prisma.$transaction(async (tx) => {
       const trip = await this.importer.lockTrip(tx, tripId);
-      if (!trip || trip.status !== 'ONGOING') throw AppException.of('TRIP_PHASE_INVALID');
+      if (!trip || trip.status !== 'ONGOING')
+        throw AppException.of('TRIP_PHASE_INVALID');
       const membership = await tx.$queryRaw<{ id: string }[]>`
         SELECT m.id FROM memberships m JOIN trips t ON t.group_id = m.group_id
         WHERE t.id = ${tripId}::uuid AND m.user_id = ${userId}::uuid AND m.left_at IS NULL
@@ -151,7 +160,10 @@ export class OutOfPeriodService {
     now: Date = new Date(),
   ): Promise<string[]> {
     const invalid = () => AppException.of('OUT_OF_PERIOD_CANDIDATE_INVALID');
-    if (candidateIds.length === 0 || new Set(candidateIds).size !== candidateIds.length) {
+    if (
+      candidateIds.length === 0 ||
+      new Set(candidateIds).size !== candidateIds.length
+    ) {
       throw invalid();
     }
     const { trip } = await this.context(userId, tripId);
@@ -179,7 +191,10 @@ export class OutOfPeriodService {
       where: {
         id: tripId,
         deletedAt: null,
-        group: { deletedAt: null, memberships: { some: { userId, leftAt: null } } },
+        group: {
+          deletedAt: null,
+          memberships: { some: { userId, leftAt: null } },
+        },
       },
       select: {
         id: true,
@@ -227,13 +242,24 @@ export class OutOfPeriodService {
         shortLabel: true,
         last4: true,
         connection: {
-          select: { id: true, status: true, accessTokenEnc: true, refreshTokenEnc: true, tokenExpiresAt: true },
+          select: {
+            id: true,
+            status: true,
+            accessTokenEnc: true,
+            refreshTokenEnc: true,
+            tokenExpiresAt: true,
+          },
         },
       },
     });
     if (methods.length === 0) return [];
-    const connections = [...new Map(methods.map((m) => [m.connection.id, m.connection])).values()];
-    if (!connections.some((c) => c.status === 'ACTIVE') && connections.some((c) => c.status === 'EXPIRED')) {
+    const connections = [
+      ...new Map(methods.map((m) => [m.connection.id, m.connection])).values(),
+    ];
+    if (
+      !connections.some((c) => c.status === 'ACTIVE') &&
+      connections.some((c) => c.status === 'EXPIRED')
+    ) {
       throw AppException.of('CONNECTION_EXPIRED');
     }
 
@@ -261,11 +287,14 @@ export class OutOfPeriodService {
       sameUserDuplicateOfId: t.sameUserDuplicateOfId,
       inTrip: t.expenses.length > 0,
     }));
-    const known = new Set(rows.map((r) => `${r.paymentMethodId}:${r.externalRef}`));
+    const known = new Set(
+      rows.map((r) => `${r.paymentMethodId}:${r.externalRef}`),
+    );
 
     // 저장 범위 밖은 제공자에 즉시 조회(저장하지 않는다)
     for (const method of methods) {
-      if (method.status !== 'ACTIVE' || method.connection.status !== 'ACTIVE') continue;
+      if (method.status !== 'ACTIVE' || method.connection.status !== 'ACTIVE')
+        continue;
       const live = await this.fetchLive(method, range);
       for (const item of live) {
         if (known.has(`${method.id}:${item.ref}`)) continue;
@@ -290,7 +319,9 @@ export class OutOfPeriodService {
         sameUserDuplicateOfId: r.sameUserDuplicateOfId ? 'stored' : null,
       };
     });
-    const duplicateAccounts = new Set(findSameUserDuplicates(dedupe).map((p) => p.accountTxId));
+    const duplicateAccounts = new Set(
+      findSameUserDuplicates(dedupe).map((p) => p.accountTxId),
+    );
     const fullyCancelled = this.fullyCancelled(rows);
 
     return rows
@@ -303,7 +334,10 @@ export class OutOfPeriodService {
           !fullyCancelled.has(r.candidateId),
       )
       .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
-      .map((r) => ({ ...r, label: paymentMethodLabel(byMethod.get(r.paymentMethodId)!) }));
+      .map((r) => ({
+        ...r,
+        label: paymentMethodLabel(byMethod.get(r.paymentMethodId)!),
+      }));
   }
 
   private fullyCancelled(rows: readonly CandidateRow[]): Set<string> {
@@ -323,19 +357,32 @@ export class OutOfPeriodService {
     for (const cancel of rows.filter((r) => r.kind === 'CANCEL')) {
       const id = matchCancel(toMatch(cancel), approvals, matched);
       if (id) {
-        matched.set(id, (matched.get(id) ?? 0n) + absScaled(toScaled(cancel.originalAmount)));
+        matched.set(
+          id,
+          (matched.get(id) ?? 0n) + absScaled(toScaled(cancel.originalAmount)),
+        );
       }
     }
     return new Set(
       approvals
-        .filter((a) => (matched.get(a.id) ?? 0n) >= absScaled(toScaled(a.originalAmount)))
+        .filter(
+          (a) =>
+            (matched.get(a.id) ?? 0n) >= absScaled(toScaled(a.originalAmount)),
+        )
         .map((a) => a.id),
     );
   }
 
-  private liveRow(paymentMethodId: string, item: ProviderTransaction): CandidateRow {
+  private liveRow(
+    paymentMethodId: string,
+    item: ProviderTransaction,
+  ): CandidateRow {
     const amount = absScaled(toScaled(item.amount));
-    const ref: LiveRef = { m: paymentMethodId, r: item.ref, a: item.occurredAt.toISOString() };
+    const ref: LiveRef = {
+      m: paymentMethodId,
+      r: item.ref,
+      a: item.occurredAt.toISOString(),
+    };
     return {
       candidateId: `${LIVE}${Buffer.from(JSON.stringify(ref)).toString('base64url')}`,
       paymentMethodId,
@@ -358,7 +405,12 @@ export class OutOfPeriodService {
     method: {
       id: string;
       externalRef: string;
-      connection: { id: string; accessTokenEnc: Uint8Array | null; refreshTokenEnc: Uint8Array | null; tokenExpiresAt: Date | null };
+      connection: {
+        id: string;
+        accessTokenEnc: Uint8Array | null;
+        refreshTokenEnc: Uint8Array | null;
+        tokenExpiresAt: Date | null;
+      };
     },
     range: { fromAt: Date; toAt: Date },
   ): Promise<ProviderTransaction[]> {
@@ -368,7 +420,10 @@ export class OutOfPeriodService {
       const tokens = {
         accessToken: this.cipher.decrypt(enc, CipherPurpose.ACCESS_TOKEN),
         ...(method.connection.refreshTokenEnc && {
-          refreshToken: this.cipher.decrypt(method.connection.refreshTokenEnc, CipherPurpose.REFRESH_TOKEN),
+          refreshToken: this.cipher.decrypt(
+            method.connection.refreshTokenEnc,
+            CipherPurpose.REFRESH_TOKEN,
+          ),
         }),
       };
       const items: ProviderTransaction[] = [];
@@ -400,25 +455,38 @@ export class OutOfPeriodService {
 
   /** 고른 즉시 조회 후보 하나를 저장한다(이 건만, 최소 수집) */
   private async store(userId: string, row: CandidateRow): Promise<string> {
-    await this.importer.upsertProviderTransactions(userId, row.paymentMethodId, [
-      {
-        ref: row.externalRef,
-        kind: row.kind,
-        occurredAt: row.occurredAt,
-        merchantName: row.merchantName,
-        amount: row.originalAmount,
-        currency: row.originalCurrency,
-        ...(row.providerKrwAmount !== null && { krwAmount: row.providerKrwAmount }),
-        ...(row.billedKrwAmount !== null && { billedKrwAmount: row.billedKrwAmount }),
-        ...(row.providerApprovalRef && { approvalRef: row.providerApprovalRef }),
-        raw: { outOfPeriod: true, ref: row.externalRef },
-      },
-    ]);
+    await this.importer.upsertProviderTransactions(
+      userId,
+      row.paymentMethodId,
+      [
+        {
+          ref: row.externalRef,
+          kind: row.kind,
+          occurredAt: row.occurredAt,
+          merchantName: row.merchantName,
+          amount: row.originalAmount,
+          currency: row.originalCurrency,
+          ...(row.providerKrwAmount !== null && {
+            krwAmount: row.providerKrwAmount,
+          }),
+          ...(row.billedKrwAmount !== null && {
+            billedKrwAmount: row.billedKrwAmount,
+          }),
+          ...(row.providerApprovalRef && {
+            approvalRef: row.providerApprovalRef,
+          }),
+          raw: { outOfPeriod: true, ref: row.externalRef },
+        },
+      ],
+    );
     const saved = await this.prisma.transaction.findUniqueOrThrow({
       where: {
         paymentMethodId_externalRef: {
           paymentMethodId: row.paymentMethodId,
-          externalRef: row.externalRef.length <= 128 ? row.externalRef : this.cipher.hmacRef(row.externalRef),
+          externalRef:
+            row.externalRef.length <= 128
+              ? row.externalRef
+              : this.cipher.hmacRef(row.externalRef),
         },
       },
       select: { id: true },
