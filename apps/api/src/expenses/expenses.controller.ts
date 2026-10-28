@@ -26,8 +26,8 @@ import {
   RequireTripStatus,
   type MembershipContext,
 } from '../common/auth/index.js';
+import { Audited, fromParam } from '../audit/index.js';
 import { ApiErrorResponse } from '../common/errors/index.js';
-import { ExpenseAccessLog } from './access-log.js';
 import {
   AddOutOfPeriodExpensesDto,
   ClassifyExpenseDto,
@@ -56,7 +56,6 @@ export class ExpensesController {
     private readonly query: ExpenseQueryService,
     private readonly command: ExpenseCommandService,
     private readonly outOfPeriod: OutOfPeriodService,
-    private readonly accessLog: ExpenseAccessLog,
   ) {}
 
   @ApiOperation({
@@ -67,19 +66,18 @@ export class ExpensesController {
   @ApiOkResponse({ type: ExpenseListResponseDto })
   @ApiErrorResponse(400, 'VALIDATION_FAILED')
   @ApiErrorResponse(409, 'TRIP_PHASE_INVALID')
+  @Audited('LIST_EXPENSES', {
+    resourceType: 'TRIP',
+    resourceId: fromParam('tripId'),
+  })
   @RequireTripStatus(['ONGOING', 'ENDED'])
   @Get('expenses')
-  async list(
+  list(
     @Param('tripId') tripId: string,
     @CurrentMembership() me: MembershipContext,
     @Query() query: ListExpensesQueryDto,
   ): Promise<ExpenseListResponse> {
-    const result = await this.query.list(tripId, me.id, query);
-    this.accessLog.record(me.userId, 'LIST_EXPENSES', {
-      type: 'Trip',
-      id: tripId,
-    });
-    return result;
+    return this.query.list(tripId, me.id, query);
   }
 
   @ApiOperation({
@@ -90,19 +88,18 @@ export class ExpensesController {
   @ApiParam({ name: 'expenseId', format: 'uuid' })
   @ApiOkResponse({ type: ExpenseDetailResponseDto })
   @ApiErrorResponse(409, 'TRIP_PHASE_INVALID')
+  @Audited('VIEW_EXPENSE_DETAIL', {
+    resourceType: 'EXPENSE',
+    resourceId: fromParam('expenseId'),
+  })
   @RequireTripStatus(['ONGOING', 'ENDED'])
   @Get('expenses/:expenseId')
-  async detail(
+  detail(
     @Param('tripId') tripId: string,
     @Param('expenseId') expenseId: string,
     @CurrentMembership() me: MembershipContext,
   ): Promise<ExpenseDetailResponse> {
-    const result = await this.query.detail(tripId, me.id, expenseId);
-    this.accessLog.record(me.userId, 'VIEW_EXPENSE_DETAIL', {
-      type: 'Expense',
-      id: result.id,
-    });
-    return result;
+    return this.query.detail(tripId, me.id, expenseId);
   }
 
   @ApiOperation({
@@ -126,6 +123,10 @@ export class ExpensesController {
     'SHARED_IN_OTHER_TRIP',
     'SHARED_TO_PERSONAL_CONFIRM_REQUIRED',
   )
+  @Audited('CLASSIFY_EXPENSE', {
+    resourceType: 'EXPENSE',
+    resourceId: fromParam('expenseId'),
+  })
   @RequireTripStatus('ONGOING', { code: 'EXPENSE_LOCKED' })
   @Put('expenses/:expenseId/classification')
   classify(
@@ -170,23 +171,18 @@ export class ExpensesController {
   })
   @ApiOkResponse({ type: [OutOfPeriodCandidateDto] })
   @ApiErrorResponse(409, 'TRIP_PHASE_INVALID')
+  @Audited('VIEW_CANDIDATES', {
+    resourceType: 'TRIP',
+    resourceId: fromParam('tripId'),
+  })
   @RequireTripStatus('ONGOING')
   @Get('out-of-period-candidates')
-  async candidates(
+  candidates(
     @Param('tripId') tripId: string,
     @CurrentMembership() me: MembershipContext,
     @Query() query: OutOfPeriodCandidatesQueryDto,
   ): Promise<OutOfPeriodCandidate[]> {
-    const result = await this.outOfPeriod.candidates(
-      tripId,
-      me,
-      query.side ?? 'BEFORE',
-    );
-    this.accessLog.record(me.userId, 'VIEW_CANDIDATES', {
-      type: 'Trip',
-      id: tripId,
-    });
-    return result;
+    return this.outOfPeriod.candidates(tripId, me, query.side ?? 'BEFORE');
   }
 
   @ApiOperation({

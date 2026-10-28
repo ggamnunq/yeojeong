@@ -276,14 +276,17 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
         isMe: true,
       });
 
-      // 접근 기록(내용 없이 ID만)
-      const logs = await prisma.accessLog.findMany({
-        where: {
-          userId: seed.members['준용'].userId,
-          action: 'VIEW_EXPENSE_DETAIL',
-        },
+      // 접근 기록(S2D @Audited, 내용 없이 ID만)
+      await vi.waitFor(async () => {
+        const logs = await prisma.accessLog.findMany({
+          where: {
+            userId: seed.members['준용'].userId,
+            action: 'VIEW_EXPENSE_DETAIL',
+            resourceId: e.horai.id,
+          },
+        });
+        expect(logs[0]).toMatchObject({ resourceType: 'EXPENSE' });
       });
-      expect(logs.length).toBeGreaterThan(0);
     });
 
     it('pages with a cursor and serves the timeline by day', async () => {

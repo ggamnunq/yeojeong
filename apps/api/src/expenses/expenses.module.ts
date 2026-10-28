@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ExpenseAccessLog } from './access-log.js';
 import { ExpenseCommandService } from './expense-command.service.js';
 import { ExpenseLifecycleService } from './expense-lifecycle.service.js';
 import { ExpenseQueryService } from './expense-query.service.js';
@@ -16,7 +15,6 @@ import { TripEndedListener } from './trip-ended.listener.js';
 @Module({
   controllers: [ExpensesController],
   providers: [
-    ExpenseAccessLog,
     ExpenseQueryService,
     ExpenseCommandService,
     ExpenseLifecycleService,

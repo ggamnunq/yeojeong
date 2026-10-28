@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { TRIP_EVENTS, type TripEndedEvent } from '../trips/events.js';
-import { errorCodeOf } from './access-log.js';
+import { errorCodeOf } from './error-code.js';
 import { ExpenseLifecycleService } from './expense-lifecycle.service.js';
 
 /**
