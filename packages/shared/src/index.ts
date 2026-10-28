@@ -27,3 +27,4 @@ export * from './invite-code.js';
 export type * from './api.js';
 export * from './api/trips.js';
 export * from './api/account.js';
+export * from './api/expenses.js';

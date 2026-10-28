@@ -17,6 +17,7 @@ import { AllExceptionsFilter } from './common/errors/all-exceptions.filter.js';
 import { createValidationPipe } from './common/errors/validation.js';
 import { LoggingModule } from './common/logging/logging.module.js';
 import { DEFAULT_THROTTLE } from './common/throttle.js';
+import { ExpensesModule } from './expenses/expenses.module.js';
 import { HealthModule } from './health/health.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RetentionModule } from './retention/retention.module.js';
@@ -36,6 +37,7 @@ import { TripsModule } from './trips/trips.module.js';
     AuditModule,
     AccountModule,
     RetentionModule,
+    ExpensesModule,
   ],
   providers: [
     { provide: APP_PIPE, useValue: createValidationPipe() },

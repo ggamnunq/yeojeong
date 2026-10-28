@@ -98,6 +98,11 @@ export const EXPENSE_ERRORS = {
     message: '추가할 수 없는 결제가 있어요',
   },
   DUPLICATE_NOT_FLAGGED: { status: 409, message: '중복 의심 결제가 아니에요' },
+  /** 공동 → 개인은 확인 다이얼로그(WF-32) 뒤 confirmSharedToPersonal: true로 보낸다 */
+  SHARED_TO_PERSONAL_CONFIRM_REQUIRED: {
+    status: 409,
+    message: '개인 결제로 바꿀지 확인해 주세요',
+  },
 } as const satisfies Record<string, ErrorDefinition>;
 
 export const FX_ERRORS = {
