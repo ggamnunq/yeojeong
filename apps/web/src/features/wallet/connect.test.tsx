@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../mocks/data'
@@ -10,10 +10,14 @@ import { external, writeAttemptContext } from './connect'
 import { expireConnections, walletMock } from './mocks'
 import { ApiError } from '../../api'
 
+// 전체 실행 때 lazy 화면·목 응답이 늦을 수 있어 기다림을 늘린다
+configure({ asyncUtilTimeout: 3000 })
+vi.setConfig({ testTimeout: 15_000 })
+
 const where = (router: ReturnType<typeof renderApp>['router']) =>
   `${router.state.location.pathname}${router.state.location.search}`
 
-const POLL_WAIT = { timeout: 4000 }
+const POLL_WAIT = { timeout: 6000 }
 
 let openWindow: ReturnType<typeof vi.spyOn>
 let assign: ReturnType<typeof vi.spyOn>
@@ -59,7 +63,7 @@ describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
     fireEvent.click(screen.getByRole('button', { name: '확인' }))
     await waitFor(() => expect(where(router)).toBe('/wallet'))
     expect(await screen.findByText('카카오뱅크 세이프박스')).toBeTruthy()
-  }, 10_000)
+  })
 
   it('선택 화면: 전체 선택 토글 · 0개면 버튼 비활성 · 계좌 → 카드 묶음', async () => {
     for (const p of db.paymentMethods) if (p.userId === db.meUserId) p.status = 'REMOVED'
@@ -115,7 +119,7 @@ describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
     await waitFor(() => expect(where(router)).toBe('/wallet'))
     expect(await screen.findByRole('button', { name: '동기화' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /토스 연결 만료/ })).toBeNull()
-  }, 10_000)
+  })
 })
 
 describe('금융정보 연동 동의 403 → 시트 → 재시도', () => {

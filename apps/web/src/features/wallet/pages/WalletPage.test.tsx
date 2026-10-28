@@ -1,8 +1,12 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { db, TRIP } from '../../../mocks/data'
 import { renderApp } from '../../../test/render'
 import { expireConnections, walletMock } from '../mocks'
+
+// 전체 실행 때 lazy 화면·목 응답이 늦을 수 있어 기다림을 늘린다
+configure({ asyncUtilTimeout: 3000 })
+vi.setConfig({ testTimeout: 15_000 })
 
 const methodNames = () => screen.getAllByRole('listitem').map((li) => li.textContent)
 

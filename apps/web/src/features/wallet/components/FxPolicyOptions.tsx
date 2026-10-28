@@ -6,7 +6,7 @@ import { Icon } from '../../../ds'
 // HF-29 적용 환율 목록: ListItem Selected 모양(제목 + 선택 체크)의 라디오 행. 진짜 라디오라 화살표 키로 고른다.
 // TODO(DS 추가 요청): Figma는 ListItem Type=Selected를 라디오처럼 쓰는데 DS ListItem은 버튼이라 여기서 조립했다(Row/Radio 후보).
 
-export const FX_POLICY_LABEL = {
+const FX_POLICY_LABEL = {
   SPOT_AT_PAYMENT: '결제 시점 매매기준율',
   CARD_BILLED: '카드사 청구 환율',
   FIXED: '고정 환율 직접 입력',
