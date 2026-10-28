@@ -758,7 +758,14 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
 
       await fx.endTrip(seed.tripId);
       await emitter.emitAsync(TRIP_ENDED_EVENT, { tripId: seed.tripId });
-      await emitter.emitAsync(TRIP_ENDED_EVENT, { tripId: seed.tripId });
+      await emitter.emitAsync(TRIP_ENDED_EVENT, {
+        tripId: seed.tripId,
+        groupId: seed.groupId,
+        endedByUserId: null,
+        reason: 'AUTO',
+        redelivered: true,
+        eventSeq: 2,
+      });
       expect(
         await prisma.expense.count({
           where: { tripId: seed.tripId, status: 'PENDING' },
