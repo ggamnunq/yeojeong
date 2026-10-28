@@ -87,7 +87,7 @@ export class OutOfPeriodService {
     const { trip } = await this.context(userId, tripId);
     const range = this.rangeOf(trip, side, now);
     const rows = await this.collect(userId, trip.id, range);
-    await this.accessLog.record(userId, 'VIEW_CANDIDATES', 'trip', tripId);
+    await this.accessLog.record(userId, 'VIEW_CANDIDATES', 'TRIP', tripId);
     return rows.map((r) => ({
       candidateId: r.candidateId,
       occurredAt: toKstIso(r.occurredAt),

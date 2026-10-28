@@ -235,7 +235,7 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
     ).toEqual(['토스뱅크 통장', '토스뱅크 체크카드', '신한카드 Deep Dream']);
     expect(list.body.methods[1]).toMatchObject({
       shortLabel: '토스뱅크 체크카드',
-      maskedNumber: '5365-****-****-1934',
+      maskedNumber: '**** **** **** 1934',
       last4: '1934',
       status: 'ACTIVE',
     });

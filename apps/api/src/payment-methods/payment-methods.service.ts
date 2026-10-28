@@ -62,7 +62,7 @@ export class PaymentMethodsService {
     await this.accessLog.record(
       userId,
       'VIEW_PAYMENT_METHODS',
-      'payment_method',
+      'PAYMENT_METHOD',
     );
     const methods = connections.flatMap((c) =>
       c.methods.map((m) => ({
@@ -196,7 +196,7 @@ export class PaymentMethodsService {
     await this.accessLog.record(
       userId,
       'DISCONNECT',
-      'payment_method',
+      'PAYMENT_METHOD',
       method.id,
     );
     this.logger.log(
@@ -254,7 +254,7 @@ export class PaymentMethodsService {
     for (const c of active) {
       handles.push(await this.sync.start(c.id, 'MANUAL', { now: startedAt }));
     }
-    await this.accessLog.record(userId, 'SYNC', 'payment_connection');
+    await this.accessLog.record(userId, 'SYNC', 'PAYMENT_CONNECTION');
     const all = Promise.allSettled(handles.map((h) => h.done));
     await waitAtMost(all, INLINE_SYNC_WAIT_MS);
     return {

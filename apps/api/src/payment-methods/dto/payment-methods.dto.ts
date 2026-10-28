@@ -55,7 +55,7 @@ export class PaymentMethodViewDto implements PaymentMethodView {
   @ApiProperty({ example: '토스뱅크 체크카드' })
   shortLabel: string;
 
-  @ApiProperty({ example: '5365-****-****-1934' })
+  @ApiProperty({ example: '**** **** **** 1934' })
   maskedNumber: string;
 
   @ApiProperty({ example: '1934' })

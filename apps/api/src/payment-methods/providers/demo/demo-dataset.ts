@@ -70,7 +70,7 @@ export const DEMO_METHODS: Record<DemoPersona, DemoMethod[]> = {
       type: 'CARD',
       institutionName: '토스뱅크',
       productName: '토스뱅크 체크카드',
-      maskedNumber: '5365-****-****-1934',
+      maskedNumber: '**** **** **** 1934',
       linkedAccountKey: TOSS_ACCOUNT.key,
     },
     {
@@ -78,7 +78,7 @@ export const DEMO_METHODS: Record<DemoPersona, DemoMethod[]> = {
       type: 'CARD',
       institutionName: '신한카드',
       productName: '신한카드 Deep Dream',
-      maskedNumber: '4518-****-****-1102',
+      maskedNumber: '**** **** **** 1102',
     },
     {
       key: 'kakaobank-safebox',
@@ -94,7 +94,7 @@ export const DEMO_METHODS: Record<DemoPersona, DemoMethod[]> = {
       type: 'CARD',
       institutionName: '현대카드',
       productName: '현대카드 ZERO',
-      maskedNumber: '4321-****-****-5521',
+      maskedNumber: '**** **** **** 5521',
     },
     {
       key: 'kakaobank-account',
@@ -110,7 +110,7 @@ export const DEMO_METHODS: Record<DemoPersona, DemoMethod[]> = {
       type: 'CARD',
       institutionName: '삼성카드',
       productName: '삼성카드 taptap O',
-      maskedNumber: '5310-****-****-7742',
+      maskedNumber: '**** **** **** 7742',
     },
   ],
   subin: [
@@ -119,7 +119,7 @@ export const DEMO_METHODS: Record<DemoPersona, DemoMethod[]> = {
       type: 'CARD',
       institutionName: '우리카드',
       productName: '우리카드 카드의정석',
-      maskedNumber: '9410-****-****-2290',
+      maskedNumber: '**** **** **** 2290',
     },
   ],
 };

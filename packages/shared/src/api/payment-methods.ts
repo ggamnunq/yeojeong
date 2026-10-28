@@ -34,7 +34,7 @@ export interface PaymentMethodView {
   productName: string;
   /** 결제 상세 줄용 이름. 표시 = "{shortLabel} {last4}" */
   shortLabel: string;
-  /** "5365-****-****-1934" */
+  /** 카드 "**** **** **** 1934"(끝 4자리만), 계좌 "3333-**-****821"(앞 4·끝 3) */
   maskedNumber: string;
   last4: string;
   /** EXPIRED면 행을 흐리게 */

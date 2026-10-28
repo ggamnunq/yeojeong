@@ -37,7 +37,9 @@ describe('DemoTossAdapter', () => {
       '신한카드 Deep Dream',
       '카카오뱅크 세이프박스',
     ]);
-    expect(methods.every((m) => isSafelyMasked(m.maskedNumber))).toBe(true);
+    expect(methods.every((m) => isSafelyMasked(m.maskedNumber, m.type))).toBe(
+      true,
+    );
     expect(methods[1].linkedAccountRef).toBe(methods[0].ref);
     await expect(
       adapter.exchangeCode({ code: 'bogus', redirectUri: '' }),

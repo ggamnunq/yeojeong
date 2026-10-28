@@ -268,7 +268,7 @@ export class ConnectionsService {
         attempt.purpose === 'RECONNECT' || connection.status === 'EXPIRED';
       const candidates: StoredCandidate[] = [];
       for (const m of methods) {
-        if (!isSafelyMasked(m.maskedNumber)) {
+        if (!isSafelyMasked(m.maskedNumber, m.type)) {
           // 어댑터 경계 위반: 전체 번호일 수 있으니 후보에 넣지 않는다(값은 로그에 남기지 않는다)
           this.logger.error(
             { attemptId: attempt.id },
@@ -332,7 +332,7 @@ export class ConnectionsService {
     await this.accessLog.record(
       userId,
       'VIEW_CANDIDATES',
-      'connection_attempt',
+      'CONNECTION_ATTEMPT',
       attempt.id,
     );
     return this.candidatesOf(attempt.candidates).map((c) => ({
@@ -372,7 +372,7 @@ export class ConnectionsService {
       ]);
     }
     const selected = all.filter((c) => candidateIds.includes(c.candidateId));
-    selected.forEach((c) => assertSafelyMasked(c.maskedNumber));
+    selected.forEach((c) => assertSafelyMasked(c.maskedNumber, c.type));
 
     const connection = await this.prisma.paymentConnection.findFirst({
       where: { id: attempt.connectionId, userId, status: { not: 'REVOKED' } },
@@ -453,7 +453,7 @@ export class ConnectionsService {
     await this.accessLog.record(
       userId,
       'CONNECT',
-      'payment_connection',
+      'PAYMENT_CONNECTION',
       connection.id,
     );
 

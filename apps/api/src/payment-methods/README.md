@@ -38,7 +38,7 @@
 
 `PaymentProviderAdapter`(abstract class = DI 토큰): `buildAuthorizeUrl({state, redirectUri, hint})` → `exchangeCode({code, redirectUri})` → `refreshTokens(tokens)` → `listPaymentMethods(tokens)` → `listTransactions(tokens, {methodRef, from, to, cursor})` → `revoke(tokens)`. 오류는 `ProviderError(code)`: `AUTH_EXPIRED`·`CONSENT_REVOKED`(갱신 1회 후 연결 EXPIRED), `RATE_LIMITED`·`UNAVAILABLE`(SyncRun FAILED, 다음 주기), `INVALID_REQUEST`(그 결제수단만 건너뜀), `AUTH_FAILED`(콜백 실패).
 
-마스킹 규칙(명세 v0.5.1): 카드는 끝 4자리 유지(`5365-****-****-1934`, `last4` = 1934, 표시 "토스뱅크 체크카드 1934"), 계좌는 앞 4·끝 3(`3333-**-****821`, `last4` = 821).
+마스킹 규칙(명세 v0.5.1): 카드는 끝 4자리만(`**** **** **** 1934`, 앞자리는 저장·응답 모두 금지, `last4` = 1934, 표시 "토스뱅크 체크카드 1934"), 계좌는 앞 4·끝 3(`3333-**-****821`, `last4` = 821).
 
 어댑터 약속: 번호는 마스킹 값만(`masking.ts`, 서버가 저장 전에 `isSafelyMasked`로 한 번 더 거른다), 실번호 ref는 `TokenCipher.hmacRef`, 적요의 송금 상대방 이름 제거, 입금은 넘기지 않음.
 

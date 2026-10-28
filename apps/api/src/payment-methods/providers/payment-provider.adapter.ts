@@ -36,7 +36,7 @@ export interface ProviderPaymentMethod {
   productName: string;
   /** 없으면 서버가 정한다(은행 체크카드 → "{은행} 체크카드", 카드사 카드 → 카드사명, 계좌 → "{은행} 통장") */
   shortLabel?: string;
-  /** 어댑터가 마스킹한 값. "5365-****-****-1934", "1000-12**-**21" */
+  /** 어댑터가 마스킹한 값(masking.ts). 카드 "**** **** **** 1934"(끝 4자리만), 계좌 "3333-**-****821"(앞 4·끝 3) */
   maskedNumber: string;
   /** 체크카드가 출금하는 계좌의 ref(같은 사용자 중복 제거, 4-1-3) */
   linkedAccountRef?: string;
