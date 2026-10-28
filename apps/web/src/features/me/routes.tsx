@@ -1,5 +1,4 @@
-import { PlaceholderPage } from '../../app/PlaceholderPage'
+import { lazy } from 'react'
 import type { AppRoute } from '../../app/routes'
 
-// TODO(마이페이지 플로우): WF-30
-export const routes: AppRoute[] = [{ layout: 'auth', path: '/me', element: <PlaceholderPage title="마이페이지" /> }]
+export const routes: AppRoute[] = [{ layout: 'auth', path: '/me', Component: lazy(() => import('./pages/MePage')) }]
