@@ -67,7 +67,7 @@ export class AccountDeletionService {
   constructor(
     private readonly prisma: PrismaService,
     config: ConfigService,
-    // EventEmitterModule.forRoot()가 앱에 없으면 이벤트 없이 동작한다(src/retention/README.md "통합")
+    // 앱 모듈의 EventEmitterModule.forRoot()가 준다. 없는 테스트 앱에서는 이벤트 없이 동작한다
     @Optional() private readonly events?: EventEmitter2,
   ) {
     this.userRefKey = config.get<string>('USER_REF_HMAC_KEY') || undefined;

@@ -1,7 +1,6 @@
 import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { CONSENT_DOCUMENT_VERSIONS } from '../src/common/auth/index.js';
@@ -26,16 +25,19 @@ export function localDatabaseUrl(): string | undefined {
 }
 
 export function describeWithDb(name: string, fn: () => void): void {
-  (localDatabaseUrl() ? describe : describe.skip)(name, fn);
+  (localDatabaseUrl() ? describe : describe.skip)(name, () => {
+    // 실제 DB에 데이터를 만들고 지우므로, 다른 e2e와 같이 돌 때 기본 5초는 빠듯하다
+    vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+    fn();
+  });
 }
 
 /**
  * 운영과 같은 가드(쿠키 세션 → sessions 테이블, 동의, 멤버십)와 실제 DB로 앱을 띄운다.
- * EventEmitterModule은 앱 모듈에 아직 없어(통합 대기) 테스트에서 붙인다.
  */
 export async function createDbTestApp() {
   const moduleRef = await Test.createTestingModule({
-    imports: [AppModule, EventEmitterModule.forRoot()],
+    imports: [AppModule],
   }).compile();
   const app =
     moduleRef.createNestApplication<NestExpressApplication>(APP_OPTIONS);

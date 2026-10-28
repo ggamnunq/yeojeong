@@ -104,7 +104,6 @@ detail() {}
 
 ## 통합 과제
 
-- `app.module.ts`에 `EventEmitterModule.forRoot()`(S2A PR에 있음). 없으면 이벤트 없이 동작하고 경고 로그를 남긴다.
-- `MembershipLeftEvent`는 S2A `src/trips/events.ts` 타입으로 바꾼다. S2A 주석의 DELETED(그룹 삭제)에 "탈퇴"도 포함해야 한다.
+- `membership.left` 타입은 S2A `src/trips/events.ts`를 그대로 쓴다. 그쪽 주석의 DELETED(그룹 삭제)에 탈퇴도 포함되도록 고치고, 스키마 통합 때 사유를 `ACCOUNT_DELETED`/`GROUP_DELETED`로 나눈다.
 - 내부 잡: 전역 CSRF 가드 예외(내부 잡 경로), Cloud Scheduler 잡과 `INTERNAL_JOB_SECRET` 시크릿(Terraform), Worker 경유 또는 origin lock 예외. 명세 6-1의 OIDC 검증으로 바꿀 때 `InternalJobGuard`를 교체한다.
 - 로그 redact 목록(`common/logging/logger.ts`)에 `x-internal-job-secret` 추가.
