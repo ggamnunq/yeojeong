@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { HealthResponse } from '@yeojeong/shared'
 
-const API_URL = import.meta.env.VITE_API_URL ?? ''
-
 type Check = 'checking' | 'up' | 'down'
 
 function App() {
@@ -10,7 +8,8 @@ function App() {
   const [db, setDb] = useState<Check>('checking')
 
   useEffect(() => {
-    fetch(`${API_URL}/api/health`)
+    // 운영에서는 같은 origin의 Cloudflare Worker가, 로컬에서는 Vite 프록시가 /api를 API 서버로 넘긴다
+    fetch('/api/health')
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json() as Promise<HealthResponse>

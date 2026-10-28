@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "yeojeong-web",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-20",
+  // 진입로는 Terraform이 붙이는 커스텀 도메인(jinyeojeong.com) 하나로 둔다
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  }
+  // API_ORIGIN(Cloud Run 주소)과 ORIGIN_SECRET은 `wrangler secret put`으로 넣는다. README 인프라 섹션 참고.
+}

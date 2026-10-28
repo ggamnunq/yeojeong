@@ -1,0 +1,46 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { isIP } from 'node:net';
+import type { NextFunction, Request, Response } from 'express';
+
+const AUTH_HEADER = 'x-origin-auth';
+const CLIENT_IP_HEADER = 'x-client-ip';
+const MIN_SECRET_LENGTH = 32;
+
+/**
+ * Cloudflare Worker(jinyeojeong.com/api/*)를 거친 요청만 받는다.
+ * Worker는 ORIGIN_SECRET을 x-origin-auth로, Cloudflare 엣지가 확인한 클라이언트 IP를 x-client-ip로 넘긴다.
+ * 비밀값이 맞을 때만 x-client-ip를 믿고 req.ip(rate limit 기준)를 그 값으로 바꾼다.
+ */
+export function originLock(secret: string) {
+  if (secret.length < MIN_SECRET_LENGTH) {
+    throw new Error(`ORIGIN_SECRET은 ${MIN_SECRET_LENGTH}자 이상이어야 합니다`);
+  }
+  const expected = digest(secret);
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    const provided = req.headers[AUTH_HEADER];
+    if (
+      typeof provided !== 'string' ||
+      !timingSafeEqual(digest(provided), expected)
+    ) {
+      res.status(403).json({ statusCode: 403, message: 'Forbidden' });
+      return;
+    }
+    delete req.headers[AUTH_HEADER];
+
+    const clientIp = req.headers[CLIENT_IP_HEADER];
+    if (typeof clientIp === 'string' && isIP(clientIp)) {
+      Object.defineProperty(req, 'ip', {
+        value: clientIp,
+        configurable: true,
+        enumerable: true,
+      });
+    }
+    next();
+  };
+}
+
+// 길이가 다른 값도 같은 길이로 비교해 비교 시간으로 비밀값 길이가 드러나지 않게 한다
+function digest(value: string) {
+  return createHash('sha256').update(value).digest();
+}
