@@ -82,6 +82,7 @@ infra/envs/prod   Cloud Run, Artifact Registry, Secret Manager, Supabase 설정,
   - zone `jinyeojeong.com`: Zone Read, Zone Settings Write, DNS Write, SSL and Certificates Write, Dynamic URL Redirects Write, Zone WAF Write, Workers Routes Write
   - 계정: Workers Scripts Write
 - 각 폴더의 `terraform.tfvars.example`을 `terraform.tfvars`로 복사해 값을 채웁니다. tfvars와 state는 커밋하지 않습니다.
+  - `infra/envs/prod`의 `kakao_client_id`·`kakao_client_secret`은 카카오디벨로퍼스 앱 「여정」의 REST API 키와 카카오 로그인 클라이언트 시크릿입니다(로컬 `apps/api/.env`와 같은 값). 세션·토큰 암호화·user ref 키는 Terraform이 만듭니다. `user_ref_hmac_key`와 `token_encryption_key`는 바꾸지 않습니다(`prevent_destroy`).
 
 ### 적용
 

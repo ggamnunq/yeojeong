@@ -12,6 +12,8 @@ export function setupSwagger(app: INestApplication) {
       '성공 응답은 데이터를 그대로 돌려주고, 에러는 모두 ApiErrorBody 형식이다.',
     )
     .setVersion('0.0.1')
+    // 로그인은 httpOnly 쿠키라 Swagger UI에서 직접 넣을 수 없다. 화면에서 로그인한 브라우저로 /api/docs를 열면 쿠키가 같이 간다.
+    .addCookieAuth('yj_session', { type: 'apiKey' }, 'yj_session')
     .addGlobalResponse(
       {
         status: 429,

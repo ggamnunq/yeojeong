@@ -33,6 +33,37 @@ describe('Swagger (e2e)', () => {
       expect.arrayContaining(['code', 'message', 'requestId']),
     );
     expect(body.components.schemas.FieldErrorDto).toBeDefined();
+
+    // 인증·회원·동의 엔드포인트와 DTO
+    for (const [path, method] of [
+      ['/api/auth/kakao/start', 'get'],
+      ['/api/auth/kakao', 'get'],
+      ['/api/auth/kakao/callback', 'get'],
+      ['/api/auth/session', 'get'],
+      ['/api/auth/signup', 'post'],
+      ['/api/auth/logout', 'post'],
+      ['/api/auth/reconsent', 'post'],
+      ['/api/users/me', 'get'],
+      ['/api/users/me/deletion-request', 'post'],
+      ['/api/consents/documents', 'get'],
+      ['/api/consents/status', 'get'],
+      ['/api/consents', 'post'],
+    ]) {
+      expect(body.paths[path]?.[method], `${method} ${path}`).toBeDefined();
+    }
+    expect(
+      body.paths['/api/auth/signup'].post.requestBody.content[
+        'application/json'
+      ].schema,
+    ).toEqual({ $ref: '#/components/schemas/SignupDto' });
+    expect(body.components.schemas.MeDto.required).toEqual(
+      expect.arrayContaining(['id', 'nickname', 'hasProfileImage']),
+    );
+    expect(body.components.securitySchemes.yj_session).toMatchObject({
+      type: 'apiKey',
+      in: 'cookie',
+      name: 'yj_session',
+    });
   });
 
   it('does not register the docs in production', async () => {

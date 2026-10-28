@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { CONSENT_ID_VALUES } from '@yeojeong/shared';
 import {
   CONSENT_DOCUMENT_VERSIONS,
@@ -9,61 +11,125 @@ import {
 const doc = (
   version: string,
   effectiveAt: string,
-  changeType: 'MAJOR' | 'MINOR',
+  options: { changeType?: 'MAJOR' | 'MINOR'; isDraft?: boolean } = {},
 ): ConsentDocumentVersion => ({
   consentId: 'TOS',
   version,
-  effectiveAt: new Date(`${effectiveAt}T00:00:00+09:00`),
-  changeType,
+  title: '서비스 이용약관',
+  required: true,
   docPath: 'docs/legal/서비스 이용약관.md',
   docHash: '0'.repeat(64),
+  effectiveAt: new Date(`${effectiveAt}T00:00:00+09:00`),
+  changeType: options.changeType ?? 'MAJOR',
   summary: null,
-  draft: false,
+  isDraft: options.isDraft ?? false,
 });
 
-describe('consent catalog', () => {
-  it('has a current version with a SHA-256 hash for every consent ID', () => {
-    for (const id of CONSENT_ID_VALUES) {
-      expect(currentConsentVersion(id).docHash).toMatch(/^[0-9a-f]{64}$/);
+const at = (date: string) => new Date(`${date}T12:00:00+09:00`);
+const DRAFT = doc('0.1-draft', '2026-10-28', { isDraft: true });
+
+describe('consent validity', () => {
+  describe('only drafts exist', () => {
+    const catalog = [DRAFT];
+
+    it('treats a draft consent as temporarily valid so signup is not blocked', () => {
+      expect(
+        currentConsentVersion('TOS', catalog, at('2026-11-01')).version,
+      ).toBe('0.1-draft');
+      expect(
+        isConsentSatisfied('TOS', ['0.1-draft'], catalog, at('2026-11-01')),
+      ).toBe(true);
+      expect(isConsentSatisfied('TOS', [], catalog, at('2026-11-01'))).toBe(
+        false,
+      );
+    });
+  });
+
+  describe('after the first formal version', () => {
+    const catalog = [DRAFT, doc('2026-12-01', '2026-12-01')];
+
+    it('asks again everyone who agreed only to the draft', () => {
+      expect(
+        isConsentSatisfied('TOS', ['0.1-draft'], catalog, at('2026-12-01')),
+      ).toBe(false);
+      expect(
+        currentConsentVersion('TOS', catalog, at('2026-12-01')).version,
+      ).toBe('2026-12-01');
+    });
+
+    it('accepts a consent to the formal version', () => {
+      expect(
+        isConsentSatisfied(
+          'TOS',
+          ['0.1-draft', '2026-12-01'],
+          catalog,
+          at('2026-12-02'),
+        ),
+      ).toBe(true);
+    });
+
+    it('keeps the draft valid until the formal version takes effect', () => {
+      expect(
+        isConsentSatisfied('TOS', ['0.1-draft'], catalog, at('2026-11-30')),
+      ).toBe(true);
+    });
+  });
+
+  describe('a newer formal version', () => {
+    it('requires a new consent after a MAJOR change', () => {
+      const catalog = [
+        DRAFT,
+        doc('2026-12-01', '2026-12-01'),
+        doc('2027-06-01', '2027-06-01'),
+      ];
+      expect(
+        isConsentSatisfied('TOS', ['2026-12-01'], catalog, at('2027-06-01')),
+      ).toBe(false);
+      expect(
+        isConsentSatisfied('TOS', ['2027-06-01'], catalog, at('2027-06-01')),
+      ).toBe(true);
+    });
+
+    it('keeps the earlier consent after a MINOR change', () => {
+      const catalog = [
+        DRAFT,
+        doc('2026-12-01', '2026-12-01'),
+        doc('2027-02-01', '2027-02-01', { changeType: 'MINOR' }),
+      ];
+      const march = at('2027-03-01');
+      expect(isConsentSatisfied('TOS', ['2026-12-01'], catalog, march)).toBe(
+        true,
+      );
+      expect(currentConsentVersion('TOS', catalog, march).version).toBe(
+        '2027-02-01',
+      );
+      expect(isConsentSatisfied('TOS', ['0.1-draft'], catalog, march)).toBe(
+        false,
+      );
+    });
+  });
+
+  it('keeps the seed constant equal to the draft rows in the migration', () => {
+    const sql = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../../../prisma/migrations/20261028101853_add_consent_documents_is_draft/migration.sql',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    );
+    expect(CONSENT_DOCUMENT_VERSIONS.map((d) => d.consentId)).toEqual(
+      CONSENT_ID_VALUES,
+    );
+    for (const doc of CONSENT_DOCUMENT_VERSIONS) {
+      expect(sql).toContain(
+        `('${doc.consentId}', '${doc.version}', '${doc.title}', ${doc.required}, '${doc.docPath}', '${doc.docHash}'`,
+      );
     }
-    const keys = CONSENT_DOCUMENT_VERSIONS.map(
-      (v) => `${v.consentId}@${v.version}`,
-    );
-    expect(new Set(keys).size).toBe(keys.length);
   });
 
-  const catalog = [
-    doc('2026-12-01', '2026-12-01', 'MAJOR'),
-    doc('2027-02-01', '2027-02-01', 'MINOR'),
-    doc('2027-06-01', '2027-06-01', 'MAJOR'),
-  ];
-
-  it('picks the latest effective version as current', () => {
-    const at = (date: string) => new Date(`${date}T12:00:00+09:00`);
-    expect(
-      currentConsentVersion('TOS', at('2027-03-01'), catalog).version,
-    ).toBe('2027-02-01');
-    expect(
-      currentConsentVersion('TOS', at('2027-06-01'), catalog).version,
-    ).toBe('2027-06-01');
-  });
-
-  it('keeps consents across MINOR changes and requires them again after MAJOR', () => {
-    const march = new Date('2027-03-01T00:00:00+09:00');
-    const july = new Date('2027-07-01T00:00:00+09:00');
-    expect(isConsentSatisfied('TOS', ['2026-12-01'], march, catalog)).toBe(
-      true,
-    );
-    expect(isConsentSatisfied('TOS', ['2026-12-01'], july, catalog)).toBe(
-      false,
-    );
-    expect(isConsentSatisfied('TOS', ['2027-02-01'], july, catalog)).toBe(
-      false,
-    );
-    expect(isConsentSatisfied('TOS', ['2027-06-01'], july, catalog)).toBe(true);
-    expect(isConsentSatisfied('TOS', [], march, catalog)).toBe(false);
-    expect(isConsentSatisfied('TOS', ['0.1-draft'], march, catalog)).toBe(
-      false,
-    );
+  it('fails loudly when no document is in effect', () => {
+    expect(() => currentConsentVersion('TOS', [], at('2026-11-01'))).toThrow();
   });
 });

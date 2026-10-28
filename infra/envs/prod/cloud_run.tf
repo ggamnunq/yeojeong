@@ -3,8 +3,19 @@ resource "google_service_account" "api_runtime" {
   display_name = "yeojeong API runtime (Cloud Run)"
 }
 
+locals {
+  # Cloud Run env 이름 → secrets.tf의 키. 런타임 서비스 계정은 이 시크릿들만 읽는다.
+  api_secret_env = {
+    KAKAO_CLIENT_ID      = "kakao_client_id"
+    KAKAO_CLIENT_SECRET  = "kakao_client_secret"
+    SESSION_SECRET       = "session_secret"
+    TOKEN_ENCRYPTION_KEY = "token_encryption_key"
+    USER_REF_HMAC_KEY    = "user_ref_hmac_key"
+  }
+}
+
 resource "google_secret_manager_secret_iam_member" "api_runtime" {
-  for_each  = toset(["database_url", "supabase_ca", "origin_secret"])
+  for_each  = toset(concat(["database_url", "supabase_ca", "origin_secret"], values(local.api_secret_env)))
   secret_id = google_secret_manager_secret.this[each.value].id
   role      = "roles/secretmanager.secretAccessor"
   member    = google_service_account.api_runtime.member
@@ -52,6 +63,24 @@ resource "google_cloud_run_v2_service" "api" {
       env {
         name  = "KAKAO_REDIRECT_URI"
         value = "https://${var.domain}/api/auth/kakao/callback"
+      }
+
+      env {
+        name  = "SUPPORT_EMAIL"
+        value = var.support_email
+      }
+
+      dynamic "env" {
+        for_each = local.api_secret_env
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.this[env.value].secret_id
+              version = "latest"
+            }
+          }
+        }
       }
 
       env {

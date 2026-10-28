@@ -82,7 +82,60 @@ documents() {}
 - 남의 리소스는 403이 아니라 404로 숨긴다. 결제처럼 여정 안의 리소스는 서비스에서 `tripId` 조건을 함께 걸어 조회한다(ID만으로 조회하지 않는다).
 - 가드는 요청 시점의 값으로 막는 1차 관문이다. 상태를 바꾸는 서비스는 트랜잭션 안에서 Trip 행을 잠그고(`FOR SHARE`/`FOR UPDATE`) 단계와 멤버십을 다시 확인한다(기능명세 8-3).
 - `@SkipConsentCheck()`는 재동의 전에도 열려야 하는 라우트(재동의, 탈퇴·삭제 요청)에만 쓴다.
-- 쿠키 이름: 세션 `yj_session`, 가입 대기 `yj_signup`. 세션 발급·가입·로그아웃은 `auth` 모듈이 맡는다.
+
+### 로그인·가입 (auth, users, consents 모듈)
+
+| 메서드 | 경로                                               | 권한             | 하는 일                                                                                          |
+| ------ | -------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------ |
+| GET    | `/api/auth/kakao/start` (`/api/auth/kakao`도 같음) | 공개             | 카카오 인가 페이지로 302. `?returnTo=/trips/...`(같은 origin 화면 경로만)                         |
+| GET    | `/api/auth/kakao/callback`                         | 공개, Strict     | 기존 회원: 세션 + 302 returnTo·`/`. 신규: 가입 대기 + 302 `/signup/nickname`. 취소·실패: `/login?error=cancelled\|failed`. state 불일치 400 |
+| GET    | `/api/auth/session`                                | 공개             | `ANONYMOUS` / `SIGNUP_REQUIRED`(+`signupDraft`) / `AUTHENTICATED`(+`user`, `reconsentRequired`). 403을 내지 않는다 |
+| POST   | `/api/auth/signup`                                 | 가입 대기, Strict | `{ nickname, agreements: [{ consentId, version, agreed }], method }` → 201 `Me`(이미 가입된 계정이면 200) |
+| POST   | `/api/auth/logout`                                 | 공개             | 이 기기 세션 폐기, 204                                                                           |
+| POST   | `/api/auth/reconsent`                              | 로그인           | 빠진 가입 필수 동의를 현재 버전으로, 204                                                        |
+| GET    | `/api/users/me`                                    | 로그인           | `Me`(`hasProfileImage`, 결제수단 수, 만료 연결 여부)                                             |
+| POST   | `/api/users/me/deletion-request`                   | 로그인, Strict   | 탈퇴·삭제 요청 코드(24시간) + 고객센터 메일 초안. 재동의 전에도 허용                             |
+| GET    | `/api/consents/documents?stage=SIGNUP\|FIN_LINK`    | 공개             | 동의 문서 현재 버전(`hidden`이면 화면에 그리지 않음)                                            |
+| GET    | `/api/consents/status?stage=FIN_LINK`              | 로그인           | 연동 동의 유효 여부                                                                              |
+| POST   | `/api/consents`                                    | 로그인           | 연동 동의(FIN_LINK·FIN_PRIVACY·THIRD_PARTY) 저장. 성공해야 결제수단 연결을 시작한다              |
+
+쿠키(모두 httpOnly·SameSite=Lax, 운영은 Secure):
+
+| 쿠키        | 값                                      | 경로              | 수명                          |
+| ----------- | --------------------------------------- | ----------------- | ----------------------------- |
+| `yj_session` | 32바이트 난수(DB에는 SHA-256만)         | `/`               | 30일, 7일 미만 남으면 30일로 연장 |
+| `yj_signup` | SignupTicket ID 서명값                  | `/api`            | 30분                          |
+| `yj_oauth`  | state·returnTo 서명값(`SESSION_SECRET`) | `/api/auth/kakao` | 10분                          |
+
+- 카카오는 REST API 키 + 클라이언트 시크릿, 인가 코드 방식이다. 동의 항목은 닉네임(필수)·프로필 사진(선택)만 요청한다. 카카오 액세스 토큰과 회원번호는 로그에 남기지 않고, 토큰은 저장하지 않는다. PKCE는 카카오 문서에 없어 쓰지 않는다.
+- 카카오 HTTP 호출은 `KakaoClient`(`src/auth/kakao/kakao.client.ts`) 뒤에 있다. 테스트는 `createTestApp([], { auth: 'real', prisma, overrides: [[KakaoClient, fake]] })`로 바꿔 끼운다(`test/auth.e2e-spec.ts`).
+
+### 동의 판정
+
+- 기준은 `consent_documents` 테이블이다(1분 캐시). 새 버전은 **마이그레이션으로 행을 추가**한다(지우지 않는다). 동의 이력(`user_consents`)은 append-only이고 수정할 수 있는 값은 철회 시각·경로뿐이다.
+- 유효 동의 = 그 항목의 시행 중인 **정식본(`is_draft = false`)** 중 가장 최근 MAJOR 버전과 그 이후 버전에 `agreed`한 행이 있고 철회되지 않음. MINOR 개정은 기존 동의를 유지한다.
+- **초안 동의는 법적 유효 동의가 아니다.** 지금은 시행일이 정해지지 않아 `0.1-draft`(초안)만 있으므로, 정식본이 하나도 없을 때만 초안 동의를 임시로 인정한다. 정식본을 넣는 순간 초안에 동의한 회원 모두에게 `403 CONSENT_REQUIRED`가 나가 재동의(`POST /api/auth/reconsent`)를 받는다(출시 전 필수 작업).
+- 판정 함수와 테스트: `src/common/auth/consent-catalog.ts`, `consent-catalog.spec.ts`(초안만 / 정식 발행 후 초안 동의자 / 정식 동의자 / 더 새 정식본 MAJOR·MINOR).
+- 동의 기록에는 서버가 `ip`(origin lock이 넘긴 클라이언트 IP), `ua`(512자), `screen`, `method`, `docHash`, `userRefHash = HMAC-SHA256(userId, USER_REF_HMAC_KEY)`를 채운다. `USER_REF_HMAC_KEY`는 바꾸지 않는다.
+
+### 탈퇴·삭제 요청 (FR-108)
+
+- 요청 코드 `YJD-XXXX-XXXX-XXXX`는 원문을 저장하지 않고 `account_deletions.request_code_hash`(HMAC)만 저장한다. 운영자가 메일로 받은 코드는 `AuthConfig.deletionCodeHash(code)`로 찾는다(검증 도구는 아직 없음).
+- 받는 주소 `SUPPORT_EMAIL`은 임시값 `support@jinyeojeong.com`이다. 이 도메인은 메일을 받지 않으니 출시 전에 바꾼다.
+- 서비스 내 탈퇴(FR-109, `DELETE /api/users/me`)는 `account` 모듈이 맡는다. 운영자가 메일 요청을 처리할 때도 같은 파이프라인(`AccountDeletionService`)을 쓴다.
+
+### 비밀값
+
+`AuthConfig`(`src/common/auth/auth-config.ts`)가 시작할 때 검증한다. 하나라도 없거나 형식이 틀리면 서버가 뜨지 않는다. 운영 값은 Secret Manager(Terraform `infra/envs/prod/secrets.tf`)에 있다.
+
+| env                                       | 운영                                   | 비고                                    |
+| ----------------------------------------- | -------------------------------------- | --------------------------------------- |
+| `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET`  | Secret Manager(tfvars에서)             | 카카오 콘솔 값                          |
+| `KAKAO_REDIRECT_URI`, `WEB_BASE_URL`      | Cloud Run 일반 env                     | 운영은 https만                          |
+| `SESSION_SECRET`                          | Secret Manager(random_password)        | 32자 이상                               |
+| `TOKEN_ENCRYPTION_KEY`                    | Secret Manager(random_bytes 32)        | `*_enc` 컬럼 AES-256-GCM(`TokenCipher`) |
+| `USER_REF_HMAC_KEY`                       | Secret Manager(random_password)        | 교체 금지(prevent_destroy)              |
+| `SUPPORT_EMAIL`                           | Cloud Run 일반 env                     | 임시 주소                               |
 
 ### 테스트에서 로그인 흉내 내기
 

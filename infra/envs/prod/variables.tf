@@ -57,3 +57,21 @@ variable "web_worker_name" {
   type    = string
   default = "yeojeong-web"
 }
+
+variable "kakao_client_id" {
+  description = "카카오 REST API 키(terraform.tfvars 또는 TF_VAR_kakao_client_id, 커밋 금지)"
+  type        = string
+  sensitive   = true
+}
+
+variable "kakao_client_secret" {
+  description = "카카오 로그인 클라이언트 시크릿(terraform.tfvars 또는 TF_VAR_kakao_client_secret, 커밋 금지)"
+  type        = string
+  sensitive   = true
+}
+
+variable "support_email" {
+  description = "탈퇴·삭제 요청 메일 초안의 받는 주소. 임시값이라 아직 메일을 받지 못한다(출시 전 교체)"
+  type        = string
+  default     = "support@jinyeojeong.com"
+}

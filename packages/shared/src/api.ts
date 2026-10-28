@@ -1,4 +1,10 @@
-import type { ConsentId, ConsentRequirement } from './consents.js';
+import type {
+  ConsentId,
+  ConsentMethod,
+  ConsentRequirement,
+  ConsentScreen,
+  ConsentStage,
+} from './consents.js';
 import type {
   EditBlockReason,
   ExpenseOrigin,
@@ -63,6 +69,52 @@ export interface ConsentDocumentSummary {
   hidden: boolean;
   /** 재동의 화면 제목 아래 한 줄 */
   summary: string | null;
+  /** 시행 전 초안. 정식본이 나오면 다시 동의받는다 */
+  isDraft: boolean;
+}
+
+/** 동의 한 항목(화면이 보여 준 문서 버전과 함께 보낸다) */
+export interface ConsentAgreementInput {
+  consentId: ConsentId;
+  version: string;
+  agreed: boolean;
+}
+
+/** POST /api/auth/signup (FR-103·104). 서버가 ip·ua·docHash·screen(WF-04)을 채운다 */
+export interface SignupRequest {
+  nickname: string;
+  agreements: ConsentAgreementInput[];
+  method: Extract<ConsentMethod, 'ALL' | 'INDIVIDUAL'>;
+}
+
+/** POST /api/auth/reconsent (FR-107) */
+export interface ReconsentRequest {
+  agreements: ConsentAgreementInput[];
+  method: Extract<ConsentMethod, 'ALL' | 'INDIVIDUAL'>;
+}
+
+/** POST /api/consents (FR-809, 결제수단 연결 전 동의 시트) */
+export interface ConsentSubmitRequest {
+  stage: Extract<ConsentStage, 'FIN_LINK'>;
+  agreements: ConsentAgreementInput[];
+  method: Extract<ConsentMethod, 'ALL' | 'INDIVIDUAL'>;
+  screen: Extract<ConsentScreen, 'WF-05' | 'WF-28' | 'WF-42'>;
+}
+
+/** GET /api/consents/status, POST /api/consents */
+export interface ConsentStatusResponse {
+  valid: boolean;
+  missing: ConsentId[];
+  required: ConsentRequirement[];
+}
+
+/** POST /api/users/me/deletion-request (FR-108). 메일은 화면이 mailto로 연다(서버는 보내지 않는다) */
+export interface DeletionRequestResponse {
+  /** YJD-XXXX-XXXX-XXXX. 본인 확인 수단이라 화면 밖에 남기지 않는다 */
+  code: string;
+  expiresAt: string;
+  mail: { to: string; subject: string; body: string };
+  mailto: string;
 }
 
 export interface CursorPage<T> {
