@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http } from 'msw'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { keys, type SessionResponse } from '../../api'
 import { db } from '../../mocks/data'
 import { server } from '../../mocks/server'
@@ -25,6 +25,17 @@ function record(method: 'post', path: string) {
 
 const button = (name: string | RegExp) => screen.getByRole('button', { name })
 const checkbox = (name: string | RegExp) => screen.getByRole('checkbox', { name })
+
+// lazy 화면을 미리 변환해 둔다(전체 실행 중 첫 테스트가 findBy 기본 1초를 넘기지 않게)
+beforeAll(async () => {
+  await Promise.all([
+    import('./pages/LoginPage'),
+    import('./pages/NicknamePage'),
+    import('./pages/TermsPage'),
+    import('./pages/SignupWalletPage'),
+    import('./pages/ReconsentPage'),
+  ])
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
