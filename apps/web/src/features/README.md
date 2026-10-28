@@ -55,7 +55,9 @@ export const routes: AppRoute[] = [
 ## 화면 틀
 
 - 셸 밖 화면은 DS `Screen` + `TopHeader(type="back"|"logo")`로 직접 조립한다.
-- `trip` 레이아웃 페이지는 셸(`Screen` + `TopHeader` group + `BottomNav`) 안 본문만 그린다. 셸은 거터가 없으니 페이지가 `px-gutter`를 붙인다.
+- `trip` 레이아웃 페이지는 셸(DS `ShellApp`: 그룹 드롭다운 · 그룹원 패널 · 하단 탭 포함) 안 본문만 그린다. 셸은 거터가 없으니 페이지가 `px-gutter`를 붙인다(첫 블록 위 8은 셸).
+- 셸 하단 CTA(탭 위 Button Primary L)는 `useShellCta({ label: '여정 시작', onClick })`(`app/shellCta`). 라벨은 문자열, null이면 없음, 페이지를 떠나면 지워진다.
+- 셸 밖 화면은 `ShellSub`(지갑·마이·서브페이지) · `ShellOnboarding`(인증)을 쓴다(`ds/README.md` 「셸 사용 규칙」).
 - 상태 화면: `LoadingScreen`(셸 안은 `inset`) · `ErrorScreen` · `NotFoundScreen` (`app/states`).
 - 설명형 마이크로카피 금지. 문구는 화면명세 0-9.
 
