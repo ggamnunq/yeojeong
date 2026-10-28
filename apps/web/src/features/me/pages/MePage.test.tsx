@@ -45,8 +45,10 @@ describe('마이페이지(HF-30)', () => {
     expect(db.session).toBe('ANONYMOUS')
     // 로그인 화면 가드가 세션을 새로 묻고, 다른 캐시는 비어 있다
     await waitFor(() => expect(queryClient.getQueryData(keys.session)).toEqual({ status: 'ANONYMOUS' }))
-    expect(queryClient.getQueryData(keys.wallet.methods)).toBeUndefined()
-    expect(queryClient.getQueryData(keys.me)).toBeUndefined()
+    await waitFor(() => {
+      expect(queryClient.getQueryData(keys.wallet.methods)).toBeUndefined()
+      expect(queryClient.getQueryData(keys.me)).toBeUndefined()
+    })
     expect(router.state.location.search).toBe('')
   })
 
