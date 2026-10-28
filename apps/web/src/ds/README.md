@@ -55,6 +55,20 @@ Figma 「여정」 v1.3 디자인 시스템을 코드로 옮긴 것. 원본 문�
 - 아이콘을 추가하려면 Figma 이름을 키로 `ICONS`에 넣고 `icons.test.ts`의 목록도 같이 고친다.
 - `Brand/KakaoSymbol`은 카카오 공식 리소스 PNG(`Icon/kakao-symbol.png`)라 `KakaoSymbol`이 data URI 이미지로 그린다.
 
+## 데이터 컴포넌트 (Figma v1.4 기준)
+
+Avatar · AvatarStack · AvatarToggle · PaymentRow · DateHeader · TimelineItem · StatCard · BudgetProgress · SettlementRow · TransferRow · ListItem · Callout · EmptyState · SheetContent/PaymentDetail(`SheetContentPaymentDetail`).
+
+- **순수 로직은 `<Name>/rules.ts`**(프사 폴백·스택 overflow·예산 상태·정산 부호·1인 금액). 컴포넌트 파일에는 컴포넌트만 둔다(fast refresh). 테스트는 rules 위주.
+- **사람 한 명 = `AvatarPerson`**(`name`·`src`·`source`·`color`·`joinOrder`·`me`·`left`). 행·스택·토글은 이 모양을 받는다. 스택 순서는 넘긴 배열 그대로(나 먼저 → 가입 순).
+- **프사 규칙(spec 7-2)**: `src`가 있으면 사진 → 없으면 「여정」 기본 이미지(`Avatar/default-image.svg`, Figma `Avatar/DefaultImage` Color=Gray를 SVG로 내보낸 것) → 사진 로딩 실패(`onError`)면 이니셜. 이니셜 색은 `color` 또는 `joinOrder`(Violet → Sunset → Green → Blue → Amber → Gray). 나·나간 멤버는 접근성 이름에 「(나)」「(나간 멤버)」가 붙고, 화면에는 「나」 배지(SettlementRow `me`)·Tag `left`를 같이 쓴다.
+- **외부 프사(카카오)**: 운영 CSP가 `img-src 'self' data:`라서 지금은 외부 URL 사진이 막힌다(→ 이니셜로 떨어짐). 카카오 로그인을 붙일 때 `public/_headers`의 `img-src`에 카카오 프사 CDN 호스트(예: `https://k.kakaocdn.net`, 실제 응답의 호스트를 확인)를 추가해야 한다. 카탈로그는 로컬 플레이스홀더(`src/catalog/photos/`)를 쓴다.
+- **금액**: `formatKrw(n)` → `₩1,284,000`, 음수는 U+2212 `−₩28,400`, `{ sign: 'always' }` → `+₩161,000`. 다른 통화는 `formatMoney(n, 'JPY')`. 받을 돈·보낼 돈은 색(`text-amount-receive|send`)만이 아니라 부호와 라벨(받을 돈 / 보낼 돈 / 정산 끝)을 항상 같이 쓴다.
+- **Figma `Style` 속성**(TimelineItem·Callout)은 HTML `style`과 이름이 겹친다. `type`/`htmlType`과 같은 규칙으로 Figma 쪽이 `style` 이름을 쓰고, 이 컴포넌트들은 HTML `style` 속성을 받지 않는다.
+- 탭하는 행(PaymentRow · TimelineItem 카드 · SettlementRow · ListItem · onClick 있는 Callout)은 `<button>`이고 Pressed는 `:active`. ListItem `value`와 onClick 없는 Callout은 `div`.
+- 글자 예외(Figma에 텍스트 스타일 없음): Avatar 이니셜 XS `text-[10px]` · XL `text-[24px]`, AvatarStack +N 칩 XS `text-[9px]`(S는 Tag와 같은 11px). 원통화 금액·타임라인 시각은 `font-amount text-caption font-medium`(IBM Plex Sans KR 500, `styles/fonts.css`).
+- EmptyState 일러스트는 Figma 세트의 Icons8 컬러 PNG 대신 DS v1.4 `Illust/Empty-Trip`(24:61381)을 토큰 색 SVG로 그린다.
+
 ## DS가 바뀌었을 때
 
 1. Figma에서 `docs/design/design-system/*.json`이 다시 나오면 `pnpm --filter @yeojeong/web ds:tokens` 후 `tokens.json`·`tokens.css` 변경을 커밋한다. 텍스트·이펙트 스타일이 바뀌었으면 `design-tokens/styles.json`을 고친다.

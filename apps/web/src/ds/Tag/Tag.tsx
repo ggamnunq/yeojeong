@@ -3,8 +3,8 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { Icon } from '../Icon/Icon'
 import type { IconName } from '../Icon/icons'
 
-// Figma Tag(24:7086) · Type × Size. 비대화형 라벨. Shared는 레거시(공동 결제는 AvatarStack).
-export type TagType = 'shared' | 'personal' | 'pending' | 'duplicate' | 'refund' | 'left'
+// Figma Tag(24:7086) · Type × Size. 비대화형 라벨. Shared는 레거시(공동 결제는 AvatarStack). Changed는 v1.4(미확정과 같은 중립 회색).
+export type TagType = 'shared' | 'personal' | 'pending' | 'duplicate' | 'refund' | 'left' | 'changed'
 export type TagSize = 'm' | 's'
 
 export type TagProps = Omit<HTMLAttributes<HTMLSpanElement>, 'children'> & {
@@ -22,6 +22,7 @@ const TYPE: Record<TagType, { icon: IconName | null; label: string; color: strin
   duplicate: { icon: 'copy', label: '중복 의심', color: 'bg-feedback-error-bg text-feedback-error-fg' },
   refund: { icon: 'refresh', label: '환불', color: 'bg-feedback-info-bg text-feedback-info-fg' },
   left: { icon: 'logout', label: '나간 멤버', color: 'bg-muted text-secondary' },
+  changed: { icon: null, label: '변경됨', color: 'bg-expense-pending-bg text-expense-pending-fg' },
 }
 
 // S는 Figma에서 11px(텍스트 스타일 없음)이다
