@@ -35,6 +35,8 @@ export abstract class SessionResolver {
 // 세션 토큰은 32바이트 난수의 base64url(43자)
 const SESSION_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const LAST_SEEN_INTERVAL_MS = 60 * 60_000;
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function readCookie(req: Request, name: string): string | undefined {
   const header = req.headers.cookie;
@@ -85,10 +87,11 @@ export class SessionService extends SessionResolver {
 
   /** 가입 대기 쿠키의 SignupTicket id(서명·만료가 맞을 때만) */
   signupTicketId(req: Request): string | null {
-    return this.config.signer.verify<string>(
+    const id = this.config.signer.verify<unknown>(
       SIGNUP_PURPOSE,
       readCookie(req, SIGNUP_COOKIE),
     );
+    return typeof id === 'string' && UUID.test(id) ? id : null;
   }
 
   async resolve(req: Request, res: Response): Promise<SessionState> {

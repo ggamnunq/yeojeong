@@ -4,3 +4,6 @@ supabase_organization_id   = "supabase-org-slug"
 github_repository_id       = "123456789"
 github_repository_owner_id = "12345678"
 cloudflare_account_id      = "0123456789abcdef0123456789abcdef"
+# 카카오디벨로퍼스 앱 「여정」 > 앱 > 플랫폼 키 > REST API 키 / 클라이언트 시크릿(카카오 로그인). 커밋하지 않는다.
+kakao_client_id     = "0123456789abcdef0123456789abcdef"
+kakao_client_secret = "..."
