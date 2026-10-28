@@ -1,10 +1,13 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
-import { db, EDGE_EXPENSE_IDS, MEMBER, TRIP } from '../../mocks/data'
+import { db, EDGE_EXPENSE_IDS, MEMBER, TRIP, USER } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { renderApp } from '../../test/render'
 import type { TripSummary } from '../settlement/types'
+
+// 앱 전체(가드·셸·lazy 화면)를 여는 테스트라 CI·부하가 큰 환경에서 1초 기본 대기가 모자랄 수 있다(이 파일에만 적용)
+configure({ asyncUtilTimeout: 5000 })
 
 const path = (router: ReturnType<typeof renderApp>['router']) => router.state.location.pathname
 
@@ -115,6 +118,15 @@ describe('현황(HF-22) 수치', () => {
     expect(subin.textContent).toContain('수빈')
     expect(subin.textContent).toContain('나간 멤버')
     expect(subin.textContent).toContain('₩81,625')
+  })
+
+  it('탈퇴한 멤버는 "탈퇴한 멤버", 태그 없음', async () => {
+    specSample()
+    db.memberships.find((m) => m.membershipId === MEMBER.subin)!.leftAt = '2026-11-13T12:00:00+09:00'
+    db.users = db.users.filter((u) => u.id !== USER.subin)
+    await openStats()
+    const gone = within(region('멤버별 부담')).getAllByRole('listitem')[3]
+    expect(gone.textContent).toBe('탈퇴한 멤버₩81,625')
   })
 
   it('불러오지 못하면 다시 시도', async () => {

@@ -7,8 +7,9 @@ import type { SettlementMemberExpenses, SettlementMemberView, SettlementView } f
 // GET …/settlement · GET …/settlement/members/:membershipId/expenses (기능명세 6-3, FR-702~705).
 // 서버는 종료 시 스냅샷을 저장하지만 목은 db에서 매번 같은 식(4-4)으로 계산한다(종료 후에는 결제가 잠겨 값이 같다).
 
-// 개발 서버(브라우저)에서는 처음부터 제주 정산 샘플을 넣는다. 테스트는 정산·현황 API가 불릴 때 넣는다(다른 플로우 테스트에 영향 없음)
-if (import.meta.env.MODE !== 'test') seedJejuSettlement()
+// 개발 서버(브라우저)에서는 처음부터 제주 정산 샘플 + 탈퇴한 멤버 케이스를 넣는다.
+// 테스트는 정산·현황 API가 불릴 때 기본 샘플만 넣는다(다른 플로우 테스트에 영향 없음, 명세 수치 그대로)
+if (import.meta.env.MODE !== 'test') seedJejuSettlement({ withdrawn: true })
 
 const phaseInvalid = () => mockError('TRIP_PHASE_INVALID')
 

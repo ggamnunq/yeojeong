@@ -9,7 +9,7 @@ import { Avatar, BadgeMe, formatKrw, Icon, orderMembers, PaymentRow, ShellSub, T
 import { settlementMemberQuery } from '../api'
 import type { SettlementMemberExpenses, SettlementView } from '../types'
 import { CardsSkeleton, InlineError, SectionLabel } from '../ui'
-import { originalAmountText, paymentDateMeta, settlementText, toPerson } from '../view'
+import { memberState, originalAmountText, paymentDateMeta, settlementText, toPerson } from '../view'
 
 // WF-26·44 / HF-26 멤버별 결제 내역(Sub 셸, 내비 없음). 영웅 = 그 사람의 ±(받을 돈·보낼 돈) + 프사,
 // 공동 결제 n건(PaymentRow, 탭 → 결제 상세 시트), 개인 결제는 남이면 건수만 "비공개"(C-02), 본인이면 목록.
@@ -42,7 +42,7 @@ export default function SettlementMemberPage() {
     ?.members.find((m) => m.member.membershipId === membershipId)
   const data = detail.data
   const member = data?.member ?? cached?.member ?? trip.members.find((m) => m.membershipId === membershipId)
-  const left = Boolean(data ? data.isLeft || data.member.isLeft : cached ? cached.isLeft || cached.member.isLeft : false)
+  const { left } = member ? memberState(member, data?.isLeft ?? cached?.isLeft) : { left: false }
 
   return (
     <ShellSub

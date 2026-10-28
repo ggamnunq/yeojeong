@@ -86,19 +86,49 @@ const jejuExpenses: MockExpense[] = [
   jejuExpense('jeju-subin-starbucks', '22T08:40', '스타벅스 제주용담점', JEJU.subin, 12_400, null),
 ]
 
+/**
+ * 탈퇴한 멤버(FR-109) 케이스: 사용자 행이 없는 멤버십 → memberSummary가 "탈퇴한 멤버" · 프사 null(서버 S2C와 같음).
+ * 공동 결제 1건을 5명이 나눠 정산 대상(M)에 남는다. 넣으면 N = 5가 되어 명세 수치(N빵 ₩206,728)와 달라지므로 따로 넣는다.
+ */
+export const JEJU_WITHDRAWN = 'mem-jeju-withdrawn'
+
+const withdrawnMembership: MockMembership = {
+  membershipId: JEJU_WITHDRAWN,
+  tripId: TRIP.jeju,
+  userId: 'user-withdrawn',
+  role: 'MEMBER',
+  joinOrder: 5,
+  leftAt: '2026-08-22T21:00:00+09:00',
+}
+const withdrawnExpense = jejuExpense('jeju-hamdeok', '22T15:30', '함덕 카페 델문도', JEJU_WITHDRAWN, 24_000, [...ALL, JEJU_WITHDRAWN])
+
 // db는 테스트마다 새 객체로 바뀐다(resetMockDb). 여정 객체 단위로 한 번만 넣는다
 const seeded = new WeakSet<MockTrip>()
+const seededWithdrawn = new WeakSet<MockTrip>()
 
-/** 제주(종료) 여정에 정산 샘플을 넣는다. 같은 db에는 한 번만(테스트가 지운 결제를 되살리지 않는다) */
-export function seedJejuSettlement() {
+const pushMembership = (m: MockMembership) => {
+  if (!db.memberships.some((x) => x.membershipId === m.membershipId)) db.memberships.push(structuredClone(m))
+}
+const pushExpense = (e: MockExpense) => {
+  if (!db.expenses.some((x) => x.id === e.id)) db.expenses.push(structuredClone(e))
+}
+
+/**
+ * 제주(종료) 여정에 정산 샘플을 넣는다. 같은 db에는 한 번만(테스트가 지운 결제를 되살리지 않는다).
+ * withdrawn: 탈퇴한 멤버 케이스도 넣는다(개발 서버 기본값, 테스트는 필요할 때만)
+ */
+export function seedJejuSettlement({ withdrawn = false } = {}) {
   const trip = findTrip(TRIP.jeju)
-  if (!trip || seeded.has(trip)) return
-  seeded.add(trip)
-  for (const m of jejuMemberships) {
-    if (!db.memberships.some((x) => x.membershipId === m.membershipId)) db.memberships.push(structuredClone(m))
+  if (!trip) return
+  if (!seeded.has(trip)) {
+    seeded.add(trip)
+    jejuMemberships.forEach(pushMembership)
+    jejuExpenses.forEach(pushExpense)
   }
-  for (const e of jejuExpenses) {
-    if (!db.expenses.some((x) => x.id === e.id)) db.expenses.push(structuredClone(e))
+  if (withdrawn && !seededWithdrawn.has(trip)) {
+    seededWithdrawn.add(trip)
+    pushMembership(withdrawnMembership)
+    pushExpense(withdrawnExpense)
   }
 }
 

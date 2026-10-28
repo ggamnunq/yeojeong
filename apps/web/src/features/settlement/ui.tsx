@@ -4,13 +4,21 @@ import { Button } from '../../ds'
 
 // 현황·정산 화면이 같이 쓰는 작은 조각(하이파이 패턴: 섹션 라벨 · 화면 오류 · 스켈레톤).
 
-/** 섹션 라벨(Body/S Strong · text/secondary). 화면 구조상 h2 */
-export function SectionLabel({ id, children, className }: { id?: string; children: ReactNode; className?: string }) {
+type SectionLabelProps = { id?: string; children: ReactNode; className?: string; level?: 2 | 3 }
+
+/** 섹션 라벨(Body/S Strong · text/secondary). 탭 화면은 숨은 탭 제목(h2) 아래라 h3, 서브 화면은 h2 */
+export function SectionLabel({ id, children, className, level = 2 }: SectionLabelProps) {
+  const Heading = level === 3 ? 'h3' : 'h2'
   return (
-    <h2 id={id} className={clsx('text-body-s-strong text-secondary', className)}>
+    <Heading id={id} className={clsx('text-body-s-strong text-secondary', className)}>
       {children}
-    </h2>
+    </Heading>
   )
+}
+
+/** 탭 화면 제목. 화면에는 하단 탭이 보이니 숨기고 화면리더에만(헤더 h1 = 그룹명) */
+export function TabTitle({ children }: { children: ReactNode }) {
+  return <h2 className="sr-only">{children}</h2>
 }
 
 /** 화면 오류(0-6): "불러오지 못했어요" + 「다시 시도」 */

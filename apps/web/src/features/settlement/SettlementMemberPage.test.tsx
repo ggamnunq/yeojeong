@@ -1,8 +1,11 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { db, MEMBER, TRIP } from '../../mocks/data'
 import { renderApp } from '../../test/render'
 import { JEJU, seedJejuSettlement } from './mockData'
+
+// 앱 전체(가드·셸·lazy 화면)를 여는 테스트라 CI·부하가 큰 환경에서 1초 기본 대기가 모자랄 수 있다(이 파일에만 적용)
+configure({ asyncUtilTimeout: 5000 })
 
 const path = (router: ReturnType<typeof renderApp>['router']) => router.state.location.pathname
 

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { db, TRIP } from '../../mocks/data'
@@ -6,6 +6,9 @@ import { server } from '../../mocks/server'
 import { mockError } from '../../mocks/utils'
 import { renderApp } from '../../test/render'
 import { JEJU, seedJejuSettlement } from './mockData'
+
+// 앱 전체(가드·셸·lazy 화면)를 여는 테스트라 CI·부하가 큰 환경에서 1초 기본 대기가 모자랄 수 있다(이 파일에만 적용)
+configure({ asyncUtilTimeout: 5000 })
 
 const path = (router: ReturnType<typeof renderApp>['router']) => router.state.location.pathname
 
@@ -72,6 +75,23 @@ describe('나간 멤버(HF-44)', () => {
     expect(subin.textContent).toContain('−₩67,795보낼 돈')
     fireEvent.click(subin)
     await waitFor(() => expect(path(router)).toBe(`/trips/trip-jeju/settlement/${JEJU.subin}`))
+  })
+
+  it('탈퇴한 멤버: 기본 아바타 + "탈퇴한 멤버", 태그 없음, 탭 불가', async () => {
+    seedJejuSettlement({ withdrawn: true })
+    const { router } = await openSettlement()
+    expect(rows()).toHaveLength(5)
+    const gone = rows()[4] as HTMLButtonElement
+    expect(gone.getAttribute('aria-label')).toBe('탈퇴한 멤버, 결제 ₩24,000, 부담 ₩4,800, 받을 돈 ₩19,200')
+    expect(gone.textContent).not.toContain('나간 멤버')
+    expect(gone.querySelector('[data-source]')?.getAttribute('data-source')).toBe('default')
+    expect(gone.querySelector('.grayscale')).toBeNull()
+    expect(gone.disabled).toBe(true)
+    fireEvent.click(gone)
+    expect(path(router)).toBe('/trips/trip-jeju/settlement')
+    // 나간 멤버(수빈)는 그대로 태그 + 탭 가능
+    expect(within(rows()[3]).getByText('나간 멤버')).toBeTruthy()
+    expect((rows()[3] as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('결제·부담이 없는 나간 멤버는 목록에서 빠진다(FR-705)', async () => {

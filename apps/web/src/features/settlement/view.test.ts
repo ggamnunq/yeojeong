@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { MemberSummary } from '../../api'
-import { kstDateTime, orderByMember, originalAmountText, paymentDateMeta, routeDate, settlementRowLabel, settlementText } from './view'
+import {
+  isWithdrawn,
+  kstDateTime,
+  memberState,
+  orderByMember,
+  originalAmountText,
+  paymentDateMeta,
+  routeDate,
+  settlementRowLabel,
+  settlementText,
+  toPerson,
+} from './view'
 
 const member = (nickname: string, joinOrder: number, extra: Partial<MemberSummary> = {}): MemberSummary => ({
   membershipId: `m-${nickname}`,
@@ -52,6 +63,18 @@ describe('원통화', () => {
     expect(originalAmountText('5960', 'JPY')).toBe('¥5,960')
     expect(originalAmountText('12.50', 'USD')).toBe('$12.50')
     expect(originalAmountText('1200', 'MYR')).toBe('1,200 MYR')
+  })
+})
+
+describe('나간 멤버 · 탈퇴한 멤버', () => {
+  it('나간 멤버는 흐림 + 태그, 탈퇴한 멤버는 둘 다 없음', () => {
+    expect(memberState(member('수빈', 4, { isLeft: true }))).toEqual({ withdrawn: false, left: true })
+    expect(memberState(member('수빈', 4), true)).toEqual({ withdrawn: false, left: true })
+    const gone = member('탈퇴한 멤버', 5, { isLeft: true })
+    expect(memberState(gone)).toEqual({ withdrawn: true, left: false })
+    expect(toPerson(gone).left).toBe(false)
+    // 같은 닉네임이어도 프사가 있으면 실제 사용자
+    expect(isWithdrawn({ nickname: '탈퇴한 멤버', profileImageUrl: 'https://k.kakaocdn.net/a.jpg' })).toBe(false)
   })
 })
 

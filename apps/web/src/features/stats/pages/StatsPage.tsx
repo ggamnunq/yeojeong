@@ -5,7 +5,7 @@ import { isApiError, keys, type BudgetState } from '../../../api'
 import { useTripDetail } from '../../../app/trip'
 import { formatKrw, RowMemberAmount } from '../../../ds'
 import type { TripSummary } from '../../settlement/types'
-import { CardsSkeleton, InlineError, SectionLabel } from '../../settlement/ui'
+import { CardsSkeleton, InlineError, SectionLabel, TabTitle } from '../../settlement/ui'
 import { orderByMember, toPerson } from '../../settlement/view'
 import { summaryQuery } from '../api'
 import { budgetFillPercent, budgetUsedPercent, heroOf } from '../rules'
@@ -23,9 +23,18 @@ export default function StatsPage() {
     if (phaseInvalid) void queryClient.invalidateQueries({ queryKey: keys.trips.detail(trip.tripId), exact: true })
   }, [phaseInvalid, queryClient, trip.tripId])
 
-  if (summary.isPending) return <CardsSkeleton blocks={2} rows={4} />
-  if (!summary.data) return <InlineError onRetry={() => void summary.refetch()} />
-  return <StatsContent summary={summary.data} />
+  return (
+    <>
+      <TabTitle>현황</TabTitle>
+      {summary.isPending ? (
+        <CardsSkeleton blocks={2} rows={4} />
+      ) : !summary.data ? (
+        <InlineError onRetry={() => void summary.refetch()} />
+      ) : (
+        <StatsContent summary={summary.data} />
+      )}
+    </>
+  )
 }
 
 function StatsContent({ summary }: { summary: TripSummary }) {
@@ -35,9 +44,9 @@ function StatsContent({ summary }: { summary: TripSummary }) {
     <div className="flex flex-col px-gutter pb-8">
       {/* 영웅 카드 · 브랜드(direction §5): StatCard Brand에서 아이콘·sub를 빼고 숫자를 Amount/XL로 */}
       <section aria-labelledby={heroId} className="flex flex-col gap-1 rounded-xl bg-brand p-6">
-        <h2 id={heroId} className="text-body-s-strong text-inverse">
+        <h3 id={heroId} className="text-body-s-strong text-inverse">
           {hero.label}
-        </h2>
+        </h3>
         <p className="font-amount text-amount-xl whitespace-nowrap text-inverse">{formatKrw(hero.amount)}</p>
       </section>
       <SharedBudget summary={summary} />
@@ -61,7 +70,7 @@ function SharedBudget({ summary }: { summary: TripSummary }) {
   return (
     <section aria-labelledby={id} className="flex flex-col gap-2.5 pt-8">
       <div className="flex items-center justify-between gap-2">
-        <SectionLabel id={id}>공동 지출</SectionLabel>
+        <SectionLabel id={id} level={3}>공동 지출</SectionLabel>
         {state === 'OVER' && over > 0 && <span className="text-caption whitespace-nowrap text-error">초과 {formatKrw(over)}</span>}
       </div>
       <p className="flex items-baseline gap-1.5 whitespace-nowrap">
@@ -92,7 +101,7 @@ function MySpending({ spending }: { spending: TripSummary['mySpending'] }) {
   const { totalKrw, sharedPct, personalPct } = spending
   return (
     <section aria-labelledby={id} className="flex flex-col gap-2.5 pt-7">
-      <SectionLabel id={id}>내 지출</SectionLabel>
+      <SectionLabel id={id} level={3}>내 지출</SectionLabel>
       <p className="font-amount text-amount-m whitespace-nowrap text-amount-default">{formatKrw(totalKrw)}</p>
       <div aria-hidden className="flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-budget-track">
         {sharedPct !== null && sharedPct > 0 && (
@@ -123,7 +132,7 @@ function Burdens({ burdens }: { burdens: TripSummary['burdens'] }) {
   const id = useId()
   return (
     <section aria-labelledby={id} className="flex flex-col gap-0.5 pt-7">
-      <SectionLabel id={id}>멤버별 부담</SectionLabel>
+      <SectionLabel id={id} level={3}>멤버별 부담</SectionLabel>
       <ul>
         {orderByMember(burdens).map((b) => (
           <li key={b.member.membershipId}>
