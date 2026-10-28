@@ -116,11 +116,15 @@ describe('결제내역 · 리스트(WF-18)', () => {
 
   it('종료된 여정: 배너·기간 외 진입 없이 목록만', async () => {
     renderApp(`/trips/${TRIP.jeju}/payments`)
-    expect(await screen.findByRole('button', { name: /돈사돈 흑돼지 본점/ })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: /돈사돈 본점/ })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /확인 필요/ })).toBeNull()
     expect(screen.queryByRole('button', { name: '기간 외 결제 추가' })).toBeNull()
     // KRW 결제는 원통화 줄이 없다
-    expect(screen.getByRole('button', { name: /돈사돈/ }).textContent).not.toContain('98000')
+    expect(screen.getByRole('button', { name: /돈사돈/ }).textContent).not.toContain('36400')
+    // 탈퇴한 멤버의 결제: 메타는 "탈퇴한 멤버", 나간 멤버 태그 없음
+    const withdrawn = screen.getByRole('button', { name: /함덕 카페 델문도/ })
+    expect(withdrawn.textContent).toContain('15:30 · 탈퇴한 멤버')
+    expect(withdrawn.textContent).not.toContain('나간 멤버')
   })
 
   it('시작 전 여정은 결제내역 탭이 잠겨 기본 탭으로 간다', async () => {
@@ -218,7 +222,7 @@ describe('결제내역 · 타임라인(WF-19)', () => {
   it('종료된 여정은 Day 1부터, 지금 노드 없음', async () => {
     renderApp(`/trips/${TRIP.jeju}/payments?view=timeline`)
     expect(await screen.findByRole('list', { name: 'Day 1 결제' })).toBeTruthy()
-    await waitFor(() => expect(timelineNames()).toEqual(['제주 렌터카 공항점']))
+    await waitFor(() => expect(timelineNames()[0]).toBe('제주 렌터카 공항점'))
     expect(screen.queryByText('지금')).toBeNull()
     expect((screen.getByRole('button', { name: 'Day 3' }) as HTMLButtonElement).disabled).toBe(false)
   })

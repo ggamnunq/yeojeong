@@ -1,3 +1,4 @@
+import type { ErrorCode } from '@yeojeong/shared'
 import { http, HttpResponse, type HttpHandler } from 'msw'
 import type { EditBlockReason } from '../../api'
 import { splitEvenly } from '../../ds'
@@ -8,12 +9,12 @@ import {
   MEMBER,
   memberSummary,
   MOCK_NOW,
-  TRIP,
   visibleExpenses,
   type MockExpense,
   type MockMembership,
 } from '../../mocks/data'
 import { mockError, requireMember } from '../../mocks/utils'
+import { seedJejuSettlement } from '../settlement/mockData'
 import { clock } from './clock'
 import type { ExpenseRow, ExpensesPage, OutOfPeriodCandidate, PaymentDetail } from './types'
 
@@ -23,78 +24,13 @@ import type { ExpenseRow, ExpensesPage, OutOfPeriodCandidate, PaymentDetail } fr
 // 목 세계의 "지금"은 샘플 시점(11.13 18:34)이다 — 타임라인 지금 노드 시각이 샘플과 맞게
 clock.now = () => Date.parse(MOCK_NOW)
 
-// 서버 기본 문구(@yeojeong/shared ERRORS 도메인 코드 — web 쪽 shared에 아직 없어 status·문구를 직접 준다)
-const ERR = {
-  TRIP_PHASE_INVALID: [409, '지금 단계에서는 할 수 없어요'],
-  VERSION_CONFLICT: [409, '다른 곳에서 바뀌었어요'],
-  NOT_PAYER: [403, '결제한 사람만 바꿀 수 있어요'],
-  EXPENSE_LOCKED: [409, '변경할 수 없는 결제예요'],
-  PARTICIPANTS_REQUIRED: [400, '함께 낼 사람을 골라 주세요'],
-  PARTICIPANT_NOT_MEMBER: [400, '함께 낼 수 없는 사람이 있어요'],
-  SHARED_IN_OTHER_TRIP: [409, '다른 여정에서 공동으로 정한 결제예요'],
-  SHARED_TO_PERSONAL_CONFIRM_REQUIRED: [409, '개인 결제로 바꿀지 확인해 주세요'],
-  OUT_OF_PERIOD_CANDIDATE_INVALID: [400, '추가할 수 없는 결제가 있어요'],
-  DUPLICATE_NOT_FLAGGED: [409, '중복 의심 결제가 아니에요'],
-  CONNECTION_EXPIRED: [409, '토스 연결이 만료됐어요'],
-} as const
-
-export const fail = (code: keyof typeof ERR, details?: Record<string, unknown>) =>
-  mockError(code, ERR[code][0], details, ERR[code][1])
+/** 서버 에러 형식. status·문구는 @yeojeong/shared ERRORS(도메인 코드 포함) 기본값 */
+export const fail = (code: ErrorCode, details?: Record<string, unknown>) => mockError(code, undefined, details)
 
 // ── 종료된 여정 샘플(제주, WF-39 잠금 · 탈퇴한 멤버) ─────────────────
-// 중앙 샘플에는 종료 여정 결제가 없어서 결제 핸들러가 처음 불릴 때 넣는다(db를 되돌리면 다시 넣는다).
-// 탈퇴한 멤버 = 멤버십은 남고 계정(userId)이 없는 사람(서버 WITHDRAWN_NICKNAME "탈퇴한 멤버").
-
-const JEJU_WITHDRAWN: MockMembership = {
-  membershipId: 'mem-jeju-withdrawn',
-  tripId: TRIP.jeju,
-  userId: 'user-withdrawn',
-  role: 'MEMBER',
-  joinOrder: 3,
-  leftAt: '2026-09-01T10:00:00+09:00',
-}
-const JEJU_ALL = ['mem-jeju-junyong', 'mem-jeju-taehyeon', JEJU_WITHDRAWN.membershipId]
-
-const jeju = (
-  id: string,
-  at: string,
-  merchantName: string,
-  payer: string,
-  status: MockExpense['status'],
-  krw: number,
-  pm: string,
-): MockExpense => ({
-  id,
-  tripId: TRIP.jeju,
-  occurredAt: `2026-08-${at}:00+09:00`,
-  merchantName,
-  payerMembershipId: payer,
-  status,
-  krwAmount: krw,
-  grossKrwAmount: krw,
-  originalAmount: String(krw),
-  originalCurrency: 'KRW',
-  participantMembershipIds: status === 'SHARED' ? JEJU_ALL : null,
-  changed: false,
-  duplicateGroupId: null,
-  refunds: [],
-  origin: 'AUTO',
-  paymentMethodId: pm,
-  version: 3,
-})
-
-const JEJU_EXPENSES = [
-  jeju('exp-jeju-rentcar', '21T10:20', '제주 렌터카 공항점', 'mem-jeju-taehyeon', 'SHARED', 184_200, 'pm-other'),
-  jeju('exp-jeju-noodle', '22T13:00', '올레국수 본점', JEJU_WITHDRAWN.membershipId, 'SHARED', 27_000, 'pm-other'),
-  jeju('exp-jeju-heukdwaeji', '22T19:10', '돈사돈 흑돼지 본점', 'mem-jeju-junyong', 'SHARED', 98_000, 'pm-shinhan'),
-  jeju('exp-jeju-cafe', '23T12:30', '카페 델문도', 'mem-jeju-junyong', 'PERSONAL', 12_500, 'pm-toss-check'),
-  jeju('exp-jeju-dutyfree', '23T15:00', '제주공항 면세점', 'mem-jeju-taehyeon', 'SHARED', 43_000, 'pm-other'),
-]
-
-export function ensureSeed() {
-  if (!db.memberships.some((m) => m.membershipId === JEJU_WITHDRAWN.membershipId)) db.memberships.push({ ...JEJU_WITHDRAWN })
-  if (!db.expenses.some((e) => e.tripId === TRIP.jeju)) db.expenses.push(...structuredClone(JEJU_EXPENSES))
-}
+// 중앙 샘플에는 종료 여정 결제가 없다. 현황·정산 목(W4F)이 넣는 제주 정산 샘플(탈퇴한 멤버 포함)을 같이 써서
+// 결제내역과 정산이 같은 장부를 본다. 결제 핸들러가 처음 불릴 때 넣고, db를 되돌리면 다시 넣는다.
+export const ensureSeed = () => seedJejuSettlement({ withdrawn: true })
 
 // ── 변경 이력 상태(서버 firstSharedAt · 중복 해제 기록) ──────────────
 // db.expenses 배열·항목은 되돌릴 때마다 새로 만들어지므로 WeakMap/WeakSet이면 함께 초기화된다.

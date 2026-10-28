@@ -231,16 +231,17 @@ describe('분담 변경(HF-31~39)', () => {
   })
 
   it('종료 후 잠금(HF-39): 내 공동 결제 — 결제 "나", 결제수단 포함, 비활성 "변경 불가"', async () => {
-    const { sheet } = await openFromList(/돈사돈/, `/trips/${TRIP.jeju}/payments`)
-    expect(sheet.textContent).toContain('08.22 19:10 · 신한카드 1102')
+    const { sheet } = await openFromList(/돈사돈 본점/, `/trips/${TRIP.jeju}/payments`)
+    expect(sheet.textContent).toContain('08.21 13:10 · 토스뱅크 체크카드 1934')
+    expect(sheet.textContent).toContain('₩9,100')
     expect(within(sheet).getByText('결제').closest('dl')!.textContent).toContain('나')
     expect((within(sheet).getByRole('button', { name: '변경 불가' }) as HTMLButtonElement).disabled).toBe(true)
     expect(within(sheet).queryByRole('radiogroup')).toBeNull()
   })
 
   it('종료 후 내 개인 결제: 금액 · 상세 줄 · 변경 불가만', async () => {
-    const { sheet } = await openFromList(/카페 델문도/, `/trips/${TRIP.jeju}/payments`)
-    expect(sheet.textContent).toContain('₩12,500')
+    const { sheet } = await openFromList(/기념품 숍 바람/, `/trips/${TRIP.jeju}/payments`)
+    expect(sheet.textContent).toContain('₩79,420')
     expect(within(sheet).queryByText('결제')).toBeNull()
     expect(within(sheet).getByRole('button', { name: '변경 불가' })).toBeTruthy()
   })
@@ -253,11 +254,11 @@ describe('분담 변경(HF-31~39)', () => {
   })
 
   it('탈퇴한 멤버: 회색 기본 아바타 + "탈퇴한 멤버", 나간 멤버 태그 없음', async () => {
-    const { sheet } = await openFromList(/올레국수/, `/trips/${TRIP.jeju}/payments`)
+    const { sheet } = await openFromList(/함덕 카페 델문도/, `/trips/${TRIP.jeju}/payments`)
     const card = within(sheet).getByText('결제').closest('dl')!
     expect(card.textContent).toContain('탈퇴한 멤버')
     expect(card.textContent).not.toContain('나간 멤버')
-    expect(within(sheet).getByRole('img', { name: /부담 인원 나, 태현 외 1명/ })).toBeTruthy()
+    expect(within(sheet).getByRole('img', { name: '부담 인원 나, 태현 외 3명' })).toBeTruthy()
   })
 })
 
