@@ -20,6 +20,11 @@ export function originLock(secret: string) {
   const expected = digest(secret);
 
   return (req: Request, res: Response, next: NextFunction) => {
+    // Scheduler는 Cloud Run URL을 직접 호출한다. 뒤의 @InternalJob 가드가 OIDC를 검증한다.
+    if (req.path.startsWith('/api/internal/')) {
+      next();
+      return;
+    }
     const provided = req.headers[AUTH_HEADER];
     if (
       typeof provided !== 'string' ||

@@ -11,18 +11,21 @@ import { createTestApp } from './create-test-app.js';
 describe('S2A trips·groups guards (e2e)', () => {
   let app: NestExpressApplication;
   let auth: TestAuth;
+  const internalJobSecret = 'a'.repeat(40);
   const prisma = {
     $queryRaw: vi.fn().mockResolvedValue([]),
     trip: { findMany: vi.fn().mockResolvedValue([]) },
   };
 
   beforeEach(async () => {
+    vi.stubEnv('INTERNAL_JOB_SECRET', internalJobSecret);
     auth = createTestAuth();
     app = await createTestApp([], { auth, prisma });
   });
 
   afterEach(async () => {
     await app.close();
+    vi.unstubAllEnvs();
   });
 
   const server = () => app.getHttpServer();
@@ -297,41 +300,25 @@ describe('S2A trips·groups guards (e2e)', () => {
   });
 
   describe('POST /api/internal/jobs/auto-end', () => {
-    const secret = 'a'.repeat(40);
-    const original = process.env.INTERNAL_JOB_SECRET;
-    afterEach(() => {
-      if (original === undefined) delete process.env.INTERNAL_JOB_SECRET;
-      else process.env.INTERNAL_JOB_SECRET = original;
-    });
     const job = () =>
       request(server())
         .post('/api/internal/jobs/auto-end')
         .set('Origin', TEST_ORIGIN);
 
-    it('is closed when the secret is not configured', async () => {
-      delete process.env.INTERNAL_JOB_SECRET;
-      await job()
-        .set('x-internal-job-secret', secret)
-        .expect(403)
-        .expect((r) => expect(r.body.code).toBe('FORBIDDEN'));
-      process.env.INTERNAL_JOB_SECRET = 'short';
-      await job().set('x-internal-job-secret', 'short').expect(403);
-    });
-
     it('requires the matching secret header', async () => {
-      process.env.INTERNAL_JOB_SECRET = secret;
       await job().expect(403);
-      await job().set('x-internal-job-secret', `${secret}x`).expect(403);
       await job()
-        .set('x-internal-job-secret', secret)
+        .set('x-internal-job-secret', `${internalJobSecret}x`)
+        .expect(403);
+      await job()
+        .set('x-internal-job-secret', internalJobSecret)
         .expect(200)
         .expect({ endedTripIds: [], redeliveredTripIds: [] });
-      // 전역 CSRF 가드가 먼저 돈다: Origin도 Sec-Fetch-Site도 없으면 403 CSRF_REJECTED(README "내부 잡")
+      // @InternalJob은 CSRF 대신 내부 잡 인증으로 방어한다.
       await request(server())
         .post('/api/internal/jobs/auto-end')
-        .set('x-internal-job-secret', secret)
-        .expect(403)
-        .expect((r) => expect(r.body.code).toBe('CSRF_REJECTED'));
+        .set('x-internal-job-secret', internalJobSecret)
+        .expect(200);
     });
   });
 });

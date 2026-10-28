@@ -5,7 +5,7 @@
 | 메서드 | 경로                       | 권한                          | 하는 일                                                                    |
 | ------ | -------------------------- | ----------------------------- | -------------------------------------------------------------------------- |
 | DELETE | `/api/users/me`            | 로그인(재동의 전에도 가능)    | 본문 `{ "confirm": true }`. 탈퇴 파이프라인 → 204 + `yj_session` 쿠키 삭제 |
-| POST   | `/api/internal/jobs/purge` | 내부(`x-internal-job-secret`) | 본문 `{ "dryRun"?: boolean }`. 파기 배치 → 200 `PurgeJobResult`            |
+| POST   | `/api/internal/jobs/purge` | 내부(Cloud Scheduler OIDC) | 본문 `{ "dryRun"?: boolean }`. 파기 배치 → 200 `PurgeJobResult`            |
 
 공유 타입은 `@yeojeong/shared`의 `api/account.ts`(`DeleteAccountRequest`, `DELETED_MEMBER_NICKNAME`, `PurgeStep`, `PurgeJobResult`).
 
@@ -57,14 +57,14 @@
 ### 호출
 
 ```bash
-curl -X POST https://jinyeojeong.com/api/internal/jobs/purge \
+curl -X POST http://localhost:3000/api/internal/jobs/purge \
   -H "x-internal-job-secret: $INTERNAL_JOB_SECRET" \
-  -H 'Origin: https://jinyeojeong.com' -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' \
   -d '{"dryRun": true}'
 ```
 
-- `InternalJobGuard`(`internal-job.guard.ts`): 헤더가 env `INTERNAL_JOB_SECRET`(32자 이상)과 같아야 한다. 비어 있으면 모두 403. 다른 잡 모듈도 같은 헤더 이름을 쓴다.
-- 지금은 전역 CSRF 가드가 Origin 없는 POST를 막아 `Origin`을 붙여야 한다. 운영 Cloud Run은 origin lock 때문에 Worker를 거쳐야 한다(통합 과제 참고).
+- `@InternalJob()` 공통 가드: 운영은 Cloud Scheduler OIDC, 로컬·테스트는 `x-internal-job-secret` 대체 인증을 쓴다.
+- 위 시크릿 방식은 로컬·테스트 전용이다. 운영은 Cloud Scheduler OIDC만 허용한다.
 
 ## 감사 로그 (`src/audit`)
 
@@ -99,11 +99,11 @@ detail() {}
 
 ## 테스트
 
-- 단위: `retention-policy.spec.ts`(경계), `account-deletion.plan.spec.ts`(승계·익명화), `audit.*.spec.ts`, `internal-job.guard.spec.ts`.
+- 단위: `retention-policy.spec.ts`(경계), `account-deletion.plan.spec.ts`(승계·익명화), `audit.*.spec.ts`, `common/internal-job/*.spec.ts`.
 - e2e(실제 DB): `test/account.e2e-spec.ts`, `test/retention.e2e-spec.ts`, `test/audit.e2e-spec.ts`. `.env`의 `DATABASE_URL`이 없으면(CI) 건너뛴다. 파기 e2e는 그 DB에서 배치를 실제로 돌리므로 개발 DB 대신 별도 DB를 쓰는 것을 권한다.
 
 ## 통합 과제
 
 - `membership.left` 타입은 S2A `src/trips/events.ts`를 그대로 쓴다. 그쪽 주석의 DELETED(그룹 삭제)에 탈퇴도 포함되도록 고치고, 스키마 통합 때 사유를 `ACCOUNT_DELETED`/`GROUP_DELETED`로 나눈다.
-- 내부 잡: 전역 CSRF 가드 예외(내부 잡 경로), Cloud Scheduler 잡과 `INTERNAL_JOB_SECRET` 시크릿(Terraform), Worker 경유 또는 origin lock 예외. 명세 6-1의 OIDC 검증으로 바꿀 때 `InternalJobGuard`를 교체한다.
-- 로그 redact 목록(`common/logging/logger.ts`)에 `x-internal-job-secret` 추가.
+- 내부 잡: `@InternalJob()`이 전역 CSRF를 예외하고, Cloud Scheduler의 Google OIDC 토큰을 공통 가드가 검증한다. Worker는 경유하지 않는다.
+- 로그 redact 목록(`common/logging/logger.ts`)에 `x-internal-job-secret`가 포함된다.

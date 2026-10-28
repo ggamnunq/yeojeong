@@ -13,7 +13,7 @@ import { SummaryService } from './summary.service.js';
  * trips 모듈은 SettlementSnapshotService(preview·ensureSettlement)와 compute.ts의 computeSettlement를 쓴다.
  */
 @Module({
-  imports: [FxModule], // InternalJobGuard
+  imports: [FxModule],
   controllers: [SettlementsController, SettlementJobsController],
   providers: [SettlementSnapshotService, SettlementsService, SummaryService],
   exports: [SettlementSnapshotService],

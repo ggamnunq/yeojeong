@@ -16,6 +16,10 @@ import {
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter.js';
 import { createValidationPipe } from './common/errors/validation.js';
 import { LoggingModule } from './common/logging/logging.module.js';
+import {
+  InternalJobGuard,
+  InternalJobModule,
+} from './common/internal-job/index.js';
 import { DEFAULT_THROTTLE } from './common/throttle.js';
 import { AuthModule } from './auth/auth.module.js';
 import { ConsentsModule } from './consents/consents.module.js';
@@ -36,6 +40,7 @@ import { UsersModule } from './users/users.module.js';
     ThrottlerModule.forRoot([DEFAULT_THROTTLE]),
     PrismaModule,
     AuthCoreModule,
+    InternalJobModule,
     EventEmitterModule.forRoot(),
     // 기능 모듈은 아래에 한 줄씩 추가한다(apps/api/README.md "모듈 추가")
     HealthModule,
@@ -56,6 +61,7 @@ import { UsersModule } from './users/users.module.js';
     // 전역 가드는 이 순서대로 돈다. 순서를 바꾸지 않는다.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: InternalJobGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: ConsentGuard },
     { provide: APP_GUARD, useClass: MembershipGuard },

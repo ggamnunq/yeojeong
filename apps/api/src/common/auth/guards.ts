@@ -17,6 +17,7 @@ import {
   NotFoundError,
   UnauthenticatedError,
 } from '../errors/app-exception.js';
+import { IS_INTERNAL_JOB_KEY } from '../internal-job/internal-job.constants.js';
 import {
   IS_PUBLIC_KEY,
   REQUIRED_CONSENTS_KEY,
@@ -52,12 +53,17 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  */
 @Injectable()
 export class CsrfGuard implements CanActivate {
-  constructor(private readonly web: WebConfig) {}
+  constructor(
+    private readonly web: WebConfig,
+    private readonly reflector: Reflector,
+  ) {}
 
   canActivate(ctx: ExecutionContext): boolean {
     if (ctx.getType() !== 'http') return true;
     const req = ctx.switchToHttp().getRequest<Request>();
     if (!UNSAFE_METHODS.has(req.method)) return true;
+    if (metadata<boolean>(this.reflector, IS_INTERNAL_JOB_KEY, ctx))
+      return true;
 
     const origin = req.headers.origin;
     const allowed =

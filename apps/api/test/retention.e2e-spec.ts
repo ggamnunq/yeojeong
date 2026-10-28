@@ -3,7 +3,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { PurgeJobResult, PurgeStep } from '@yeojeong/shared';
 import request from 'supertest';
 import type { PrismaService } from './../src/prisma/prisma.service.js';
-import { INTERNAL_JOB_SECRET_HEADER } from './../src/retention/internal-job.guard.js';
+import { INTERNAL_JOB_SECRET_HEADER } from './../src/common/internal-job/index.js';
 import {
   createDbTestApp,
   createExpense,
@@ -41,7 +41,7 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
     vi.unstubAllEnvs();
   });
 
-  // Cloud Scheduler 호출 흉내. 전역 CSRF 가드 때문에 허용 Origin도 붙인다(src/retention/README.md "호출")
+  // 로컬 대체 시크릿으로 Cloud Scheduler 호출을 흉내 낸다.
   const purge = (body: object = {}, secret: string | null = SECRET) => {
     const req = request(app.getHttpServer())
       .post('/api/internal/jobs/purge')

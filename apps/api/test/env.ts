@@ -13,4 +13,5 @@ export const TEST_ENV = {
   TOKEN_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
   USER_REF_HMAC_KEY: 'test-user-ref-hmac-key-not-for-production-0',
   SUPPORT_EMAIL: 'support@jinyeojeong.com',
+  INTERNAL_JOB_SECRET: 'test-internal-job-secret-not-production-000',
 };

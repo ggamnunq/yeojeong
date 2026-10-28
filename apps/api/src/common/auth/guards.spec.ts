@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { AppException } from '../errors/app-exception.js';
+import { InternalJob } from '../internal-job/index.js';
 import type { AuthContext } from './auth-context.js';
 import type { ConsentChecker } from './consent-checker.js';
 import {
@@ -75,6 +76,7 @@ describe('CsrfGuard', () => {
         WEB_ORIGIN: 'http://localhost:5173',
       }),
     ),
+    new Reflector(),
   );
   const run = (req: Partial<Request>) => () =>
     guard.canActivate(context(req).ctx);
@@ -108,6 +110,14 @@ describe('CsrfGuard', () => {
   it('accepts a same-origin request without an Origin header', () => {
     expect(
       run({ method: 'POST', headers: { 'sec-fetch-site': 'same-origin' } })(),
+    ).toBe(true);
+  });
+
+  it('leaves @InternalJob authentication to the internal job guard', () => {
+    expect(
+      guard.canActivate(
+        context({ method: 'POST', headers: {} }, InternalJob()).ctx,
+      ),
     ).toBe(true);
   });
 });

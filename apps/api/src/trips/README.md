@@ -25,7 +25,7 @@
 | DELETE | `/api/groups/:groupId` | 그룹장 · 시작 전 | 204 | 403, 409 | 209 |
 | GET | `/api/invites/:code` | 로그인 · StrictThrottle | `InvitePreview` | 404 `INVITE_CODE_INVALID`, 403 `MEMBER_KICKED`, 409 `INVITE_TRIP_ENDED` | 203 |
 | POST | `/api/invites/:code/join` | 로그인 · StrictThrottle | 201 `JoinTripResponse` | 위 + 409 `ALREADY_MEMBER`·`MEMBER_LIMIT_EXCEEDED` | 204 |
-| POST | `/api/internal/jobs/auto-end` | 내부(`x-internal-job-secret`) | `AutoEndJobResponse` | 403 `FORBIDDEN` | 305 |
+| POST | `/api/internal/jobs/auto-end` | 내부(Cloud Scheduler OIDC) | `AutoEndJobResponse` | 403 `FORBIDDEN` | 305 |
 
 시작·종료·나가기는 행동이라 200, 만들기·참여는 201이다. 날짜는 KST 달력 날짜 `"2026-11-12"`, 시각은 `"2026-11-15T23:59:59+09:00"`.
 
@@ -84,9 +84,9 @@
 
 ## 내부 잡
 
-`POST /api/internal/jobs/auto-end`(Cloud Scheduler, 1분 주기 제안).
+`POST /api/internal/jobs/auto-end`(Cloud Scheduler, 5분 주기).
 
-- `@Public()` + `InternalJobGuard`: 헤더 `x-internal-job-secret`가 env `INTERNAL_JOB_SECRET`(32자 이상)과 같아야 한다. 비밀값이 없거나 짧으면 항상 403(fail closed). 명세 8-1의 OIDC 검증은 아니고, 다른 모듈의 같은 가드와 나중에 합친다.
+- `@InternalJob()`: 운영은 Scheduler OIDC 서명·audience·서비스 계정을 공통 가드에서 검증한다. 로컬·테스트만 `x-internal-job-secret`를 쓴다.
 - 전역 `CsrfGuard`가 먼저 돌아서 `Origin`도 `Sec-Fetch-Site: same-origin`도 없는 요청은 403 `CSRF_REJECTED`다. 공통 가드에서 `/api/internal/*`를 빼기 전까지 Scheduler는 `Sec-Fetch-Site: same-origin` 헤더를 함께 보낸다. 운영 origin lock(`x-origin-auth`)도 같은 문제라 공통 처리가 필요하다.
 - 한 번에 50건, 남으면 다음 실행이 잇는다. 여정 하나가 실패해도 나머지는 계속한다.
 

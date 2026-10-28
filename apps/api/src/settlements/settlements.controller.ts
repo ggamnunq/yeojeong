@@ -6,14 +6,8 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
-  UseGuards,
 } from '@nestjs/common';
-import {
-  ApiHeader,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type {
   SettlementMemberExpenses,
   SettlementRecomputeResult,
@@ -23,16 +17,12 @@ import type {
 } from '@yeojeong/shared';
 import {
   CurrentMembership,
-  Public,
   RequireRole,
   RequireTripStatus,
   type MembershipContext,
 } from '../common/auth/index.js';
 import { ApiErrorResponse, NotFoundError } from '../common/errors/index.js';
-import {
-  INTERNAL_JOB_SECRET_HEADER,
-  InternalJobGuard,
-} from '../fx/internal-job.guard.js';
+import { InternalJob } from '../common/internal-job/index.js';
 import {
   RecomputeSettlementDto,
   SettlementMemberExpensesDto,
@@ -126,9 +116,7 @@ export class SettlementsController {
 }
 
 @ApiTags('jobs')
-@ApiHeader({ name: INTERNAL_JOB_SECRET_HEADER, required: true })
-@Public()
-@UseGuards(InternalJobGuard)
+@InternalJob()
 @Controller('internal/jobs/settlements')
 export class SettlementJobsController {
   constructor(private readonly snapshots: SettlementSnapshotService) {}

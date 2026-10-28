@@ -7,14 +7,8 @@ import {
   Patch,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
-import {
-  ApiHeader,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type {
   FxJobResult,
   FxRateView,
@@ -23,7 +17,6 @@ import type {
 } from '@yeojeong/shared';
 import {
   CurrentMembership,
-  Public,
   RequireRole,
   RequireTripStatus,
   type MembershipContext,
@@ -43,10 +36,7 @@ import {
 import { FxJobService } from './fx-job.service.js';
 import { FxPolicyService } from './fx-policy.service.js';
 import { FxRatesService } from './fx-rates.service.js';
-import {
-  INTERNAL_JOB_SECRET_HEADER,
-  InternalJobGuard,
-} from './internal-job.guard.js';
+import { InternalJob } from '../common/internal-job/index.js';
 import { asOfFromQuery } from './kst.js';
 
 @ApiTags('fx')
@@ -104,9 +94,7 @@ export class FxController {
 }
 
 @ApiTags('jobs')
-@ApiHeader({ name: INTERNAL_JOB_SECRET_HEADER, required: true })
-@Public()
-@UseGuards(InternalJobGuard)
+@InternalJob()
 @Controller('internal/jobs')
 export class FxJobController {
   constructor(private readonly job: FxJobService) {}
