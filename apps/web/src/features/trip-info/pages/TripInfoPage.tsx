@@ -52,8 +52,8 @@ export default function TripInfoPage() {
   useShellCta(
     leader && trip.status === 'UPCOMING'
       ? periodOver
-        ? { label: '기간 수정', onClick: goToEdit }
-        : { label: '여정 시작', disabled: !permissions.canStart, onClick: () => setDialog('start') }
+        ? { label: '기간 수정', onClick: goToEdit, ...(permissions.canDeleteGroup && { secondary: { label: '그룹 삭제', onClick: () => setDialog('delete') } }) }
+        : { label: '여정 시작', disabled: !permissions.canStart, onClick: () => setDialog('start'), ...(permissions.canDeleteGroup && { secondary: { label: '그룹 삭제', onClick: () => setDialog('delete') } }) }
       : null,
   )
   const refreshTrip = () => queryClient.fetchQuery({ ...tripQuery(tripId), staleTime: 0 }).catch(() => undefined)
@@ -156,11 +156,6 @@ export default function TripInfoPage() {
 
       <div className="min-h-8 flex-1" />
 
-      {trip.status === 'UPCOMING' && permissions.canDeleteGroup && (
-        <div className="flex justify-center px-gutter pb-2">
-          <TextLink onClick={() => setDialog('delete')}>그룹 삭제</TextLink>
-        </div>
-      )}
       {trip.status === 'ONGOING' && permissions.canEnd && (
         <div className="flex flex-col items-center px-gutter pb-3">
           <TextLink onClick={() => void openEnd()} disabled={loadingPreview}>

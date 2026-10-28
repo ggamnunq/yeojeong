@@ -370,7 +370,7 @@ describe('재동의', () => {
     await waitFor(() => expect(where(router)).toBe('/reconsent?required=TOS&returnTo=%2Fme'))
 
     expect(await screen.findByRole('heading', { name: '약관이 바뀌었어요' })).toBeTruthy()
-    expect(await screen.findByText('서비스 이용 조건, 송금 없음, 정산은 참고 정보')).toBeTruthy()
+    expect(screen.queryByText('서비스 이용 조건, 송금 없음, 정산은 참고 정보')).toBeNull()
     expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['[필수] 서비스 이용약관'])
     expect(screen.queryByRole('button', { name: '뒤로 가기' })).toBeNull()
 

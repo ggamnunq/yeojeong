@@ -27,10 +27,10 @@ describe('멤버별 결제 내역(HF-26) · 가시성', () => {
     expect(hero.textContent).toContain('부담₩213,300')
 
     const shared = list(/공동 결제 3건/).getAllByRole('button')
-    // 여행 순서(occurredAt 오름차순)
-    expect(shared.map((r) => r.textContent?.split('08.')[0])).toEqual(['제주 렌터카 공항점', '우도 도항선', '동문재래시장'])
-    expect(shared[0].textContent).toContain('08.21 11:20 · 민지')
-    expect(shared[0].textContent).toContain('₩54,780')
+    // 최신순(occurredAt 내림차순)
+    expect(shared.map((r) => r.textContent?.split('08.')[0])).toEqual(['동문재래시장', '우도 도항선', '제주 렌터카 공항점'])
+    expect(shared[2].textContent).toContain('08.21 11:20 · 민지')
+    expect(shared[2].textContent).toContain('₩54,780')
 
     expect(screen.getByRole('heading', { name: '개인 결제 3건' })).toBeTruthy()
     expect(screen.getByText('비공개')).toBeTruthy()
@@ -44,7 +44,7 @@ describe('멤버별 결제 내역(HF-26) · 가시성', () => {
     expect(title().textContent).toBe('준용나')
     expect(screen.getByRole('region', { name: '받을 돈' }).textContent).toContain('+₩103,090')
     const shared = list(/공동 결제 4건/).getAllByRole('button')
-    expect(shared[0].textContent).toContain('08.21 13:10 · 내 결제')
+    expect(shared.at(-1)?.textContent).toContain('08.21 13:10 · 내 결제')
     const personal = list(/개인 결제 2건/).getAllByRole('button')
     expect(personal.map((r) => r.textContent?.includes('개인'))).toEqual([true, true])
     expect(personal[0].textContent).toContain('기념품 숍 바람')
@@ -81,7 +81,7 @@ describe('나간 멤버(HF-44)', () => {
 describe('이동', () => {
   it('결제 행 → 결제 상세 시트 주소', async () => {
     const { router } = await openMember(JEJU.minji)
-    fireEvent.click(list(/공동 결제/).getAllByRole('button')[0])
+    fireEvent.click(list(/공동 결제/).getAllByRole('button').at(-1)!)
     await waitFor(() => expect(path(router)).toBe('/trips/trip-jeju/payments/jeju-rentcar'))
   })
 
@@ -105,7 +105,7 @@ describe('이동', () => {
     db.trips.find((t) => t.tripId === TRIP.osaka)!.status = 'ENDED'
     await openMember(MEMBER.minji, TRIP.osaka)
     const first = list(/공동 결제/).getAllByRole('button')[0]
-    expect(first.textContent).toContain('난카이 라피트 간사이공항역')
-    expect(first.textContent).toContain('₩54,780¥5,960')
+    expect(first.textContent).toContain('우메다 스카이빌딩 공중정원')
+    expect(first.textContent).toContain('₩73,540¥8,000')
   })
 })

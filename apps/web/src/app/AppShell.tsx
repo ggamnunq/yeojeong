@@ -1,6 +1,6 @@
 import { Suspense, useState } from 'react'
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router'
-import { ShellApp, type BottomNavActive } from '../ds'
+import { BottomNav, Button, Screen, TopHeader, type BottomNavActive } from '../ds'
 import { GroupDropdown } from '../features/shell/GroupDropdown'
 import { MemberPanel } from '../features/shell/MemberPanel'
 import { useTripEventToasts } from '../features/shell/useTripEventToasts'
@@ -33,18 +33,24 @@ export function AppShell() {
 
   return (
     <ShellCtaContext value={setCta}>
-      <ShellApp
+      <Screen
+        background="surface"
         gutter={false}
-        cta={cta ?? undefined}
-        header={{
+        contentClassName="pt-2"
+        header={<TopHeader type="group" groupNameSize="h2" divider={false} {...{
           groupName: trip.groupName,
           dropdown: menuOpen ? 'open' : 'closed',
           onMenuClick: () => setPanelOpen(true),
           onGroupClick: () => setMenuOpen((open) => !open),
           onWalletClick: () => navigate(paths.wallet()),
           onMyClick: () => navigate(paths.me()),
-        }}
-        nav={{
+        }} />}
+        nav={<>
+          {cta && <div className="bg-surface px-gutter pt-3 pb-3">
+            <Button type="primary" size="l" className="w-full" label={cta.label} disabled={cta.disabled} htmlType={cta.htmlType} form={cta.form} onClick={cta.onClick} />
+            {cta.secondary && <button type="button" className="mt-2 w-full py-2 text-body-s text-secondary" onClick={cta.secondary.onClick}>{cta.secondary.label}</button>}
+          </div>}
+          <BottomNav {...{
           active: NAV_ORDER[activeIndex],
           phase: trip.status === 'ENDED' ? 'ended' : 'ongoing',
           locked: NAV_ORDER.filter((_, i) => tabs[i].locked),
@@ -52,12 +58,13 @@ export function AppShell() {
             const tab = tabs[NAV_ORDER.indexOf(active)]
             if (!tab.locked) navigate(paths.tripTab(trip.tripId, tab.tab))
           },
-        }}
+        }} />
+        </>}
       >
         <Suspense fallback={<LoadingScreen inset />}>
           <Outlet />
         </Suspense>
-      </ShellApp>
+      </Screen>
       <GroupDropdown open={menuOpen} onClose={() => setMenuOpen(false)} currentTripId={trip.tripId} />
       <MemberPanel open={panelOpen} onClose={() => setPanelOpen(false)} trip={trip} />
     </ShellCtaContext>

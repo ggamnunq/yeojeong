@@ -29,7 +29,7 @@ describe('HF-16 시작 전 여정 정보', () => {
     expect(main().getByText('B8N-4RT')).toBeTruthy()
     expect(button('여정 정보 수정')).toBeTruthy()
     expect(await screen.findByRole('button', { name: '여정 시작' })).toBeTruthy()
-    expect(button('그룹 삭제')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '그룹 삭제' })).toBeTruthy()
     // 시작 전에는 프사 줄 「추가」가 없다(HF-16)
     expect(button('추가')).toBeNull()
   })
