@@ -78,6 +78,8 @@
 - 쿠키가 제대로 동작하려면 화면과 API가 같은 사이트에 있어야 한다.
   - 적용됨: `https://jinyeojeong.com/api/*`를 Worker가 Cloud Run으로 프록시해서 화면과 같은 origin이다. CORS도 필요 없다.
 - 쿠키 인증을 쓰면 상태를 바꾸는 요청에 CSRF 방어를 붙인다. SameSite와 Origin 검사, 또는 CSRF 토큰을 쓴다.
+  - 적용됨: 세션 쿠키 `yj_session`(httpOnly·SameSite=Lax·운영 Secure, DB에는 토큰 SHA-256만), 전역 `CsrfGuard`가 POST·PUT·PATCH·DELETE의 `Origin`(없으면 `Sec-Fetch-Site: same-origin`)을 `WEB_BASE_URL`과 비교한다. 카카오 로그인 state는 서명 쿠키로 검증한다. 자세한 내용은 `apps/api/README.md` "인증과 권한".
+- 모든 API는 기본이 로그인 필수다(`@Public()`만 예외). 여정·그룹 경로(`:tripId`, `:groupId`)는 멤버십 가드가 자동으로 걸리고 비멤버에게는 404를 준다.
 
 ### 권한 검사 (IDOR)
 
