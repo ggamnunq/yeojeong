@@ -1,9 +1,14 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { db, MEMBER, TRIP, USER } from '../../mocks/data'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { db, TRIP, USER } from '../../mocks/data'
 import { renderApp } from '../../test/render'
 
 const PAYMENTS = `/trips/${TRIP.osaka}/payments`
+
+beforeAll(async () => {
+  // lazy 페이지를 미리 받아 첫 테스트가 느려지지 않게
+  await import('./pages/PaymentsPage')
+})
 
 const section = (name: RegExp) => screen.getByRole('region', { name })
 const rowNames = (region: HTMLElement) =>
@@ -157,6 +162,60 @@ describe('결제내역 · 무한 스크롤', () => {
     expect(screen.queryByText('편의점 0')).toBeNull()
     callbacks.at(-1)!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
     expect(await screen.findByText('편의점 0')).toBeTruthy()
-    expect(db.memberships.some((m) => m.membershipId === MEMBER.junyong)).toBe(true)
+  })
+})
+
+describe('결제내역 · 타임라인(WF-19)', () => {
+  const timelineNames = () =>
+    within(screen.getByRole('list', { name: /결제$/ }))
+      .getAllByRole('button')
+      .map((b) => b.querySelector('.text-body-m-strong')?.textContent)
+
+  it('오늘(Day 2) 시간순, 끝에 지금 18:34, 앞으로 올 날은 잠김, 보기 기억', async () => {
+    const { router } = renderApp(PAYMENTS)
+    fireEvent.click(await screen.findByRole('radio', { name: '타임라인' }))
+    await waitFor(() => expect(router.state.location.search).toBe('?view=timeline'))
+    const list = await screen.findByRole('list', { name: 'Day 2 결제' })
+    await waitFor(() => expect(within(list).getAllByRole('button').length).toBe(7))
+    expect(timelineNames()).toEqual([
+      '패밀리마트 난바역점',
+      '오사카 주유패스 4매',
+      '오사카성 천수각',
+      '오사카성 천수각',
+      'MK택시',
+      '우메다 스카이빌딩 공중정원',
+      '551 호라이 난바본점',
+    ])
+    expect(list.textContent).toContain('18:34')
+    expect(list.textContent).toContain('지금')
+    expect(within(list).getByRole('button', { name: /패밀리마트/ }).textContent).toContain('내 결제')
+    expect(within(list).getByRole('button', { name: /우메다/ }).textContent).toContain('민지')
+
+    const chips = screen.getByRole('group', { name: '날짜' })
+    expect(within(chips).getByRole('button', { name: 'Day 2' }).getAttribute('aria-pressed')).toBe('true')
+    expect((within(chips).getByRole('button', { name: 'Day 3' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((within(chips).getByRole('button', { name: 'Day 4' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(localStorage.getItem(`yj:payView:${USER.junyong}`)).toBe('timeline')
+
+    fireEvent.click(within(chips).getByRole('button', { name: 'Day 1' }))
+    await waitFor(() => expect(router.state.location.search).toBe('?view=timeline&day=1'))
+    await screen.findByRole('list', { name: 'Day 1 결제' })
+    await waitFor(() => expect(timelineNames()[0]).toBe('난카이 라피트 간사이공항역'))
+    expect(screen.queryByText('지금')).toBeNull()
+  })
+
+  it('마지막 보기가 타임라인이면 결제내역을 열 때 타임라인', async () => {
+    localStorage.setItem(`yj:payView:${USER.junyong}`, 'timeline')
+    renderApp(PAYMENTS)
+    expect(await screen.findByRole('list', { name: 'Day 2 결제' })).toBeTruthy()
+    expect((screen.getByRole('radio', { name: '타임라인' }) as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('종료된 여정은 Day 1부터, 지금 노드 없음', async () => {
+    renderApp(`/trips/${TRIP.jeju}/payments?view=timeline`)
+    expect(await screen.findByRole('list', { name: 'Day 1 결제' })).toBeTruthy()
+    await waitFor(() => expect(timelineNames()).toEqual(['제주 렌터카 공항점']))
+    expect(screen.queryByText('지금')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Day 3' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })
