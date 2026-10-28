@@ -1,0 +1,16 @@
+{
+  "name": "yeojeong",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @yeojeong/shared build && pnpm --parallel --recursive dev",
+    "build": "pnpm --recursive build",
+    "lint": "pnpm --recursive lint",
+    "test": "pnpm --recursive test && pnpm --filter @yeojeong/api test:e2e",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down"
+  }
+}

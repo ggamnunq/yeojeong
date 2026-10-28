@@ -1,0 +1,21 @@
+name: yeojeong
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: yeojeong
+      POSTGRES_PASSWORD: yeojeong
+      POSTGRES_DB: yeojeong
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U yeojeong -d yeojeong']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db-data:
