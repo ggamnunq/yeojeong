@@ -1,24 +1,26 @@
-import { QueryErrorResetBoundary } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { RouterProvider } from 'react-router'
 import './index.css'
 import { ApiProvider } from './api'
-import App from './App.tsx'
-import { ErrorBoundary } from './app/ErrorBoundary'
-import { ToastHost } from './notifications'
+import { createAppRouter } from './app/router'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ApiProvider>
-      <QueryErrorResetBoundary>
-        {({ reset }) => (
-          <ErrorBoundary onReset={reset}>
-            <App />
-          </ErrorBoundary>
-        )}
-      </QueryErrorResetBoundary>
-      {/* 경계 밖에 둬서 화면이 실패해도 토스트는 남는다. 지금 화면에는 하단 내비가 없다. */}
-      <ToastHost aboveNav={false} />
-    </ApiProvider>
-  </StrictMode>,
-)
+async function enableMocking() {
+  // DEV가 false인 운영 빌드에서는 이 분기와 msw chunk가 통째로 빠진다
+  if (import.meta.env.DEV && import.meta.env.VITE_MOCK_API === '1') {
+    const { startMockWorker } = await import('./mocks/browser')
+    await startMockWorker()
+  }
+}
+
+const router = createAppRouter()
+
+void enableMocking().then(() => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <ApiProvider>
+        <RouterProvider router={router} />
+      </ApiProvider>
+    </StrictMode>,
+  )
+})

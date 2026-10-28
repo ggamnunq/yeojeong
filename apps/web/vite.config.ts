@@ -1,11 +1,13 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { msw } from 'msw/vite'
 import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 // 기본 빌드는 index.html만 묶는다. catalog.html(디자인 시스템 카탈로그)은 개발 서버나 --mode catalog로만 연다.
-export default defineConfig(({ mode }) => ({
-  plugins: [react(), tailwindcss()],
+// MSW 워커 스크립트는 개발 서버에서만 내준다(VITE_MOCK_API=1, src/mocks). 빌드에는 플러그인을 넣지 않는다.
+export default defineConfig(({ command, mode }) => ({
+  plugins: [react(), tailwindcss(), command === 'serve' && msw({ mode: 'worker-only' })],
   server: {
     proxy: {
       '/api': 'http://localhost:3000',

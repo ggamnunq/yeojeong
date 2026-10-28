@@ -1,16 +1,16 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiProvider, createQueryClient } from './api'
-import App from './App'
-import { toastStore } from './notifications/store'
-import { ToastHost } from './notifications/ToastHost'
+import { ApiProvider, createQueryClient } from '../../../api'
+import { toastStore } from '../../../notifications/store'
+import { ToastHost } from '../../../notifications/ToastHost'
+import HealthPage from './HealthPage'
 
 const statusOf = (label: string) => screen.getByText(label).nextElementSibling?.textContent
 
 function renderApp() {
   return render(
     <ApiProvider client={createQueryClient()}>
-      <App />
+      <HealthPage />
       <ToastHost aboveNav={false} />
     </ApiProvider>,
   )
@@ -30,7 +30,7 @@ afterEach(() => {
   toastStore.clear()
 })
 
-describe('App 헬스 표시', () => {
+describe('헬스 화면(/__health)', () => {
   it('/api/health 결과로 서버·DB 상태를 보여 준다', async () => {
     fetchMock.mockResolvedValue(Response.json({ status: 'ok', db: 'down' }))
     renderApp()

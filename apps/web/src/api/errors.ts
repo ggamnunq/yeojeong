@@ -50,6 +50,33 @@ function notifyUnauthenticated(error: ApiError) {
   unauthenticatedHandler(error)
 }
 
+// ── 동의가 필요할 때(CONSENT_REQUIRED, FR-107·809) ──────────────────
+
+/** 서버 도메인 코드라 shared ErrorCode에는 아직 없다 */
+export const CONSENT_REQUIRED = 'CONSENT_REQUIRED'
+
+export type ConsentRequiredHandler = (error: ApiError, required: string[]) => void
+
+let consentRequiredHandler: ConsentRequiredHandler | null = null
+
+/**
+ * 403 CONSENT_REQUIRED를 받았을 때 부를 처리기를 단다. 달려 있으면 토스트 없이 처리기만 부른다. 해제 함수를 돌려준다.
+ * required는 details.required(없으면 details.missing)의 동의 항목 ID 목록.
+ */
+export function onConsentRequired(handler: ConsentRequiredHandler): () => void {
+  consentRequiredHandler = handler
+  return () => {
+    if (consentRequiredHandler === handler) consentRequiredHandler = null
+  }
+}
+
+/** CONSENT_REQUIRED면 다시 받아야 할 동의 항목 ID 목록, 아니면 null */
+export function consentRequiredIds(error: unknown): string[] | null {
+  if (!isApiError(error) || (error.code as string) !== CONSENT_REQUIRED) return null
+  const list = error.details?.required ?? error.details?.missing
+  return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : []
+}
+
 // ── 코드별 반응 ─────────────────────────────────────────────────────
 
 /** 연결 자체가 안 된 경우. 다시 시도하면 될 수 있다 */
@@ -70,6 +97,11 @@ export function handleApiError(error: unknown, ctx: ApiErrorContext = {}): void 
   const { code, status } = error
   if (code === 'UNAUTHENTICATED') {
     notifyUnauthenticated(error)
+    return
+  }
+  const required = consentRequiredIds(error)
+  if (required && consentRequiredHandler) {
+    consentRequiredHandler(error, required)
     return
   }
   // 폼이 fieldErrors(error)로 필드 옆에 보여 준다
