@@ -29,8 +29,8 @@
 
 - `ExpenseStatsService.personalCountsByPayer(tripId, tx?)` — 결제자별 개인 결제 건수(SettlementMember.personalCount).
 - `ExpenseQueryService.paymentsByPayer(tripId, viewer, payer)` — 정산 멤버별 내역(FR-703): 공동 목록, 개인 건수, 본인이면 개인 목록.
-- `personalizePendingExpenses(tx, tripId)` / `TRIP_ENDED_EVENT`·`TripEndedEvent` — 종료 처리.
-- 앱에 `EventEmitterModule.forRoot()`가 있어야 리스너가 돈다(S2A 등록 예정, e2e는 테스트에서 붙인다).
+- `personalizePendingExpenses(tx, tripId)` — 종료 처리(이벤트 계약은 `src/trips/events.ts`의 `TRIP_EVENTS.ENDED`·`TripEndedEvent`).
+- 리스너는 AppModule의 `EventEmitterModule.forRoot()`(S2A)로 돈다. S2A는 종료 트랜잭션에서 미확정을 바꾸지 않고 이 리스너에 맡기며, 남아 있으면 자동 종료 잡이 `redelivered: true`로 다시 보낸다.
 
 ## 테스트
 

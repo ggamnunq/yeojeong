@@ -2,7 +2,6 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -85,8 +84,8 @@ export async function createDbTestApp(prisma: PrismaClient) {
   );
   const auth = { ...createTestAuth(), memberships };
   const moduleFixture = await Test.createTestingModule({
-    // S2A가 AppModule에 등록하기 전까지 테스트에서 이벤트 모듈을 붙인다
-    imports: [AppModule, EventEmitterModule.forRoot()],
+    // EventEmitterModule.forRoot()는 AppModule에 있다(중복 등록하지 않는다)
+    imports: [AppModule],
   })
     .overrideProvider(SessionResolver)
     .useValue(auth.sessions)

@@ -5,6 +5,7 @@ import {
   computeSplit,
   effectiveStatus,
   invalidParticipants,
+  isPayerOnly,
   isVisibleTo,
   planClassification,
   splitFromShares,
@@ -131,11 +132,15 @@ describe('state transitions (3-2)', () => {
     ...over,
   });
   const active = ['a', 'b', 'c', 'd'];
+  /** 결제자 = a */
+  const plan = (
+    c: ClassificationCurrent,
+    r: Parameters<typeof planClassification>[1],
+    a: readonly string[],
+  ) => planClassification(c, r, a, 'a');
 
   it('confirms a pending expense as personal', () => {
-    expect(
-      planClassification(current(), { status: 'PERSONAL' }, active),
-    ).toMatchObject({
+    expect(plan(current(), { status: 'PERSONAL' }, active)).toMatchObject({
       kind: 'CHANGE',
       action: 'CONFIRM_PERSONAL',
       nextStatus: 'PERSONAL',
@@ -146,9 +151,7 @@ describe('state transitions (3-2)', () => {
   });
 
   it('confirms as shared with every active member by default', () => {
-    expect(
-      planClassification(current(), { status: 'SHARED' }, active),
-    ).toMatchObject({
+    expect(plan(current(), { status: 'SHARED' }, active)).toMatchObject({
       kind: 'CHANGE',
       action: 'CONFIRM_SHARED',
       participantIds: active,
@@ -157,21 +160,13 @@ describe('state transitions (3-2)', () => {
       becomesShared: true,
     });
     expect(
-      planClassification(
-        current(),
-        { status: 'SHARED', participantIds: ['a', 'b'] },
-        active,
-      ),
+      plan(current(), { status: 'SHARED', participantIds: ['a', 'b'] }, active),
     ).toMatchObject({ participantIds: ['a', 'b'] });
   });
 
   it('rejects shared without participants', () => {
     expect(
-      planClassification(
-        current(),
-        { status: 'SHARED', participantIds: [] },
-        active,
-      ),
+      plan(current(), { status: 'SHARED', participantIds: [] }, active),
     ).toEqual({ kind: 'ERROR', code: 'PARTICIPANTS_REQUIRED' });
   });
 
@@ -182,12 +177,12 @@ describe('state transitions (3-2)', () => {
       firstSharedAt: new Date(),
       confirmedAt: new Date(),
     });
-    expect(planClassification(shared, { status: 'PERSONAL' }, active)).toEqual({
+    expect(plan(shared, { status: 'PERSONAL' }, active)).toEqual({
       kind: 'ERROR',
       code: 'CONFIRM_REQUIRED',
     });
     expect(
-      planClassification(
+      plan(
         shared,
         { status: 'PERSONAL', confirmSharedToPersonal: true },
         active,
@@ -206,9 +201,7 @@ describe('state transitions (3-2)', () => {
       status: 'PERSONAL',
       confirmedAt: new Date(),
     });
-    expect(
-      planClassification(neverShared, { status: 'SHARED' }, active),
-    ).toMatchObject({
+    expect(plan(neverShared, { status: 'SHARED' }, active)).toMatchObject({
       action: 'PERSONAL_TO_SHARED',
       markChanged: false,
       setFirstSharedAt: true,
@@ -218,9 +211,7 @@ describe('state transitions (3-2)', () => {
       confirmedAt: new Date(),
       firstSharedAt: new Date(),
     });
-    expect(
-      planClassification(reShared, { status: 'SHARED' }, active),
-    ).toMatchObject({
+    expect(plan(reShared, { status: 'SHARED' }, active)).toMatchObject({
       action: 'PERSONAL_TO_SHARED',
       markChanged: true,
       setFirstSharedAt: false,
@@ -234,17 +225,13 @@ describe('state transitions (3-2)', () => {
       firstSharedAt: new Date(),
     });
     expect(
-      planClassification(
-        shared,
-        { status: 'SHARED', participantIds: ['b', 'a'] },
-        active,
-      ),
+      plan(shared, { status: 'SHARED', participantIds: ['b', 'a'] }, active),
     ).toEqual({ kind: 'NOOP' });
-    expect(planClassification(shared, { status: 'SHARED' }, active)).toEqual({
+    expect(plan(shared, { status: 'SHARED' }, active)).toEqual({
       kind: 'NOOP',
     });
     expect(
-      planClassification(
+      plan(
         shared,
         { status: 'SHARED', participantIds: ['a', 'b', 'c'] },
         active,
@@ -256,13 +243,37 @@ describe('state transitions (3-2)', () => {
     });
   });
 
-  it('is idempotent for personal → personal', () => {
+  it('rejects shared with only the payer, but allows others without the payer (Q-08)', () => {
     expect(
-      planClassification(
-        current({ status: 'PERSONAL' }),
-        { status: 'PERSONAL' },
+      plan(current(), { status: 'SHARED', participantIds: ['a'] }, active),
+    ).toEqual({ kind: 'ERROR', code: 'PAYER_ONLY' });
+    // 활성 멤버가 결제자뿐이면 기본값(전원)도 결제자 혼자다
+    expect(plan(current(), { status: 'SHARED' }, ['a'])).toEqual({
+      kind: 'ERROR',
+      code: 'PAYER_ONLY',
+    });
+    expect(
+      plan(
+        current({
+          status: 'SHARED',
+          participantIds: ['a', 'b'],
+          firstSharedAt: new Date(),
+        }),
+        { status: 'SHARED', participantIds: ['a'] },
         active,
       ),
+    ).toEqual({ kind: 'ERROR', code: 'PAYER_ONLY' });
+    expect(
+      plan(current(), { status: 'SHARED', participantIds: ['b'] }, active),
+    ).toMatchObject({ kind: 'CHANGE', participantIds: ['b'] });
+    expect(isPayerOnly(['a'], 'a')).toBe(true);
+    expect(isPayerOnly(['b'], 'a')).toBe(false);
+    expect(isPayerOnly(['a', 'b'], 'a')).toBe(false);
+  });
+
+  it('is idempotent for personal → personal', () => {
+    expect(
+      plan(current({ status: 'PERSONAL' }), { status: 'PERSONAL' }, active),
     ).toEqual({ kind: 'NOOP' });
   });
 });

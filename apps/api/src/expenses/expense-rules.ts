@@ -117,7 +117,10 @@ export interface ClassificationRequestInput {
 
 export type ClassificationPlan =
   | { kind: 'NOOP' }
-  | { kind: 'ERROR'; code: 'PARTICIPANTS_REQUIRED' | 'CONFIRM_REQUIRED' }
+  | {
+      kind: 'ERROR';
+      code: 'PARTICIPANTS_REQUIRED' | 'PAYER_ONLY' | 'CONFIRM_REQUIRED';
+    }
   | {
       kind: 'CHANGE';
       action: ChangeAction;
@@ -137,6 +140,14 @@ export type ClassificationPlan =
 const sameSet = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((id) => b.includes(id));
 
+/** 공동인데 부담 인원이 결제자 혼자(미결 Q-08 → 서버도 막는다. 결제자를 빼고 남만 고르는 건 허용) */
+export function isPayerOnly(
+  participantIds: readonly string[],
+  payerMembershipId: string,
+): boolean {
+  return participantIds.length === 1 && participantIds[0] === payerMembershipId;
+}
+
 /**
  * 현재 상태와 요청으로 할 일을 정한다(6-3 "같은 상태·같은 부담 인원이면 변경 없이 200").
  * participantIds가 없으면 PENDING·PERSONAL → SHARED는 활성 멤버 전원(4-3 기본값), SHARED → SHARED는 그대로.
@@ -145,6 +156,7 @@ export function planClassification(
   current: ClassificationCurrent,
   request: ClassificationRequestInput,
   activeMemberIds: readonly string[],
+  payerMembershipId: string,
 ): ClassificationPlan {
   const action = CLASSIFICATION_TRANSITIONS[current.status][request.status];
 
@@ -179,6 +191,11 @@ export function planClassification(
   if (current.status === 'SHARED') {
     if (sameSet(participantIds, current.participantIds))
       return { kind: 'NOOP' };
+  }
+  if (isPayerOnly(participantIds, payerMembershipId)) {
+    return { kind: 'ERROR', code: 'PAYER_ONLY' };
+  }
+  if (current.status === 'SHARED') {
     return {
       kind: 'CHANGE',
       action: 'PARTICIPANTS_CHANGED',

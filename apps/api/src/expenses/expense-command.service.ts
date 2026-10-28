@@ -4,7 +4,11 @@ import type {
   ExpenseDetailResponse,
 } from '@yeojeong/shared';
 import type { MembershipContext } from '../common/auth/index.js';
-import { AppException, NotFoundError } from '../common/errors/index.js';
+import {
+  AppException,
+  NotFoundError,
+  ValidationFailedError,
+} from '../common/errors/index.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { flagDuplicates, leaveDuplicateGroup } from './duplicates.js';
@@ -13,6 +17,7 @@ import {
   changeSnapshot,
   computeSplit,
   invalidParticipants,
+  isPayerOnly,
   isVisibleTo,
   planClassification,
   type GroupMember,
@@ -46,6 +51,17 @@ const EDIT_SELECT = {
 
 type EditRecord = Prisma.ExpenseGetPayload<{ select: typeof EDIT_SELECT }>;
 
+/** 공동인데 결제자 혼자(Q-08). 화면은 버튼을 막고, 서버는 400 VALIDATION_FAILED로 막는다 */
+function payerOnlyError() {
+  return new ValidationFailedError([
+    {
+      path: 'participantMembershipIds',
+      code: 'payerOnly',
+      message: '나 말고 함께 낼 사람을 골라 주세요',
+    },
+  ]);
+}
+
 type Outcome = { kind: 'DONE' } | { kind: 'VERSION_CONFLICT' };
 
 /**
@@ -71,6 +87,13 @@ export class ExpenseCommandService {
       body.participantMembershipIds?.length === 0
     ) {
       throw AppException.of('PARTICIPANTS_REQUIRED');
+    }
+    if (
+      body.status === 'SHARED' &&
+      body.participantMembershipIds &&
+      isPayerOnly(body.participantMembershipIds, me.id)
+    ) {
+      throw payerOnlyError();
     }
     const outcome = await this.prisma.$transaction((tx) =>
       this.classifyInTx(tx, tripId, me, expenseId, body),
@@ -214,11 +237,13 @@ export class ExpenseCommandService {
         confirmSharedToPersonal: body.confirmSharedToPersonal,
       },
       activeIds,
+      me.id,
     );
     // 같은 상태·같은 부담 인원이면 변경 없이 200(6-3). version이 낡아도 결과가 같으므로 통과시킨다
     if (plan.kind === 'NOOP') return { kind: 'DONE' };
     if (body.version !== expense.version) return { kind: 'VERSION_CONFLICT' };
     if (plan.kind === 'ERROR') {
+      if (plan.code === 'PAYER_ONLY') throw payerOnlyError();
       throw AppException.of(
         plan.code === 'CONFIRM_REQUIRED'
           ? 'SHARED_TO_PERSONAL_CONFIRM_REQUIRED'

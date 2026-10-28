@@ -8,8 +8,8 @@ import type {
 import request from 'supertest';
 import { ExpenseLifecycleService } from './../src/expenses/expense-lifecycle.service.js';
 import { ExpenseStatsService } from './../src/expenses/expense-stats.service.js';
-import { TRIP_ENDED_EVENT } from './../src/expenses/trip-ended.listener.js';
 import type { PrismaClient } from './../src/generated/prisma/client.js';
+import { TRIP_EVENTS, type TripEndedEvent } from './../src/trips/events.js';
 import {
   createDbTestApp,
   createFixturePrisma,
@@ -70,6 +70,21 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
       .set(as(seed, name))
       .send(body);
   const names = (items: ExpenseRow[]) => items.map((i) => i.merchantName);
+  /** S2A 계약(src/trips/events.ts) 그대로의 trip.ended */
+  const endedEvent = (
+    seed: SeedTrip,
+    over: Partial<TripEndedEvent> = {},
+  ): TripEndedEvent => ({
+    tripId: seed.tripId,
+    groupId: seed.groupId,
+    endedByUserId: null,
+    endedAt: new Date(),
+    reason: 'AUTO',
+    redelivered: false,
+    eventSeq: 1n,
+    occurredAt: new Date(),
+    ...over,
+  });
 
   /** WF-18 샘플(11.13 Day 2) + 환불 묶음 */
   async function seedOsaka() {
@@ -530,6 +545,47 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
         },
       });
 
+      // Q-08: 공동인데 결제자 혼자는 400, 결제자를 빼고 남만 고르는 건 허용
+      const m = (n: string) => seed.members[n].membershipId;
+      res = await classify(seed, '준용', e.horai.id, {
+        status: 'SHARED',
+        participantMembershipIds: [m('준용')],
+        version: 0,
+      }).expect(400);
+      expect(res.body).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: {
+          fields: [{ path: 'participantMembershipIds', code: 'payerOnly' }],
+        },
+      });
+      res = await classify(seed, '준용', e.horai.id, {
+        status: 'SHARED',
+        participantMembershipIds: [m('민지'), m('태현')],
+        version: 0,
+      }).expect(200);
+      expect(res.body).toMatchObject({
+        perPersonKrw: 12870,
+        remainderKrw: 0,
+        version: 1,
+      });
+      expect(
+        res.body.shares.map((sh: { membershipId: string }) => sh.membershipId),
+      ).toEqual([m('민지'), m('태현')]);
+      // 활성 멤버가 결제자뿐인 여정: 기본값(전원)도 결제자 혼자라 400
+      const solo = await fx.seedTrip(['혼자']);
+      const soloExpense = await fx.addExpense(solo, '혼자', {
+        status: 'PENDING',
+        at: '2026-11-13 09:00',
+        merchant: '편의점',
+        amount: '500',
+        krw: 4600,
+      });
+      res = await classify(solo, '혼자', soloExpense.id, {
+        status: 'SHARED',
+        version: 0,
+      }).expect(400);
+      expect(res.body.details.fields[0].code).toBe('payerOnly');
+
       res = await classify(seed, '준용', e.horai.id, {
         status: 'PENDING',
         version: 0,
@@ -673,7 +729,7 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
 
       await app
         .get(EventEmitter2)
-        .emitAsync(TRIP_ENDED_EVENT, { tripId: seed.tripId, eventSeq: 1 });
+        .emitAsync(TRIP_EVENTS.ENDED, endedEvent(seed));
       expect(
         await prisma.expense.count({
           where: { tripId: seed.tripId, status: 'PENDING' },
@@ -749,7 +805,7 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
       const { seed } = await seedOsaka();
       const emitter = app.get(EventEmitter2);
       // 종료 전 이벤트(잘못 온 것)는 무시
-      await emitter.emitAsync(TRIP_ENDED_EVENT, { tripId: seed.tripId });
+      await emitter.emitAsync(TRIP_EVENTS.ENDED, endedEvent(seed));
       expect(
         await prisma.expense.count({
           where: { tripId: seed.tripId, status: 'PENDING' },
@@ -757,15 +813,11 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
       ).toBe(2);
 
       await fx.endTrip(seed.tripId);
-      await emitter.emitAsync(TRIP_ENDED_EVENT, { tripId: seed.tripId });
-      await emitter.emitAsync(TRIP_ENDED_EVENT, {
-        tripId: seed.tripId,
-        groupId: seed.groupId,
-        endedByUserId: null,
-        reason: 'AUTO',
-        redelivered: true,
-        eventSeq: 2,
-      });
+      await emitter.emitAsync(TRIP_EVENTS.ENDED, endedEvent(seed));
+      await emitter.emitAsync(
+        TRIP_EVENTS.ENDED,
+        endedEvent(seed, { redelivered: true, eventSeq: 2n }),
+      );
       expect(
         await prisma.expense.count({
           where: { tripId: seed.tripId, status: 'PENDING' },
