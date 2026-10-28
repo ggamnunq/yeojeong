@@ -9,14 +9,14 @@ import {
 import type { Request, Response } from 'express';
 import { AuthConfig } from '../common/auth/auth-config.js';
 import {
-  OAUTH_COOKIE,
-  OAUTH_PURPOSE,
+  LOGIN_STATE_COOKIE,
+  LOGIN_STATE_PURPOSE,
   SIGNUP_COOKIE,
   SIGNUP_PURPOSE,
 } from '../common/auth/auth.constants.js';
 import { ConsentChecker } from '../common/auth/consent-checker.js';
 import {
-  OAUTH_TTL_SECONDS,
+  LOGIN_STATE_TTL_SECONDS,
   SIGNUP_TTL_SECONDS,
   clearCookie,
   setCookie,
@@ -101,9 +101,13 @@ export class AuthService {
     setCookie(
       res,
       this.web,
-      OAUTH_COOKIE,
-      this.config.signer.sign(OAUTH_PURPOSE, value, OAUTH_TTL_SECONDS),
-      OAUTH_TTL_SECONDS * 1000,
+      LOGIN_STATE_COOKIE,
+      this.config.signer.sign(
+        LOGIN_STATE_PURPOSE,
+        value,
+        LOGIN_STATE_TTL_SECONDS,
+      ),
+      LOGIN_STATE_TTL_SECONDS * 1000,
     );
     return this.kakao.authorizeUrl(state);
   }
@@ -118,10 +122,10 @@ export class AuthService {
     query: { code?: unknown; state?: unknown; error?: unknown },
   ): Promise<string> {
     const stored = this.config.signer.verify<OAuthState>(
-      OAUTH_PURPOSE,
-      readCookie(req, OAUTH_COOKIE),
+      LOGIN_STATE_PURPOSE,
+      readCookie(req, LOGIN_STATE_COOKIE),
     );
-    clearCookie(res, this.web, OAUTH_COOKIE);
+    clearCookie(res, this.web, LOGIN_STATE_COOKIE);
     if (
       !stored ||
       typeof query.state !== 'string' ||

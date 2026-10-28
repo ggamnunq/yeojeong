@@ -1,6 +1,6 @@
 import type { CookieOptions, Response } from 'express';
 import {
-  OAUTH_COOKIE,
+  LOGIN_STATE_COOKIE,
   SESSION_COOKIE,
   SIGNUP_COOKIE,
 } from './auth.constants.js';
@@ -11,13 +11,13 @@ export const SESSION_TTL_MS = 30 * DAY_MS;
 /** 남은 기간이 이보다 짧으면 사용할 때 30일로 연장한다 */
 export const SESSION_REFRESH_BEFORE_MS = 7 * DAY_MS;
 export const SIGNUP_TTL_SECONDS = 30 * 60;
-export const OAUTH_TTL_SECONDS = 10 * 60;
+export const LOGIN_STATE_TTL_SECONDS = 10 * 60;
 
 // 쿠키별 경로: 세션은 화면 전체, 가입 대기는 /api, OAuth state는 카카오 로그인 경로에만 보낸다
 const PATHS = {
   [SESSION_COOKIE]: '/',
   [SIGNUP_COOKIE]: '/api',
-  [OAUTH_COOKIE]: '/api/auth/kakao',
+  [LOGIN_STATE_COOKIE]: '/api/auth/kakao',
 } as const;
 
 type CookieName = keyof typeof PATHS;

@@ -8,7 +8,7 @@ export type {
 } from './auth-context.js';
 export { AuthConfig } from './auth-config.js';
 export {
-  OAUTH_COOKIE,
+  LOGIN_STATE_COOKIE,
   SESSION_COOKIE,
   SIGNUP_COOKIE,
 } from './auth.constants.js';
