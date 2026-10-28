@@ -18,6 +18,19 @@ export function avatarStackLayout(total: number, overflow = true) {
 }
 
 /**
+ * 스택·멤버 목록 순서(spec C-05, screens.md): 나 먼저 → 나머지는 가입 순(joinOrder 오름차순).
+ * 결제자를 앞세우지 않는다 — 결제자는 행 왼쪽 아바타로 이미 보인다.
+ * joinOrder가 없는 사람은 넘긴 순서 그대로 맨 뒤에 둔다. 원본 배열은 바꾸지 않는다.
+ */
+export function orderMembers<T extends Pick<AvatarPerson, 'me' | 'joinOrder'>>(people: readonly T[]): T[] {
+  const rank = (p: T) => (p.me ? -1 : (p.joinOrder ?? Number.POSITIVE_INFINITY))
+  return people
+    .map((person, index) => ({ person, index }))
+    .sort((a, b) => rank(a.person) - rank(b.person) || a.index - b.index)
+    .map(({ person }) => person)
+}
+
+/**
  * 접근성 이름. 나 먼저 → 가입 순으로 앞의 두 명 이름 + "외 N명".
  * 예: "나, 민지 외 2명" · "나, 민지" · "민지"
  */

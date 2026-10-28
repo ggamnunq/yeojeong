@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`gen-tokens > 출력 스냅샷 1`] = `
-"/* 자동 생성 파일 — 직접 고치지 말 것. 원본: apps/web/design-tokens/*.json
+"/* 자동 생성 파일 — 직접 고치지 말 것. 원본: apps/web/design-tokens/tokens.json (DS v1.4 · 2026-10-28)
  * 다시 만들기: pnpm --filter @yeojeong/web ds:tokens
  * 간격(space/N)은 Tailwind 기본 4px 스케일을 쓴다: space/2=0.5 space/4=1 space/8=2 space/12=3 space/16=4 space/20=5 space/24=6 space/32=8 space/40=10 space/48=12 space/64=16 */
 
@@ -137,6 +137,7 @@ exports[`gen-tokens > 출력 스냅샷 1`] = `
   --font-sans: 'Noto Sans KR Variable', 'Noto Sans KR', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
   --font-amount: 'IBM Plex Sans KR', 'Noto Sans KR Variable', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
 
+  /* mixedKorean: 문장형 혼합 문자열은 Noto Sans KR 스타일, 숫자가 주인공인 금액만 Amount/* */
   --text-*: initial;
   --text-display: 32px;
   --text-display--line-height: 42px;
@@ -194,6 +195,10 @@ exports[`gen-tokens > 출력 스냅샷 1`] = `
   --text-label-s--line-height: 16px;
   --text-label-s--letter-spacing: 0;
   --text-label-s--font-weight: 500;
+  --text-amount-xl: 40px; /* 화면당 영웅 숫자 1개. 단위·한글 단위(원·엔)는 같은 줄에서 24px SemiBold(Amount 계열)로 작게 */
+  --text-amount-xl--line-height: 48px;
+  --text-amount-xl--letter-spacing: -1px;
+  --text-amount-xl--font-weight: 700;
   --text-amount-l: 32px;
   --text-amount-l--line-height: 40px;
   --text-amount-l--letter-spacing: -0.6px;

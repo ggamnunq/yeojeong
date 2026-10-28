@@ -22,7 +22,21 @@ const entries = Object.values(modules).sort(
 
 const slug = (title: string) => title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
+// ?only=Shell/App 처럼 제목을 주면 그 항목만 그린다(Figma 스크린샷과 나란히 비교할 때)
+const only = new URLSearchParams(location.search).get('only')
+
+function Only({ title }: { title: string }) {
+  const entry = entries.find((e) => e.title === title)
+  if (!entry) return <p className="p-6 text-body-m text-error">카탈로그에 없는 항목: {title}</p>
+  return (
+    <main data-catalog={entry.title} className="inline-flex flex-col p-6">
+      <entry.Demo />
+    </main>
+  )
+}
+
 function Catalog() {
+  if (only) return <Only title={only} />
   return (
     <div className="mx-auto flex max-w-6xl gap-10 px-gutter py-10">
       <nav className="sticky top-10 hidden h-fit w-44 shrink-0 flex-col gap-6 md:flex">

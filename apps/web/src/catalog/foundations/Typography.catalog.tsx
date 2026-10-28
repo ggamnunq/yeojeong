@@ -1,4 +1,4 @@
-import styles from '../../../design-tokens/styles.json'
+import tokens from '../../../design-tokens/tokens.json'
 import { defineCatalog } from '../catalog'
 
 const slug = (name: string) =>
@@ -14,16 +14,16 @@ export default defineCatalog({
   Demo: function TypographyCatalog() {
     return (
       <div className="flex flex-col divide-y divide-default rounded-lg border border-default bg-surface">
-        {styles.text.map((t) => {
-          const key = `--text-${slug(t.name)}`
-          const amount = t.family === 'amount'
+        {Object.entries(tokens.typography).map(([name, t]) => {
+          const key = `--text-${slug(name)}`
+          const amount = t.tabularNums
           return (
-            <div key={t.name} className="flex items-center gap-6 px-5 py-4">
+            <div key={name} className="flex items-center gap-6 px-5 py-4">
               <div className="w-44 shrink-0">
-                <p className="text-body-s-strong">{t.name}</p>
+                <p className="text-body-s-strong">{name}</p>
                 <p className="text-caption text-tertiary">
-                  text-{slug(t.name)}
-                  {amount && ' font-amount'} · {t.size}/{t.lineHeight} · {t.letterSpacing} · {t.weight}
+                  text-{slug(name)}
+                  {amount && ' font-amount'} · {t.fontSize}/{t.lineHeight} · {t.letterSpacing} · {t.fontWeight}
                 </p>
               </div>
               <p

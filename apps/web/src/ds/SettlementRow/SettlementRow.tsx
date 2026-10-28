@@ -2,6 +2,7 @@ import { clsx } from 'clsx'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { Avatar } from '../Avatar/Avatar'
 import type { AvatarPerson } from '../Avatar/rules'
+import { BadgeMe } from '../Badge/Me'
 import { formatKrw } from '../format'
 import { Icon } from '../Icon/Icon'
 import { focusRing } from '../styles'
@@ -69,8 +70,7 @@ export function SettlementRow({
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-body-m-strong text-primary">{name ?? person.name}</span>
-          {/* Figma Badge/Me와 같은 모양 */}
-          {me && <span className="shrink-0 rounded-xs bg-brand-subtle px-1.5 py-px text-label-s text-brand">나</span>}
+          {me && <BadgeMe />}
           {left && <Tag type="left" size="s" />}
         </span>
         <span className="text-caption text-tertiary">결제 {formatKrw(paid)}</span>

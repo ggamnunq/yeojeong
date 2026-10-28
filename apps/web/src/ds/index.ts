@@ -12,8 +12,11 @@ export {
 } from './Avatar/rules'
 export { AvatarStack, type AvatarStackProps, type AvatarStackSize } from './AvatarStack/AvatarStack'
 export { AVATAR_STACK_MAX, avatarStackLabel, avatarStackLayout, type AvatarStackCount } from './AvatarStack/rules'
+// spec C-05: 나 먼저 → 가입 순
+export { orderMembers } from './AvatarStack/rules'
 export { AvatarToggle, type AvatarToggleProps } from './AvatarToggle/AvatarToggle'
 export { Badge, type BadgeProps, type BadgeSize, type BadgeStatus } from './Badge/Badge'
+export { BadgeMe, type BadgeMeProps } from './Badge/Me'
 export { BottomNav, type BottomNavActive, type BottomNavPhase, type BottomNavProps } from './BottomNav/BottomNav'
 export { BottomSheet, type BottomSheetCta, type BottomSheetProps } from './BottomSheet/BottomSheet'
 export { BudgetProgress, type BudgetProgressProps } from './BudgetProgress/BudgetProgress'
@@ -25,19 +28,54 @@ export { Chip, type ChipProps } from './Chip/Chip'
 export { DateHeader, type DateHeaderProps } from './DateHeader/DateHeader'
 export { Dialog, type DialogProps, type DialogType } from './Dialog/Dialog'
 export { Divider, type DividerProps, type DividerType } from './Divider/Divider'
+export {
+  DropdownMenu,
+  DropdownMenuPanel,
+  type DropdownMenuAction,
+  type DropdownMenuPanelProps,
+  type DropdownMenuProps,
+  type DropdownMenuTrip,
+} from './Dropdown/Menu'
 export { EmptyState, type EmptyStateProps, type EmptyStateType } from './EmptyState/EmptyState'
 export { formatKrw, formatMoney, MINUS, type CurrencyCode, type MoneyFormatOptions } from './format'
 export { Icon, type IconProps, type IconSize } from './Icon/Icon'
 export { ICON_NAMES, ICONS, type IconName } from './Icon/icons'
 export { KakaoSymbol, type KakaoSymbolProps } from './Icon/KakaoSymbol'
 export { IconButton, type IconButtonProps, type IconButtonSize, type IconButtonType } from './IconButton/IconButton'
+export {
+  IllustEmptyTrip,
+  IllustLinked,
+  IllustLinking,
+  IllustSettled,
+  type IllustLinkingPhase,
+  type IllustLinkingProps,
+  type IllustProps,
+} from './Illust/Illust'
 export { Input, type InputProps } from './Input/Input'
 export { KakaoLoginButton, type KakaoLoginButtonProps, type KakaoLoginButtonSize } from './KakaoLoginButton/KakaoLoginButton'
 export { ListItem, type ListItemProps, type ListItemType } from './ListItem/ListItem'
 export { AppIcon, type AppIconProps } from './Logo/AppIcon'
 export { Logo, type LogoProps, type LogoVariant } from './Logo/Logo'
 export { NavItem, type NavItemProps, type NavItemState } from './NavItem/NavItem'
+export { PanelSide, PanelSidePanel, type PanelSidePanelProps, type PanelSideProps } from './Panel/Side'
 export { PaymentRow, type PaymentRowProps, type PaymentRowType } from './PaymentRow/PaymentRow'
+export { paymentMeta, payerLabel } from './PaymentRow/rules'
+export { ProgressSteps, type ProgressStepsProps, type ProgressStepsStep } from './Progress/Steps'
+export { RouteProgress, type RouteProgressProps } from './Route/Progress'
+export {
+  ROUTE_DEFAULT_CURRENT,
+  ROUTE_DEFAULT_DAYS,
+  routeLabel,
+  routeLayout,
+  type RouteNode,
+  type RouteProgressPhase,
+  type RouteSegment,
+} from './Route/rules'
+export { RowAccount, type RowAccountProps, type RowAccountType } from './Row/Account'
+export { RowAdd, type RowAddProps } from './Row/Add'
+export { RowMember, type RowMemberProps } from './Row/Member'
+export { RowMemberAmount, type RowMemberAmountProps } from './Row/MemberAmount'
+export { RowOption, type RowOptionProps } from './Row/Option'
 export { Screen, type ScreenBackground, type ScreenCta, type ScreenProps } from './Screen/Screen'
 export {
   SegmentedControl,
@@ -52,7 +90,16 @@ export {
   type PaymentExpenseType,
   type SheetContentPaymentDetailProps,
 } from './SheetContent/PaymentDetail'
+export {
+  SheetContentOption,
+  type SheetContentOptionItem,
+  type SheetContentOptionProps,
+} from './SheetContent/Option'
+export { SheetContentReadOnly, type SheetContentReadOnlyProps } from './SheetContent/ReadOnly'
 export { splitEvenly } from './SheetContent/rules'
+export { ShellApp, type ShellAppProps } from './Shell/App'
+export { ShellOnboarding, type ShellOnboardingProps } from './Shell/Onboarding'
+export { ShellSub, type ShellSubHeader, type ShellSubProps } from './Shell/Sub'
 export { StatCard, type StatCardProps, type StatCardSize, type StatCardType } from './StatCard/StatCard'
 export { Tag, type TagProps, type TagSize, type TagType } from './Tag/Tag'
 export {
@@ -67,6 +114,7 @@ export { Toggle, type ToggleProps } from './Toggle/Toggle'
 export {
   TopHeader,
   type TopHeaderBackProps,
+  type TopHeaderDropdown,
   type TopHeaderGroupProps,
   type TopHeaderLogoProps,
   type TopHeaderProps,

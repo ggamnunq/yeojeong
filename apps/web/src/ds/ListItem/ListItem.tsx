@@ -9,7 +9,7 @@ import { focusRing } from '../styles'
 // Navigation·Selected·Destructive는 버튼. Value는 onClick이 없으면 누를 수 없는 행(div)이다.
 export type ListItemType = 'navigation' | 'value' | 'selected' | 'destructive'
 
-export type ListItemProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'children' | 'value'> & {
+export type ListItemProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'children' | 'value' | 'title'> & {
   type?: ListItemType
   /** Figma title */
   title: ReactNode
