@@ -34,3 +34,7 @@ override.tf.json
 *_override.tf.json
 
 .claude/
+
+# 디자인 세션 작업물 중 비공개 자료(기획안·노션 사본)와 캐시
+docs/design/context/
+.icon_cache/
