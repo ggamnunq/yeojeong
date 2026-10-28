@@ -1,0 +1,10 @@
+# Cloudflare(Pages / Workers static assets)가 응답에 붙이는 보안 헤더. 빌드하면 dist/_headers로 복사된다.
+# API를 다른 origin에 두면 connect-src에 그 origin을 추가해야 한다. docs/security.md 참고.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000
