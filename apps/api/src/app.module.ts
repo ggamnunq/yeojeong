@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import {
   AuthCoreModule,
@@ -16,6 +17,7 @@ import { LoggingModule } from './common/logging/logging.module.js';
 import { DEFAULT_THROTTLE } from './common/throttle.js';
 import { HealthModule } from './health/health.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { TripsModule } from './trips/trips.module.js';
 
 @Module({
   imports: [
@@ -24,8 +26,10 @@ import { PrismaModule } from './prisma/prisma.module.js';
     ThrottlerModule.forRoot([DEFAULT_THROTTLE]),
     PrismaModule,
     AuthCoreModule,
+    EventEmitterModule.forRoot(),
     // 기능 모듈은 아래에 한 줄씩 추가한다(apps/api/README.md "모듈 추가")
     HealthModule,
+    TripsModule,
   ],
   providers: [
     { provide: APP_PIPE, useValue: createValidationPipe() },
