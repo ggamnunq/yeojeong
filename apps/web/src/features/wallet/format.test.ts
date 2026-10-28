@@ -24,9 +24,8 @@ describe('지갑 표기', () => {
   })
 
   it('번호 표시: 계좌 앞 4·끝 3, 카드 끝 4자리만', () => {
-    expect(displayMaskedNumber('CARD', '5365-****-****-1934')).toBe('****-****-****-1934')
-    expect(displayMaskedNumber('ACCOUNT', '3333-**-****821')).toBe('3333-**-****821')
-    expect(displayMaskedNumber('ACCOUNT', '1000-12**-**21')).toBe('1000-****-**21')
-    expect(displayMaskedNumber('ACCOUNT', '100012345621')).toBe('1000*****621')
+    expect(displayMaskedNumber('CARD', '5365-****-****-1934')).toBe('**** **** **** 1934')
+    expect(displayMaskedNumber('ACCOUNT', '3333-**-****821')).toBe('3333-****-***-821')
+    expect(displayMaskedNumber('ACCOUNT', '1000*****321')).toBe('1000-****-***-321')
   })
 })

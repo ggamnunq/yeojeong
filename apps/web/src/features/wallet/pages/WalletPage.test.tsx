@@ -17,9 +17,9 @@ describe('지갑(HF-27)', () => {
     await screen.findByText('토스뱅크 통장')
     expect(methodNames()).toEqual([
       // 계좌는 앞 4·끝 3자리, 카드는 끝 4자리만
-      '토스뱅크 통장1000-****-**21',
-      '토스뱅크 체크카드****-****-****-1934',
-      '신한카드 Deep Dream****-****-****-1102',
+      '토스뱅크 통장1000-****-***-321',
+      '토스뱅크 체크카드**** **** **** 1934',
+      '신한카드 Deep Dream**** **** **** 1102',
     ])
     expect(screen.getByText('18:32 동기화')).toBeTruthy()
     expect(screen.getByRole('button', { name: '계좌·카드 추가' })).toBeTruthy()

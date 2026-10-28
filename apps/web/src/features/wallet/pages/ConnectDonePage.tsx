@@ -34,7 +34,7 @@ function ConnectDone({ attemptId, returnTo }: { attemptId: string; returnTo: str
         onClick: () => navigate(finishPath(purpose, returnTo), { replace: true }),
       }}
     >
-      <ConnectStatus illust={<IllustLinked />} title="연결 완료" sub={counts || undefined} />
+      <ConnectStatus illust={<IllustLinked size={168} />} title="연결 완료" sub={counts || undefined} />
     </ShellOnboarding>
   )
 }

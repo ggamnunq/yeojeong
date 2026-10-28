@@ -62,7 +62,7 @@ describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
     const safebox = await screen.findByRole('checkbox', { name: /카카오뱅크 세이프박스/ })
     expect((safebox as HTMLInputElement).checked).toBe(true)
     // 계좌는 앞 4·끝 3자리만
-    expect(screen.getByText('3333-**-****821')).toBeTruthy()
+    expect(screen.getByText('3333-****-***-821')).toBeTruthy()
     expect(screen.queryByRole('group', { name: '카드' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '1개 연결' }))
 
@@ -93,7 +93,7 @@ describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
     expect(await screen.findByRole('button', { name: '3개 연결' })).toBeTruthy()
     // 가입 흐름은 진행 막대 3/4
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('3')
-    expect(screen.getByText('****-****-****-1934')).toBeTruthy()
+    expect(screen.getByText('**** **** **** 1934')).toBeTruthy()
     expect(within(screen.getByRole('group', { name: '계좌' })).getAllByRole('checkbox')).toHaveLength(2)
     expect(within(screen.getByRole('group', { name: '카드' })).getAllByRole('checkbox')).toHaveLength(2)
 

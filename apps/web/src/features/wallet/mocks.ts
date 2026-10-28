@@ -51,6 +51,8 @@ type MockAttempt = {
   reconnectConnectionId?: string
   status: AttemptStatus
   polls: number
+  /** 데모 인증이 끝나는 시각(만든 뒤 1.5초) */
+  authorizeAt?: number
   expiresAt: string
   candidates: ConnectionCandidate[]
 }
@@ -68,9 +70,13 @@ export type WalletMockState = {
   seq: number
 }
 
+/** 서버 규칙(계좌 앞 4·끝 3)대로 마스킹한 토스뱅크 통장. 공용 샘플(db)의 "1000-12**-**21"은 끝 2자리라 응답에서 바꿔 준다 */
+const TOSS_ACCOUNT_MASK = '1000-****-*321'
+const serverMask = (p: MockPaymentMethod) => (p.id === 'pm-toss-account' ? TOSS_ACCOUNT_MASK : p.maskedNumber)
+
 /** 데모 페르소나(준용)의 토스 후보 — HF-07 */
 const DEMO_CANDIDATES: MockCandidate[] = [
-  { candidateId: 'cand-toss-account', type: 'ACCOUNT', institutionName: '토스뱅크', productName: '토스뱅크 통장', shortLabel: '토스뱅크 통장', maskedNumber: '1000-12**-**21', last4: '21' },
+  { candidateId: 'cand-toss-account', type: 'ACCOUNT', institutionName: '토스뱅크', productName: '토스뱅크 통장', shortLabel: '토스뱅크 통장', maskedNumber: TOSS_ACCOUNT_MASK, last4: '321' },
   { candidateId: 'cand-kakao-safebox', type: 'ACCOUNT', institutionName: '카카오뱅크', productName: '카카오뱅크 세이프박스', shortLabel: '카카오뱅크 통장', maskedNumber: '3333-**-****821', last4: '821' },
   { candidateId: 'cand-toss-check', type: 'CARD', institutionName: '토스뱅크', productName: '토스뱅크 체크카드', shortLabel: '토스뱅크 체크카드', maskedNumber: '5365-****-****-1934', last4: '1934' },
   { candidateId: 'cand-shinhan', type: 'CARD', institutionName: '신한카드', productName: '신한카드 Deep Dream', shortLabel: '신한카드', maskedNumber: '4518-****-****-1102', last4: '1102' },
@@ -167,8 +173,8 @@ function methodsResponse(): PaymentMethodsResponse {
         institutionName: p.institutionName,
         productName: p.productName,
         shortLabel: shortLabelOf(p),
-        maskedNumber: p.maskedNumber,
-        last4: p.maskedNumber.replace(/\D/g, '').slice(-4),
+        maskedNumber: serverMask(p),
+        last4: serverMask(p).replace(/\D/g, '').slice(-4),
         status: p.status === 'EXPIRED' ? 'EXPIRED' : 'ACTIVE',
         lastSyncedAt: state.connections.find((c) => c.id === connectionId)?.lastSyncedAt ?? null,
       }
@@ -187,7 +193,7 @@ function attemptView(a: MockAttempt) {
 }
 
 function candidatesFor(purpose: AttemptPurpose): ConnectionCandidate[] {
-  const connected = new Set(myMethods().map((p) => p.maskedNumber))
+  const connected = new Set(myMethods().map(serverMask))
   return DEMO_CANDIDATES.filter((c) => purpose === 'RECONNECT' || !connected.has(c.maskedNumber)).map(
     ({ shortLabel: _shortLabel, ...c }) => ({ ...c, preselected: purpose === 'RECONNECT' ? connected.has(c.maskedNumber) : true }),
   )
@@ -323,8 +329,9 @@ export const handlers: HttpHandler[] = [
     const attempt = signupAttempt(String(params.attemptId)) ?? walletMock().attempts[String(params.attemptId)]
     if (!attempt || attempt.userId !== db.meUserId) return mockError('NOT_FOUND', 404)
     if (attempt.status === 'EXPIRED') return mockError('ATTEMPT_EXPIRED', 410)
-    // 데모: 첫 조회는 대기, 다음 조회부터 인증 완료
-    if (attempt.status === 'WAITING' && attempt.polls++ >= 1) attempt.status = 'AUTHORIZED'
+    // 데모: 첫 조회는 대기, 만든 뒤 1.5초가 지난 다음 조회부터 인증 완료
+    attempt.authorizeAt ??= Date.now() + 1500
+    if (attempt.status === 'WAITING' && attempt.polls++ >= 1 && Date.now() >= attempt.authorizeAt) attempt.status = 'AUTHORIZED'
     return HttpResponse.json(attemptView(attempt))
   }),
 
@@ -363,11 +370,11 @@ export const handlers: HttpHandler[] = [
     if (attempt.purpose === 'RECONNECT') {
       for (const p of myMethods()) {
         if (state.methodConnection[p.id] !== connId) continue
-        p.status = picked.some((c) => c.maskedNumber === p.maskedNumber) ? 'ACTIVE' : 'REMOVED'
+        p.status = picked.some((c) => c.maskedNumber === serverMask(p)) ? 'ACTIVE' : 'REMOVED'
       }
     }
     for (const c of picked) {
-      const existing = myMethods().find((p) => p.maskedNumber === c.maskedNumber)
+      const existing = myMethods().find((p) => serverMask(p) === c.maskedNumber)
       if (existing) continue
       const id = `pm-${c.candidateId}-${state.seq}`
       db.paymentMethods.push({
