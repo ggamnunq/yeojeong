@@ -23,6 +23,7 @@ export function toMemberSummary(
     joinOrder: member.joinOrder,
     isMe: member.id === meId,
     isLeft: member.leftAt !== null,
+    isWithdrawn: member.userId === null && member.leaveReason === 'ACCOUNT_DELETED',
   };
 }
 

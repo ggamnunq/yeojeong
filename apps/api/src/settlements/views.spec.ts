@@ -18,6 +18,7 @@ const member = (
 ): LedgerMember => ({
   id,
   userId: `u-${id}`,
+  leaveReason: null,
   nickname: id,
   profileImageUrl: null,
   role: joinOrder === 1 ? 'LEADER' : 'MEMBER',
@@ -72,12 +73,13 @@ describe('member summary', () => {
       toMemberSummary(
         member('c', 3, {
           userId: null,
+          leaveReason: 'ACCOUNT_DELETED',
           nickname: null,
           profileImageUrl: 'https://x',
         }),
         'a',
       ),
-    ).toMatchObject({ nickname: '탈퇴한 멤버', profileImageUrl: null });
+    ).toMatchObject({ nickname: '탈퇴한 멤버', profileImageUrl: null, isWithdrawn: true });
   });
 
   it('sorts me first, then by join order', () => {

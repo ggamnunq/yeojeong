@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { FxModule } from '../fx/fx.module.js';
+import { ExpensesModule } from '../expenses/expenses.module.js';
 import { SettlementSnapshotService } from './settlement-snapshot.service.js';
 import {
   SettlementJobsController,
@@ -13,7 +14,7 @@ import { SummaryService } from './summary.service.js';
  * trips 모듈은 SettlementSnapshotService(preview·ensureSettlement)와 compute.ts의 computeSettlement를 쓴다.
  */
 @Module({
-  imports: [FxModule],
+  imports: [FxModule, ExpensesModule],
   controllers: [SettlementsController, SettlementJobsController],
   providers: [SettlementSnapshotService, SettlementsService, SummaryService],
   exports: [SettlementSnapshotService],

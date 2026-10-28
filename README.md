@@ -103,6 +103,7 @@ Supabase 프로젝트는 대시보드에서 만든 것을 `terraform import supa
 - 마이그레이션용 연결(`yeojeong-direct-url`): session 모드(5432)입니다. API 배포 워크플로가 Cloud Run 배포 전에 이 연결로 마이그레이션을 적용하며, 배포 서비스 계정은 이 시크릿만 읽을 수 있습니다.
 - 마이그레이션 작성법, 하위 호환 규칙, 롤백, 운영 수동 실행은 [apps/api/prisma/README.md](apps/api/prisma/README.md)를 참고하세요.
 - Supabase Data API는 꺼 두었고, SSL 연결만 받으며, Supabase Auth 가입도 막혀 있습니다.
+- Cloud Scheduler는 전용 서비스 계정의 OIDC 토큰으로 Cloud Run을 직접 호출합니다. 자동 종료 5분, 정산 복구 1시간, 환율 하루 2회, 파기 매일 04:00(KST)이며 결제 동기화는 코드 배포 전까지 일시 중지합니다. 환율 소스의 운영 구현은 아직 필요합니다.
 
 ### 배포
 

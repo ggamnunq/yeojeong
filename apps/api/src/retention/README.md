@@ -17,7 +17,7 @@
 2. 한 트랜잭션:
    - `users` 행 `FOR UPDATE`. 없으면 `ALREADY_DELETED`로 끝난다(동시 요청·재시도 멱등).
    - 활성 멤버십의 Trip 행 `FOR UPDATE`(S2A와 같은 순서: Trip → Membership).
-   - 활성 멤버십마다: `userId = NULL`, `leftAt`, `leaveReason = LEFT`. 그룹장이면 남은 활성 멤버 중 `joinOrder` 최소에게 LEADER + `TripEvent LEADER_CHANGED`. 남는 활성 멤버가 없으면 그룹·여정 `deletedAt`(29일 경과 후 파기).
+   - 활성 멤버십마다: `userId = NULL`, `leftAt`, `leaveReason = ACCOUNT_DELETED`. 그룹장이면 남은 활성 멤버 중 `joinOrder` 최소에게 LEADER + `TripEvent LEADER_CHANGED`. 남는 활성 멤버가 없으면 그룹·여정 `deletedAt`(29일 경과 후 파기).
    - 나간 멤버십도 `userId = NULL`. 내가 승계받았던 토스트 페이로드의 닉네임은 "탈퇴한 멤버"로 바꾼다.
    - 내 PENDING·PERSONAL 결제(취소 자식 포함), 거래 원본, 결제수단, 연결 시도, 연결(토큰 포함), 세션, 같은 카카오 회원번호의 가입 대기를 지운다. SHARED 결제·부담·정산 행은 Membership ID로 남고 `transactionId`만 NULL이 된다.
    - 동의 이력 `withdrawnAt` + `ACCOUNT_DELETED`(3년 보존 후 파기).
@@ -84,7 +84,7 @@ detail() {}
 ```
 
 - 라우트 밖(서비스 트랜잭션 안, 잡)에서는 `AuditService.record({ userId, action, resourceType, resourceId, ip }, tx?)`.
-- 행동은 shared `AccessAction`(`VIEW_PAYMENT_METHODS`·`VIEW_EXPENSE_DETAIL`·`LIST_EXPENSES`·`VIEW_CANDIDATES`·`CONNECT`·`DISCONNECT`·`SYNC`)에 `CLASSIFY_EXPENSE`·`VIEW_SETTLEMENT`·`DELETE_ACCOUNT`를 더했다(`audit-actions.ts`).
+- 행동은 shared `AccessAction`을 사용한다.
 - 남기는 것: userId, action, resourceType, resourceId(UUID가 아니면 NULL), `ipHash`(HMAC-SHA256, `AUDIT_HMAC_KEY` 없으면 NULL), 시각. 금액·가맹점·닉네임·IP 원문은 남기지 않는다.
 - requestId·user-agent는 테이블에 칸이 없어 같은 요청의 애플리케이션 로그 `접근 기록`(`accessLogId`, requestId 자동)으로 잇는다. 요청 로그 줄에 ip·userAgent가 있다.
 - 기록 실패는 응답을 막지 않는다(오류 코드만 로그). 보존 1년은 파기 배치 9단계.
@@ -100,7 +100,7 @@ detail() {}
 ## 테스트
 
 - 단위: `retention-policy.spec.ts`(경계), `account-deletion.plan.spec.ts`(승계·익명화), `audit.*.spec.ts`, `common/internal-job/*.spec.ts`.
-- e2e(실제 DB): `test/account.e2e-spec.ts`, `test/retention.e2e-spec.ts`, `test/audit.e2e-spec.ts`. `.env`의 `DATABASE_URL`이 없으면(CI) 건너뛴다. 파기 e2e는 그 DB에서 배치를 실제로 돌리므로 개발 DB 대신 별도 DB를 쓰는 것을 권한다.
+- e2e(실제 DB): `test/account.e2e-spec.ts`, `test/retention.e2e-spec.ts`, `test/audit.e2e-spec.ts`. `DATABASE_URL`이 없으면 건너뛴다. CI는 별도 테스트 DB를 사용한다. 파기 e2e는 그 DB에서 배치를 실제로 돌리므로 개발 DB 대신 별도 DB를 쓰는 것을 권한다.
 
 ## 통합 과제
 

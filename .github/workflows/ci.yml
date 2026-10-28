@@ -17,6 +17,21 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: yeojeong
+          POSTGRES_PASSWORD: yeojeong
+          POSTGRES_DB: yeojeong_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U yeojeong -d yeojeong_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://yeojeong:yeojeong@localhost:5432/yeojeong_test
+      TEST_DATABASE_URL: postgresql://yeojeong:yeojeong@localhost:5432/yeojeong_s2a_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,6 +42,9 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: PGPASSWORD=yeojeong createdb -h localhost -U yeojeong yeojeong_s2a_test
+      - run: pnpm --filter @yeojeong/api db:migrate:deploy
+      - run: DATABASE_URL="$TEST_DATABASE_URL" pnpm --filter @yeojeong/api db:migrate:deploy
       # api의 type-aware 린트가 shared 빌드 결과를 참조하므로 빌드를 먼저 한다
       - run: pnpm build
       - run: pnpm --filter @yeojeong/web ds:tokens:check

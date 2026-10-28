@@ -12,6 +12,7 @@ export interface LedgerMember {
   id: string;
   /** 탈퇴하면 null → "탈퇴한 멤버" */
   userId: string | null;
+  leaveReason: 'LEFT' | 'KICKED' | 'ACCOUNT_DELETED' | 'GROUP_DELETED' | null;
   nickname: string | null;
   profileImageUrl: string | null;
   role: MemberRole;
@@ -34,6 +35,7 @@ export async function loadMembers(
     select: {
       id: true,
       userId: true,
+      leaveReason: true,
       role: true,
       joinOrder: true,
       leftAt: true,
@@ -43,6 +45,7 @@ export async function loadMembers(
   return rows.map((row) => ({
     id: row.id,
     userId: row.userId,
+    leaveReason: row.leaveReason,
     nickname: row.user?.nickname ?? null,
     profileImageUrl: row.user?.profileImageUrl ?? null,
     role: row.role,
@@ -91,24 +94,4 @@ export async function sumMyPersonal(
     _sum: { netKrwAmount: true },
   });
   return result._sum.netKrwAmount ?? 0;
-}
-
-/**
- * 멤버별 개인 결제 건수(정산 스냅샷의 personalCount). 종료 때 미확정은 개인이 되므로(FR-306) PENDING도 센다.
- * 금액은 읽지 않는다.
- */
-export async function countPersonalByMember(
-  db: Db,
-  tripId: string,
-): Promise<Map<string, number>> {
-  const rows = await db.expense.groupBy({
-    by: ['payerMembershipId'],
-    where: {
-      tripId,
-      status: { in: ['PERSONAL', 'PENDING'] },
-      refundOfExpenseId: null,
-    },
-    _count: { _all: true },
-  });
-  return new Map(rows.map((r) => [r.payerMembershipId, r._count._all]));
 }

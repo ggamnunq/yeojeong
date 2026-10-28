@@ -28,6 +28,8 @@ export const MEMBER_SELECT = {
   role: true,
   joinOrder: true,
   leftAt: true,
+  userId: true,
+  leaveReason: true,
   user: { select: { nickname: true, profileImageUrl: true } },
 } satisfies Prisma.MembershipSelect;
 
@@ -113,6 +115,7 @@ export function toMemberSummary(
     joinOrder: member.joinOrder,
     isMe: member.id === viewerMembershipId,
     isLeft: member.leftAt !== null,
+    isWithdrawn: member.userId === null && member.leaveReason === 'ACCOUNT_DELETED',
   };
 }
 

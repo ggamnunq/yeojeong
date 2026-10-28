@@ -51,6 +51,8 @@ describe('AuditService', () => {
         resourceType: 'EXPENSE',
         resourceId: EXPENSE_ID,
         ipHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+        requestId: null,
+        ua: null,
       },
       select: { id: true },
     });

@@ -142,7 +142,7 @@ documents() {}
 - 내부 잡 컨트롤러는 클래스에 `@InternalJob()`을 붙인다. 이 데코레이터가 `@Public()`과 CSRF 예외를 함께 적용하고, 전역 `InternalJobGuard`가 인증한다. 모듈별 가드를 만들지 않는다.
 - 운영은 Cloud Scheduler가 Cloud Run URL을 직접 호출하며, `Authorization: Bearer <OIDC ID token>`의 Google JWKS 서명·`aud`·서비스 계정 `email`을 검증한다. `INTERNAL_JOB_OIDC_AUDIENCE`와 `INTERNAL_JOB_OIDC_SERVICE_ACCOUNT`가 정확히 일치해야 한다.
 - 로컬·테스트만 `x-internal-job-secret` = `INTERNAL_JOB_SECRET`(32자 이상)을 대체 인증으로 허용한다. `NODE_ENV=production`에서는 이 헤더를 무시한다.
-- `/api/internal/`은 Cloudflare origin lock을 건너뛰다. 이 경로의 인증 경계는 `@InternalJob()` 가드다.
+- `/api/internal/`은 Cloudflare origin lock을 건너뛴다. 이 경로의 인증 경계는 `@InternalJob()` 가드다.
 - 결제 동기화 `/api/internal/jobs/sync`는 S2B-1(PR #23) 머지 후 해당 컨트롤러에 같은 `@InternalJob()`을 적용한다. Scheduler 잡은 코드 머지·배포 전까지 paused 상태로 둔다.
 
 ### 테스트에서 로그인 흉내 내기

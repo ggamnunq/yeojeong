@@ -504,8 +504,8 @@ describe.skipIf(!withDb)('Settlements · summary (e2e, real DB)', () => {
           p.refunds.length,
         ]),
       ).toEqual([
-        ['이치란', 30_000, false, 0],
         ['주유패스', 9_000, true, 1],
+        ['이치란', 30_000, false, 0],
       ]);
       expect(body.personalCount).toBe(1);
       expect(

@@ -13,11 +13,11 @@ import {
   type SettlementResult,
 } from './compute.js';
 import {
-  countPersonalByMember,
   loadMembers,
   loadSharedExpenses,
   type Db,
 } from './ledger.js';
+import { ExpenseStatsService } from '../expenses/expense-stats.service.js';
 import { TRIP_EVENTS, type TripEndedEvent } from '../trips/events.js';
 
 const TRIP_SELECT = {
@@ -56,7 +56,7 @@ function isUniqueViolation(error: unknown) {
 export class SettlementSnapshotService {
   private readonly logger = new Logger(SettlementSnapshotService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly expenseStats: ExpenseStatsService) {}
 
   /**
    * trips 모듈(S2A)의 종료 커밋 뒤 이벤트(src/trips/events.ts). 재발행(redelivered)·중복 전달도 ensureSettlement가 멱등이라 같다.
@@ -241,7 +241,7 @@ export class SettlementSnapshotService {
   ): Promise<SettlementResult> {
     const members = await loadMembers(db, trip.groupId);
     const sharedExpenses = await loadSharedExpenses(db, trip.id);
-    const personal = await countPersonalByMember(db, trip.id);
+    const personal = new Map((await this.expenseStats.personalCountsByPayer(trip.id, db)).map((row) => [row.membershipId, row.personalCount]));
     return computeSettlement({
       members: members.map((m) => ({
         membershipId: m.id,

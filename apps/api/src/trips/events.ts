@@ -67,10 +67,10 @@ export interface MembershipJoinedEvent extends OrderedEvent {
   tripStatus: TripStatus;
 }
 
-export type MembershipLeftReason = 'LEFT' | 'KICKED' | 'DELETED';
+export type MembershipLeftReason = 'LEFT' | 'KICKED' | 'ACCOUNT_DELETED' | 'GROUP_DELETED';
 
 /**
- * 멤버가 빠짐(FR-207·208·209). DELETED = 그룹 삭제로 활성 멤버 전원이 빠짐(Membership.leftAt은 그대로 NULL).
+ * 멤버가 빠짐(FR-207·208·209). GROUP_DELETED = 그룹 삭제로 활성 멤버 전원이 빠짐.
  * 구독: S2B 이후 인입 중단.
  */
 export interface MembershipLeftEvent extends OrderedEvent {

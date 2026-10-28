@@ -63,7 +63,7 @@
 | `trip.started` | `tripId, groupId, startedByUserId, startAt`(시작일 00:00 KST) + `eventSeq, occurredAt` | 시작 트랜잭션 커밋 뒤 | S2B 소급 인입(TRIP_START, [startAt, now]) |
 | `trip.ended` | `tripId, groupId, endedByUserId`(자동이면 null)`, endedAt, reason`(`MANUAL`·`AUTO`)`, redelivered` + `eventSeq, occurredAt` | 종료 트랜잭션 커밋 뒤. 자동 종료 잡이 재전송할 때 `redelivered: true` | S2B 미확정 → 개인, S2C 정산 스냅샷 |
 | `membership.joined` | `tripId, groupId, membershipId, userId, joinedAt, rejoined, tripStatus` + `eventSeq, occurredAt` | 참여 트랜잭션 커밋 뒤 | S2B 신규 멤버 소급 인입(진행 중일 때 JOIN) |
-| `membership.left` | `tripId, groupId, membershipId, userId`(탈퇴 멤버면 null)`, reason`(`LEFT`·`KICKED`·`DELETED`) + `eventSeq, occurredAt` | 나가기·강퇴 커밋 뒤, 그룹 삭제는 활성 멤버마다 한 건 | S2B 이후 인입 중단 |
+| `membership.left` | `tripId, groupId, membershipId, userId`(탈퇴 멤버면 null)`, reason`(`LEFT`·`KICKED`·`ACCOUNT_DELETED`·`GROUP_DELETED`) + `eventSeq, occurredAt` | 나가기·강퇴 커밋 뒤, 그룹 삭제는 활성 멤버마다 한 건 | S2B 이후 인입 중단 |
 | `trip.auto-ending` | `tripId, groupId, autoEndAt`(순서 번호 없음) | 자동 종료 잡이 종료 트랜잭션 전에 보내고 최대 60초 기다림 | S2B FINAL 동기화(FR-305) |
 
 보장과 구독자 규칙:
@@ -98,7 +98,7 @@
 | `test/trips-guards.e2e-spec.ts` | DB 없이: 비로그인 401, 비멤버 404, 비그룹장 403, 단계 위반 409, 검증 400, 초대코드 형식, 내부 잡 시크릿 |
 | `test/trips-flow.e2e-spec.ts` | 실제 DB: 생성 → 목록 → 상세 → 참여 → 강퇴 → 나가기·승계 → 재참여 → 수정 → 시작 → 종료 → 잠금, 동시 참여, 그룹장·다음 멤버 동시 나가기, 인원 한도, 초대코드 충돌·재사용, 마지막 멤버, 자동 종료 겹침·재전송 |
 
-실제 DB e2e는 `TEST_DATABASE_URL`이 있을 때만 돈다(CI는 건너뜀). 이름이 `_test`로 끝나는 전용 DB를 쓰고, 테스트가 매번 `TRUNCATE users, groups … CASCADE`로 비운다.
+실제 DB e2e는 `TEST_DATABASE_URL`이 있을 때만 돈다(CI에서도 실행). 이름이 `_test`로 끝나는 전용 DB를 쓰고, 테스트가 매번 `TRUNCATE users, groups … CASCADE`로 비운다.
 
 ```bash
 docker exec yeojeong-db-1 psql -U yeojeong -c "CREATE DATABASE yeojeong_s2a_test"

@@ -5,7 +5,7 @@ import { TRIP_EVENTS } from '../trips/events.js';
 
 /**
  * 멤버가 그룹에서 빠졌다(나가기·강퇴·탈퇴). 커밋 후 발행. 이름·페이로드는 S2A `src/trips/events.ts`를 그대로 쓴다.
- * 탈퇴는 reason DELETED, userId null로 보낸다. DB에는 leaveReason = LEFT로 남는다(enum에 탈퇴 사유가 아직 없다).
+ * 탈퇴는 reason ACCOUNT_DELETED, userId null로 보낸다.
  * eventSeq는 S2A와 같은 방식으로 Trip 행을 잠근 뒤 trip_events.seq 시퀀스에서 받는다.
  */
 export const MEMBERSHIP_LEFT_EVENT = TRIP_EVENTS.MEMBERSHIP_LEFT;

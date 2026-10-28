@@ -60,7 +60,7 @@
 ## 통합 예정(S2B-2)
 
 - 기간 외 결제 등 인입 환산은 임시 `krw.ts` 대신 `FxRatesService.convertForTrip`(DB 고시 조회 포함) 또는 순수 함수 `convertToKrw`로 바꾼다.
-- 멤버별 내역·개인 건수는 지금 Prisma로 직접 읽는다(`settlements.service.ts`, `ledger.ts`의 `countPersonalByMember`). expenses 모듈의 `ExpenseQueryService.paymentsByPayer`·`ExpenseStatsService.personalCountsByPayer`가 들어오면 그쪽으로 바꾼다.
+- 멤버별 내역·개인 건수는 expenses 모듈의 `ExpenseQueryService.paymentsByPayer`와 `ExpenseStatsService.personalCountsByPayer`를 사용한다.
 
 ## 가시성
 

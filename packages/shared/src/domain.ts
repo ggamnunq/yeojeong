@@ -17,7 +17,7 @@ export const MEMBER_ROLE_VALUES = ['LEADER', 'MEMBER'] as const;
 export type MemberRole = (typeof MEMBER_ROLE_VALUES)[number];
 export const MemberRole = enumObject(MEMBER_ROLE_VALUES);
 
-export const LEAVE_REASON_VALUES = ['LEFT', 'KICKED'] as const;
+export const LEAVE_REASON_VALUES = ['LEFT', 'KICKED', 'ACCOUNT_DELETED', 'GROUP_DELETED'] as const;
 export type LeaveReason = (typeof LEAVE_REASON_VALUES)[number];
 export const LeaveReason = enumObject(LEAVE_REASON_VALUES);
 
@@ -136,6 +136,9 @@ export const ACCESS_ACTION_VALUES = [
   'CONNECT',
   'DISCONNECT',
   'SYNC',
+  'CLASSIFY_EXPENSE',
+  'VIEW_SETTLEMENT',
+  'DELETE_ACCOUNT',
 ] as const;
 /** 금융 데이터 접근 로그(AccessLog.action) */
 export type AccessAction = (typeof ACCESS_ACTION_VALUES)[number];

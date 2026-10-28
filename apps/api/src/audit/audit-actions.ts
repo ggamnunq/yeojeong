@@ -6,12 +6,6 @@ import { ACCESS_ACTION_VALUES } from '@yeojeong/shared';
  */
 export const AUDIT_ACTION_VALUES = [
   ...ACCESS_ACTION_VALUES,
-  /** 결제 분류·부담 인원 변경(FR-504~508) */
-  'CLASSIFY_EXPENSE',
-  /** 정산 요약·멤버별 내역 조회(FR-702~704) */
-  'VIEW_SETTLEMENT',
-  /** 서비스 내 탈퇴(FR-109) */
-  'DELETE_ACCOUNT',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTION_VALUES)[number];
 

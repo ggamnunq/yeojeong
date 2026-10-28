@@ -18,6 +18,7 @@ export const memberSelect = {
   joinOrder: true,
   leftAt: true,
   userId: true,
+  leaveReason: true,
   user: { select: { nickname: true, profileImageUrl: true } },
 } as const;
 
@@ -27,6 +28,7 @@ export interface MemberRow {
   joinOrder: number;
   leftAt: Date | null;
   userId: string | null;
+  leaveReason: 'LEFT' | 'KICKED' | 'ACCOUNT_DELETED' | 'GROUP_DELETED' | null;
   user: { nickname: string; profileImageUrl: string | null } | null;
 }
 
@@ -49,6 +51,7 @@ export function toMemberSummary(
     joinOrder: row.joinOrder,
     isMe: row.id === meMembershipId,
     isLeft: row.leftAt !== null,
+    isWithdrawn: row.userId === null && row.leaveReason === 'ACCOUNT_DELETED',
   };
 }
 

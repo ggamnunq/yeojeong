@@ -26,6 +26,8 @@ pnpm --filter @yeojeong/api build                            # client 재생성(
 
 Prisma CLI는 `DIRECT_URL`이 있으면 그것을, 없으면 `DATABASE_URL`을 쓴다. 로컬은 `DATABASE_URL`만 있으면 된다. 서버 런타임은 항상 `DATABASE_URL`을 쓴다.
 
+CI는 여정 테스트의 TRUNCATE가 다른 테스트에 영향을 주지 않도록 별도 Postgres DB 두 개에 각각 마이그레이션을 적용한다. LeaveReason 확장과 기존 값 이관은 enum 추가가 커밋된 뒤 값을 사용할 수 있도록 별도 마이그레이션으로 나눈다.
+
 ## 스키마 규칙
 
 - 모델은 PascalCase 단수, 테이블은 snake_case 복수: `@@map("trip_members")`

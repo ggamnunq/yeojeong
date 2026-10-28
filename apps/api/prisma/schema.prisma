@@ -38,6 +38,8 @@ enum MemberRole {
 enum LeaveReason {
   LEFT
   KICKED
+  ACCOUNT_DELETED
+  GROUP_DELETED
 
   @@map("leave_reason")
 }
@@ -838,6 +840,8 @@ model AccessLog {
   resourceType String   @map("resource_type") @db.VarChar(32)
   resourceId   String?  @map("resource_id") @db.Uuid
   ipHash       String?  @map("ip_hash") @db.Char(64)
+  requestId    String?  @map("request_id") @db.VarChar(128)
+  ua           String?  @db.VarChar(512)
   at           DateTime @default(now()) @db.Timestamptz
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz

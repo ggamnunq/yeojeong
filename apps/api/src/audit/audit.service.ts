@@ -17,6 +17,8 @@ export interface AuditEntry {
   resourceId?: string | null;
   /** 원문은 저장하지 않고 HMAC만 남긴다 */
   ip?: string | null;
+  requestId?: string | null;
+  ua?: string | null;
 }
 
 type AccessLogWriter = Pick<Prisma.TransactionClient, 'accessLog'>;
@@ -52,7 +54,6 @@ export class AuditService {
 
   /**
    * AccessLog 한 줄을 쓰고 id를 돌려준다. 트랜잭션 안이면 tx를 넘긴다.
-   * requestId·user-agent는 테이블에 칸이 없어 같은 요청의 애플리케이션 로그(requestId 자동)에 accessLogId로 잇는다.
    */
   async record(
     entry: AuditEntry,
@@ -67,6 +68,8 @@ export class AuditService {
         resourceType: entry.resourceType,
         resourceId,
         ipHash: this.hashIp(entry.ip),
+        requestId: entry.requestId?.slice(0, 128) ?? null,
+        ua: entry.ua?.slice(0, 512) ?? null,
       },
       select: { id: true },
     });

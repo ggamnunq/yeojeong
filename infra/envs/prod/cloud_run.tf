@@ -11,6 +11,7 @@ locals {
     SESSION_SECRET       = "session_secret"
     TOKEN_ENCRYPTION_KEY = "token_encryption_key"
     USER_REF_HMAC_KEY    = "user_ref_hmac_key"
+    AUDIT_HMAC_KEY       = "audit_hmac_key"
   }
 }
 
@@ -68,6 +69,16 @@ resource "google_cloud_run_v2_service" "api" {
       env {
         name  = "SUPPORT_EMAIL"
         value = var.support_email
+      }
+
+      env {
+        name  = "INTERNAL_JOB_OIDC_AUDIENCE"
+        value = var.internal_job_oidc_audience
+      }
+
+      env {
+        name  = "INTERNAL_JOB_OIDC_SERVICE_ACCOUNT"
+        value = google_service_account.scheduler.email
       }
 
       dynamic "env" {

@@ -8,13 +8,12 @@ import type { MembershipContext } from '../common/auth/index.js';
 import { NotFoundError } from '../common/errors/index.js';
 import { toKstIso } from '../fx/kst.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ExpenseQueryService } from '../expenses/expense-query.service.js';
 import { settlementDirection } from './compute.js';
 import { loadMembers, type LedgerMember } from './ledger.js';
 import { SettlementSnapshotService } from './settlement-snapshot.service.js';
 import {
   compareMeFirst,
-  EXPENSE_ITEM_SELECT,
-  toExpenseListItem,
   toMemberSummary,
 } from './views.js';
 
@@ -33,6 +32,7 @@ export class SettlementsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly snapshots: SettlementSnapshotService,
+    private readonly expenses: ExpenseQueryService,
   ) {}
 
   /** 정산 요약. 스냅샷이 없으면(리스너 실패 등) 같은 생성 함수로 지연 생성한다 */
@@ -94,52 +94,22 @@ export class SettlementsService {
     if (!row) throw new NotFoundError();
     const trip = await this.prisma.trip.findUniqueOrThrow({
       where: { id: tripId },
-      select: { groupId: true, startDate: true, endDate: true },
+      select: { groupId: true },
     });
     const members = await this.memberMap(trip.groupId);
-    const ctx = {
-      meId: me.id,
-      members,
-      startDate: trip.startDate,
-      endDate: trip.endDate,
-    };
     const summaryOf = (id: string) => {
       const member = members.get(id);
       if (!member) throw new NotFoundError();
       return toMemberSummary(member, me.id);
     };
 
-    const sharedRows = await this.prisma.expense.findMany({
-      where: {
-        tripId,
-        payerMembershipId: membershipId,
-        status: 'SHARED',
-        refundOfExpenseId: null,
-      },
-      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
-      select: EXPENSE_ITEM_SELECT,
-    });
-    const isMe = membershipId === me.id;
-    const personalRows = isMe
-      ? await this.prisma.expense.findMany({
-          where: {
-            tripId,
-            payerMembershipId: me.id,
-            status: { in: ['PERSONAL', 'PENDING'] },
-            refundOfExpenseId: null,
-          },
-          orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
-          select: EXPENSE_ITEM_SELECT,
-        })
-      : null;
+    const payments = await this.expenses.paymentsByPayer(tripId, me.id, membershipId);
 
     return {
       ...this.memberView(row, summaryOf),
-      sharedPayments: sharedRows.map((r) => toExpenseListItem(r, ctx)),
-      personalCount: row.personalCount,
-      personalPayments: personalRows
-        ? personalRows.map((r) => toExpenseListItem(r, ctx))
-        : null,
+      sharedPayments: payments.sharedPayments,
+      personalCount: payments.personalCount,
+      personalPayments: payments.personalPayments ?? null,
     };
   }
 
