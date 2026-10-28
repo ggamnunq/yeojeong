@@ -18,6 +18,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.9"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 5.28"
+    }
   }
 }
 
@@ -37,3 +41,6 @@ provider "google" {
 
 # 토큰은 SUPABASE_ACCESS_TOKEN 환경변수로 받는다
 provider "supabase" {}
+
+# 토큰은 CLOUDFLARE_API_TOKEN 환경변수로 받는다 (jinyeojeong.com zone + 계정 Workers 권한만 가진 토큰)
+provider "cloudflare" {}

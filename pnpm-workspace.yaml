@@ -3,7 +3,9 @@ packages:
   - packages/*
 allowBuilds:
   '@prisma/engines': true
+  esbuild: false
   prisma: true
+  workerd: false
 overrides:
   # GHSA-q7qp-rjg7-q26m: @nestjs/platform-express 12.2.0이 multer 2.4.0을 고정한다. Nest를 12.3.2 이상으로 올리면 지운다.
   multer: 2.5.0

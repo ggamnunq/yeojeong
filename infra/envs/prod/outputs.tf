@@ -21,3 +21,9 @@ output "github_variables" {
     CLOUD_RUN_SERVICE = google_cloud_run_v2_service.api.name
   }
 }
+
+# Worker secret(ORIGIN_SECRET)으로 넣는 값. README 인프라 섹션 참고.
+output "origin_secret" {
+  value     = random_password.origin_secret.result
+  sensitive = true
+}

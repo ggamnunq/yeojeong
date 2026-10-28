@@ -43,3 +43,17 @@ variable "github_repository_owner_id" {
   description = "레포 소유자의 숫자 ID (gh api repos/OWNER/REPO --jq .owner.id)"
   type        = string
 }
+
+variable "cloudflare_account_id" {
+  type = string
+}
+
+variable "domain" {
+  type    = string
+  default = "jinyeojeong.com"
+}
+
+variable "web_worker_name" {
+  type    = string
+  default = "yeojeong-web"
+}

@@ -4,7 +4,7 @@ resource "google_service_account" "api_runtime" {
 }
 
 resource "google_secret_manager_secret_iam_member" "api_runtime" {
-  for_each  = toset(["database_url", "supabase_ca"])
+  for_each  = toset(["database_url", "supabase_ca", "origin_secret"])
   secret_id = google_secret_manager_secret.this[each.value].id
   role      = "roles/secretmanager.secretAccessor"
   member    = google_service_account.api_runtime.member
@@ -48,6 +48,16 @@ resource "google_cloud_run_v2_service" "api" {
         value_source {
           secret_key_ref {
             secret  = google_secret_manager_secret.this["database_url"].secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "ORIGIN_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.this["origin_secret"].secret_id
             version = "latest"
           }
         }

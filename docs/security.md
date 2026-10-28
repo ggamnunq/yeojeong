@@ -12,25 +12,44 @@
 - **Rate limit**: 전역으로 IP당 1분에 120회까지 허용한다.
   - 로그인이나 인증번호처럼 무차별 대입 대상이 되는 엔드포인트에는 `@StrictThrottle()`(1분에 10회)를 붙인다.
   - 카운터는 인스턴스 메모리에 있어서 Cloud Run 인스턴스마다 따로 센다. 인증을 붙일 때 Redis 같은 공유 저장소를 검토한다.
-- **클라이언트 IP(trust proxy)**: Cloud Run(`K_SERVICE`가 있을 때)에서는 `X-Forwarded-For`의 맨 끝 1단계만 믿는다.
-  - Cloudflare를 앞에 붙이면 `TRUST_PROXY_HOPS=2`로 올린다.
-  - 그때 `*.run.app`으로 직접 들어오는 요청은 막아야 IP를 위조할 수 없다(Cloud Run ingress 제한 등).
-  - 배포한 뒤에는 `req.ip`가 실제 클라이언트 IP로 잡히는지 한 번 확인한다.
-- **CORS**: `WEB_ORIGIN`에 적은 정확한 origin만 허용하고 credentials도 허용한다. 와일드카드나 경로가 붙은 값은 서버가 시작할 때 오류를 낸다.
+- **Origin lock**: 운영 API는 Cloudflare Worker를 거친 요청만 받는다.
+  - Worker가 `x-origin-auth` 헤더에 `ORIGIN_SECRET`을 담아 보내고, API는 값이 다르거나 없으면 403을 돌려준다(상수 시간 비교).
+  - `*.run.app` 주소로 직접 들어오는 요청은 그래서 모두 403이다. Cloudflare의 보호(HTTPS 강제, rate limit 등)를 우회할 수 없다.
+  - `ORIGIN_SECRET`은 Terraform이 만들어 Secret Manager(Cloud Run)와 Worker secret에만 둔다. 32자보다 짧으면 서버가 뜨지 않는다. 로컬에서는 비워 둬서 잠그지 않는다.
+- **클라이언트 IP**: Worker를 거치면 Cloud Run이 받는 `X-Forwarded-For`는 `2a06:98c0:3600::103,<Cloudflare IP>`라 trust proxy만으로는 실제 IP를 알 수 없다(2026-10-28 실측).
+  - Worker가 Cloudflare 엣지가 채운 `CF-Connecting-IP`를 `x-client-ip`로 넘기고, API는 origin lock을 통과한 요청에서만 이 값을 `req.ip`로 쓴다. rate limit도 이 IP 기준이다.
+  - 클라이언트가 보낸 `X-Forwarded-For`, `X-Client-IP`, `X-Real-IP` 등은 Worker가 버린다. `CF-Connecting-IP`를 직접 보내면 Cloudflare가 요청을 거부한다.
+  - `ORIGIN_SECRET` 없이 띄우면 예전처럼 trust proxy(Cloud Run 1단계, 로컬 0단계)로 판단한다.
+- **CORS**: 운영은 화면과 API가 같은 origin이라 CORS를 쓰지 않는다(`WEB_ORIGIN` 비움). 다른 origin에서 불러야 할 때만 `WEB_ORIGIN`에 정확한 origin을 적는다. 와일드카드나 경로가 붙은 값은 서버가 시작할 때 오류를 낸다.
 - **에러 응답**: 500 응답은 `Internal server error`만 돌려준다. 스택은 서버 로그에만 남긴다.
-- 위 내용은 모두 `test/security.e2e-spec.ts`로 확인한다.
+- 위 내용은 `test/security.e2e-spec.ts`와 `test/origin-lock.e2e-spec.ts`로 확인한다.
 
 ### 화면 (`apps/web`)
 
 - `public/_headers`: Cloudflare가 응답에 아래 헤더를 붙인다.
   - CSP(`default-src 'self'`, `frame-ancestors 'none'` 등)
   - `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, HSTS
+- 화면은 API를 같은 origin의 `/api`로 부르므로 CSP `connect-src 'self'`로 충분하다.
 - **CSP를 바꿔야 할 때**
   - API를 다른 origin에 두면 `connect-src`에 그 origin을 추가한다.
   - 외부 폰트, 이미지, 스크립트를 쓸 때도 필요한 출처만 추가한다.
   - `'unsafe-inline'`과 `'unsafe-eval'`은 쓰지 않는다.
 - **Permissions-Policy를 바꿔야 할 때**: 카메라(영수증 촬영)나 위치(소비 지도)를 직접 쓰게 되면 `camera=(self)`처럼 필요한 것만 연다.
 - **`VITE_*` 환경변수**: 빌드 결과에 그대로 들어가 공개된다. 비밀값을 넣지 않는다.
+
+### Cloudflare (`jinyeojeong.com`, `infra/envs/prod/cloudflare.tf`)
+
+- HTTPS만 쓴다: SSL Full (strict), Always Use HTTPS, 최소 TLS 1.2.
+- HSTS: 1년, 하위 도메인 포함. preload는 목록에서 빠지기 어려워 켜지 않았다.
+- DNSSEC을 켰다.
+- 메일을 쓰지 않는 도메인이라 사칭 메일이 거부되도록 SPF `-all`, DMARC `p=reject`, 빈 DKIM, null MX를 걸었다.
+- `/api/*`에 엣지 rate limit(IP당 10초에 50회)을 걸었다. 앱의 분당 120회 제한보다 느슨한 1차 방어선이다.
+- `www`는 apex로 301, workers.dev와 preview URL은 꺼서 진입로를 `jinyeojeong.com` 하나로 둔다.
+- Cloudflare가 자동으로 넣는 Web Analytics 스크립트는 껐다. 제3자 스크립트라 CSP에도 막힌다.
+- 토큰은 용도별로 나누고 최소 권한만 준다. 같은 계정의 다른 프로젝트 zone은 읽지도 못한다.
+  - `yeojeong-terraform`(로컬 키체인): `jinyeojeong.com` zone 설정·DNS·리다이렉트·WAF·Workers Routes, 계정 Workers Scripts. 2027-04-28 만료.
+  - `yeojeong-web-deploy`(GitHub `production` 환경 secret, main 브랜치 전용): 계정 Workers Scripts만. 2027-10-28 만료.
+  - Workers Scripts 권한은 계정 단위라 같은 계정의 다른 Worker도 바꿀 수 있다. 지금은 다른 Worker가 없지만, 생기면 계정 분리를 검토한다.
 
 ### 의존성, CI, 레포
 
@@ -56,7 +75,7 @@
 
 - 인증 토큰은 localStorage에 두지 않는다. httpOnly, Secure, SameSite 쿠키에 담는다.
 - 쿠키가 제대로 동작하려면 화면과 API가 같은 사이트에 있어야 한다.
-  - 계획: Cloudflare에서 `<도메인>/api/*`를 Cloud Run으로 프록시해서 화면과 같은 origin으로 둔다. 그러면 CORS도 필요 없다.
+  - 적용됨: `https://jinyeojeong.com/api/*`를 Worker가 Cloud Run으로 프록시해서 화면과 같은 origin이다. CORS도 필요 없다.
 - 쿠키 인증을 쓰면 상태를 바꾸는 요청에 CSRF 방어를 붙인다. SameSite와 Origin 검사, 또는 CSRF 토큰을 쓴다.
 
 ### 권한 검사 (IDOR)
