@@ -6,9 +6,14 @@
 
 export const TRIP_ENDED_EVENT = 'trip.ended';
 
+/** 정산은 tripId만 쓴다. 나머지는 trips 모듈(S2A)이 싣는 정보용 필드다 */
 export interface TripEndedEvent {
   tripId: string;
   /** 정보용. 정산은 DB의 Trip.endedAt을 기준으로 만든다 */
   endedAt?: Date;
   reason?: 'MANUAL' | 'AUTO';
+  /** 자동 종료 잡이 정산 없는 여정에 다시 발행한 경우 true. ensureSettlement가 멱등이라 처리는 같다 */
+  redelivered?: boolean;
+  eventSeq?: bigint;
+  occurredAt?: Date;
 }

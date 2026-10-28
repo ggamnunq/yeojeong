@@ -8,7 +8,10 @@ import type {
 import request from 'supertest';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { SettlementSnapshotService } from './../src/settlements/settlement-snapshot.service.js';
-import { TRIP_ENDED_EVENT } from './../src/settlements/settlement.events.js';
+import {
+  TRIP_ENDED_EVENT,
+  type TripEndedEvent,
+} from './../src/settlements/settlement.events.js';
 import { createTestAuth, type TestAuth } from './auth-helpers.js';
 import {
   createDbTestApp,
@@ -297,7 +300,13 @@ describe.skipIf(!withDb)('Settlements · summary (e2e, real DB)', () => {
       const events = app.get(EventEmitter2);
 
       await events.emitAsync(TRIP_ENDED_EVENT, { tripId: s.tripId });
-      await events.emitAsync(TRIP_ENDED_EVENT, { tripId: s.tripId });
+      // 자동 종료 잡의 재발행(S2A 계약: redelivered·eventSeq·occurredAt)
+      await events.emitAsync(TRIP_ENDED_EVENT, {
+        tripId: s.tripId,
+        redelivered: true,
+        eventSeq: 2n,
+        occurredAt: new Date(),
+      } satisfies TripEndedEvent);
       await Promise.all([
         events.emitAsync(TRIP_ENDED_EVENT, { tripId: s.tripId }),
         events.emitAsync(TRIP_ENDED_EVENT, { tripId: s.tripId }),

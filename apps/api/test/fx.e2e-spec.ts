@@ -371,9 +371,9 @@ describe.skipIf(!withDb)('FX (e2e, real DB)', () => {
       fxRateSource: TEST_SOURCE,
     }); // 100 × 10
     expect(byId[second].krwAmount).toBe(670); // 55.5 × 12 = 666 → 670
-    expect(byId[second].shares.map((s) => s.amountKrw).sort()).toEqual([
-      335, 335,
-    ]);
+    expect(
+      byId[second].shares.map((s) => s.amountKrw).sort((x, y) => x - y),
+    ).toEqual([335, 335]);
   });
 
   it('rejects fx-policy changes for KRW trips', async () => {
