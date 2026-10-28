@@ -43,7 +43,7 @@ import type {
 // 참여용 데모 여정(준용은 멤버 아님, 처음 조회할 때 db에 넣는다):
 //   T4K9YP 도쿄 먹방 여행(시작 전, 3명) · D7N3QA 다낭 가족여행(진행 중, 2명) · X2P8RW 타이베이 주말(준용 강퇴 이력 → 403)
 //   그 밖에 J3W9PZ 제주(종료 → 409), K7M2QX 오사카·B8N4RT 부산(이미 멤버)
-// 개발 서버에서 여정 없음(HF-09)을 보려면 콘솔에서 localStorage.setItem('yj:mock:trips', 'none') 후 새로고침.
+// 개발 서버 시나리오는 아래 'yj:mock:trips' 참고(콘솔에서 설정 후 새로고침).
 
 const MOCK_TODAY = MOCK_NOW.slice(0, 10)
 
@@ -129,11 +129,11 @@ function ensureDemoTrips() {
   }
 }
 
-// 개발 서버 전용: 여정 없음 화면 보기
+// 개발 서버 전용 시나리오: localStorage 'yj:mock:trips' = 'none'(여정 없음) · 'expired'(부산 시작 전 여정의 종료일이 지남, Q-26)
 try {
-  if (typeof localStorage !== 'undefined' && localStorage.getItem('yj:mock:trips') === 'none') {
-    db.memberships = db.memberships.filter((m) => m.userId !== db.meUserId)
-  }
+  const scenario = typeof localStorage === 'undefined' ? null : localStorage.getItem('yj:mock:trips')
+  if (scenario === 'none') db.memberships = db.memberships.filter((m) => m.userId !== db.meUserId)
+  if (scenario === 'expired') Object.assign(findTrip('trip-busan') ?? {}, { startDate: '2026-11-01', endDate: '2026-11-02' })
 } catch {
   // 저장소를 못 쓰는 환경
 }
@@ -334,7 +334,8 @@ export const handlers: HttpHandler[] = [
   http.post('/api/trips/:tripId/start', async ({ params, request }) => {
     const { denied, trip } = requireLeader(String(params.tripId))
     if (denied) return denied
-    if (trip.status !== 'UPCOMING') return domainError.phase()
+    // Q-26: 종료일이 지난 시작 전 여정은 시작할 수 없다(기간을 고쳐서 시작)
+    if (trip.status !== 'UPCOMING' || trip.endDate < MOCK_TODAY) return domainError.phase()
     const { version } = (await request.json()) as { version: number }
     if (version !== trip.version) return domainError.versionConflict(trip)
     trip.status = 'ONGOING'

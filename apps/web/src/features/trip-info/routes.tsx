@@ -1,7 +1,7 @@
-import { PlaceholderPage } from '../../app/PlaceholderPage'
+import { lazy } from 'react'
 import type { AppRoute } from '../../app/routes'
 
-// TODO(여정 정보 플로우): 시작 전(WF-16)·진행 중·종료 후(WF-23) 여정 정보 탭
+// 여정 정보 탭: 시작 전(HF-16·17) · 진행 중(HF-23·24) · 종료 후(읽기 전용)
 export const routes: AppRoute[] = [
-  { layout: 'trip', path: '/trips/:tripId/info', element: <PlaceholderPage inShell title="여정 정보" /> },
+  { layout: 'trip', path: '/trips/:tripId/info', Component: lazy(() => import('./pages/TripInfoPage')) },
 ]

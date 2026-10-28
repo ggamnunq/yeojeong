@@ -82,6 +82,9 @@ export type TripInfo = TripDetail & {
   /** 진행 중이고 오늘이 기간 안이면 오늘의 Day N(1부터) */
   todayDayIndex?: number | null
   city?: string | null
+  startedAt?: string | null
+  endedAt?: string | null
+  endReason?: 'MANUAL' | 'AUTO' | null
 }
 
 /** GET /api/trips/:tripId/end-preview */
@@ -128,3 +131,6 @@ export interface TripFormValues {
   endDate: string
   budget: string
 }
+
+/** 화면 사이 이동 표시(location.state). 표시가 있으면 「뒤로」가 기록을 되돌리고, 없으면(주소로 바로 옴) 목적지로 바꾼다 */
+export type NavState = { from?: 'info'; fromCreate?: boolean } | null

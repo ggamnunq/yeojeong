@@ -202,14 +202,19 @@ export function tripPermissions(trip: TripInfo, today: string): TripPermissions 
   return {
     canEdit: editableFields.length > 0,
     editableFields,
-    canStart: leader && trip.status === 'UPCOMING' && trip.endDate >= today,
+    canStart: leader && trip.status === 'UPCOMING' && !isStartPeriodOver(trip, today),
     canEnd: leader && trip.status === 'ONGOING',
     canDeleteGroup: leader && trip.status === 'UPCOMING',
     canKick: leader && open,
-    canInvite: open && trip.inviteCode !== null,
+    canInvite: open,
     canLeave: true,
     canChangeFx: leader && open,
   }
+}
+
+/** 시작하지 않은 채 종료일이 지났는가(Q-26 확정: 그룹장은 「기간 수정」, 멤버는 비활성 「여정 시작」, 서버는 시작 409) */
+export function isStartPeriodOver(trip: Pick<TripInfo, 'status' | 'endDate'>, today: string): boolean {
+  return trip.status === 'UPCOMING' && trip.endDate < today
 }
 
 /** 진행 중 오늘이 몇째 날인지(1 ~ days). 서버 todayDayIndex가 먼저 */
@@ -224,7 +229,8 @@ export type TripHero = { label: string; value: string; suffix?: string }
 /** 영웅 카드 글자: 시작 전 "출발까지 D-15"(당일 D-day, 시작일 지남 "시작 전") · 진행 중 "여행 중 Day 2 / 4" · 종료 "종료 3박 4일" */
 export function tripHero(trip: TripInfo, today: string): TripHero {
   if (trip.status === 'UPCOMING') {
-    if (trip.startDate < today) return { label: '', value: '시작 전' }
+    // 서버 dDay는 시작일이 지났으면 null
+    if (trip.startDate < today || trip.dDay === null) return { label: '', value: '시작 전' }
     const dDay = trip.dDay ?? daysBetween(today, trip.startDate)
     return { label: '출발까지', value: dDay <= 0 ? 'D-day' : `D-${dDay}` }
   }
