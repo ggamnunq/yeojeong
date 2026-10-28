@@ -54,16 +54,25 @@ export async function createRealDbApp(): Promise<RealDbContext> {
   const prisma = app.get(PrismaService);
   lookup.inner = new PrismaMembershipLookup(prisma);
 
-  const [{ db }] = await prisma.$queryRaw<{ db: string }[]>`SELECT current_database() AS db`;
+  const [{ db }] = await prisma.$queryRaw<
+    { db: string }[]
+  >`SELECT current_database() AS db`;
   if (!db.endsWith('_test')) {
-    throw new Error(`TEST_DATABASE_URL은 이름이 _test로 끝나는 DB여야 합니다: ${db}`);
+    throw new Error(
+      `TEST_DATABASE_URL은 이름이 _test로 끝나는 DB여야 합니다: ${db}`,
+    );
   }
   // users·groups에 걸린 행(멤버십·여정·이벤트·결제·정산 등)을 모두 비운다
-  await prisma.$executeRawUnsafe('TRUNCATE users, groups RESTART IDENTITY CASCADE');
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE users, groups RESTART IDENTITY CASCADE',
+  );
 
   const events: PublishedEvent[] = [];
   app.get(EventEmitter2).onAny((name, payload) => {
-    events.push({ name: String(name), payload: payload as Record<string, unknown> });
+    events.push({
+      name: String(name),
+      payload: payload as Record<string, unknown>,
+    });
   });
 
   return {
