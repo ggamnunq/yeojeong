@@ -240,7 +240,9 @@ model Session {
   @@map("sessions")
 }
 
-/// 동의 문서 버전. version = 시행일 YYYY-MM-DD(같은 날 두 번이면 .2). 초안(0.1-draft)은 운영 DB에 넣지 않는다.
+/// 동의 문서 버전(서버가 현재 시행 버전을 판단하는 기준). version = 시행일 YYYY-MM-DD(같은 날 두 번이면 .2).
+/// 새 버전은 지우지 말고 마이그레이션으로 행을 추가한다. 시행일이 정해지기 전이라 지금은 초안(0.1-draft, isDraft)만 있다.
+/// 초안 동의는 법적 유효 동의가 아니다: 정식본이 하나도 없을 때만 임시로 인정하고, 정식본이 발행되면 모두 재동의(FR-107).
 model ConsentDocument {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   consentId   ConsentId @map("consent_id")
@@ -255,6 +257,8 @@ model ConsentDocument {
   changeType  String    @map("change_type") @db.VarChar(8)
   /// 재동의 화면 제목 아래 한 줄
   summary     String?
+  /// 시행 전 초안. 법적 유효 동의로 보지 않는다
+  isDraft     Boolean   @default(false) @map("is_draft")
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 

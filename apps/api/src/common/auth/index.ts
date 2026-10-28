@@ -6,10 +6,15 @@ export type {
   MembershipContext,
   TripContext,
 } from './auth-context.js';
-export { SESSION_COOKIE, SIGNUP_COOKIE } from './auth.constants.js';
+export { AuthConfig } from './auth-config.js';
+export {
+  OAUTH_COOKIE,
+  SESSION_COOKIE,
+  SIGNUP_COOKIE,
+} from './auth.constants.js';
 export { AuthCoreModule } from './auth-core.module.js';
 export {
-  CONSENT_DOCUMENT_VERSIONS,
+  ConsentCatalog,
   currentConsentVersion,
   isConsentSatisfied,
   type ConsentDocumentVersion,
@@ -40,6 +45,7 @@ export {
 } from './membership-lookup.js';
 export {
   SessionResolver,
+  SessionService,
   hashSessionToken,
   readCookie,
   type SessionState,
