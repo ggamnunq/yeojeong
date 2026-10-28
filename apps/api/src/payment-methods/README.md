@@ -58,7 +58,7 @@
 - **동일 사용자 중복 제거**: 계좌 출금 ↔ 그 계좌에 연결된 체크카드 승인(같은 원화·±2분) → 계좌 쪽 `sameUserDuplicateOfId`. 계좌 쪽이 이미 확정됐으면 반대로 카드 쪽을 뺀다.
 - **취소 매칭**: 원 승인 ref → 같은 결제수단·가맹점 키·통화·잔여 금액(정확히 같은 금액 → 최근 순).
 - **장부 반영**(`ImportService.importIntoTrip`, Trip·Membership `FOR SHARE`): ONGOING + 활성 멤버일 때만. 여정 기간 안의 승인 → `Expense(PENDING, AUTO)`(`(tripId, transactionId)` 유니크, `skipDuplicates`). 이번 창이 아니라 여정 기간 전체를 보므로 앞선 실패로 빠진 것도 채운다. 원 결제가 여정에 있는 취소 → 자식 Expense(부모 환율로 계산, 상태·결제자 = 부모), 부모 순액 재계산, 공동이면 같은 부담 인원으로 다시 나눔 + `REFUND_ATTACHED` + 중복 의심 재판정.
-- **원화**(`krw.ts`, S2C가 fx를 만들면 교체): KRW 그대로 / FIXED / CARD_BILLED(청구 → 제공자 원화 → SPOT) / SPOT(직전 ExchangeRate, 없으면 제공자 원화). `Expense.fxRate` = 원통화 1단위당 원, `fxRateUnit` = 고시 단위(표시용).
+- **원화**: S2C `FxRatesService.convertForTrip`(여정 환율 정책)의 결과를 Expense `krwAmount`·`fxPolicyApplied`·`fxRate`(원통화 1단위당 원)·`fxRateUnit`(고시 단위)·`fxRateSource`·`fxRateAt`에 넣는다. 고시가 아직 없어 `FX_RATE_UNAVAILABLE`이면 그 거래만 미루고 다음 동기화에서 다시 시도한다.
 - **가시성**: 인입은 PENDING만 만들고 결제자 외 응답은 하지 않는다. 결제수단·거래 원본은 본인 API에서만, 로그에는 ID만.
 
 ## 이벤트 (`transactions/trip-events.listener.ts`)
@@ -82,6 +82,6 @@
 
 ## 테스트
 
-- 단위: `import-rules.spec.ts`(중복 제거·취소 매칭·자식 원화·중복 의심), `krw.spec.ts`, `sync-window.spec.ts`, `masking.spec.ts`, `token-cipher.spec.ts`, `demo-toss.adapter.spec.ts`, `event-seq.spec.ts`
+- 단위: `import-rules.spec.ts`(중복 제거·취소 매칭·자식 원화), `sync-window.spec.ts`, `masking.spec.ts`, `token-cipher.spec.ts`, `demo-toss.adapter.spec.ts`, `event-seq.spec.ts`
 - e2e(DB 없이, CI): `test/payment-methods.e2e-spec.ts` — 동의 403, 로그인, 잡 시크릿·CSRF
 - e2e(실DB, `PAYMENT_TEST_DATABASE_URL`이 있을 때만, DB 이름은 `_test`로 끝나야 함 · S2A의 `TEST_DATABASE_URL`은 시작 때 TRUNCATE하므로 다른 DB): `test/payment-flow.e2e-spec.ts` — 연결 → 선택 → 목록 → PENDING → 수동 동기화 → 해제 → purge, 환불, SH-2 자가 복구·이벤트 멱등·참여 소급·나간 멤버, 만료 → 재연결 소급, 여정 전 거래 보관, FINAL

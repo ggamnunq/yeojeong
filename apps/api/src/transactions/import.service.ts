@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { splitEvenly } from '@yeojeong/shared';
+import { splitEvenly, type FxPolicy } from '@yeojeong/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import { normalizeMerchantKey } from '../payment-methods/masking.js';
 import type { ProviderTransaction } from '../payment-methods/providers/payment-provider.adapter.js';
 import { CipherPurpose, TokenCipher } from '../payment-methods/token-cipher.js';
+import { AppException } from '../common/errors/index.js';
+import { FxRatesService } from '../fx/fx-rates.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { DuplicateFlagger } from './duplicate-flagger.js';
 import {
@@ -18,12 +20,15 @@ import {
   type DedupeTx,
   type MatchTx,
 } from './import-rules.js';
-import { computeKrw, type SpotRate, type TripFx } from './krw.js';
 
 type Tx = Prisma.TransactionClient;
 
 /** 인입 대상 여정(행 잠금 후 다시 읽은 값) */
-export interface LockedTrip extends TripFx {
+export interface LockedTrip {
+  fxPolicy: FxPolicy;
+  /** 고시 단위당 원(FIXED) */
+  fxFixedRate: string | null;
+  fxPolicyChangedAt: Date | null;
   id: string;
   status: 'UPCOMING' | 'ONGOING' | 'ENDED';
   startAt: Date;
@@ -50,6 +55,7 @@ export class ImportService {
     private readonly prisma: PrismaService,
     private readonly cipher: TokenCipher,
     private readonly duplicates: DuplicateFlagger,
+    private readonly fx: FxRatesService,
   ) {}
 
   /**
@@ -373,27 +379,39 @@ export class ImportService {
       },
       orderBy: { occurredAt: 'asc' },
     });
-    const rates = new SpotRateCache(tx);
     const data: Prisma.ExpenseCreateManyInput[] = [];
     for (const t of candidates) {
-      const krw = computeKrw(
-        {
-          originalAmount: t.originalAmount.toFixed(4),
-          originalCurrency: t.originalCurrency,
-          providerKrwAmount: t.providerKrwAmount,
-          billedKrwAmount: t.billedKrwAmount,
-        },
-        trip,
-        await rates.find(t.originalCurrency, t.occurredAt),
-        input.now,
-      );
-      if (!krw) {
-        // 환율도 제공자 원화도 없으면 다음 동기화에서 다시 시도한다
-        this.logger.warn(
-          { transactionId: t.id },
-          '원화를 정하지 못해 인입을 미룸',
+      // 원화는 S2C fx(FxRatesService.convertForTrip)가 정한다. 고시가 아직 없으면 다음 동기화에서 다시 시도한다
+      let krw;
+      try {
+        krw = await this.fx.convertForTrip(
+          {
+            policy: trip.fxPolicy,
+            fixedRate: trip.fxFixedRate,
+            fixedAt: trip.fxPolicyChangedAt,
+          },
+          {
+            amount: t.originalAmount.abs().toFixed(4),
+            currency: t.originalCurrency,
+            occurredAt: t.occurredAt,
+            billedKrwAmount: t.billedKrwAmount,
+            billedAt: t.billedAt,
+            providerKrwAmount: t.providerKrwAmount,
+          },
+          tx,
         );
-        continue;
+      } catch (error) {
+        if (
+          error instanceof AppException &&
+          error.code === 'FX_RATE_UNAVAILABLE'
+        ) {
+          this.logger.warn(
+            { transactionId: t.id, errorCode: error.code },
+            '환율 고시가 없어 인입을 미룸',
+          );
+          continue;
+        }
+        throw error;
       }
       data.push({
         tripId: trip.id,
@@ -407,11 +425,11 @@ export class ImportService {
         originalCurrency: t.originalCurrency,
         krwAmount: krw.krwAmount,
         netKrwAmount: krw.krwAmount,
-        fxPolicyApplied: krw.fxPolicyApplied,
-        fxRate: krw.fxRate,
-        fxRateUnit: krw.fxRateUnit,
-        fxRateSource: krw.fxRateSource,
-        fxRateAt: krw.fxRateAt,
+        fxPolicyApplied: krw.policyApplied,
+        fxRate: krw.rate,
+        fxRateUnit: krw.rateUnit,
+        fxRateSource: krw.rateSource,
+        fxRateAt: krw.rateAt,
       });
     }
     const created =
@@ -542,38 +560,5 @@ export class ImportService {
       }
     }
     return attached;
-  }
-}
-
-/** occurredAt 직전 매매기준율(S2C가 수집한 ExchangeRate). 같은 통화·같은 분은 한 번만 조회 */
-class SpotRateCache {
-  private readonly memo = new Map<string, SpotRate | null>();
-
-  constructor(private readonly tx: Tx) {}
-
-  async find(currency: string, at: Date): Promise<SpotRate | null> {
-    if (currency === 'KRW') return null;
-    const key = `${currency}:${Math.floor(at.getTime() / 60_000)}`;
-    if (this.memo.has(key)) return this.memo.get(key)!;
-    const row = await this.tx.exchangeRate.findFirst({
-      where: { quoteCurrency: currency, effectiveAt: { lte: at } },
-      orderBy: { effectiveAt: 'desc' },
-      select: {
-        rate: true,
-        displayUnit: true,
-        source: true,
-        effectiveAt: true,
-      },
-    });
-    const rate = row
-      ? {
-          rate: row.rate.toFixed(6),
-          displayUnit: row.displayUnit,
-          source: row.source,
-          effectiveAt: row.effectiveAt,
-        }
-      : null;
-    this.memo.set(key, rate);
-    return rate;
   }
 }

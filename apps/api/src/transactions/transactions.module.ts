@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { FxModule } from '../fx/fx.module.js';
 import { PaymentProvidersModule } from '../payment-methods/providers/payment-providers.module.js';
 import {
   DuplicateFlagger,
@@ -15,7 +16,7 @@ import { TripEventsListener } from './trip-events.listener.js';
  * 기간 외 후보·추가 API는 S2B-2(expenses)가 저장된 Transaction으로 처리하고, 이 모듈은 그 거래를 가져와 보관한다.
  */
 @Module({
-  imports: [PaymentProvidersModule],
+  imports: [PaymentProvidersModule, FxModule],
   controllers: [JobsController],
   providers: [
     SyncService,

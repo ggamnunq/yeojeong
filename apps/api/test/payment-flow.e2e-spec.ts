@@ -45,6 +45,19 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
         `PAYMENT_TEST_DATABASE_URL은 이름이 _test로 끝나는 DB여야 합니다: ${db}`,
       );
     }
+    // 원화는 S2C fx(SPOT_AT_PAYMENT)가 정한다: 샘플과 같은 100엔 = 919.20원 고시 하나
+    await prisma.exchangeRate.createMany({
+      data: [
+        {
+          quoteCurrency: 'JPY',
+          rate: '9.192',
+          displayUnit: 100,
+          source: 'S2B 테스트 고시',
+          effectiveAt: new Date('2020-01-01T00:00:00Z'),
+        },
+      ],
+      skipDuplicates: true,
+    });
   });
 
   afterAll(async () => {
