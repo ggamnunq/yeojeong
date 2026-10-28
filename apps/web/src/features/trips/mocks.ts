@@ -129,11 +129,15 @@ function ensureDemoTrips() {
   }
 }
 
-// 개발 서버 전용 시나리오: localStorage 'yj:mock:trips' = 'none'(여정 없음) · 'expired'(부산 시작 전 여정의 종료일이 지남, Q-26)
+// 개발 서버 전용 시나리오(쉼표로 여러 개): localStorage 'yj:mock:trips' =
+//   'none' 여정 없음 · 'busan-leader' 부산(시작 전)을 준용이 그룹장으로 · 'expired' 부산 종료일이 지남(Q-26)
 try {
-  const scenario = typeof localStorage === 'undefined' ? null : localStorage.getItem('yj:mock:trips')
-  if (scenario === 'none') db.memberships = db.memberships.filter((m) => m.userId !== db.meUserId)
-  if (scenario === 'expired') Object.assign(findTrip('trip-busan') ?? {}, { startDate: '2026-11-01', endDate: '2026-11-02' })
+  const scenario = new Set((typeof localStorage === 'undefined' ? null : localStorage.getItem('yj:mock:trips'))?.split(',') ?? [])
+  if (scenario.has('none')) db.memberships = db.memberships.filter((m) => m.userId !== db.meUserId)
+  if (scenario.has('busan-leader')) {
+    for (const m of db.memberships) if (m.tripId === 'trip-busan') m.role = m.userId === db.meUserId ? 'LEADER' : 'MEMBER'
+  }
+  if (scenario.has('expired')) Object.assign(findTrip('trip-busan') ?? {}, { startDate: '2026-11-01', endDate: '2026-11-02' })
 } catch {
   // 저장소를 못 쓰는 환경
 }

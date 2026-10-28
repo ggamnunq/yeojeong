@@ -70,7 +70,7 @@ export function MemberAvatars({ members, onAdd }: MemberAvatarsProps) {
         )}
       >
         {ordered.map((m) => (
-          <li key={m.membershipId} className="flex w-16 shrink-0 flex-col items-center gap-2">
+          <li key={m.membershipId} className="flex max-w-18 min-w-12 shrink-0 flex-col items-center gap-2">
             <Avatar name={m.nickname} src={m.profileImageUrl} joinOrder={m.joinOrder} me={m.isMe} size="l" alt="" />
             <span className="flex max-w-full items-center gap-0.5">
               {m.role === 'LEADER' && <Icon name="crown" size={14} label="그룹장" className="shrink-0 text-warning-500" />}
@@ -80,7 +80,7 @@ export function MemberAvatars({ members, onAdd }: MemberAvatarsProps) {
           </li>
         ))}
         {onAdd && (
-          <li className="flex w-16 shrink-0">
+          <li className="flex min-w-12 shrink-0">
             <button
               type="button"
               onClick={onAdd}
