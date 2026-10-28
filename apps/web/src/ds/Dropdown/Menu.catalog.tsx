@@ -3,14 +3,17 @@ import { defineCatalog } from '../../catalog/catalog'
 import { PhoneFrame } from '../../catalog/PhoneFrame'
 import { Row, Variant } from '../../catalog/ui'
 import { ShellApp } from '../Shell/App'
-import { DropdownMenu, DropdownMenuPanel, type DropdownMenuTrip } from './Menu'
+import { DropdownMenu, DropdownMenuPanel, type DropdownMenuAction, type DropdownMenuTrip } from './Menu'
 
 const TRIPS: DropdownMenuTrip[] = [
-  { title: '오사카 3박 4일', meta: '진행 중 · 4명', current: true },
-  { title: '제주 2박 3일', meta: '시작 전 · 12.27' },
-  { title: '부산 1박 2일', meta: '정산 완료' },
+  { title: '오사카 3박 4일', meta: '진행 중', current: true },
+  { title: '부산 연말 모임', meta: '시작 전 · 12.27' },
+  { title: '제주 우정여행', meta: '정산 완료' },
 ]
-const ACTIONS = [{ label: '새 여정 만들기' }]
+const ACTIONS: DropdownMenuAction[] = [
+  { label: '새 여정 만들기', icon: 'plus' },
+  { label: '초대코드로 참여', icon: 'link' },
+]
 
 export default defineCatalog({
   title: 'Dropdown/Menu',
@@ -23,8 +26,8 @@ export default defineCatalog({
     const trips = TRIPS.map((t, i) => ({ ...t, current: i === current, onSelect: () => setCurrent(i) }))
     return (
       <Row>
-        <Variant name="Figma 기본(DropdownMenuPanel, 350 폭)">
-          <div className="w-[350px]">
+        <Variant name="Figma 기본(DropdownMenuPanel, 366 폭)">
+          <div className="w-[366px]">
             <DropdownMenuPanel trips={TRIPS} actions={ACTIONS} />
           </div>
         </Variant>
@@ -32,7 +35,7 @@ export default defineCatalog({
           <PhoneFrame
             height={640}
             overlay={
-              <div className="absolute inset-x-0 top-header-height bottom-0 bg-dim px-gutter">
+              <div className="absolute inset-x-0 top-header-height bottom-0 bg-dim px-3">
                 <DropdownMenuPanel trips={TRIPS} actions={ACTIONS} />
               </div>
             }

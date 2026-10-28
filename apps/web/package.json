@@ -12,7 +12,8 @@
     "catalog": "vite --open /catalog.html",
     "catalog:build": "vite build --mode catalog",
     "ds:tokens": "node scripts/gen-tokens.mjs",
-    "ds:tokens:check": "node scripts/gen-tokens.mjs --check"
+    "ds:tokens:check": "node scripts/gen-tokens.mjs --check",
+    "legal:sync": "node scripts/sync-legal.mjs"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-kr": "^5.3.1",

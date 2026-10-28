@@ -28,6 +28,11 @@ export default defineCatalog({
             </div>
           </Sub>
         ))}
+        <Sub title="시작 전 · locked={['first', 'second']} (HF-13: 자물쇠 · 40% · 눌러도 이동 없음)">
+          <div className="w-[390px]">
+            <BottomNav active="third" locked={['first', 'second']} aria-label="여정 메뉴 예시 시작 전" />
+          </div>
+        </Sub>
         <Sub title="눌러서 바꾸기 (onChange)">
           <div className="w-[390px]">
             <BottomNav active={active} onChange={setActive} aria-label="여정 메뉴 예시 동작" />
