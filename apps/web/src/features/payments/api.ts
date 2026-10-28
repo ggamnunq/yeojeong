@@ -1,6 +1,14 @@
 import { infiniteQueryOptions, queryOptions, type InfiniteData, type QueryClient } from '@tanstack/react-query'
-import { apiFetch, keys, type ExpenseListItem, type ExpenseListParams, type ExpenseListResponse } from '../../api'
-import type { ClassificationInput, OutOfPeriodAddResponse, OutOfPeriodCandidate, PaymentDetail, PeriodSide } from './types'
+import { apiFetch, keys, type ExpenseListParams } from '../../api'
+import type {
+  ClassificationInput,
+  ExpenseRow,
+  ExpensesPage,
+  OutOfPeriodAddResponse,
+  OutOfPeriodCandidate,
+  OutOfPeriodSide,
+  PaymentDetail,
+} from './types'
 
 // 결제 플로우의 쿼리·뮤테이션(기능명세 6-3 expenses). 키는 모두 keys.trips.detail(tripId)로 시작하므로
 // 뮤테이션 뒤 invalidateQueries({ queryKey: keys.trips.detail(tripId) })로 목록·상세·현황이 함께 새로 받아진다.
@@ -20,7 +28,7 @@ export const expensesQuery = (tripId: string, params: ExpenseListParams) =>
   infiniteQueryOptions({
     queryKey: [...keys.trips.expenses(tripId, params), 'pages'],
     queryFn: ({ signal, pageParam }) =>
-      apiFetch<ExpenseListResponse>(
+      apiFetch<ExpensesPage>(
         `/trips/${tripId}/expenses${search({ ...params, cursor: pageParam, limit: PAGE_SIZE })}`,
         { signal },
       ),
@@ -38,17 +46,11 @@ export const expenseQuery = (tripId: string, expenseId: string) =>
   })
 
 /** GET /trips/:tripId/out-of-period-candidates?side= */
-export const outOfPeriodQuery = (tripId: string, side: PeriodSide) =>
+export const outOfPeriodQuery = (tripId: string, side: OutOfPeriodSide) =>
   queryOptions({
     queryKey: keys.trips.outOfPeriod(tripId, side),
-    queryFn: async ({ signal }) => {
-      const res = await apiFetch<OutOfPeriodCandidate[] | { items: OutOfPeriodCandidate[] }>(
-        `/trips/${tripId}/out-of-period-candidates${search({ side })}`,
-        { signal },
-      )
-      // 명세는 배열이다. 서버가 { items }로 감싸도 받는다(S2B-2 확정 후 한쪽으로)
-      return Array.isArray(res) ? res : res.items
-    },
+    queryFn: ({ signal }) =>
+      apiFetch<OutOfPeriodCandidate[]>(`/trips/${tripId}/out-of-period-candidates${search({ side })}`, { signal }),
     // 연결 만료(409 CONNECTION_EXPIRED)는 화면이 Callout으로 보여 준다
     meta: { silent: true },
   })
@@ -63,8 +65,8 @@ export const addOutOfPeriod = (tripId: string, candidateIds: string[]) =>
   apiFetch<OutOfPeriodAddResponse>(`/trips/${tripId}/out-of-period-expenses`, { body: { candidateIds } })
 
 /** 이미 받아 둔 목록에서 결제 하나를 찾는다(시트 머리를 상세 응답 전에 그린다) */
-export function findCachedExpense(client: QueryClient, tripId: string, expenseId: string): ExpenseListItem | undefined {
-  const cached = client.getQueriesData<InfiniteData<ExpenseListResponse>>({ queryKey: [...keys.trips.detail(tripId), 'expenses'] })
+export function findCachedExpense(client: QueryClient, tripId: string, expenseId: string): ExpenseRow | undefined {
+  const cached = client.getQueriesData<InfiniteData<ExpensesPage>>({ queryKey: [...keys.trips.detail(tripId), 'expenses'] })
   for (const [, data] of cached) {
     for (const page of data?.pages ?? []) {
       const hit = page.items.find((item) => item.id === expenseId)

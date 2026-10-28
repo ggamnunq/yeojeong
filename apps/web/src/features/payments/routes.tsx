@@ -8,7 +8,7 @@ export const routes: AppRoute[] = [
     layout: 'trip',
     path: '/trips/:tripId/payments',
     Component: lazy(() => import('./pages/PaymentsPage')),
-    children: [{ path: '/trips/:tripId/payments/:expenseId', element: null }],
+    children: [{ path: '/trips/:tripId/payments/:expenseId', Component: lazy(() => import('./pages/PaymentSheet')) }],
   },
   { layout: 'trip-page', path: '/trips/:tripId/payments/out-of-period', element: <PlaceholderPage title="기간 외 결제 추가" /> },
 ]

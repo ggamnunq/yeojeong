@@ -1,16 +1,16 @@
 import type { InfiniteData, UseInfiniteQueryResult } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { useEffect } from 'react'
-import type { ExpenseListItem, ExpenseListResponse } from '../../../api'
 import { LoadingScreen } from '../../../app/states'
 import { Button, EmptyState, orderMembers, payerLabel, Tag, TimelineItem, type TimelineItemType } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { groupByDate, kst, toPerson } from '../rules'
 import { useLoadMore } from '../useLoadMore'
-import { ExpenseRow } from './ExpenseRow'
+import type { ExpenseRow, ExpensesPage } from '../types'
+import { PaymentListRow } from './PaymentListRow'
 import { OutOfPeriodEntry, PlainDateHeader } from './ListParts'
 
-type ExpensesResult = UseInfiniteQueryResult<InfiniteData<ExpenseListResponse>>
+type ExpensesResult = UseInfiniteQueryResult<InfiniteData<ExpensesPage>>
 
 const itemsOf = (query: ExpensesResult) => query.data?.pages.flatMap((p) => p.items) ?? []
 
@@ -43,7 +43,7 @@ const Empty = () => <EmptyState type="no-payments" title="아직 결제가 없�
 
 export type ListViewProps = {
   query: ExpensesResult
-  onOpen: (item: ExpenseListItem) => void
+  onOpen: (item: ExpenseRow) => void
   /** 진행 중이면 맨 아래 "기간 외 결제 추가" */
   onAddOutOfPeriod?: () => void
 }
@@ -64,7 +64,7 @@ export function ListView({ query, onOpen, onAddOutOfPeriod }: ListViewProps) {
         <section key={group.localDate} aria-label={`${group.label} ${group.day}`} className={clsx(index > 0 && 'pt-4')}>
           <PlainDateHeader date={group.label} day={group.day} />
           {group.items.map((item) => (
-            <ExpenseRow key={item.id} item={item} onOpen={onOpen} />
+            <PaymentListRow key={item.id} item={item} onOpen={onOpen} />
           ))}
         </section>
       ))}
@@ -82,7 +82,7 @@ export function ListView({ query, onOpen, onAddOutOfPeriod }: ListViewProps) {
 // ── 타임라인(WF-19) ───────────────────────────────────────────────
 
 const TIMELINE_TYPE = { SHARED: 'shared', PERSONAL: 'personal', PENDING: 'pending' } as const satisfies Record<
-  ExpenseListItem['status'],
+  ExpenseRow['status'],
   TimelineItemType
 >
 
@@ -98,7 +98,7 @@ export type TimelineViewProps = {
   /** 지금 시각 "18:34"(오늘을 볼 때 끝에 지금 노드) */
   nowTime: string
   onDayChange: (day: number) => void
-  onOpen: (item: ExpenseListItem) => void
+  onOpen: (item: ExpenseRow) => void
 }
 
 export function TimelineView({ query, days, day, today, nowTime, onDayChange, onOpen }: TimelineViewProps) {
@@ -157,7 +157,7 @@ export function TimelineView({ query, days, day, today, nowTime, onDayChange, on
 }
 
 /** 카드 2행: "내 결제" / 닉네임 + 플래그(변경됨 · 중복 의심) */
-function TimelineMeta({ item }: { item: ExpenseListItem }) {
+function TimelineMeta({ item }: { item: ExpenseRow }) {
   const label = payerLabel(toPerson(item.payer))
   if (!item.flags.changed && !item.flags.duplicateSuspected) return label
   return (

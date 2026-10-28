@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
-import type { ExpenseListItem, ExpenseListParams } from '../../../api'
+import type { ExpenseListParams } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { useTripDetail } from '../../../app/trip'
@@ -11,7 +11,7 @@ import { clock } from '../clock'
 import { ControlRow } from '../components/ListParts'
 import { ListView, TimelineView } from '../components/Views'
 import { defaultDay, kst, readStoredView, storeView, todayDay } from '../rules'
-import type { PaymentsView } from '../types'
+import type { ExpenseRow, ExpensesPage, PaymentsView } from '../types'
 
 /**
  * 결제내역(WF-18 리스트 · WF-19 타임라인). 주소: ?view=timeline&day=N · ?filter=pending.
@@ -30,16 +30,26 @@ export default function PaymentsPage() {
   const filterOn = params.get('filter') === 'pending'
   const ongoing = trip.status === 'ONGOING'
 
+  // 오늘 Day·일수는 목록 응답 period가 기준. 받기 전에는 기기 시각(KST)으로 같은 값을 계산한다
+  const [saved, setSaved] = useState<{ tripId: string; period: ExpensesPage['period'] } | null>(null)
+  const period = saved?.tripId === trip.tripId ? saved.period : null
   const now = clock.now()
-  const today = todayDay(trip, now)
+  const today = period ? period.todayDayIndex : todayDay(trip, now)
+  const days = period?.days ?? trip.days
   const requestedDay = Number(params.get('day'))
-  const dayOk = Number.isInteger(requestedDay) && requestedDay >= 1 && requestedDay <= trip.days && (today === null || requestedDay <= today)
-  const day = dayOk ? requestedDay : defaultDay(trip, now)
+  const dayOk = Number.isInteger(requestedDay) && requestedDay >= 1 && requestedDay <= days && (today === null || requestedDay <= today)
+  const day = dayOk ? requestedDay : (today ?? (period ? 1 : defaultDay(trip, now)))
 
   const status = filterOn ? 'PENDING' : undefined
   const queryParams: ExpenseListParams = view === 'list' ? { status, order: 'desc' } : { status, day, order: 'asc' }
   const query = useInfiniteQuery(expensesQuery(trip.tripId, queryParams))
-  const pendingCount = ongoing ? (query.data?.pages[0]?.pendingCount ?? trip.me.pendingCount) : 0
+  const firstPage = query.data?.pages[0]
+  const pendingCount = ongoing ? (firstPage?.pendingCount ?? trip.me.pendingCount) : 0
+  // 받은 period를 기억해 두면 Day를 바꿔 새로 받는 동안에도 칩·오늘이 그대로다(렌더 중 갱신 — 파생 상태 패턴)
+  const loadedPeriod = firstPage?.period
+  if (loadedPeriod && (saved?.period !== loadedPeriod || saved.tripId !== trip.tripId)) {
+    setSaved({ tripId: trip.tripId, period: loadedPeriod })
+  }
 
   const update = (change: (next: URLSearchParams) => void) =>
     setParams(
@@ -75,7 +85,7 @@ export default function PaymentsPage() {
     })
   }
 
-  const open = (item: ExpenseListItem) =>
+  const open = (item: ExpenseRow) =>
     navigate({ pathname: paths.payment(trip.tripId, item.id), search: location.search }, { state: { fromList: true } })
 
   return (
@@ -100,7 +110,7 @@ export default function PaymentsPage() {
       ) : (
         <TimelineView
           query={query}
-          days={trip.days}
+          days={days}
           day={day}
           today={today}
           nowTime={kst(now).time}
@@ -108,7 +118,10 @@ export default function PaymentsPage() {
           onOpen={open}
         />
       )}
-      <Outlet />
+      {/* 시트 chunk를 받는 동안 목록을 스켈레톤으로 바꾸지 않게 셸의 Suspense보다 안쪽에서 받는다 */}
+      <Suspense fallback={null}>
+        <Outlet />
+      </Suspense>
     </div>
   )
 }

@@ -1,13 +1,29 @@
 import type { ExpenseListItem, MemberSummary, TripDetail } from '../../api'
 import { formatKrw, type AvatarPerson } from '../../ds'
-import type { PaymentDetail, PaymentsView, SheetCta, SheetDraft, SheetMode } from './types'
+import type { ExpenseRow, PaymentDetail, PaymentsView, SheetCta, SheetDraft, SheetMode } from './types'
 
 // 결제내역·결제 상세의 순수 규칙(화면명세 0-5·0-7·부록 A, 기능명세 4-3). 화면 없이 테스트한다.
 
 // ── 사람 ─────────────────────────────────────────────────────────
 
-/** 서버 MemberSummary → DS AvatarPerson. 서버 joinOrder는 1부터, DS 이니셜 색은 0부터 */
+/** 서버가 계정이 지워진 멤버(userId NULL)에게 주는 이름(용어집 "탈퇴한 멤버", 서버 WITHDRAWN_NICKNAME) */
+export const WITHDRAWN_NICKNAME = '탈퇴한 멤버'
+
+/**
+ * 탈퇴한 멤버인가. 응답에 전용 플래그가 아직 없어 isDeleted·userId null(생기면)과 서버 고정 이름으로 본다.
+ * TODO(서버): MemberSummary에 isWithdrawn 같은 플래그가 생기면 그 값만 본다.
+ */
+export function isWithdrawn(m: MemberSummary): boolean {
+  const extra = m as MemberSummary & { isDeleted?: boolean; isWithdrawn?: boolean; userId?: string | null }
+  return extra.isWithdrawn === true || extra.isDeleted === true || extra.userId === null || m.nickname === WITHDRAWN_NICKNAME
+}
+
+/**
+ * 서버 MemberSummary → DS AvatarPerson. 서버 joinOrder는 1부터, DS 이니셜 색은 0부터.
+ * 탈퇴한 멤버 = 회색 기본 아바타 + "탈퇴한 멤버"(흐림·「나간 멤버」 태그 없음), 나간 멤버 = 흐림(left) + 태그는 쓰는 곳이.
+ */
 export function toPerson(m: MemberSummary): AvatarPerson {
+  if (isWithdrawn(m)) return { name: WITHDRAWN_NICKNAME, src: null, source: 'default', joinOrder: m.joinOrder - 1 }
   return { name: m.nickname, src: m.profileImageUrl, joinOrder: m.joinOrder - 1, me: m.isMe, left: m.isLeft }
 }
 
@@ -86,34 +102,17 @@ export function formatOriginal(amount: string | number, currency: string): strin
   return known ? `${known.symbol}${body}` : `${body} ${currency}`
 }
 
-/** 환불 전 원 결제 원화. 목록 응답에는 순액만 있어 순액 − 취소 합으로 되돌린다 */
-export const grossKrw = (item: Pick<ExpenseListItem, 'krwAmount' | 'refunds'>) =>
-  item.krwAmount - item.refunds.reduce((sum, r) => sum + r.krwAmount, 0)
-
-/**
- * 환불 묶음의 원통화 순액(WF-41 상세 줄 "¥0"). 응답에 원통화 순액이 없어 원화 비율로 환산한다.
- * TODO(서버): 상세 응답에 원통화 순액이 생기면 그 값을 쓴다.
- */
-export function originalNet(item: Pick<ExpenseListItem, 'krwAmount' | 'refunds' | 'originalAmount' | 'originalCurrency'>) {
-  const gross = grossKrw(item)
-  const original = Number(item.originalAmount)
-  if (gross <= 0 || item.krwAmount <= 0) return 0
-  const digits = CURRENCIES[item.originalCurrency]?.digits ?? 2
-  const scale = 10 ** digits
-  return Math.round(((original * item.krwAmount) / gross) * scale) / scale
-}
-
 // ── 목록 ─────────────────────────────────────────────────────────
 
 export type DateGroup = {
   localDate: string
   label: string
   day: string
-  items: ExpenseListItem[]
+  items: ExpenseRow[]
 }
 
 /** 받은 순서 그대로 KST 날짜별로 묶는다(서버가 이미 정렬해서 준다) */
-export function groupByDate(items: readonly ExpenseListItem[]): DateGroup[] {
+export function groupByDate(items: readonly ExpenseRow[]): DateGroup[] {
   const groups: DateGroup[] = []
   for (const item of items) {
     const last = groups.at(-1)
@@ -155,12 +154,12 @@ export function detailLine(detail: Pick<PaymentDetail, 'occurredAt' | 'originalA
     .join(' · ')
 }
 
-/** 환불 묶음 상세 줄(WF-41): "¥0 · 11.13 (금)" */
-export function refundDetailLine(detail: Pick<PaymentDetail, 'localDate' | 'krwAmount' | 'refunds' | 'originalAmount' | 'originalCurrency'>) {
-  return [formatOriginal(originalNet(detail), detail.originalCurrency), formatDateLabel(detail.localDate)].filter(Boolean).join(' · ')
+/** 환불 묶음 상세 줄(WF-41): "¥0 · 11.13 (금)" — 원통화 순액(netOriginalAmount) */
+export function refundDetailLine(detail: Pick<PaymentDetail, 'localDate' | 'netOriginalAmount' | 'originalCurrency'>) {
+  return [formatOriginal(detail.netOriginalAmount, detail.originalCurrency), formatDateLabel(detail.localDate)].filter(Boolean).join(' · ')
 }
 
-/** 시트 모드(부록 A). 화면은 서버 permissions로 정한다 */
+/** 시트 모드(부록 A). 화면은 서버 permissions로 정한다: TRIP_ENDED → 잠금, NOT_PAYER·PAYER_LEFT → 읽기 전용 */
 export function sheetMode(detail: Pick<PaymentDetail, 'status' | 'permissions'>): SheetMode {
   if (detail.permissions.canEdit) {
     if (detail.status === 'PENDING') return 'EDIT_PENDING'
@@ -170,33 +169,44 @@ export function sheetMode(detail: Pick<PaymentDetail, 'status' | 'permissions'>)
 }
 
 /**
- * 부담 인원 후보(기능명세 4-3): 활성 멤버 + 이 결제에 이미 들어 있던 나간 멤버(해제만 가능, Q-30). 나 먼저 → 가입 순은 화면이 orderMembers로.
+ * 부담 인원 후보(기능명세 4-3): 서버 participantCandidates. 없으면 활성 멤버 + 이 결제에 이미 들어 있던 나간 멤버(해제만 가능, Q-30).
+ * 나 먼저 → 가입 순은 화면이 orderMembers로.
  */
-export function participantCandidates(trip: Pick<TripDetail, 'members'>, detail: Pick<PaymentDetail, 'participants'>) {
+export function participantCandidates(
+  trip: Pick<TripDetail, 'members'>,
+  detail: Pick<PaymentDetail, 'participants' | 'participantCandidates'>,
+): MemberSummary[] {
+  if (detail.participantCandidates) return detail.participantCandidates
   const active = trip.members.filter((m) => !m.isLeft)
   const leftInExpense = (detail.participants ?? []).filter((p) => p.isLeft && !active.some((m) => m.membershipId === p.membershipId))
   return [...active, ...leftInExpense]
 }
 
-/** 시트를 열었을 때 고른 상태. 미확정은 Q-01 추천안대로 공동 · 활성 멤버 전원 */
-export function initialDraft(detail: Pick<PaymentDetail, 'status' | 'participants'>, activeIds: readonly string[]): SheetDraft {
-  if (detail.status === 'SHARED') return { type: 'shared', selected: (detail.participants ?? []).map((p) => p.membershipId) }
-  return { type: detail.status === 'PENDING' ? 'shared' : 'personal', selected: [...activeIds] }
+/**
+ * 시트를 열었을 때 고른 상태. 선택값은 서버 defaultParticipantMembershipIds(공동 = 지금 부담 인원, 그 밖 = 활성 멤버 전원).
+ * 미확정의 기본 세그먼트는 Q-01 추천안대로 공동.
+ */
+export function initialDraft(
+  detail: Pick<PaymentDetail, 'status' | 'participants' | 'defaultParticipantMembershipIds'>,
+  activeIds: readonly string[],
+): SheetDraft {
+  const fallback = detail.status === 'SHARED' ? (detail.participants ?? []).map((p) => p.membershipId) : activeIds
+  const selected = [...(detail.defaultParticipantMembershipIds ?? fallback)]
+  return { type: detail.status === 'PERSONAL' ? 'personal' : 'shared', selected }
 }
 
 const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id) => b.includes(id))
 
 /**
- * 시트 하단 버튼(WF-20·21·31·35·36). 공동은 1명 이상, 결제자 혼자만 고르면 비활성(Q-08 추천).
- * 개인 결제에서 [개인]을 고른 상태면 버튼이 없다.
+ * 시트 하단 버튼(WF-20·21·31·35·36). 공동은 결제자 외 최소 1명(Q-08 확정) — 결제자만 남거나 아무도 없으면 비활성.
+ * 결제자를 빼고 다른 사람만 고르는 것은 된다. 개인 결제에서 [개인]을 고른 상태면 버튼이 없다.
  */
 export function sheetCta(
   mode: SheetMode,
   draft: SheetDraft,
   detail: Pick<PaymentDetail, 'participants' | 'payer'>,
 ): SheetCta | null {
-  const payerOnly = draft.selected.length === 1 && draft.selected[0] === detail.payer.membershipId
-  const sharedInvalid = draft.selected.length === 0 || payerOnly
+  const sharedInvalid = !draft.selected.some((id) => id !== detail.payer.membershipId)
   switch (mode) {
     case 'EDIT_PENDING':
       return draft.type === 'personal'
