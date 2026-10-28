@@ -63,7 +63,7 @@ export class PurgeService {
   private steps(
     now: Date,
   ): [PurgeStep, (tx: Tx, dryRun: boolean) => Promise<StepOutcome>][] {
-    const days30 = cutoff(now, RETENTION.softDeletedGroup);
+    const softDeleted = cutoff(now, RETENTION.softDeletedGroup);
     const groupRecords = cutoff(now, RETENTION.groupRecords);
     const rawPayload = cutoff(now, RETENTION.rawPayload);
     const removedMethod = cutoff(now, RETENTION.removedPaymentMethod);
@@ -80,8 +80,8 @@ export class PurgeService {
         (tx, dryRun) => {
           const where: Prisma.GroupWhereInput = {
             OR: [
-              { deletedAt: { lte: days30 } },
-              { trip: { deletedAt: { lte: days30 } } },
+              { deletedAt: { lte: softDeleted } },
+              { trip: { deletedAt: { lte: softDeleted } } },
             ],
           };
           return sweep(dryRun, groups, {

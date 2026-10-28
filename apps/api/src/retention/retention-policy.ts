@@ -2,17 +2,23 @@
 
 export type RetentionPeriod = { days: number } | { years: number };
 
+/**
+ * 처리방침이 "30일 이내 파기"로 고지한 항목(삭제 표시한 정보 제7조④, 삭제·전원 이탈 그룹, 해제한 결제수단).
+ * 배치가 하루에 한 번이라 30일로 잡으면 최대 31일이 걸린다 → 29일 경과에 지워 30일 이내를 보장한다.
+ */
+export const WITHIN_30_DAYS = { days: 29 } as const satisfies RetentionPeriod;
+
 export const RETENTION = {
   /** 1단계: 소프트 삭제(deletedAt)한 그룹·여정. "30일 이내 영구 삭제" */
-  softDeletedGroup: { days: 30 },
+  softDeletedGroup: WITHIN_30_DAYS,
   /** 2단계: 여정 종료일 + 3년 → 그룹 기록 일체 */
   groupRecords: { years: 3 },
   /** 3단계: 거래 원문(암호화) 수집일 + 90일 → NULL */
   rawPayload: { days: 90 },
-  /** 6단계: 연결 해제한 결제수단 + 30일(그 결제수단의 거래가 남아 있으면 남긴다) */
-  removedPaymentMethod: { days: 30 },
-  /** 6단계 보조: 해제(REVOKED)되고 결제수단이 하나도 없는 연결 + 30일 */
-  revokedConnection: { days: 30 },
+  /** 6단계: 연결 해제한 결제수단. "30일 이내"(그 결제수단의 거래가 남아 있으면 남긴다) */
+  removedPaymentMethod: WITHIN_30_DAYS,
+  /** 6단계 보조: 해제(REVOKED)되고 결제수단이 하나도 없는 연결. 결제수단과 같이 "30일 이내" */
+  revokedConnection: WITHIN_30_DAYS,
   /** 7단계: 마지막 로그인 + 3년 → 탈퇴로 보고 FR-109 */
   inactiveUser: { years: 3 },
   /** 8단계: 동의 철회·탈퇴 + 3년 */

@@ -2,10 +2,10 @@
 
 기능명세 FR-109(서비스 내 탈퇴), 8-1·8-2(접근 기록·보존 기간), 8-8(파기 배치), 개인정보처리방침 제3조·제7조를 구현한다.
 
-| 메서드 | 경로 | 권한 | 하는 일 |
-| --- | --- | --- | --- |
-| DELETE | `/api/users/me` | 로그인(재동의 전에도 가능) | 본문 `{ "confirm": true }`. 탈퇴 파이프라인 → 204 + `yj_session` 쿠키 삭제 |
-| POST | `/api/internal/jobs/purge` | 내부(`x-internal-job-secret`) | 본문 `{ "dryRun"?: boolean }`. 파기 배치 → 200 `PurgeJobResult` |
+| 메서드 | 경로                       | 권한                          | 하는 일                                                                    |
+| ------ | -------------------------- | ----------------------------- | -------------------------------------------------------------------------- |
+| DELETE | `/api/users/me`            | 로그인(재동의 전에도 가능)    | 본문 `{ "confirm": true }`. 탈퇴 파이프라인 → 204 + `yj_session` 쿠키 삭제 |
+| POST   | `/api/internal/jobs/purge` | 내부(`x-internal-job-secret`) | 본문 `{ "dryRun"?: boolean }`. 파기 배치 → 200 `PurgeJobResult`            |
 
 공유 타입은 `@yeojeong/shared`의 `api/account.ts`(`DeleteAccountRequest`, `DELETED_MEMBER_NICKNAME`, `PurgeStep`, `PurgeJobResult`).
 
@@ -17,7 +17,7 @@
 2. 한 트랜잭션:
    - `users` 행 `FOR UPDATE`. 없으면 `ALREADY_DELETED`로 끝난다(동시 요청·재시도 멱등).
    - 활성 멤버십의 Trip 행 `FOR UPDATE`(S2A와 같은 순서: Trip → Membership).
-   - 활성 멤버십마다: `userId = NULL`, `leftAt`, `leaveReason = LEFT`. 그룹장이면 남은 활성 멤버 중 `joinOrder` 최소에게 LEADER + `TripEvent LEADER_CHANGED`. 남는 활성 멤버가 없으면 그룹·여정 `deletedAt`(30일 뒤 파기).
+   - 활성 멤버십마다: `userId = NULL`, `leftAt`, `leaveReason = LEFT`. 그룹장이면 남은 활성 멤버 중 `joinOrder` 최소에게 LEADER + `TripEvent LEADER_CHANGED`. 남는 활성 멤버가 없으면 그룹·여정 `deletedAt`(29일 경과 후 파기).
    - 나간 멤버십도 `userId = NULL`. 내가 승계받았던 토스트 페이로드의 닉네임은 "탈퇴한 멤버"로 바꾼다.
    - 내 PENDING·PERSONAL 결제(취소 자식 포함), 거래 원본, 결제수단, 연결 시도, 연결(토큰 포함), 세션, 같은 카카오 회원번호의 가입 대기를 지운다. SHARED 결제·부담·정산 행은 Membership ID로 남고 `transactionId`만 NULL이 된다.
    - 동의 이력 `withdrawnAt` + `ACCOUNT_DELETED`(3년 보존 후 파기).
@@ -33,20 +33,22 @@
 
 경계는 `retention-policy.ts`의 `cutoff()`다. 기준 시각이 `now − 기간` **이하**면 대상이다. 일 단위는 24시간 × n, 연 단위는 달력 기준이고 2월 29일은 2월 28일로 당긴다.
 
-| # | 단계 (`PurgeStep`) | 대상 | 기준 | 처리 | 한 번 상한 |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `SOFT_DELETED_GROUPS` | Group·Trip과 하위 기록 일체 | `group.deletedAt` 또는 `trip.deletedAt` + 30일 | 영구 삭제 | 100그룹 |
-| 2 | `EXPIRED_GROUP_RECORDS` | 위와 같음 | `trip.endedAt`(종료 안 됐으면 `autoEndAt`) + 3년 | 영구 삭제 | 100그룹 |
-| 3 | `RAW_PAYLOADS` | `Transaction.rawPayloadEnc` | `importedAt` + 90일 | NULL | 5,000행 |
-| 4 | `CONNECTION_ATTEMPTS` | ConnectionAttempt | `expiresAt` 지남 | 삭제 | 5,000행 |
-| 5 | `SIGNUP_TICKETS` | SignupTicket | `expiresAt` 지남 | 삭제 | 5,000행 |
-| 5 | `SESSIONS` | Session | `expiresAt` 지남 또는 `revokedAt` 있음 | 삭제 | 5,000행 |
-| 6 | `REMOVED_PAYMENT_METHODS` | PaymentMethod | `REMOVED` + `removedAt` + 30일 + 참조 거래 없음 | 삭제 | 5,000행 |
-| 6 | `REVOKED_CONNECTIONS` | PaymentConnection | `REVOKED` + 결제수단 없음 + `updatedAt` + 30일 | 삭제(명세 외 추가) | 5,000행 |
-| 7 | `INACTIVE_USERS` | User | `lastLoginAt` + 3년 | 탈퇴 파이프라인(`INACTIVE`) | 20명 |
-| 8 | `USER_CONSENTS` | UserConsent | `withdrawnAt` + 3년 | 삭제 | 5,000행 |
-| 9 | `ACCESS_LOGS` | AccessLog | `at` + 1년 | 삭제 | 5,000행 |
-| 10 | `ACCOUNT_DELETIONS` | AccountDeletion | `completedAt` + 3년, 처리 안 된 요청은 `requestedAt` + 3년 | 삭제 | 5,000행 |
+처리방침이 "30일 이내 파기"로 고지한 항목(삭제 표시한 그룹·여정, 해제한 결제수단과 연결)은 상수 `WITHIN_30_DAYS`(29일)를 쓴다. 배치가 하루 한 번이라 30일로 잡으면 최대 31일이 걸리기 때문이다.
+
+| #   | 단계 (`PurgeStep`)        | 대상                        | 기준                                                       | 처리                        | 한 번 상한 |
+| --- | ------------------------- | --------------------------- | ---------------------------------------------------------- | --------------------------- | ---------- |
+| 1   | `SOFT_DELETED_GROUPS`     | Group·Trip과 하위 기록 일체 | `group.deletedAt` 또는 `trip.deletedAt` + 29일             | 영구 삭제                   | 100그룹    |
+| 2   | `EXPIRED_GROUP_RECORDS`   | 위와 같음                   | `trip.endedAt`(종료 안 됐으면 `autoEndAt`) + 3년           | 영구 삭제                   | 100그룹    |
+| 3   | `RAW_PAYLOADS`            | `Transaction.rawPayloadEnc` | `importedAt` + 90일                                        | NULL                        | 5,000행    |
+| 4   | `CONNECTION_ATTEMPTS`     | ConnectionAttempt           | `expiresAt` 지남                                           | 삭제                        | 5,000행    |
+| 5   | `SIGNUP_TICKETS`          | SignupTicket                | `expiresAt` 지남                                           | 삭제                        | 5,000행    |
+| 5   | `SESSIONS`                | Session                     | `expiresAt` 지남 또는 `revokedAt` 있음                     | 삭제                        | 5,000행    |
+| 6   | `REMOVED_PAYMENT_METHODS` | PaymentMethod               | `REMOVED` + `removedAt` + 29일 + 참조 거래 없음            | 삭제                        | 5,000행    |
+| 6   | `REVOKED_CONNECTIONS`     | PaymentConnection           | `REVOKED` + 결제수단 없음 + `updatedAt` + 29일             | 삭제(명세 외 추가)          | 5,000행    |
+| 7   | `INACTIVE_USERS`          | User                        | `lastLoginAt` + 3년                                        | 탈퇴 파이프라인(`INACTIVE`) | 20명       |
+| 8   | `USER_CONSENTS`           | UserConsent                 | `withdrawnAt` + 3년                                        | 삭제                        | 5,000행    |
+| 9   | `ACCESS_LOGS`             | AccessLog                   | `at` + 1년                                                 | 삭제                        | 5,000행    |
+| 10  | `ACCOUNT_DELETIONS`       | AccountDeletion             | `completedAt` + 3년, 처리 안 된 요청은 `requestedAt` + 3년 | 삭제                        | 5,000행    |
 
 - "하위 기록 일체" = ExpenseChangeLog → Expense(ExpenseShare·취소 자식 CASCADE) → Settlement(멤버·송금안 CASCADE) → TripEvent → Trip → Membership → Group. 이 여정의 결제에만 쓰인 거래 원본과, 그 거래를 가리키는 동일 사용자 중복 행(결제가 없는 것)도 지운다. 겹치는 다른 여정이 쓰는 거래는 남긴다.
 - 상한에 걸리면 `hasMore: true`이고 다음 실행이 이어서 지운다.
@@ -89,11 +91,11 @@ detail() {}
 
 ## env
 
-| 이름 | 필수 | 설명 |
-| --- | --- | --- |
-| `INTERNAL_JOB_SECRET` | 잡을 부를 때 | 32자 이상. 비우면 내부 잡 전부 403 |
-| `AUDIT_HMAC_KEY` | 아니오 | 32자 이상. 접근 기록 IP 해시 키. 없으면 `ipHash` NULL |
-| `USER_REF_HMAC_KEY` | 아니오 | 동의 이력이 없는 회원의 `userRefHash` 계산용(auth와 같은 키) |
+| 이름                  | 필수         | 설명                                                         |
+| --------------------- | ------------ | ------------------------------------------------------------ |
+| `INTERNAL_JOB_SECRET` | 잡을 부를 때 | 32자 이상. 비우면 내부 잡 전부 403                           |
+| `AUDIT_HMAC_KEY`      | 아니오       | 32자 이상. 접근 기록 IP 해시 키. 없으면 `ipHash` NULL        |
+| `USER_REF_HMAC_KEY`   | 아니오       | 동의 이력이 없는 회원의 `userRefHash` 계산용(auth와 같은 키) |
 
 ## 테스트
 

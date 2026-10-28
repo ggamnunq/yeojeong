@@ -82,11 +82,11 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
     const owner = await user({ nickname: '파기' });
     const pay = await createPaymentSetup(db, owner.id);
 
-    // 1단계: 소프트 삭제 31일 전(파기) / 29일 전(유지)
+    // 1단계: 소프트 삭제 30일 전(파기, 29일 기준) / 28일 전(유지)
     const softOld = await createGroupWithTrip(db, {
       status: 'ENDED',
       members: [{ userId: owner.id }],
-      deletedAt: daysAgo(31),
+      deletedAt: daysAgo(30),
     });
     const softOldTx = await createTransaction(db, owner.id, pay.method.id);
     const softOldDup = await createTransaction(db, owner.id, pay.method.id, {
@@ -133,7 +133,7 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
     const softRecent = await createGroupWithTrip(db, {
       status: 'UPCOMING',
       members: [{ userId: owner.id }],
-      deletedAt: daysAgo(29),
+      deletedAt: daysAgo(28),
     });
 
     // 2단계: 여정 종료 + 3년 지남(파기) / 아직(유지)
@@ -192,7 +192,7 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
     });
     const sessionValid = await createSession(db, owner.id);
 
-    // 6단계: 해제한 결제수단 31일·거래 없음(삭제) / 31일·거래 있음(유지) / 29일(유지)
+    // 6단계: 해제한 결제수단 30일·거래 없음(삭제) / 30일·거래 있음(유지) / 28일(유지)
     const removed = async (removedAt: Date, withTx: boolean) => {
       const m = await db.paymentMethod.create({
         data: {
@@ -212,11 +212,11 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
       if (withTx) await createTransaction(db, owner.id, m.id);
       return m;
     };
-    const methodOld = await removed(daysAgo(31), false);
-    const methodWithTx = await removed(daysAgo(31), true);
-    const methodRecent = await removed(daysAgo(29), false);
+    const methodOld = await removed(daysAgo(30), false);
+    const methodWithTx = await removed(daysAgo(30), true);
+    const methodRecent = await removed(daysAgo(28), false);
 
-    // 6단계 보조: 해제(REVOKED)·결제수단 없는 연결 31일(삭제) / 29일(유지)
+    // 6단계 보조: 해제(REVOKED)·결제수단 없는 연결 30일(삭제) / 28일(유지)
     const revoked = async (days: number) => {
       const c = await db.paymentConnection.create({
         data: {
@@ -229,8 +229,8 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
       await db.$executeRaw`UPDATE payment_connections SET updated_at = ${daysAgo(days)} WHERE id = ${c.id}::uuid`;
       return c;
     };
-    const connectionOld = await revoked(31);
-    const connectionRecent = await revoked(29);
+    const connectionOld = await revoked(30);
+    const connectionRecent = await revoked(28);
 
     // 7단계: 마지막 로그인 3년 + 2일(탈퇴 처리) / 3년 - 2일(유지)
     const inactive = await user({
@@ -379,7 +379,7 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
     expect(run.dryRun).toBe(false);
     expect(run.steps.every((step) => step.skipped === undefined)).toBe(true);
 
-    // 1단계: 소프트 삭제 30일 지난 그룹과 하위 기록 일체 + 그 여정에만 쓰인 거래(중복 표시 행 포함)
+    // 1단계: 소프트 삭제 29일 지난 그룹과 하위 기록 일체 + 그 여정에만 쓰인 거래(중복 표시 행 포함)
     expect(await db.group.count({ where: { id: s.softOld.group.id } })).toBe(0);
     expect(await db.trip.count({ where: { id: s.softOld.trip.id } })).toBe(0);
     expect(
