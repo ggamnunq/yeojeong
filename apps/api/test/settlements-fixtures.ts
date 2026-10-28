@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -53,7 +52,7 @@ export function hasDatabase(): Promise<boolean> {
 
 /**
  * 운영과 같은 setupApp + 실제 Prisma + 실제 멤버십 조회. 로그인·동의만 스텁(test/auth-helpers.ts).
- * EventEmitterModule은 trips 모듈(S2A)이 app.module에 넣기 전까지 테스트에서만 등록한다.
+ * EventEmitterModule.forRoot()는 AppModule에 있다(중복 등록하지 않는다).
  */
 export async function createDbTestApp(
   auth: TestAuth,
@@ -61,7 +60,7 @@ export async function createDbTestApp(
 ): Promise<NestExpressApplication> {
   process.env.INTERNAL_JOB_SECRET = INTERNAL_SECRET;
   const builder = Test.createTestingModule({
-    imports: [AppModule, EventEmitterModule.forRoot()],
+    imports: [AppModule],
   })
     .overrideProvider(SessionResolver)
     .useValue(auth.sessions)

@@ -26,16 +26,12 @@
 - `personalCount`는 PERSONAL + PENDING(종료 때 개인이 되는 건) 건수. 금액은 읽지 않는다.
 - 검산(Σ netKrw = 0)이 깨지면 `SettlementImbalanceError`로 롤백하고 아무것도 저장하지 않는다.
 
-### `trip.ended` 이벤트 (trips 모듈과의 계약, `settlement.events.ts`)
+### `trip.ended` 이벤트 (계약은 `src/trips/events.ts`의 `TRIP_EVENTS.ENDED`·`TripEndedEvent`)
 
-```ts
-// 종료 트랜잭션을 커밋한 뒤에
-await this.events.emitAsync(TRIP_ENDED_EVENT, { tripId } satisfies TripEndedEvent);
-```
-
-- 커밋 **전**에 발행하면 리스너가 Trip 행 잠금을 기다려 교착한다.
-- 리스너는 실패를 로그로 남기고 다시 던진다(`suppressErrors: false`). `emit()`이 아니라 `emitAsync()`로 받고, 실패해도 종료 응답은 성공으로 둔다(GET이 지연 생성한다).
-- `EventEmitterModule.forRoot()`는 app.module에 한 번 등록한다(S2A). 그전까지 e2e는 `test/settlements-fixtures.ts`에서 등록한다.
+- S2A가 종료 커밋 **후** `DomainEventPublisher`(emitAsync)로 보낸다. 받을 때 Trip은 이미 ENDED다.
+- 리스너 `SettlementSnapshotService.onTripEnded`는 `ensureSettlement(tripId)`만 부른다. 재발행(`redelivered`)·중복 전달도 같은 결과(1건).
+- 실패는 발행자에게 던지지 않는다(S2A 계약). 원인과 tripId를 error 로그로 남기고, 정산이 없는 종료 여정은 ① 자동 종료 잡의 재발행 ② `GET …/settlement` 지연 생성 ③ `POST /api/internal/jobs/settlements`가 다시 만든다. 종료되지 않았거나 없는 여정의 이벤트는 warn만 남긴다.
+- expenses의 `trip.ended` 리스너(미확정 → 개인)와 순서가 정해져 있지 않다. 그래서 `personalCount`는 PENDING도 센다.
 
 ### 다른 모듈이 쓰는 함수
 
@@ -43,7 +39,7 @@ await this.events.emitAsync(TRIP_ENDED_EVENT, { tripId } satisfies TripEndedEven
 | --- | --- | --- |
 | `computeSettlement(input, { assertBalanced })` | `compute.ts` | 순수·결정적·정수. 현황·스냅샷·종료 미리보기 |
 | `SettlementSnapshotService.preview(tripId)` | `settlement-snapshot.service.ts` | trips `end-preview`(저장 안 함) |
-| `SettlementSnapshotService.ensureSettlement(tripId)` | 〃 | 종료 직후 바로 만들고 싶을 때(커밋 후) |
+| `SettlementSnapshotService.ensureSettlement(tripId)` | 〃 | 종료 응답에 settlementId가 필요할 때(커밋 후 호출) |
 | `convertToKrw(input)` | `../fx/convert.ts` | 결제 한 건 환산(KRW·SPOT·CARD_BILLED·FIXED). 순수 |
 | `FxRatesService.convertForTrip(tripPolicy, expense, tx?)` | `../fx/fx-rates.service.ts` | 인입(S2B): 직전 고시를 찾아 환산. 고시가 없으면 503 |
 | `FxRecalcService.recalculateTrip(tx, trip, actor)` | `../fx/fx-recalc.service.ts` | Trip 행을 잠근 트랜잭션에서 여정 전체 재환산 |

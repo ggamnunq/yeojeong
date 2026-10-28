@@ -8,10 +8,7 @@ import type {
 import request from 'supertest';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { SettlementSnapshotService } from './../src/settlements/settlement-snapshot.service.js';
-import {
-  TRIP_ENDED_EVENT,
-  type TripEndedEvent,
-} from './../src/settlements/settlement.events.js';
+import { TRIP_EVENTS, type TripEndedEvent } from './../src/trips/events.js';
 import { createTestAuth, type TestAuth } from './auth-helpers.js';
 import {
   createDbTestApp,
@@ -22,6 +19,22 @@ import {
 } from './settlements-fixtures.js';
 
 const withDb = await hasDatabase();
+
+/** S2A 계약(src/trips/events.ts) 그대로의 trip.ended */
+const ended = (
+  trip: { tripId: string; groupId: string },
+  over: Partial<TripEndedEvent> = {},
+): TripEndedEvent => ({
+  tripId: trip.tripId,
+  groupId: trip.groupId,
+  endedByUserId: null,
+  endedAt: new Date('2026-11-15T20:00:00+09:00'),
+  reason: 'MANUAL',
+  redelivered: false,
+  eventSeq: 1n,
+  occurredAt: new Date('2026-11-15T20:00:00+09:00'),
+  ...over,
+});
 
 /** 금액·가맹점이 새지 않았는지 볼 때 UUID 속 숫자와 헷갈리지 않게 지운다 */
 const visibleText = (body: unknown) =>
@@ -299,17 +312,15 @@ describe.skipIf(!withDb)('Settlements · summary (e2e, real DB)', () => {
       await fixture.end(s.tripId);
       const events = app.get(EventEmitter2);
 
-      await events.emitAsync(TRIP_ENDED_EVENT, { tripId: s.tripId });
+      await events.emitAsync(TRIP_EVENTS.ENDED, ended(s));
       // 자동 종료 잡의 재발행(S2A 계약: redelivered·eventSeq·occurredAt)
-      await events.emitAsync(TRIP_ENDED_EVENT, {
-        tripId: s.tripId,
-        redelivered: true,
-        eventSeq: 2n,
-        occurredAt: new Date(),
-      } satisfies TripEndedEvent);
+      await events.emitAsync(
+        TRIP_EVENTS.ENDED,
+        ended(s, { redelivered: true, eventSeq: 2n }),
+      );
       await Promise.all([
-        events.emitAsync(TRIP_ENDED_EVENT, { tripId: s.tripId }),
-        events.emitAsync(TRIP_ENDED_EVENT, { tripId: s.tripId }),
+        events.emitAsync(TRIP_EVENTS.ENDED, ended(s)),
+        events.emitAsync(TRIP_EVENTS.ENDED, ended(s)),
         app.get(SettlementSnapshotService).ensureSettlement(s.tripId),
       ]);
       expect(await fixture.settlementCount(s.tripId)).toBe(1);
@@ -362,10 +373,15 @@ describe.skipIf(!withDb)('Settlements · summary (e2e, real DB)', () => {
         .mockRejectedValueOnce(new Error('DB 연결 끊김(테스트)'));
       const events = app.get(EventEmitter2);
 
-      // 리스너는 실패를 삼키지 않는다 → 발행자(emitAsync)가 받는다
-      await expect(
-        events.emitAsync(TRIP_ENDED_EVENT, { tripId: s.tripId }),
-      ).rejects.toThrow('DB 연결 끊김');
+      // S2A 계약: 구독자 실패는 발행자에게 던지지 않고 error 로그로 남긴다(리스너 결과 null)
+      const snapshotResult = (results: unknown[]) =>
+        results.find(
+          (r) =>
+            r === null ||
+            (typeof r === 'object' && r !== null && 'settlementId' in r),
+        );
+      const failed = await events.emitAsync(TRIP_EVENTS.ENDED, ended(s));
+      expect(snapshotResult(failed)).toBeNull();
       expect(await fixture.settlementCount(s.tripId)).toBe(0);
 
       const res = await get(`/api/trips/${s.tripId}/settlement`, s.a).expect(
@@ -373,20 +389,19 @@ describe.skipIf(!withDb)('Settlements · summary (e2e, real DB)', () => {
       );
       expectScenarioSettlement(res.body as SettlementView, 'A');
 
-      await events.emitAsync(TRIP_ENDED_EVENT, { tripId: s.tripId });
+      await events.emitAsync(TRIP_EVENTS.ENDED, ended(s));
       expect(await fixture.settlementCount(s.tripId)).toBe(1);
       expect(write).toHaveBeenCalledTimes(2); // 실패 1회 + GET 지연 생성 1회
       write.mockRestore();
     });
 
-    it('rolls nothing back into the DB when the listener sees a trip that has not ended', async () => {
+    it('ignores a trip.ended for a trip that has not ended', async () => {
       const s = await seedScenario(fixture);
       const events = app.get(EventEmitter2);
+      // 잘못 보낸 이벤트는 발행자에게 던지지 않고(warn) 아무것도 만들지 않는다
       await expect(
-        events.emitAsync(TRIP_ENDED_EVENT, { tripId: s.tripId }),
-      ).rejects.toMatchObject({
-        code: 'TRIP_PHASE_INVALID',
-      });
+        events.emitAsync(TRIP_EVENTS.ENDED, ended(s)),
+      ).resolves.toBeDefined();
       expect(await fixture.settlementCount(s.tripId)).toBe(0);
     });
 

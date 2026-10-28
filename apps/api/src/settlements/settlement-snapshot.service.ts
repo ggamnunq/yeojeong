@@ -18,7 +18,7 @@ import {
   loadSharedExpenses,
   type Db,
 } from './ledger.js';
-import { TRIP_ENDED_EVENT, type TripEndedEvent } from './settlement.events.js';
+import { TRIP_EVENTS, type TripEndedEvent } from '../trips/events.js';
 
 const TRIP_SELECT = {
   id: true,
@@ -59,23 +59,39 @@ export class SettlementSnapshotService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * trips 모듈의 종료 커밋 뒤 이벤트. 실패는 로그를 남기고 다시 던진다(발행자 emitAsync가 받는다).
-   * 놓쳐도 GET 지연 생성과 POST /api/internal/jobs/settlements가 같은 함수로 복구한다.
+   * trips 모듈(S2A)의 종료 커밋 뒤 이벤트(src/trips/events.ts). 재발행(redelivered)·중복 전달도 ensureSettlement가 멱등이라 같다.
+   * S2A 계약대로 구독자 실패는 발행자에게 던지지 않는다. 대신 error 로그(tripId·원인)를 남기고, 정산이 없는 종료 여정은
+   * ① 자동 종료 잡의 재발행 ② GET …/settlement 지연 생성 ③ POST /api/internal/jobs/settlements 가 같은 함수로 다시 만든다.
+   * 아직 종료되지 않았거나 없는 여정(잘못 보낸 이벤트)은 재시도해도 소용없어 warn으로만 남긴다.
+   * @returns 처리 결과(테스트·로그용). 실패면 null
    */
-  @OnEvent(TRIP_ENDED_EVENT, { suppressErrors: false })
-  async onTripEnded(event: TripEndedEvent): Promise<void> {
+  @OnEvent(TRIP_EVENTS.ENDED)
+  async onTripEnded(
+    event: TripEndedEvent,
+  ): Promise<EnsureSettlementResult | null> {
     try {
       const result = await this.ensureSettlement(event.tripId);
       this.logger.log(
-        { tripId: event.tripId, ...result },
+        { tripId: event.tripId, redelivered: event.redelivered, ...result },
         result.created ? '정산 스냅샷 생성' : '정산 스냅샷이 이미 있음',
       );
+      return result;
     } catch (error) {
-      this.logger.error(
-        { err: error, tripId: event.tripId },
-        '정산 스냅샷 생성 실패(GET 지연 생성·내부 잡으로 다시 시도됨)',
-      );
-      throw error;
+      const hopeless =
+        error instanceof AppException &&
+        (error.code === 'TRIP_PHASE_INVALID' || error.code === 'NOT_FOUND');
+      if (hopeless) {
+        this.logger.warn(
+          { tripId: event.tripId, errorCode: error.code },
+          '종료되지 않았거나 없는 여정의 trip.ended라 정산을 만들지 않음',
+        );
+      } else {
+        this.logger.error(
+          { err: error, tripId: event.tripId },
+          '정산 스냅샷 생성 실패(재발행·GET 지연 생성·내부 잡으로 다시 만든다)',
+        );
+      }
+      return null;
     }
   }
 
