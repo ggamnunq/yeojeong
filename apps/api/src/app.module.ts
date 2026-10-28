@@ -18,9 +18,11 @@ import { createValidationPipe } from './common/errors/validation.js';
 import { LoggingModule } from './common/logging/logging.module.js';
 import { DEFAULT_THROTTLE } from './common/throttle.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
+import { FxModule } from './fx/fx.module.js';
 import { HealthModule } from './health/health.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RetentionModule } from './retention/retention.module.js';
+import { SettlementsModule } from './settlements/settlements.module.js';
 import { TripsModule } from './trips/trips.module.js';
 
 @Module({
@@ -38,6 +40,8 @@ import { TripsModule } from './trips/trips.module.js';
     AccountModule,
     RetentionModule,
     ExpensesModule,
+    FxModule,
+    SettlementsModule,
   ],
   providers: [
     { provide: APP_PIPE, useValue: createValidationPipe() },
