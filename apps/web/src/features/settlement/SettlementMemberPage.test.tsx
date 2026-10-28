@@ -47,8 +47,8 @@ describe('멤버별 결제 내역(HF-26) · 가시성', () => {
     expect(shared.at(-1)?.textContent).toContain('08.21 13:10 · 내 결제')
     const personal = list(/개인 결제 2건/).getAllByRole('button')
     expect(personal.map((r) => r.textContent?.includes('개인'))).toEqual([true, true])
-    expect(personal[0].textContent).toContain('기념품 숍 바람')
-    expect(personal[1].textContent).toContain('CU 제주공항점')
+    expect(personal[0].textContent).toContain('CU 제주공항점')
+    expect(personal[1].textContent).toContain('기념품 숍 바람')
     expect(screen.queryByText('비공개')).toBeNull()
   })
 
