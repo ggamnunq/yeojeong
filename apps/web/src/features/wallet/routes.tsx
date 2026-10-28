@@ -1,9 +1,10 @@
+import { lazy } from 'react'
 import { PlaceholderPage } from '../../app/PlaceholderPage'
 import type { AppRoute } from '../../app/routes'
 
-// TODO(지갑 플로우): 자리 화면을 lazy 페이지로 바꾼다. WF-06~08은 가입·추가·재연결 공용
+// WF-06~08은 가입·추가·재연결 공용(?attempt=…&returnTo=…, connect.ts)
 export const routes: AppRoute[] = [
-  { layout: 'auth', path: '/wallet', element: <PlaceholderPage title="지갑" /> },
+  { layout: 'auth', path: '/wallet', Component: lazy(() => import('./pages/WalletPage')) },
   { layout: 'auth', path: '/wallet/connect/toss', element: <PlaceholderPage title="토스 인증" /> },
   { layout: 'auth', path: '/wallet/connect/select', element: <PlaceholderPage title="불러올 계좌·카드" /> },
   { layout: 'auth', path: '/wallet/connect/done', element: <PlaceholderPage title="연결 완료" /> },
