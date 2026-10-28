@@ -2,9 +2,11 @@ import { Controller, Get, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
+import { Public } from './../src/common/auth/index.js';
 import { createLogger } from './../src/common/logging/logger.js';
 import { createTestApp } from './create-test-app.js';
 
+@Public()
 @Controller('log-probe')
 class LogProbeController {
   private readonly logger = new Logger(LogProbeController.name);

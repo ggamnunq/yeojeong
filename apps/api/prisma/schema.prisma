@@ -1,4 +1,6 @@
 // 스키마 규칙과 마이그레이션 절차는 prisma/README.md 참고
+// 도메인 정의는 기능명세(로컬 docs/spec) 2장·부록 A. CHECK 제약과 부분 유니크 인덱스는 Prisma로 표현할 수 없어
+// 마이그레이션 SQL(20261028095249_create_domain)에 직접 넣었다. 그 목록은 prisma/README.md "DB 제약" 절.
 
 generator client {
   provider = "prisma-client"
@@ -9,15 +11,833 @@ datasource db {
   provider = "postgresql"
 }
 
-/// 명세 확정 전 최소 구성. 카카오 로그인만 확정이라 나머지 필드는 명세가 나오면 추가한다.
+// ─── enum (값은 @yeojeong/shared의 같은 이름 상수와 같다) ───
+
+enum TripStatus {
+  UPCOMING
+  ONGOING
+  ENDED
+
+  @@map("trip_status")
+}
+
+enum EndReason {
+  MANUAL
+  AUTO
+
+  @@map("end_reason")
+}
+
+enum MemberRole {
+  LEADER
+  MEMBER
+
+  @@map("member_role")
+}
+
+enum LeaveReason {
+  LEFT
+  KICKED
+
+  @@map("leave_reason")
+}
+
+enum ExpenseStatus {
+  PENDING
+  PERSONAL
+  SHARED
+
+  @@map("expense_status")
+}
+
+enum ExpenseOrigin {
+  AUTO
+  OUT_OF_PERIOD
+
+  @@map("expense_origin")
+}
+
+enum FxPolicy {
+  SPOT_AT_PAYMENT
+  CARD_BILLED
+  FIXED
+
+  @@map("fx_policy")
+}
+
+enum Provider {
+  TOSS
+  DEMO
+
+  @@map("provider")
+}
+
+enum ConnectionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+
+  @@map("connection_status")
+}
+
+enum PaymentMethodType {
+  ACCOUNT
+  CARD
+
+  @@map("payment_method_type")
+}
+
+enum PaymentMethodStatus {
+  ACTIVE
+  EXPIRED
+  REMOVED
+
+  @@map("payment_method_status")
+}
+
+enum AttemptPurpose {
+  SIGNUP
+  WALLET_ADD
+  RECONNECT
+
+  @@map("attempt_purpose")
+}
+
+enum AttemptStatus {
+  WAITING
+  AUTHORIZED
+  CONFIRMED
+  FAILED
+  EXPIRED
+
+  @@map("attempt_status")
+}
+
+enum TxKind {
+  APPROVAL
+  CANCEL
+
+  @@map("tx_kind")
+}
+
+/// docs/legal/consents.md 1절
+enum ConsentId {
+  TOS
+  PRIVACY
+  AGE14
+  MARKETING
+  FIN_LINK
+  FIN_PRIVACY
+  THIRD_PARTY
+
+  @@map("consent_id")
+}
+
+enum RateType {
+  MID
+
+  @@map("rate_type")
+}
+
+enum SyncStatus {
+  OK
+  FAILED
+  EXPIRED
+
+  @@map("sync_status")
+}
+
+enum TripEventType {
+  LEADER_CHANGED
+  FX_POLICY_CHANGED
+
+  @@map("trip_event_type")
+}
+
+enum ChangeAction {
+  CONFIRM_PERSONAL
+  CONFIRM_SHARED
+  SHARED_TO_PERSONAL
+  PERSONAL_TO_SHARED
+  PARTICIPANTS_CHANGED
+  AUTO_PERSONAL_ON_END
+  OUT_OF_PERIOD_ADDED
+  REFUND_ATTACHED
+  DUPLICATE_FLAGGED
+  DUPLICATE_DISMISSED
+  FX_RECALCULATED
+
+  @@map("change_action")
+}
+
+// ─── 회원·인증·동의 ───
+
+/// kakao_id·nickname·profile_image_url은 첫 마이그레이션(create_users)의 TEXT 그대로 둔다(하위 호환).
+/// 길이 규칙(카카오 회원번호 ≤ 32자, 닉네임 grapheme 1~10자, 프사 https만)은 서버가 검증한다.
 model User {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// 카카오 회원번호(숫자를 문자열로). 로그에는 남기지 않는다
+  kakaoId              String    @unique @map("kakao_id")
+  /// 서비스 닉네임. 중복 허용
+  nickname             String
+  /// 카카오 프사(https). 없거나 기본 이미지면 NULL → 화면 기본 이미지
+  profileImageUrl      String?   @map("profile_image_url")
+  profileImageSyncedAt DateTime? @map("profile_image_synced_at") @db.Timestamptz
+  /// 캐시. 기준은 UserConsent(MARKETING)의 유효 동의. MARKETING을 숨긴 출시에서는 항상 false
+  marketingOptIn       Boolean   @default(false) @map("marketing_opt_in")
+  /// 진입 라우팅용 마지막 여정
+  lastViewedTripId     String?   @map("last_viewed_trip_id") @db.Uuid
+  lastViewedTrip       Trip?     @relation("UserLastViewedTrip", fields: [lastViewedTripId], references: [id], onDelete: SetNull)
+  lastLoginAt          DateTime  @default(now()) @map("last_login_at") @db.Timestamptz
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  sessions         Session[]
+  consents         UserConsent[]
+  accountDeletions AccountDeletion[]
+  memberships      Membership[]
+  createdGroups    Group[]
+  connections      PaymentConnection[]
+  attempts         ConnectionAttempt[]
+  paymentMethods   PaymentMethod[]
+  transactions     Transaction[]
+
+  @@map("users")
+}
+
+/// 가입 대기: 카카오 인증은 끝났지만 닉네임·약관을 마치지 않은 상태. 약관 동의 전에는 User를 만들지 않는다.
+/// 쿠키 yj_signup에 id를 서명해 담는다. 만료(30분) 후에는 로그인부터 다시.
+model SignupTicket {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  /// 카카오 회원번호
-  kakaoId         String   @unique @map("kakao_id")
-  nickname        String
+  kakaoId         String   @unique @map("kakao_id") @db.VarChar(32)
+  /// 닉네임 화면 미리 채움용
+  kakaoNickname   String?  @map("kakao_nickname") @db.VarChar(64)
   profileImageUrl String?  @map("profile_image_url")
+  expiresAt       DateTime @map("expires_at") @db.Timestamptz
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@map("users")
+  @@index([expiresAt])
+  @@map("signup_tickets")
+}
+
+/// 쿠키 yj_session 값(256bit 난수)의 SHA-256만 저장한다. 원문은 저장하지 않는다.
+model Session {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  userId     String    @map("user_id") @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// 30일. 사용할 때 7일 미만으로 남으면 30일로 연장
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz
+  /// 로그아웃 시각
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// 동의 문서 버전. version = 시행일 YYYY-MM-DD(같은 날 두 번이면 .2). 초안(0.1-draft)은 운영 DB에 넣지 않는다.
+model ConsentDocument {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  consentId   ConsentId @map("consent_id")
+  version     String    @db.VarChar(16)
+  title       String
+  required    Boolean
+  docPath     String    @map("doc_path")
+  /// 게시한 전문의 SHA-256
+  docHash     String    @map("doc_hash") @db.Char(64)
+  effectiveAt DateTime  @map("effective_at") @db.Timestamptz
+  /// MAJOR(재동의) | MINOR(고지만)
+  changeType  String    @map("change_type") @db.VarChar(8)
+  /// 재동의 화면 제목 아래 한 줄
+  summary     String?
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([consentId, version])
+  @@map("consent_documents")
+}
+
+/// 동의 이력. append-only: 수정 가능한 필드는 withdrawnAt, withdrawChannel뿐이다(docs/legal/consents.md 4절).
+/// 현재 유효 동의 = 해당 ID의 최신 MAJOR 이후 버전 행이 agreed AND withdrawnAt IS NULL.
+model UserConsent {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// 탈퇴로 User가 지워져도 보존 기간(3년) 동안 행을 남긴다
+  userId          String?   @map("user_id") @db.Uuid
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// 탈퇴 후 입증용 사용자 HMAC
+  userRefHash     String    @map("user_ref_hash") @db.Char(64)
+  consentId       ConsentId @map("consent_id")
+  version         String    @db.VarChar(16)
+  /// 선택 항목 미동의도 false로 기록
+  agreed          Boolean
+  agreedAt        DateTime  @default(now()) @map("agreed_at") @db.Timestamptz
+  /// 동의 시 접속 IP(origin lock이 넘긴 클라이언트 IP)
+  ip              String    @db.Inet
+  /// User-Agent 512자 자름
+  ua              String    @db.VarChar(512)
+  /// WF-04 | WF-05 | WF-28 | WF-42 | WF-30 | RECONSENT | SUPPORT
+  screen          String    @db.VarChar(16)
+  /// ALL | INDIVIDUAL | TOGGLE
+  method          String    @db.VarChar(12)
+  /// 동의 당시 보여 준 전문의 SHA-256(= ConsentDocument.docHash)
+  docHash         String    @map("doc_hash") @db.Char(64)
+  withdrawnAt     DateTime? @map("withdrawn_at") @db.Timestamptz
+  /// WF-30 | WF-27 | SUPPORT | ACCOUNT_DELETED
+  withdrawChannel String?   @map("withdraw_channel") @db.VarChar(16)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([userId, consentId, version])
+  @@index([consentId, version])
+  @@index([userRefHash])
+  @@map("user_consents")
+}
+
+/// 탈퇴·삭제 요청과 처리 기록. 처리 완료일부터 3년 보관.
+/// 요청 코드(FR-108)는 원문을 저장하지 않고 HMAC만 저장한다.
+model AccountDeletion {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// 처리 전까지 요청자를 찾는 데 쓴다. User 삭제 후 NULL
+  userId          String?   @map("user_id") @db.Uuid
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userRefHash     String    @map("user_ref_hash") @db.Char(64)
+  /// SUPPORT(요청 코드 메일, P0) | IN_APP(P1) | KAKAO_UNLINK | INACTIVE
+  channel         String    @db.VarChar(16)
+  requestCodeHash String?   @unique @map("request_code_hash") @db.Char(64)
+  /// 요청 코드 만료(24시간)
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz
+  requestedAt     DateTime  @default(now()) @map("requested_at") @db.Timestamptz
+  completedAt     DateTime? @map("completed_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([userRefHash])
+  @@map("account_deletions")
+}
+
+// ─── 그룹·여정 ───
+
+/// 사람·권한의 묶음. MVP는 그룹 1 : 여정 1(Trip.groupId UNIQUE).
+/// 초대코드 유니크는 삭제되지 않은 그룹 안에서만(부분 유니크 인덱스, SQL).
+model Group {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// 화면의 여정 이름(헤더). 1~20자
+  name            String    @db.VarChar(20)
+  /// 6자, 문자 집합 23456789ABCDEFGHJKMNPQRSTUVWXYZ(CHECK). 표시는 3-3
+  inviteCode      String    @map("invite_code") @db.Char(6)
+  /// 탈퇴(FR-109) 후 NULL
+  createdByUserId String?   @map("created_by_user_id") @db.Uuid
+  createdBy       User?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  /// 그룹 삭제(소프트). 30일 뒤 파기 배치가 영구 삭제
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  trip        Trip?
+  memberships Membership[]
+
+  @@index([inviteCode])
+  @@map("groups")
+}
+
+model Trip {
+  id                    String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// MVP 1:1. 1:N 확장 시 @unique 제거
+  groupId               String      @unique @map("group_id") @db.Uuid
+  group                 Group       @relation(fields: [groupId], references: [id])
+  /// 표시용 장소 "일본 오사카"
+  placeLabel            String      @map("place_label") @db.VarChar(40)
+  /// ISO 3166-1. 국내 KR
+  countryCode           String      @map("country_code") @db.Char(2)
+  city                  String?     @db.VarChar(40)
+  /// ISO 4217. 국가에서 자동으로 정한다
+  currency              String      @db.Char(3)
+  /// KST 달력 날짜. endDate ≥ startDate(CHECK)
+  startDate             DateTime    @map("start_date") @db.Date
+  endDate               DateTime    @map("end_date") @db.Date
+  /// startDate 00:00 KST / endDate 23:59:59 KST. 인입 범위·자동 종료 조회용
+  startAt               DateTime    @map("start_at") @db.Timestamptz
+  autoEndAt             DateTime    @map("auto_end_at") @db.Timestamptz
+  /// 공동 지출 기준 예산. 1 ~ 1,000,000,000(CHECK)
+  budgetKrw             Int         @map("budget_krw")
+  status                TripStatus  @default(UPCOMING)
+  startedAt             DateTime?   @map("started_at") @db.Timestamptz
+  startedByMembershipId String?     @map("started_by_membership_id") @db.Uuid
+  startedBy             Membership? @relation("TripStartedBy", fields: [startedByMembershipId], references: [id], onDelete: SetNull)
+  endedAt               DateTime?   @map("ended_at") @db.Timestamptz
+  /// 자동 종료면 NULL
+  endedByMembershipId   String?     @map("ended_by_membership_id") @db.Uuid
+  endedBy               Membership? @relation("TripEndedBy", fields: [endedByMembershipId], references: [id], onDelete: SetNull)
+  endReason             EndReason?  @map("end_reason")
+  fxPolicy              FxPolicy    @default(SPOT_AT_PAYMENT) @map("fx_policy")
+  /// 고시 단위당 원(100엔당 919.20 → 919.200000). FIXED일 때 NOT NULL(CHECK)
+  fxFixedRate           Decimal?    @map("fx_fixed_rate") @db.Decimal(18, 6)
+  fxPolicyChangedAt     DateTime?   @map("fx_policy_changed_at") @db.Timestamptz
+  /// 낙관적 잠금(수정·환율 변경)
+  version               Int         @default(0)
+  deletedAt             DateTime?   @map("deleted_at") @db.Timestamptz
+  createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  expenses          Expense[]
+  changeLogs        ExpenseChangeLog[]
+  settlement        Settlement?
+  events            TripEvent[]
+  lastViewedByUsers User[]             @relation("UserLastViewedTrip")
+
+  @@index([status, autoEndAt])
+  @@map("trips")
+}
+
+/// 결제자·부담 인원·정산 행은 userId가 아니라 이 ID를 참조한다(나간 뒤·탈퇴 후에도 기록 유지).
+/// 활성 LEADER는 그룹당 1명(부분 유니크 인덱스, SQL). leftAt과 leaveReason은 함께 채우고 함께 비운다(CHECK).
+model Membership {
+  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  groupId              String       @map("group_id") @db.Uuid
+  group                Group        @relation(fields: [groupId], references: [id])
+  /// 탈퇴 시 NULL → 화면 표시 "탈퇴한 멤버"
+  userId               String?      @map("user_id") @db.Uuid
+  user                 User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  role                 MemberRole   @default(MEMBER)
+  /// 가입 순서. 생성자 = 1. 승계·스택 정렬 기준
+  joinOrder            Int          @map("join_order")
+  joinedAt             DateTime     @default(now()) @map("joined_at") @db.Timestamptz
+  /// 나감·강퇴 시각. NULL이 아니면 그 여정의 어떤 API도 404
+  leftAt               DateTime?    @map("left_at") @db.Timestamptz
+  leaveReason          LeaveReason? @map("leave_reason")
+  kickedByMembershipId String?      @map("kicked_by_membership_id") @db.Uuid
+  kickedBy             Membership?  @relation("MembershipKickedBy", fields: [kickedByMembershipId], references: [id], onDelete: SetNull)
+  /// 1회성 토스트를 어디까지 봤는지(TripEvent.seq)
+  lastSeenTripEventSeq BigInt?      @map("last_seen_trip_event_seq")
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  kicked              Membership[]         @relation("MembershipKickedBy")
+  paidExpenses        Expense[]            @relation("ExpensePayer")
+  dismissedDuplicates Expense[]            @relation("ExpenseDuplicateDismissedBy")
+  shares              ExpenseShare[]
+  changeLogs          ExpenseChangeLog[]
+  startedTrips        Trip[]               @relation("TripStartedBy")
+  endedTrips          Trip[]               @relation("TripEndedBy")
+  settlementRows      SettlementMember[]
+  transfersFrom       SettlementTransfer[] @relation("TransferFrom")
+  transfersTo         SettlementTransfer[] @relation("TransferTo")
+  tripEvents          TripEvent[]
+
+  @@unique([groupId, userId])
+  @@unique([groupId, joinOrder])
+  @@index([userId, leftAt])
+  @@map("memberships")
+}
+
+/// 1회성 토스트(그룹장 승계·환율 기준 변경). seq는 순서용 내부 번호로 응답에 내보내지 않는다.
+model TripEvent {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  seq               BigInt        @unique @default(autoincrement())
+  tripId            String        @map("trip_id") @db.Uuid
+  trip              Trip          @relation(fields: [tripId], references: [id])
+  type              TripEventType
+  /// {newLeaderMembershipId, nickname} / {policy}
+  payload           Json
+  /// 행위자에게는 다시 띄우지 않는다
+  actorMembershipId String?       @map("actor_membership_id") @db.Uuid
+  actor             Membership?   @relation(fields: [actorMembershipId], references: [id], onDelete: SetNull)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tripId, seq])
+  @@map("trip_events")
+}
+
+// ─── 결제수단·인입 ───
+// 금융 민감 정보 규칙(기능명세 2-5 I-9, 8-1):
+// - 토큰·원문 페이로드는 평문으로 저장하지 않는다. *Enc 컬럼(bytea)에 AES-256-GCM 암호문만 넣는다
+//   (키: env TOKEN_ENCRYPTION_KEY, 나중에 Cloud KMS 봉투 암호화로 교체). 복호화한 값은 메모리 밖으로 내보내지 않는다.
+// - 카드·계좌 전체 번호는 받지도 저장하지도 않는다. 어댑터 경계에서 마스킹한 값(maskedNumber, last4)만 저장한다.
+// - 이 테이블들의 값은 로그에 남기지 않는다(ID만).
+
+/// 토스 연결(토큰 1개 = 결제수단 여러 개). ACTIVE면 accessTokenEnc NOT NULL(CHECK).
+/// 해제·철회·탈퇴·만료 확인 시 토큰 컬럼을 즉시 NULL로 지운다.
+model PaymentConnection {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String           @map("user_id") @db.Uuid
+  user              User             @relation(fields: [userId], references: [id])
+  provider          Provider
+  status            ConnectionStatus @default(ACTIVE)
+  /// AES-256-GCM 암호문. 평문 저장·로그 금지
+  accessTokenEnc    Bytes?           @map("access_token_enc")
+  /// AES-256-GCM 암호문. 평문 저장·로그 금지
+  refreshTokenEnc   Bytes?           @map("refresh_token_enc")
+  tokenExpiresAt    DateTime?        @map("token_expires_at") @db.Timestamptz
+  /// 동의 범위(제공자 값 그대로)
+  scope             String?
+  connectedAt       DateTime         @map("connected_at") @db.Timestamptz
+  /// 만료 감지 시각 → 재연결 소급 기준
+  expiredAt         DateTime?        @map("expired_at") @db.Timestamptz
+  lastSyncedAt      DateTime?        @map("last_synced_at") @db.Timestamptz
+  lastSyncStatus    SyncStatus?      @map("last_sync_status")
+  lastSyncErrorCode String?          @map("last_sync_error_code") @db.VarChar(40)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  methods           PaymentMethod[]
+  syncRuns          SyncRun[]
+  reconnectAttempts ConnectionAttempt[] @relation("AttemptReconnect")
+  confirmedAttempts ConnectionAttempt[] @relation("AttemptConnection")
+
+  @@index([userId])
+  @@map("payment_connections")
+}
+
+/// WF-06·07 흐름 상태. OAuth state는 해시만 저장한다.
+model ConnectionAttempt {
+  id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String             @map("user_id") @db.Uuid
+  user                  User               @relation(fields: [userId], references: [id])
+  provider              Provider           @default(TOSS)
+  purpose               AttemptPurpose
+  reconnectConnectionId String?            @map("reconnect_connection_id") @db.Uuid
+  reconnectConnection   PaymentConnection? @relation("AttemptReconnect", fields: [reconnectConnectionId], references: [id], onDelete: SetNull)
+  stateHash             String             @unique @map("state_hash") @db.Char(64)
+  status                AttemptStatus      @default(WAITING)
+  connectionId          String?            @map("connection_id") @db.Uuid
+  connection            PaymentConnection? @relation("AttemptConnection", fields: [connectionId], references: [id], onDelete: SetNull)
+  /// 제공자가 돌려준 계좌·카드 후보(마스킹 값만). 선택 완료 또는 10분 후 NULL
+  candidates            Json?
+  expiresAt             DateTime           @map("expires_at") @db.Timestamptz
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("connection_attempts")
+}
+
+/// 계좌·카드. maskedNumber는 '*'를 포함해야 하고 last4는 숫자 2~4자리다(CHECK).
+model PaymentMethod {
+  id               String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String              @map("user_id") @db.Uuid
+  user             User                @relation(fields: [userId], references: [id])
+  connectionId     String              @map("connection_id") @db.Uuid
+  connection       PaymentConnection   @relation(fields: [connectionId], references: [id])
+  type             PaymentMethodType
+  /// "토스뱅크", "신한카드"
+  institutionName  String              @map("institution_name") @db.VarChar(30)
+  /// "토스뱅크 체크카드" (WF-07·27 제목 줄)
+  productName      String              @map("product_name") @db.VarChar(40)
+  /// 결제 상세 줄용 이름. 표시 = "{shortLabel} {last4}"
+  shortLabel       String              @map("short_label") @db.VarChar(30)
+  /// 서버에서 마스킹한 값만: 카드 5365-****-****-1934, 계좌 1000-12**-**21
+  maskedNumber     String              @map("masked_number") @db.VarChar(30)
+  /// 카드 끝 4자리 / 계좌 끝 2~4자리
+  last4            String              @db.VarChar(4)
+  /// 제공자의 불투명 ID. 실제 카드·계좌번호면 저장하지 않고 HMAC으로 대체
+  externalRef      String              @map("external_ref") @db.VarChar(128)
+  /// 체크카드와 연결된 계좌의 externalRef(같은 사용자 중복 제거용, 미결 Q-31)
+  linkedAccountRef String?             @map("linked_account_ref") @db.VarChar(128)
+  status           PaymentMethodStatus @default(ACTIVE)
+  lastSyncedAt     DateTime?           @map("last_synced_at") @db.Timestamptz
+  /// 제공자 증분 조회 커서
+  syncCursor       String?             @map("sync_cursor")
+  removedAt        DateTime?           @map("removed_at") @db.Timestamptz
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  transactions Transaction[]
+
+  @@unique([connectionId, externalRef])
+  @@index([userId])
+  @@map("payment_methods")
+}
+
+/// 토스에서 가져온 거래 원본. 소유자 외 누구에게도 직접 노출하지 않는다(여정 장부는 Expense로만).
+model Transaction {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String        @map("user_id") @db.Uuid
+  user                  User          @relation(fields: [userId], references: [id])
+  paymentMethodId       String        @map("payment_method_id") @db.Uuid
+  paymentMethod         PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  /// 제공자 거래 ID. 멱등 upsert 키
+  externalRef           String        @map("external_ref") @db.VarChar(128)
+  kind                  TxKind
+  /// 승인(취소) 시각. 인입 범위·Day 계산 기준
+  occurredAt            DateTime      @map("occurred_at") @db.Timestamptz
+  merchantNameRaw       String        @map("merchant_name_raw") @db.VarChar(100)
+  /// NFKC → 대문자 → 공백·기호 제거. 중복·환불 매칭용
+  merchantKey           String        @map("merchant_key") @db.VarChar(100)
+  /// 부호 포함(취소는 음수)
+  originalAmount        Decimal       @map("original_amount") @db.Decimal(19, 4)
+  originalCurrency      String        @map("original_currency") @db.Char(3)
+  providerKrwAmount     Int?          @map("provider_krw_amount")
+  /// 카드사 청구 확정 원화(CARD_BILLED)
+  billedKrwAmount       Int?          @map("billed_krw_amount")
+  billedAt              DateTime?     @map("billed_at") @db.Timestamptz
+  /// 환율 스냅샷: occurredAt 직전 매매기준율
+  spotRateId            String?       @map("spot_rate_id") @db.Uuid
+  spotRate              ExchangeRate? @relation(fields: [spotRateId], references: [id], onDelete: SetNull)
+  spotKrwAmount         Int?          @map("spot_krw_amount")
+  /// 취소 건이 가리키는 원 승인 ID(제공자가 줄 때)
+  providerApprovalRef   String?       @map("provider_approval_ref") @db.VarChar(128)
+  cancelOfTransactionId String?       @map("cancel_of_transaction_id") @db.Uuid
+  cancelOf              Transaction?  @relation("TxCancel", fields: [cancelOfTransactionId], references: [id], onDelete: SetNull)
+  cancels               Transaction[] @relation("TxCancel")
+  /// 같은 결제가 계좌·카드 양쪽에 잡힌 경우 계좌 쪽에 표시하고 인입하지 않는다
+  sameUserDuplicateOfId String?       @map("same_user_duplicate_of_id") @db.Uuid
+  sameUserDuplicateOf   Transaction?  @relation("TxDuplicate", fields: [sameUserDuplicateOfId], references: [id], onDelete: SetNull)
+  sameUserDuplicates    Transaction[] @relation("TxDuplicate")
+  /// 원문 JSON의 AES-256-GCM 암호문. 수집 후 90일에 NULL
+  rawPayloadEnc         Bytes?        @map("raw_payload_enc")
+  importedAt            DateTime      @default(now()) @map("imported_at") @db.Timestamptz
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  expenses Expense[]
+
+  @@unique([paymentMethodId, externalRef])
+  @@index([userId, occurredAt])
+  @@map("transactions")
+}
+
+// ─── 여정 장부 ───
+
+/// 여정 장부 항목. 잠금 여부는 컬럼이 아니라 계산한다: trip.status = ENDED 또는 결제자 Membership.leftAt != NULL.
+/// PENDING·PERSONAL은 결제자 외 응답에 넣지 않는다(I-8, 저장소 계층 공통 필터).
+model Expense {
+  id                               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId                           String        @map("trip_id") @db.Uuid
+  trip                             Trip          @relation(fields: [tripId], references: [id])
+  /// 원본 거래를 파기해도 SHARED 결제는 복사해 둔 값으로 남는다(NULL)
+  transactionId                    String?       @map("transaction_id") @db.Uuid
+  transaction                      Transaction?  @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  payerMembershipId                String        @map("payer_membership_id") @db.Uuid
+  payer                            Membership    @relation("ExpensePayer", fields: [payerMembershipId], references: [id])
+  status                           ExpenseStatus @default(PENDING)
+  origin                           ExpenseOrigin @default(AUTO)
+  occurredAt                       DateTime      @map("occurred_at") @db.Timestamptz
+  merchantName                     String        @map("merchant_name") @db.VarChar(100)
+  /// 부호 포함
+  originalAmount                   Decimal       @map("original_amount") @db.Decimal(19, 4)
+  originalCurrency                 String        @map("original_currency") @db.Char(3)
+  /// 이 건의 원화(취소 자식은 음수)
+  krwAmount                        Int           @map("krw_amount")
+  /// 부모만 NOT NULL: max(0, krwAmount + Σ자식 krwAmount). 리스트·정산이 쓰는 금액(CHECK)
+  netKrwAmount                     Int?          @map("net_krw_amount")
+  /// KRW 거래는 NULL
+  fxPolicyApplied                  FxPolicy?     @map("fx_policy_applied")
+  fxRate                           Decimal?      @map("fx_rate") @db.Decimal(18, 6)
+  fxRateUnit                       Int?          @map("fx_rate_unit")
+  fxRateSource                     String?       @map("fx_rate_source") @db.VarChar(40)
+  fxRateAt                         DateTime?     @map("fx_rate_at") @db.Timestamptz
+  /// 취소 자식이 가리키는 부모. 자식은 리스트에 단독으로 나오지 않는다
+  refundOfExpenseId                String?       @map("refund_of_expense_id") @db.Uuid
+  refundOf                         Expense?      @relation("ExpenseRefund", fields: [refundOfExpenseId], references: [id], onDelete: Cascade)
+  refunds                          Expense[]     @relation("ExpenseRefund")
+  /// 중복 의심 묶음 ID
+  duplicateGroupId                 String?       @map("duplicate_group_id") @db.Uuid
+  duplicateDismissedAt             DateTime?     @map("duplicate_dismissed_at") @db.Timestamptz
+  duplicateDismissedByMembershipId String?       @map("duplicate_dismissed_by_membership_id") @db.Uuid
+  duplicateDismissedBy             Membership?   @relation("ExpenseDuplicateDismissedBy", fields: [duplicateDismissedByMembershipId], references: [id], onDelete: SetNull)
+  /// 처음 공동으로 공개된 시각
+  firstSharedAt                    DateTime?     @map("first_shared_at") @db.Timestamptz
+  /// "변경됨" 표시 근거
+  changedAfterShared               Boolean       @default(false) @map("changed_after_shared")
+  confirmedAt                      DateTime?     @map("confirmed_at") @db.Timestamptz
+  /// 종료 시 미확정 → 개인 자동 처리 시각
+  autoPersonalizedAt               DateTime?     @map("auto_personalized_at") @db.Timestamptz
+  /// 낙관적 잠금
+  version                          Int           @default(0)
+  createdAt                        DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                        DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  shares     ExpenseShare[]
+  changeLogs ExpenseChangeLog[]
+
+  @@unique([tripId, transactionId])
+  @@index([tripId, occurredAt(sort: Desc), id])
+  @@index([tripId, status])
+  @@index([payerMembershipId])
+  @@index([refundOfExpenseId])
+  @@index([duplicateGroupId])
+  @@map("expenses")
+}
+
+/// 부담 인원. SHARED 부모만 행을 가지며 Σ amountKrw = 부모 netKrwAmount, 행 ≥ 1(I-4, 서비스가 보장).
+model ExpenseShare {
+  expenseId         String     @map("expense_id") @db.Uuid
+  expense           Expense    @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  /// 나간 멤버도 남는다
+  membershipId      String     @map("membership_id") @db.Uuid
+  membership        Membership @relation(fields: [membershipId], references: [id])
+  /// 나머지 포함. ≥ 0(CHECK)
+  amountKrw         Int        @map("amount_krw")
+  /// 원 단위 나머지를 진 사람
+  isRemainderHolder Boolean    @default(false) @map("is_remainder_holder")
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@id([expenseId, membershipId])
+  @@index([membershipId])
+  @@map("expense_shares")
+}
+
+/// 변경 이력. 이력 화면은 추후, 데이터는 MVP부터 쌓는다.
+model ExpenseChangeLog {
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  expenseId         String       @map("expense_id") @db.Uuid
+  expense           Expense      @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  tripId            String       @map("trip_id") @db.Uuid
+  trip              Trip         @relation(fields: [tripId], references: [id])
+  /// 시스템 처리면 NULL
+  actorMembershipId String?      @map("actor_membership_id") @db.Uuid
+  actor             Membership?  @relation(fields: [actorMembershipId], references: [id], onDelete: SetNull)
+  action            ChangeAction
+  /// {status, participantIds, netKrwAmount, perPersonKrw}
+  before            Json?
+  after             Json?
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([expenseId, createdAt])
+  @@index([tripId])
+  @@map("expense_change_logs")
+}
+
+// ─── 환율 ───
+
+/// 기준 통화는 KRW 고정. rate는 1단위당 원(JPY 9.192000), displayUnit은 고시 단위(JPY·IDR·VND = 100).
+model ExchangeRate {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quoteCurrency String   @map("quote_currency") @db.Char(3)
+  rate          Decimal  @db.Decimal(18, 6)
+  displayUnit   Int      @default(1) @map("display_unit")
+  rateType      RateType @default(MID) @map("rate_type")
+  /// 예: "하나은행 매매기준율"
+  source        String   @db.VarChar(40)
+  /// 고시 시각
+  effectiveAt   DateTime @map("effective_at") @db.Timestamptz
+  fetchedAt     DateTime @default(now()) @map("fetched_at") @db.Timestamptz
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  transactions Transaction[]
+
+  @@unique([quoteCurrency, source, effectiveAt])
+  @@index([quoteCurrency, effectiveAt(sort: Desc)])
+  @@map("exchange_rates")
+}
+
+// ─── 정산(종료 시 스냅샷) ───
+
+/// ENDED 여정에만 있고 Σ SettlementMember.netKrw = 0(I-7, 종료 트랜잭션에서 검산).
+model Settlement {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tripId           String   @unique @map("trip_id") @db.Uuid
+  trip             Trip     @relation(fields: [tripId], references: [id])
+  totalSharedKrw   Int      @map("total_shared_krw")
+  /// 공동 결제 건수(환불 묶음은 1건)
+  sharedCount      Int      @map("shared_count")
+  /// 정산 대상 인원 N
+  memberCount      Int      @map("member_count")
+  /// N빵 1인 = round(total / N), 참고용
+  perCapitaKrw     Int      @map("per_capita_krw")
+  fxPolicy         FxPolicy @map("fx_policy")
+  algorithmVersion String   @default("v1") @map("algorithm_version") @db.VarChar(8)
+  /// 정산 확정 시각 = Trip.endedAt
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  members   SettlementMember[]
+  transfers SettlementTransfer[]
+
+  @@map("settlements")
+}
+
+model SettlementMember {
+  settlementId  String     @map("settlement_id") @db.Uuid
+  settlement    Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  membershipId  String     @map("membership_id") @db.Uuid
+  membership    Membership @relation(fields: [membershipId], references: [id])
+  /// 공동 결제 합계·건수
+  paidKrw       Int        @map("paid_krw")
+  paidCount     Int        @map("paid_count")
+  /// 최종 부담
+  burdenKrw     Int        @map("burden_krw")
+  /// paid − burden (+받을 / −보낼)
+  netKrw        Int        @map("net_krw")
+  /// 개인 결제 건수(남에게는 이것만 노출)
+  personalCount Int        @map("personal_count")
+  /// 종료 시점에 나간 멤버였는지
+  isLeft        Boolean    @map("is_left")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@id([settlementId, membershipId])
+  @@index([membershipId])
+  @@map("settlement_members")
+}
+
+/// 송금 권장안(참고용, 화면 미노출). from ≠ to, amount > 0(CHECK)
+model SettlementTransfer {
+  id               String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  settlementId     String     @map("settlement_id") @db.Uuid
+  settlement       Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  seq              Int
+  fromMembershipId String     @map("from_membership_id") @db.Uuid
+  from             Membership @relation("TransferFrom", fields: [fromMembershipId], references: [id])
+  toMembershipId   String     @map("to_membership_id") @db.Uuid
+  to               Membership @relation("TransferTo", fields: [toMembershipId], references: [id])
+  amountKrw        Int        @map("amount_krw")
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([settlementId, seq])
+  @@map("settlement_transfers")
+}
+
+// ─── 운영 ───
+
+/// 동기화 추적·장애 분석. 거래 내용은 남기지 않는다.
+model SyncRun {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId  String            @map("connection_id") @db.Uuid
+  connection    PaymentConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  /// SCHEDULED·MANUAL·TRIP_START·JOIN·RECONNECT·METHOD_ADDED·FINAL (@yeojeong/shared SyncTrigger)
+  trigger       String            @db.VarChar(16)
+  fromAt        DateTime          @map("from_at") @db.Timestamptz
+  toAt          DateTime          @map("to_at") @db.Timestamptz
+  status        SyncStatus?
+  fetchedCount  Int               @default(0) @map("fetched_count")
+  importedCount Int               @default(0) @map("imported_count")
+  errorCode     String?           @map("error_code") @db.VarChar(40)
+  startedAt     DateTime          @default(now()) @map("started_at") @db.Timestamptz
+  finishedAt    DateTime?         @map("finished_at") @db.Timestamptz
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([connectionId, startedAt])
+  @@map("sync_runs")
+}
+
+/// 금융 데이터 접근 로그(누가·무엇을·언제, 내용 없음). 1년 보존.
+/// 감사 기록이라 User FK를 걸지 않는다(탈퇴해도 행을 고치지 않는다).
+model AccessLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  /// @yeojeong/shared AccessAction
+  action       String   @db.VarChar(32)
+  resourceType String   @map("resource_type") @db.VarChar(32)
+  resourceId   String?  @map("resource_id") @db.Uuid
+  ipHash       String?  @map("ip_hash") @db.Char(64)
+  at           DateTime @default(now()) @db.Timestamptz
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([userId, at])
+  @@map("access_logs")
 }

@@ -3,11 +3,13 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ERRORS } from '@yeojeong/shared';
 import type { Request } from 'express';
 import request from 'supertest';
+import { Public } from './../src/common/auth/index.js';
 import { StrictThrottle } from './../src/common/throttle.js';
 import { createTestApp } from './create-test-app.js';
 
 const SECRET = 'test-origin-secret-0123456789abcdefghij';
 
+@Public()
 @Controller('origin-probe')
 class OriginProbeController {
   @Get('ip')

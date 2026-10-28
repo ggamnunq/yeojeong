@@ -17,9 +17,11 @@ import {
   ValidateNested,
 } from 'class-validator';
 import request from 'supertest';
+import { Public } from './../src/common/auth/index.js';
 import { AppException } from './../src/common/errors/index.js';
 import { StrictThrottle } from './../src/common/throttle.js';
 import { Prisma } from './../src/generated/prisma/client.js';
+import { TEST_ORIGIN } from './auth-helpers.js';
 import { createTestApp } from './create-test-app.js';
 
 const UUID_V4 =
@@ -55,6 +57,7 @@ class DenyGuard implements CanActivate {
 }
 
 // 테스트에서만 등록하는 컨트롤러. 운영 코드에는 이런 라우트를 두지 않는다.
+@Public()
 @Controller('error-probe')
 class ErrorProbeController {
   @Post('expenses')
@@ -116,6 +119,7 @@ describe('Error responses (e2e)', () => {
   it('collects every field error on validation failure', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/error-probe/expenses')
+      .set('Origin', TEST_ORIGIN)
       .send({
         title: '오사카 3박 4일 맛집 투어',
         amount: -1,
@@ -160,6 +164,7 @@ describe('Error responses (e2e)', () => {
   it('returns 400 for malformed JSON', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/error-probe/expenses')
+      .set('Origin', TEST_ORIGIN)
       .set('Content-Type', 'application/json')
       .send('{"title": ')
       .expect(400);
@@ -174,6 +179,7 @@ describe('Error responses (e2e)', () => {
   it('returns 413 for bodies over the limit', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/error-probe/expenses')
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'x'.repeat(200 * 1024) })
       .expect(413);
     expect(res.body).toEqual({

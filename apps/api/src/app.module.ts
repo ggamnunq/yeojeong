@@ -2,6 +2,14 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import {
+  AuthCoreModule,
+  AuthGuard,
+  ConsentGuard,
+  CsrfGuard,
+  MembershipGuard,
+  TripStatusGuard,
+} from './common/auth/index.js';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter.js';
 import { createValidationPipe } from './common/errors/validation.js';
 import { LoggingModule } from './common/logging/logging.module.js';
@@ -15,11 +23,19 @@ import { PrismaModule } from './prisma/prisma.module.js';
     LoggingModule,
     ThrottlerModule.forRoot([DEFAULT_THROTTLE]),
     PrismaModule,
+    AuthCoreModule,
+    // 기능 모듈은 아래에 한 줄씩 추가한다(apps/api/README.md "모듈 추가")
     HealthModule,
   ],
   providers: [
     { provide: APP_PIPE, useValue: createValidationPipe() },
+    // 전역 가드는 이 순서대로 돈다. 순서를 바꾸지 않는다.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: AuthGuard },
+    { provide: APP_GUARD, useClass: ConsentGuard },
+    { provide: APP_GUARD, useClass: MembershipGuard },
+    { provide: APP_GUARD, useClass: TripStatusGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
 })

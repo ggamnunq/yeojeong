@@ -53,6 +53,78 @@ export const COMMON_ERRORS = {
   },
 } as const satisfies Record<string, ErrorDefinition>;
 
+// 기능명세 6-2. 401은 공통 UNAUTHENTICATED를 쓴다(명세 초안의 AUTH_REQUIRED와 같은 뜻).
+export const AUTH_ERRORS = {
+  SIGNUP_REQUIRED: { status: 403, message: '가입을 마저 진행해 주세요' },
+  CSRF_REJECTED: { status: 403, message: '요청을 처리할 수 없어요' },
+  TERMS_REQUIRED: { status: 400, message: '필수 약관에 동의해 주세요' },
+  /** details: ConsentRequiredDetails { missing, required } */
+  CONSENT_REQUIRED: { status: 403, message: '약관 동의가 필요해요' },
+} as const satisfies Record<string, ErrorDefinition>;
+
+export const TRIP_ERRORS = {
+  NOT_LEADER: { status: 403, message: '그룹장만 할 수 있어요' },
+  TRIP_PHASE_INVALID: {
+    status: 409,
+    message: '지금 단계에서는 할 수 없어요',
+  },
+  /** details.current에 최신 리소스를 담는다 */
+  VERSION_CONFLICT: { status: 409, message: '다른 곳에서 바뀌었어요' },
+  INVITE_CODE_INVALID: {
+    status: 404,
+    message: '초대코드를 다시 확인해 주세요',
+  },
+  INVITE_TRIP_ENDED: { status: 409, message: '참여할 수 없는 여정이에요' },
+  MEMBER_KICKED: { status: 403, message: '참여할 수 없는 여정이에요' },
+  ALREADY_MEMBER: { status: 409, message: '이미 참여한 여정이에요' },
+  MEMBER_LIMIT_EXCEEDED: { status: 409, message: '참여할 수 없는 여정이에요' },
+  CANNOT_KICK_SELF: { status: 400, message: '나 자신은 내보낼 수 없어요' },
+} as const satisfies Record<string, ErrorDefinition>;
+
+export const EXPENSE_ERRORS = {
+  NOT_PAYER: { status: 403, message: '결제한 사람만 바꿀 수 있어요' },
+  EXPENSE_LOCKED: { status: 409, message: '변경할 수 없는 결제예요' },
+  PARTICIPANTS_REQUIRED: { status: 400, message: '함께 낼 사람을 골라 주세요' },
+  PARTICIPANT_NOT_MEMBER: {
+    status: 400,
+    message: '함께 낼 수 없는 사람이 있어요',
+  },
+  SHARED_IN_OTHER_TRIP: {
+    status: 409,
+    message: '다른 여정에서 공동으로 정한 결제예요',
+  },
+  OUT_OF_PERIOD_CANDIDATE_INVALID: {
+    status: 400,
+    message: '추가할 수 없는 결제가 있어요',
+  },
+  DUPLICATE_NOT_FLAGGED: { status: 409, message: '중복 의심 결제가 아니에요' },
+} as const satisfies Record<string, ErrorDefinition>;
+
+export const FX_ERRORS = {
+  FX_POLICY_LOCKED: { status: 409, message: '환율 기준을 바꿀 수 없어요' },
+  FX_RATE_UNAVAILABLE: {
+    status: 503,
+    message: '환율 정보를 불러오지 못했어요',
+  },
+} as const satisfies Record<string, ErrorDefinition>;
+
+export const WALLET_ERRORS = {
+  CONNECTION_EXPIRED: { status: 409, message: '토스 연결이 만료됐어요' },
+  ATTEMPT_EXPIRED: { status: 410, message: '다시 시도해 주세요' },
+  PROVIDER_AUTH_FAILED: {
+    status: 502,
+    message: '잠시 후 다시 시도해 주세요',
+  },
+  PROVIDER_UNAVAILABLE: {
+    status: 503,
+    message: '잠시 후 다시 시도해 주세요',
+  },
+  SYNC_RATE_LIMITED: {
+    status: 429,
+    message: '잠시 후 다시 시도해 주세요',
+  },
+} as const satisfies Record<string, ErrorDefinition>;
+
 /**
  * API 서버가 아니라 화면(apps/web의 apiFetch)이나 앞단 Cloudflare Worker가 만드는 코드.
  * 서버 코드에서는 던지지 않는다. status는 같은 상황을 HTTP로 나타낸 값이고,
@@ -80,12 +152,17 @@ export const CLIENT_ERRORS = {
 } as const satisfies Record<string, ErrorDefinition>;
 
 /**
- * 모든 에러 코드. 도메인 코드는 모듈별 맵(예: TRIP_ERRORS = { TRIP_NOT_FOUND: { status: 404, message: '여정을 찾을 수 없어요' } })을
- * 같은 모양으로 만들어 여기에 펼쳐 넣는다. 코드는 대문자 스네이크로, 한 번 정하면 바꾸지 않는다.
+ * 모든 에러 코드. 도메인 코드는 모듈별 맵(예: TRIP_ERRORS)을 같은 모양으로 만들어 여기에 펼쳐 넣는다.
+ * 코드는 대문자 스네이크로, 한 번 정하면 바꾸지 않는다.
  */
 export const ERRORS = {
   ...COMMON_ERRORS,
   ...CLIENT_ERRORS,
+  ...AUTH_ERRORS,
+  ...TRIP_ERRORS,
+  ...EXPENSE_ERRORS,
+  ...FX_ERRORS,
+  ...WALLET_ERRORS,
 } as const satisfies Record<string, ErrorDefinition>;
 
 export type ErrorCode = keyof typeof ERRORS;

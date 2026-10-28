@@ -38,6 +38,7 @@
     "@yeojeong/shared": "workspace:*",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "cookie": "^1.1.1",
     "helmet": "^8.3.0",
     "nestjs-pino": "^5.3.1",
     "pino": "^10.4.0",

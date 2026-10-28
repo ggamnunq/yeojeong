@@ -40,6 +40,40 @@ Prisma CLI는 `DIRECT_URL`이 있으면 그것을, 없으면 `DATABASE_URL`을 �
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
   ```
 - 명세가 확정되지 않은 모델은 `///` 주석으로 표시한다.
+- enum도 `@@map("snake_case")`로 DB 타입 이름을 맞춘다. 값은 `@yeojeong/shared`의 같은 이름 상수와 같다.
+- 순서가 필요한 기록도 PK는 UUID로 두고, 순서용 컬럼(`trip_events.seq` BIGSERIAL)을 따로 둔다. 순서 번호는 응답에 내보내지 않는다.
+
+## 도메인 모델
+
+`20261028095249_create_domain`에서 기능명세 부록 A의 모든 모델을 만들었다.
+
+| 영역      | 모델 (테이블)                                                                                                                             |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 회원·인증 | `User`(users), `SignupTicket`(signup_tickets), `Session`(sessions), `ConsentDocument`(consent_documents), `UserConsent`(user_consents), `AccountDeletion`(account_deletions) |
+| 그룹·여정 | `Group`(groups), `Trip`(trips), `Membership`(memberships), `TripEvent`(trip_events)                                                       |
+| 결제수단  | `PaymentConnection`(payment_connections), `ConnectionAttempt`(connection_attempts), `PaymentMethod`(payment_methods), `Transaction`(transactions), `SyncRun`(sync_runs) |
+| 장부      | `Expense`(expenses), `ExpenseShare`(expense_shares), `ExpenseChangeLog`(expense_change_logs)                                              |
+| 환율·정산 | `ExchangeRate`(exchange_rates), `Settlement`(settlements), `SettlementMember`(settlement_members), `SettlementTransfer`(settlement_transfers) |
+| 감사      | `AccessLog`(access_logs, User FK 없음)                                                                                                    |
+
+금융 민감 컬럼: `*_enc`(bytea)에는 AES-256-GCM 암호문만 넣는다(키 `TOKEN_ENCRYPTION_KEY`, 추후 Cloud KMS). 카드·계좌는 마스킹 값(`masked_number`, `last4`)만 저장한다.
+
+## DB 제약
+
+Prisma 스키마로 표현할 수 없는 제약은 마이그레이션 SQL 끝에 직접 넣었다. Prisma는 CHECK와 부분 인덱스를 비교하지 않으므로 다음 `migrate dev`가 지우지 않는다(2026-10-28 확인). 서비스에서 이 제약 위반(P2002·P2004 등)을 만나면 도메인 코드로 바꿔 던진다.
+
+| 제약                                   | 내용                                                                                                |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `memberships_active_leader_key`        | 부분 유니크: 그룹당 `role = LEADER AND left_at IS NULL`은 1행(I-2)                                   |
+| `groups_invite_code_active_key`        | 부분 유니크: 삭제되지 않은 그룹의 초대코드                                                          |
+| `groups_invite_code_check`             | 초대코드 `^[2-9A-HJKMNP-Z]{6}$`                                                                     |
+| `trips_*_check`                        | 종료일 ≥ 시작일, 예산 1~10억, 국가·통화 코드 형식, FIXED면 고정 환율 필수, `status = ENDED` ⇔ `ended_at`·`end_reason` |
+| `memberships_*_check`                  | `join_order ≥ 1`, `left_at`과 `leave_reason`은 함께, `kicked_by`는 KICKED일 때만                     |
+| `payment_connections_active_token_check` | ACTIVE 연결은 `access_token_enc` 필수(해제·만료 시 토큰을 지울 수 있게 nullable)                   |
+| `payment_methods_*_check`              | `masked_number`에 `*` 포함, `last4`는 숫자 2~4자리                                                  |
+| `expenses_*_check`                     | 부모(환불 자식이 아닌 행)만 `net_krw_amount` NOT NULL·≥ 0, 통화 형식                               |
+| `expense_shares`, `exchange_rates`, `settlements`, `settlement_transfers` | 금액·환율 ≥ 0 또는 > 0, 송금 권장안 from ≠ to |
+| `user_consents_*_check`, `consent_documents_*_check`, `account_deletions_channel_check` | screen·method·withdraw_channel·change_type·channel 허용 값, doc_hash 형식 |
 
 ## 배포 흐름
 
