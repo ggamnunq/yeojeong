@@ -6,6 +6,7 @@ import {
   SYNC_STATUS_VALUES,
   type ConnectionStatus,
   type ManualSyncResponse,
+  type ManualSyncSkipReason,
   type PaymentConnectionView,
   type PaymentMethodsResponse,
   type PaymentMethodType,
@@ -98,6 +99,14 @@ export class ManualSyncResponseDto implements ManualSyncResponse {
 
   @ApiProperty({ format: 'date-time' })
   startedAt: string;
+
+  @ApiProperty({
+    enum: ['NO_ACTIVE_TRIP'],
+    nullable: true,
+    description:
+      '진행 중 여정이 없어 제공자를 부르지 않았으면 NO_ACTIVE_TRIP(HTTP 200), 동기화를 시작했으면 null(HTTP 202)',
+  })
+  skipped: ManualSyncSkipReason | null;
 }
 
 export class RemovePaymentMethodQueryDto {

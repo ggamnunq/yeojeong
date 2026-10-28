@@ -2,41 +2,43 @@
 
 토스 연결(지갑)과 거래 동기화·인입. 기능명세 3-3, 4-1, 4-2, 5-4(FR-401~408), 5-8(FR-801~804·809), 6-3 "지갑", 7-2, 8-1~8-4.
 
-| 폴더 | 모듈 | 하는 일 |
-| --- | --- | --- |
-| `src/payment-methods/` | `PaymentMethodsModule`(app.module에 이 한 줄) | 연결 시도·콜백·후보·확정, 결제수단 목록·해제, 수동 동기화 |
-| `src/payment-methods/providers/` | `PaymentProvidersModule` | 제공자 어댑터(env로 선택), 토큰 암호화, 금융 접근 로그 |
-| `src/transactions/` | `TransactionsModule` | 동기화(SyncRun)·인입·환불 매칭·중복 제거, 기간 외 후보, S2A 이벤트 구독, 내부 잡 |
+| 폴더                             | 모듈                                          | 하는 일                                                                          |
+| -------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------- |
+| `src/payment-methods/`           | `PaymentMethodsModule`(app.module에 이 한 줄) | 연결 시도·콜백·후보·확정, 결제수단 목록·해제, 수동 동기화                        |
+| `src/payment-methods/providers/` | `PaymentProvidersModule`                      | 제공자 어댑터(env로 선택), 토큰 암호화, 금융 접근 로그                           |
+| `src/transactions/`              | `TransactionsModule`                          | 동기화(SyncRun)·인입·환불 매칭·중복 제거, 기간 외 후보, S2A 이벤트 구독, 내부 잡 |
 
 ## 엔드포인트
 
-| 메서드 | 경로 | 권한 | 응답 · 에러 |
-| --- | --- | --- | --- |
-| GET | `/api/payment-methods` | 로그인 | `PaymentMethodsResponse`(REMOVED 제외, 마스킹 값만) |
-| POST | `/api/payment-methods/sync` | 로그인 | 202 `{ syncRunIds, startedAt }` · 429 `SYNC_RATE_LIMITED`(60초) · 409 `CONNECTION_EXPIRED` |
-| DELETE | `/api/payment-methods/:paymentMethodId?purgeImported=true` | 본인 | 204 · 404 · 400(마지막이 아닌데 purge) |
-| POST | `/api/payment-connections` | 로그인 + 연동 동의 3건, Strict | 201 `{ attemptId, authUrl, expiresAt }` · 403 `CONSENT_REQUIRED` · 503 `PROVIDER_UNAVAILABLE` |
-| GET | `/api/payment-connections/callback/toss` | 공개(state 해시로 시도 식별) | 302 `/wallet/connect/select?attempt=…` 또는 `/wallet/connect/toss?attempt=…&error=invalid\|expired\|cancelled\|provider` |
-| GET | `/api/payment-connections/attempts/:attemptId` | 본인 | `{ attemptId, status, purpose, expiresAt }` · 410 `ATTEMPT_EXPIRED` |
-| GET | `/api/payment-connections/attempts/:attemptId/candidates` | 본인 | `ConnectionCandidate[]` · 410 |
-| POST | `/api/payment-connections/attempts/:attemptId/confirm` | 본인 + 연동 동의 | 201 `{ accounts, cards }` · 400 · 410 |
-| POST | `/api/internal/jobs/sync` | `@Public` + 헤더 `x-internal-job-secret` | 200 `SyncJobResult` · 403 |
+| 메서드 | 경로                                                       | 권한                                     | 응답 · 에러                                                                                                                                                                                                                                                   |
+| ------ | ---------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/payment-methods`                                     | 로그인                                   | `PaymentMethodsResponse`(REMOVED 제외, 마스킹 값만)                                                                                                                                                                                                           |
+| POST   | `/api/payment-methods/sync`                                | 로그인                                   | 202 `{ syncRunIds, startedAt, skipped: null }` · 진행 중 여정이 없으면 **200** `skipped: 'NO_ACTIVE_TRIP'`(제공자를 부르지 않고 동기화 시각도 그대로 — 아무 작업도 시작하지 않았으니 202가 아니다) · 429 `SYNC_RATE_LIMITED`(60초) · 409 `CONNECTION_EXPIRED` |
+| DELETE | `/api/payment-methods/:paymentMethodId?purgeImported=true` | 본인                                     | 204 · 404 · 400(마지막이 아닌데 purge)                                                                                                                                                                                                                        |
+| POST   | `/api/payment-connections`                                 | 로그인 + 연동 동의 3건, Strict           | 201 `{ attemptId, authUrl, expiresAt }` · 403 `CONSENT_REQUIRED` · 503 `PROVIDER_UNAVAILABLE`                                                                                                                                                                 |
+| GET    | `/api/payment-connections/callback/toss`                   | 공개(state 해시로 시도 식별)             | 302 `/wallet/connect/select?attempt=…` 또는 `/wallet/connect/toss?attempt=…&error=invalid\|expired\|cancelled\|provider`                                                                                                                                      |
+| GET    | `/api/payment-connections/attempts/:attemptId`             | 본인                                     | `{ attemptId, status, purpose, expiresAt }` · 410 `ATTEMPT_EXPIRED`                                                                                                                                                                                           |
+| GET    | `/api/payment-connections/attempts/:attemptId/candidates`  | 본인                                     | `ConnectionCandidate[]` · 410                                                                                                                                                                                                                                 |
+| POST   | `/api/payment-connections/attempts/:attemptId/confirm`     | 본인 + 연동 동의                         | 201 `{ accounts, cards }` · 400 · 410                                                                                                                                                                                                                         |
+| POST   | `/api/internal/jobs/sync`                                  | `@Public` + 헤더 `x-internal-job-secret` | 200 `SyncJobResult` · 403                                                                                                                                                                                                                                     |
 
 타입은 `@yeojeong/shared`의 `api/payment-methods.ts`. 내부 잡은 전역 CsrfGuard 뒤에 있어서 호출 측(Cloud Scheduler)이 `Origin: <WEB_BASE_URL>`을 붙여야 한다(공통 쪽에서 나중에 정리).
 
 ## env
 
-| 이름 | 기본 | 설명 |
-| --- | --- | --- |
-| `PAYMENT_PROVIDER` | 운영 `toss`, 그 밖 `demo` | `demo` = DemoTossAdapter, `toss` = TossPaymentAdapter(미구현, 503) |
-| `TOKEN_ENCRYPTION_KEY` | 로컬·테스트는 고정 개발 키 | 32바이트(base64 44자 또는 hex 64자). 운영에서 없으면 부팅은 되지만 연결·동기화가 실패한다 |
-| `INTERNAL_JOB_SECRET` | 없음(항상 403) | 내부 잡 공유 비밀 |
-| `DEMO_ANCHOR_DATE` | `2026-11-12` | 데모 샘플 기준일(사용자에게 여정이 없을 때만) |
-| `PAYMENT_CALLBACK_BASE_URL` | `WEB_BASE_URL` | 콜백 주소의 origin. 로컬에서 Vite 프록시 없이 API에 직접 붙일 때 `http://localhost:3000` |
+| 이름                        | 기본                       | 설명                                                                                      |
+| --------------------------- | -------------------------- | ----------------------------------------------------------------------------------------- |
+| `PAYMENT_PROVIDER`          | 운영 `toss`, 그 밖 `demo`  | `demo` = DemoTossAdapter, `toss` = TossPaymentAdapter(미구현, 503)                        |
+| `TOKEN_ENCRYPTION_KEY`      | 로컬·테스트는 고정 개발 키 | 32바이트(base64 44자 또는 hex 64자). 운영에서 없으면 부팅은 되지만 연결·동기화가 실패한다 |
+| `INTERNAL_JOB_SECRET`       | 없음(항상 403)             | 내부 잡 공유 비밀                                                                         |
+| `DEMO_ANCHOR_DATE`          | `2026-11-12`               | 데모 샘플 기준일(사용자에게 여정이 없을 때만)                                             |
+| `PAYMENT_CALLBACK_BASE_URL` | `WEB_BASE_URL`             | 콜백 주소의 origin. 로컬에서 Vite 프록시 없이 API에 직접 붙일 때 `http://localhost:3000`  |
 
 ## 제공자 어댑터 (`providers/payment-provider.adapter.ts`)
 
 `PaymentProviderAdapter`(abstract class = DI 토큰): `buildAuthorizeUrl({state, redirectUri, hint})` → `exchangeCode({code, redirectUri})` → `refreshTokens(tokens)` → `listPaymentMethods(tokens)` → `listTransactions(tokens, {methodRef, from, to, cursor})` → `revoke(tokens)`. 오류는 `ProviderError(code)`: `AUTH_EXPIRED`·`CONSENT_REVOKED`(갱신 1회 후 연결 EXPIRED), `RATE_LIMITED`·`UNAVAILABLE`(SyncRun FAILED, 다음 주기), `INVALID_REQUEST`(그 결제수단만 건너뜀), `AUTH_FAILED`(콜백 실패).
+
+마스킹 규칙(명세 v0.5.1): 카드는 끝 4자리 유지(`5365-****-****-1934`, `last4` = 1934, 표시 "토스뱅크 체크카드 1934"), 계좌는 앞 4·끝 3(`3333-**-****821`, `last4` = 821).
 
 어댑터 약속: 번호는 마스킹 값만(`masking.ts`, 서버가 저장 전에 `isSafelyMasked`로 한 번 더 거른다), 실번호 ref는 `TokenCipher.hmacRef`, 적요의 송금 상대방 이름 제거, 입금은 넘기지 않음.
 
@@ -63,12 +65,12 @@
 
 계약은 S2A `src/trips/events.ts`(`TRIP_EVENTS`, 페이로드 타입)를 그대로 import한다.
 
-| 이벤트 | 처리 |
-| --- | --- |
-| `trip.started` | 전 멤버 소급(TRIP_START, `[startAt, now]`). 백그라운드로 돌고 바로 돌아온다 |
-| `membership.joined` | DB에서 여정이 ONGOING이면 그 멤버 소급(JOIN) |
-| `membership.left` | 할 일 없음(인입 판정이 `leftAt`을 본다). 순번만 기록 |
-| `trip.auto-ending` | FINAL 동기화, 끝날 때까지(최대 55초) 기다림 |
+| 이벤트              | 처리                                                                        |
+| ------------------- | --------------------------------------------------------------------------- |
+| `trip.started`      | 전 멤버 소급(TRIP_START, `[startAt, now]`). 백그라운드로 돌고 바로 돌아온다 |
+| `membership.joined` | DB에서 여정이 ONGOING이면 그 멤버 소급(JOIN)                                |
+| `membership.left`   | 할 일 없음(인입 판정이 `leftAt`을 본다). 순번만 기록                        |
+| `trip.auto-ending`  | FINAL 동기화, 끝날 때까지(최대 55초) 기다림                                 |
 
 실패하면 error 로그(`event, listener, tripId, errorCode`) + SyncRun FAILED로 남고, 10분 잡이 위 자가 복구로 따라잡는다. `eventSeq`가 이미 본 것 이하면 버린다(인스턴스 메모리).
 

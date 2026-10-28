@@ -59,7 +59,7 @@ const TOSS_ACCOUNT: DemoMethod = {
   type: 'ACCOUNT',
   institutionName: '토스뱅크',
   productName: '토스뱅크 통장',
-  maskedNumber: '1000-12**-**21',
+  maskedNumber: '1000-****-*621',
 };
 
 export const DEMO_METHODS: Record<DemoPersona, DemoMethod[]> = {

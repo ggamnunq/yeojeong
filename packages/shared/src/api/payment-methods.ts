@@ -99,10 +99,18 @@ export interface ConfirmConnectionResponse {
   cards: number;
 }
 
-/** POST /api/payment-methods/sync (202) */
+/** 수동 동기화를 건너뛴 이유. 진행 중 여정이 없으면 제공자를 부르지 않는다(최소 수집) */
+export type ManualSyncSkipReason = "NO_ACTIVE_TRIP";
+
+/**
+ * POST /api/payment-methods/sync. 동기화를 시작하면 202, 진행 중 여정이 없어 건너뛰면 200 + skipped.
+ * 동기화 시각(lastSyncedAt)은 제공자를 실제로 불렀을 때만 바뀐다.
+ */
 export interface ManualSyncResponse {
   syncRunIds: string[];
   startedAt: string;
+  /** 건너뛴 경우에만 'NO_ACTIVE_TRIP', 그 밖에는 null */
+  skipped: ManualSyncSkipReason | null;
 }
 
 /** POST /api/internal/jobs/sync (Cloud Scheduler) */

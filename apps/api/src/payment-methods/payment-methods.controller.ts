@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
 import {
   ApiAcceptedResponse,
@@ -18,6 +19,7 @@ import type {
   ManualSyncResponse,
   PaymentMethodsResponse,
 } from '@yeojeong/shared';
+import type { Response } from 'express';
 import { CurrentUser, type AuthUser } from '../common/auth/index.js';
 import { ApiErrorResponse, NotFoundError } from '../common/errors/index.js';
 import {
@@ -41,14 +43,27 @@ export class PaymentMethodsController {
     return this.methods.list(user.id);
   }
 
-  @ApiOperation({ summary: '수동 동기화(FR-402). 사용자당 60초에 1번' })
+  @ApiOperation({
+    summary: '수동 동기화(FR-402). 사용자당 60초에 1번',
+    description:
+      '동기화를 시작하면 202. 진행 중 여정이 없어 제공자를 부르지 않으면 200 + skipped: NO_ACTIVE_TRIP(동기화 시각은 그대로)',
+  })
   @ApiAcceptedResponse({ type: ManualSyncResponseDto })
+  @ApiOkResponse({
+    type: ManualSyncResponseDto,
+    description: 'skipped: NO_ACTIVE_TRIP',
+  })
   @ApiErrorResponse(429, 'SYNC_RATE_LIMITED')
   @ApiErrorResponse(409, 'CONNECTION_EXPIRED')
   @HttpCode(202)
   @Post('sync')
-  sync(@CurrentUser() user: AuthUser): Promise<ManualSyncResponse> {
-    return this.methods.manualSync(user.id);
+  async sync(
+    @CurrentUser() user: AuthUser,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ManualSyncResponse> {
+    const result = await this.methods.manualSync(user.id);
+    if (result.skipped) res.status(200);
+    return result;
   }
 
   @ApiOperation({

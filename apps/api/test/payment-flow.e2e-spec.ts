@@ -251,6 +251,7 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
       .set(auth.headers(me))
       .expect(202);
     expect(manual.body.syncRunIds).toHaveLength(1);
+    expect(manual.body.skipped).toBeNull();
     await request(server())
       .post('/api/payment-methods/sync')
       .set(auth.headers(me))
@@ -426,6 +427,22 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
     expect(
       await prisma.syncRun.count({ where: { connectionId: sbConn.id } }),
     ).toBe(0);
+    // 수동 동기화도 건너뛴다: 200 + skipped, 동기화 시각은 그대로
+    const skipped = await request(server())
+      .post('/api/payment-methods/sync')
+      .set(auth.headers(asUser(sb)))
+      .expect(200);
+    expect(skipped.body).toMatchObject({
+      syncRunIds: [],
+      skipped: 'NO_ACTIVE_TRIP',
+    });
+    expect(
+      (
+        await prisma.paymentConnection.findUniqueOrThrow({
+          where: { id: sbConn.id },
+        })
+      ).lastSyncedAt,
+    ).toBeNull();
 
     // 여정 시작(S2A가 커밋) → trip.started 소급 리스너를 강제로 실패시킨다
     await prisma.trip.update({

@@ -211,8 +211,8 @@ export class PaymentMethodsService {
   }
 
   /**
-   * POST /api/payment-methods/sync (202) — 사용자당 60초에 1번. ACTIVE 연결마다 동기화를 시작하고 최대 5초 기다린다.
-   * 연결이 모두 만료됐으면 409 CONNECTION_EXPIRED. 진행 중 여정이 없으면 제공자를 부르지 않는다(syncRunIds 빈 배열).
+   * POST /api/payment-methods/sync — 사용자당 60초에 1번. ACTIVE 연결마다 동기화를 시작하고 최대 5초 기다린다(202).
+   * 연결이 모두 만료됐으면 409 CONNECTION_EXPIRED. 진행 중 여정이 없으면 제공자를 부르지 않고 skipped: 'NO_ACTIVE_TRIP'(컨트롤러가 200).
    */
   async manualSync(userId: string): Promise<ManualSyncResponse> {
     const startedAt = new Date();
@@ -239,6 +239,17 @@ export class PaymentMethodsService {
     if (active.length === 0 && connections.length > 0) {
       throw AppException.of('CONNECTION_EXPIRED');
     }
+    if (active.length > 0) {
+      const trips = await this.sync.ongoingMemberships(userId);
+      if (trips.length === 0) {
+        // 진행 중 여정이 없으면 제공자를 부르지 않는다(최소 수집, FR-401 AC2). 동기화 시각도 그대로다
+        return {
+          syncRunIds: [],
+          startedAt: startedAt.toISOString(),
+          skipped: 'NO_ACTIVE_TRIP',
+        };
+      }
+    }
     const handles = [];
     for (const c of active) {
       handles.push(await this.sync.start(c.id, 'MANUAL', { now: startedAt }));
@@ -249,6 +260,7 @@ export class PaymentMethodsService {
     return {
       syncRunIds: handles.flatMap((h) => (h.syncRunId ? [h.syncRunId] : [])),
       startedAt: startedAt.toISOString(),
+      skipped: null,
     };
   }
 }
