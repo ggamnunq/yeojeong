@@ -141,3 +141,111 @@ describe('결제 상세 · 409 처리(명세 v0.5)', () => {
     expect(calls).toBe(1)
   })
 })
+
+describe('분담 변경(HF-31~39)', () => {
+  it('공동 → 개인: [개인] → "개인으로 변경" → 다이얼로그(WF-32), 취소하면 시트로', async () => {
+    const { sheet } = await openFromList(/이치란/)
+    expect(sheet.textContent).toContain('¥3,960 · 11.12 13:05 · 토스뱅크 체크카드 1934')
+    expect(sheet.textContent).not.toContain('미확정')
+    expect((cta(sheet, '저장') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(segment(sheet, '개인'))
+    fireEvent.click(cta(sheet, '개인으로 변경'))
+    const dialog = await screen.findByRole('alertdialog', { name: '개인 결제로 바꿀까요?' })
+    expect(dialog.textContent).toContain('다른 멤버의 내역과 정산에서 빠져요')
+    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(db.expenses.find((e) => e.id === 'exp-ichiran')!.status).toBe('SHARED')
+    expect(screen.getByRole('dialog', { name: '이치란 라멘 도톤보리점' })).toBeTruthy()
+  })
+
+  it('공동 → 개인: 바꾸기 → confirmSharedToPersonal, 토스트, 내 목록에 개인', async () => {
+    let body: Record<string, unknown> = {}
+    server.events.on('request:start', async ({ request }) => {
+      if (request.method === 'PUT') body = (await request.clone().json()) as Record<string, unknown>
+    })
+    const { sheet, router } = await openFromList(/이치란/)
+    fireEvent.click(segment(sheet, '개인'))
+    fireEvent.click(cta(sheet, '개인으로 변경'))
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: '바꾸기' }))
+    expect(await screen.findByText('개인 결제로 바꿨어요')).toBeTruthy()
+    server.events.removeAllListeners()
+    expect(body).toMatchObject({ status: 'PERSONAL', confirmSharedToPersonal: true })
+    await waitFor(() => expect(router.state.location.pathname).toBe(PAYMENTS))
+    await waitFor(() => expect(screen.getByRole('button', { name: /이치란/ }).textContent).toContain('개인'))
+    expect(db.expenses.find((x) => x.id === 'exp-ichiran')).toMatchObject({ status: 'PERSONAL', changed: true })
+  })
+
+  it('개인 → 공동(HF-35): [공동] → 전원 · 1인 ₩19,855 → 공동으로 변경, 다이얼로그 없음', async () => {
+    const { sheet } = await openFromList(/돈키호테/)
+    expect((segment(sheet, '개인') as HTMLInputElement).checked).toBe(true)
+    expect(within(sheet).queryByRole('button', { name: /변경|저장|확정/ })).toBeNull()
+    fireEvent.click(segment(sheet, '공동'))
+    expect(toggles(sheet)).toEqual(['나', '민지', '태현', '수빈'])
+    expect(sheet.textContent).toContain('1인 ₩19,855')
+    fireEvent.click(cta(sheet, '공동으로 변경'))
+    expect(await screen.findByText('공동 결제로 바꿨어요')).toBeTruthy()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    // 처음 공개되는 결제는 변경됨이 아니다
+    expect(db.expenses.find((x) => x.id === 'exp-donki')).toMatchObject({ status: 'SHARED', changed: false })
+  })
+
+  it('부담 인원 변경(HF-36·37): 되돌리면 저장 비활성, 2 → 4명이면 결제자 +2원 · 1인 ₩6,572', async () => {
+    const { sheet } = await openFromList(/MK택시/)
+    expect(toggles(sheet)).toEqual(['나', '민지'])
+    const save = () => cta(sheet, '저장') as HTMLButtonElement
+    expect(save().disabled).toBe(true)
+    fireEvent.click(within(sheet).getByRole('button', { name: '태현' }))
+    expect(save().disabled).toBe(false)
+    fireEvent.click(within(sheet).getByRole('button', { name: '태현' }))
+    expect(save().disabled).toBe(true)
+    fireEvent.click(within(sheet).getByRole('button', { name: '태현' }))
+    fireEvent.click(within(sheet).getByRole('button', { name: '수빈' }))
+    expect(sheet.textContent).toContain('부담 인원 4명')
+    expect(sheet.textContent).toContain('결제자 +2원')
+    expect(sheet.textContent).toContain('1인 ₩6,572')
+    fireEvent.click(save())
+    expect(await screen.findByText('저장했어요')).toBeTruthy()
+    expect(db.expenses.find((x) => x.id === 'exp-mk')).toMatchObject({ changed: true })
+  })
+
+  it('변경됨(HF-34)·읽기 전용(HF-38): 민지가 준용의 MK택시 — 결제수단 없음, 결제 준용, 4명, 1인, 버튼 없음', async () => {
+    const e = db.expenses.find((x) => x.id === 'exp-mk')!
+    e.participantMembershipIds = ['mem-osaka-junyong', 'mem-osaka-minji', 'mem-osaka-taehyeon', 'mem-osaka-subin']
+    e.changed = true
+    db.meUserId = USER.minji
+    const { sheet } = await openFromList(/MK택시/)
+    expect(sheet.textContent).toContain('₩26,290')
+    expect(sheet.textContent).toContain('¥2,860 · 11.13 14:10')
+    expect(sheet.textContent).not.toContain('토스뱅크')
+    expect(sheet.textContent).toContain('변경됨')
+    const card = within(sheet).getByText('결제').closest('dl')!
+    expect(card.textContent).toContain('준용')
+    expect(card.textContent).toContain('4명')
+    expect(card.textContent).toContain('₩6,572')
+    expect(within(sheet).getByRole('img', { name: '부담 인원 나, 준용 외 2명' })).toBeTruthy()
+    expect(within(sheet).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['닫기'])
+  })
+
+  it('종료 후 잠금(HF-39): 내 공동 결제 — 결제 "나", 결제수단 포함, 비활성 "변경 불가"', async () => {
+    const { sheet } = await openFromList(/돈사돈/, `/trips/${TRIP.jeju}/payments`)
+    expect(sheet.textContent).toContain('08.22 19:10 · 신한카드 1102')
+    expect(within(sheet).getByText('결제').closest('dl')!.textContent).toContain('나')
+    expect((within(sheet).getByRole('button', { name: '변경 불가' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(within(sheet).queryByRole('radiogroup')).toBeNull()
+  })
+
+  it('종료 후 내 개인 결제: 금액 · 상세 줄 · 변경 불가만', async () => {
+    const { sheet } = await openFromList(/카페 델문도/, `/trips/${TRIP.jeju}/payments`)
+    expect(sheet.textContent).toContain('₩12,500')
+    expect(within(sheet).queryByText('결제')).toBeNull()
+    expect(within(sheet).getByRole('button', { name: '변경 불가' })).toBeTruthy()
+  })
+
+  it('탈퇴한 멤버: 회색 기본 아바타 + "탈퇴한 멤버", 나간 멤버 태그 없음', async () => {
+    const { sheet } = await openFromList(/올레국수/, `/trips/${TRIP.jeju}/payments`)
+    const card = within(sheet).getByText('결제').closest('dl')!
+    expect(card.textContent).toContain('탈퇴한 멤버')
+    expect(card.textContent).not.toContain('나간 멤버')
+    expect(within(sheet).getByRole('img', { name: /부담 인원 나, 태현 외 1명/ })).toBeTruthy()
+  })
+})
