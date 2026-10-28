@@ -1,17 +1,16 @@
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
+import { APP_OPTIONS, setupApp } from './setup-app.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  const config = app.get(ConfigService);
+  const app = await NestFactory.create<NestExpressApplication>(
+    AppModule,
+    APP_OPTIONS,
+  );
+  setupApp(app);
 
-  app.setGlobalPrefix('api');
-  const webOrigin = config.get<string>('WEB_ORIGIN');
-  if (webOrigin) {
-    app.enableCors({ origin: webOrigin, credentials: true });
-  }
-
-  await app.listen(config.get<string>('PORT') ?? 3000);
+  await app.listen(app.get(ConfigService).get<string>('PORT') ?? 3000);
 }
 await bootstrap();

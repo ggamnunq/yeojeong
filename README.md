@@ -2,6 +2,8 @@
 
 여행 공동 지갑 웹앱.
 
+보안 원칙은 [docs/security.md](docs/security.md), 취약점 신고는 [SECURITY.md](SECURITY.md)를 참고하세요.
+
 ## 구조
 
 ```
