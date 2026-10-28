@@ -122,7 +122,7 @@ documents() {}
 
 - 요청 코드 `YJD-XXXX-XXXX-XXXX`는 원문을 저장하지 않고 `account_deletions.request_code_hash`(HMAC)만 저장한다. 운영자가 메일로 받은 코드는 `AuthConfig.deletionCodeHash(code)`로 찾는다(검증 도구는 아직 없음).
 - 받는 주소 `SUPPORT_EMAIL`은 임시값 `support@jinyeojeong.com`이다. 이 도메인은 메일을 받지 않으니 출시 전에 바꾼다.
-- 서비스 내 탈퇴(FR-109, `DELETE /api/users/me`)는 P1이라 아직 없다(`users.service.ts` TODO).
+- 서비스 내 탈퇴(FR-109, `DELETE /api/users/me`)는 `account` 모듈이 맡는다. 운영자가 메일 요청을 처리할 때도 같은 파이프라인(`AccountDeletionService`)을 쓴다.
 
 ### 비밀값
 

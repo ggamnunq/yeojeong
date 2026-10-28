@@ -67,7 +67,7 @@ export class UsersService {
   /**
    * 탈퇴·삭제 요청(FR-108, 서비스 내 탈퇴가 생기기 전 임시 경로). 요청 코드를 만들어 HMAC만 저장하고,
    * 고객센터로 보낼 메일 초안을 돌려준다. 메일은 보내지 않는다. 운영자는 받은 코드의 HMAC으로 요청을 찾는다.
-   * TODO(FR-109, P1): DELETE /api/users/me 서비스 내 탈퇴 파이프라인(세션 폐기 → 토큰 폐기 → 개인 데이터 삭제 → 승계 → 카카오 연결 끊기 → 동의 철회 표시 → User 삭제)
+   * 서비스 내 탈퇴(FR-109, DELETE /api/users/me)는 account 모듈에 있다. 운영자가 이 요청을 처리할 때도 같은 파이프라인을 쓴다.
    */
   async requestDeletion(userId: string): Promise<DeletionRequestResponse> {
     const code = generateDeletionCode();
