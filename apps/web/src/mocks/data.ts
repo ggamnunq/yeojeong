@@ -6,6 +6,7 @@ import type {
   MemberSummary,
   TripDetail,
   TripListItem,
+  TripEventType,
   TripStatus,
 } from '../api'
 
@@ -74,6 +75,16 @@ export type MockExpense = {
   origin: 'AUTO' | 'OUT_OF_PERIOD'
   paymentMethodId: string
   version: number
+}
+
+/** 1회성 토스트용 그룹 이벤트(FR-004). 행위자 본인과 이미 본(ack) 사람에게는 보이지 않는다 */
+export type MockTripEvent = {
+  id: string
+  tripId: string
+  type: TripEventType
+  payload: Record<string, unknown>
+  actorUserId: string | null
+  seenBy: string[]
 }
 
 export const USER = {
@@ -253,6 +264,7 @@ export type MockDb = {
   memberships: MockMembership[]
   paymentMethods: MockPaymentMethod[]
   expenses: MockExpense[]
+  tripEvents: MockTripEvent[]
 }
 
 export function createMockDb(): MockDb {
@@ -266,6 +278,7 @@ export function createMockDb(): MockDb {
     memberships,
     paymentMethods,
     expenses,
+    tripEvents: [],
   } satisfies MockDb)
 }
 
@@ -355,7 +368,9 @@ export function tripDetail(trip: MockTrip, viewerUserId = db.meUserId): TripDeta
     },
     members: tripMembers(trip.tripId, viewerUserId),
     fx: trip.currency === 'KRW' ? null : { policy: trip.fxPolicy, tripCurrency: trip.currency },
-    unseenEvents: [],
+    unseenEvents: db.tripEvents
+      .filter((e) => e.tripId === trip.tripId && e.actorUserId !== viewerUserId && !e.seenBy.includes(viewerUserId))
+      .map(({ id, type, payload }) => ({ id, type, payload })),
     version: trip.version,
   }
 }
