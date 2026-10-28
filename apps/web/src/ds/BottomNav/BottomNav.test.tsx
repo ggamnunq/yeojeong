@@ -40,4 +40,17 @@ describe('BottomNav', () => {
     expect(link.getAttribute('aria-current')).toBe('page')
     expect(screen.getByRole('link', { name: '결제내역' }).hasAttribute('aria-current')).toBe(false)
   })
+
+  it('locked 탭은 자물쇠 · 40% · aria-disabled이고 눌러도 onChange를 부르지 않는다', () => {
+    const onChange = vi.fn()
+    render(<BottomNav active="third" locked={['first', 'second']} onChange={onChange} hrefs={['/a', '/b', '/c']} />)
+    const locked = screen.getByRole('button', { name: '결제내역' })
+    expect(locked.getAttribute('aria-disabled')).toBe('true')
+    expect(locked.className).toContain('opacity-40')
+    expect(locked.querySelector('.lucide-lock-keyhole')).toBeTruthy()
+    fireEvent.click(locked)
+    fireEvent.click(screen.getByRole('button', { name: '현황' }))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('link', { name: '여정 정보' }).getAttribute('aria-current')).toBe('page')
+  })
 })

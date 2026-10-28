@@ -1,34 +1,38 @@
 import { clsx } from 'clsx'
 import type { KeyboardEvent, ReactNode } from 'react'
-import { ListItem } from '../ListItem/ListItem'
-import { RowAdd } from '../Row/Add'
+import { Icon } from '../Icon/Icon'
+import type { IconName } from '../Icon/icons'
+import { focusRing } from '../styles'
 import { useModalDialog } from '../useModalDialog'
 
 // Figma Dropdown/Menu(30:69694) · 그룹 전환 드롭다운(TopHeader Dropdown=Open 아래).
-// 흰 패널 radius/lg(16) · Elevation/2 · 위아래 8: 여정 행(ListItem + airplane, 현재 = Selected 체크 · 나머지 = Navigation, 상태는 메타 글자)
-// + 맨 아래 Row/Add("새 여정 만들기"). 딤(bg/dim)은 헤더 아래부터 깔고 헤더는 딤 밖에 둔다(WF-14).
+// 흰 패널 radius/lg(16) · Elevation/2 · 위아래 8 · 화면 좌우 12: 여정 행(이름 + 상태 메타, 앞 아이콘·› 없음, 현재 = Body/M Strong + 체크 icon/brand)
+// + 위 여백 8 뒤 액션 행(높이 48 · 왼쪽 20 · 아이콘 20 icon/subtle · Body/M text/secondary, 구분선 없음): "새 여정 만들기"(plus) · "초대코드로 참여"(link).
+// 딤(bg/dim)은 헤더 아래부터 깔고 헤더는 딤 밖에 둔다(WF-14, Figma v1.4.1).
 // 키보드: role=menu, ↑↓ · Home · End로 항목 이동, Enter·Space로 선택, ESC·Tab·딤·헤더 탭으로 닫힘.
 export type DropdownMenuTrip = {
   /** React key. 없으면 순서 */
   key?: string
-  /** 여정 이름 — ListItem title */
+  /** 여정 이름 */
   title: ReactNode
-  /** 상태 메타 글자: "진행 중" · "시작 전 · 12.27" · "정산 완료"(배지 대신) — ListItem subtitle */
+  /** 상태 메타 글자: "진행 중" · "시작 전 · 12.27" · "정산 완료"(배지 대신) */
   meta?: ReactNode
-  /** 지금 보고 있는 여정(ListItem Selected) */
+  /** 지금 보고 있는 여정(체크) */
   current?: boolean
   onSelect?: () => void
 }
 
 export type DropdownMenuAction = {
-  /** Row/Add Label: "새 여정 만들기" */
+  /** "새 여정 만들기" · "초대코드로 참여" */
   label: ReactNode
+  /** 앞 아이콘. 기본 plus("초대코드로 참여"는 link) */
+  icon?: IconName
   onSelect?: () => void
 }
 
 export type DropdownMenuPanelProps = {
   trips: readonly DropdownMenuTrip[]
-  /** 목록 끝 Row/Add 행들(Figma는 "새 여정 만들기" 하나) */
+  /** 목록 끝 액션 행들(Figma: 새 여정 만들기 · 초대코드로 참여) */
   actions?: readonly DropdownMenuAction[]
   /** 항목을 고른 뒤·Tab으로 빠져나갈 때 부른다 */
   onClose?: () => void
@@ -37,6 +41,7 @@ export type DropdownMenuPanelProps = {
 }
 
 const ITEM = '[role^="menuitem"]:not([disabled])'
+const ROW = clsx('flex w-full shrink-0 items-center bg-surface px-5 text-left transition-colors select-none active:bg-pressed', focusRing)
 
 function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
   const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(ITEM))
@@ -93,27 +98,37 @@ export function DropdownMenuPanel({
       )}
     >
       {trips.map((trip, i) => (
-        <ListItem
+        <button
           key={trip.key ?? i}
+          type="button"
           role="menuitemradio"
           aria-checked={!!trip.current}
           tabIndex={i === home ? 0 : -1}
-          type={trip.current ? 'selected' : 'navigation'}
-          leadingIcon="airplane"
-          title={trip.title}
-          subtitle={trip.meta}
           onClick={select(trip.onSelect)}
-          className="min-h-14"
-        />
+          className={clsx(ROW, 'gap-3 py-3.5')}
+        >
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className={clsx('truncate text-primary', trip.current ? 'text-body-m-strong' : 'text-body-m')}>
+              {trip.title}
+            </span>
+            {trip.meta != null && <span className="truncate text-caption text-tertiary">{trip.meta}</span>}
+          </span>
+          {trip.current && <Icon name="check" size={20} className="shrink-0 text-icon-brand" />}
+        </button>
       ))}
+      {trips.length > 0 && actions.length > 0 && <div aria-hidden className="h-2 shrink-0" />}
       {actions.map((action, i) => (
-        <RowAdd
+        <button
           key={i}
+          type="button"
           role="menuitem"
           tabIndex={trips.length === 0 && i === 0 ? 0 : -1}
-          label={action.label}
           onClick={select(action.onSelect)}
-        />
+          className={clsx(ROW, 'h-12 gap-3')}
+        >
+          <Icon name={action.icon ?? 'plus'} size={20} className="shrink-0 text-icon-subtle" />
+          <span className="min-w-0 truncate text-body-m text-secondary">{action.label}</span>
+        </button>
       ))}
     </div>
   )
@@ -151,7 +166,7 @@ export function DropdownMenu({ open, onClose, 'aria-label': ariaLabel = '여정 
       />
       <div
         className={clsx(
-          'pointer-events-none absolute inset-x-0 mx-auto w-full max-w-screen-width px-gutter',
+          'pointer-events-none absolute inset-x-0 mx-auto w-full max-w-screen-width px-3',
           below,
         )}
       >
