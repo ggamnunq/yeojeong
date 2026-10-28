@@ -10,6 +10,8 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
       adapter: new PrismaPg({
         connectionString: config.getOrThrow<string>('DATABASE_URL'),
       }),
+      // 기본 형식은 오류 메시지에 쿼리와 입력값을 그려 넣어 로그에 개인정보가 섞일 수 있다
+      errorFormat: 'minimal',
     });
   }
 

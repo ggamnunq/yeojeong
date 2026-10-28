@@ -2,17 +2,30 @@ import type { NestApplicationOptions } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
+import { Logger } from 'nestjs-pino';
+import type { Logger as PinoInstance } from 'pino';
+import { createHttpLogger } from './common/logging/http-logger.js';
+import { PINO_LOGGER } from './common/logging/logging.module.js';
+import { REQUEST_ID_HEADER } from './common/logging/request-id.js';
 import { originLock } from './common/origin-lock.js';
+import { setupSwagger } from './common/swagger.js';
 import { parseWebOrigins } from './common/web-origins.js';
 
-// 기본 파서(json + urlencoded)를 끄고 JSON만 받는다. 폼 전송으로 들어오는 CSRF 경로를 줄인다.
-export const APP_OPTIONS: NestApplicationOptions = { bodyParser: false };
+export const APP_OPTIONS: NestApplicationOptions = {
+  // 기본 파서(json + urlencoded)를 끄고 JSON만 받는다. 폼 전송으로 들어오는 CSRF 경로를 줄인다.
+  bodyParser: false,
+  // 시작 로그도 pino로 나가게 useLogger 전까지 모아 둔다
+  bufferLogs: true,
+};
 
 export function setupApp(app: NestExpressApplication) {
   const config = app.get(ConfigService);
+  app.useLogger(app.get(Logger));
 
   app.setGlobalPrefix('api');
   app.set('trust proxy', trustProxyHops(config));
+  // 요청 ID와 요청 로그는 맨 앞에 둬서 origin lock 403, 본문 413도 남게 한다
+  app.use(createHttpLogger(app.get<PinoInstance>(PINO_LOGGER)));
   app.use(helmet());
 
   // 운영(Cloud Run)에서만 설정한다. 비어 있으면 로컬 개발처럼 잠그지 않는다.
@@ -26,7 +39,15 @@ export function setupApp(app: NestExpressApplication) {
   // 화면과 API가 같은 origin(jinyeojeong.com)이라 운영에서는 비워 둔다
   const origins = parseWebOrigins(config.get<string>('WEB_ORIGIN'));
   if (origins.length > 0) {
-    app.enableCors({ origin: origins, credentials: true });
+    app.enableCors({
+      origin: origins,
+      credentials: true,
+      exposedHeaders: [REQUEST_ID_HEADER],
+    });
+  }
+
+  if (config.get<string>('NODE_ENV') !== 'production') {
+    setupSwagger(app);
   }
 }
 
