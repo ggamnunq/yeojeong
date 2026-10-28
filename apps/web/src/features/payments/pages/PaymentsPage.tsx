@@ -1,11 +1,14 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
-import { Suspense, useEffect, useState } from 'react'
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
 import type { ExpenseListParams } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { useTripDetail } from '../../../app/trip'
 import { Callout } from '../../../ds'
+import { FinConsentSheet } from '../../auth/components/FinConsentSheet'
+import { paymentMethodsQuery, requestSync } from '../../wallet/api'
+import { useTossConnect } from '../../wallet/useTossConnect'
 import { expensesQuery } from '../api'
 import { clock } from '../clock'
 import { ControlRow } from '../components/ListParts'
@@ -43,6 +46,19 @@ export default function PaymentsPage() {
   const status = filterOn ? 'PENDING' : undefined
   const queryParams: ExpenseListParams = view === 'list' ? { status, order: 'desc' } : { status, day, order: 'asc' }
   const query = useInfiniteQuery(expensesQuery(trip.tripId, queryParams))
+  const methods = useQuery({
+    ...paymentMethodsQuery(),
+    enabled: ongoing && trip.me.connectionExpired,
+  })
+  const expiredConnection = methods.data?.connections.find((connection) => connection.status === 'EXPIRED')
+  const connect = useTossConnect()
+  const touchStart = useRef<number | null>(null)
+  const [pullDistance, setPullDistance] = useState(0)
+  const sync = useMutation({
+    mutationFn: requestSync,
+    meta: { silent: true },
+    onSettled: () => query.refetch(),
+  })
   const firstPage = query.data?.pages[0]
   const pendingCount = ongoing ? (firstPage?.pendingCount ?? trip.me.pendingCount) : 0
   // 받은 period를 기억해 두면 Day를 바꿔 새로 받는 동안에도 칩·오늘이 그대로다(렌더 중 갱신 — 파생 상태 패턴)
@@ -89,11 +105,44 @@ export default function PaymentsPage() {
     navigate({ pathname: paths.payment(trip.tripId, item.id), search: location.search }, { state: { fromList: true } })
 
   return (
-    <div className="flex flex-1 flex-col bg-surface">
+    <div
+      className="flex flex-1 flex-col bg-surface"
+      onTouchStart={(event) => {
+        if (!ongoing || window.scrollY > 0 || sync.isPending) return
+        touchStart.current = event.touches[0]?.clientY ?? null
+      }}
+      onTouchMove={(event) => {
+        if (touchStart.current === null) return
+        setPullDistance(Math.min(80, Math.max(0, (event.touches[0]?.clientY ?? touchStart.current) - touchStart.current)))
+      }}
+      onTouchEnd={() => {
+        if (pullDistance >= 56 && !sync.isPending) sync.mutate()
+        touchStart.current = null
+        setPullDistance(0)
+      }}
+    >
+      {ongoing && (pullDistance > 0 || sync.isPending) && (
+        <p role="status" className="h-8 text-center text-caption text-tertiary">
+          {sync.isPending ? '새로고침 중' : pullDistance >= 56 ? '놓아서 새로고침' : '당겨서 새로고침'}
+        </p>
+      )}
       {ongoing && trip.me.connectionExpired && (
         <div className="px-gutter pt-2">
-          {/* 다시 연결(WF-06 RECONNECT)은 지갑 플로우가 시작한다 — 지갑 화면의 연결 만료 카드로 보낸다 */}
-          <Callout tone="disconnected" style="tone" label="토스 연결 만료" onClick={() => navigate(paths.wallet())} />
+          <Callout
+            tone="disconnected"
+            style="tone"
+            label="토스 연결 만료"
+            disabled={!expiredConnection || connect.isPending}
+            onClick={() =>
+              expiredConnection &&
+              connect.start({
+                purpose: 'RECONNECT',
+                reconnectConnectionId: expiredConnection.id,
+                from: `${location.pathname}${location.search}`,
+                returnTo: `${location.pathname}${location.search}`,
+              })
+            }
+          />
         </div>
       )}
       <ControlRow
@@ -120,6 +169,7 @@ export default function PaymentsPage() {
       <Suspense fallback={null}>
         <Outlet />
       </Suspense>
+      {connect.consentSheet && <FinConsentSheet {...connect.consentSheet} />}
     </div>
   )
 }

@@ -300,8 +300,12 @@ export const handlers: HttpHandler[] = [
     const state = walletMock()
     if (!state.finConsent) {
       const missing: FinConsentId[] = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
-      // TODO(서버): 실제 응답의 required는 { id, version }[]. src/api consentRequiredIds가 문자열만 읽어 목은 문자열로 준다
-      return mockError('CONSENT_REQUIRED', 403, { missing, required: missing }, '금융정보 연동 동의가 필요해요')
+      return mockError(
+        'CONSENT_REQUIRED',
+        403,
+        { missing, required: missing.map((id) => ({ id, version: '0.1-draft' })) },
+        '금융정보 연동 동의가 필요해요',
+      )
     }
     const body = (await request.json()) as StartConnectionRequest
     if (body.purpose === 'RECONNECT' && !state.connections.some((c) => c.id === body.reconnectConnectionId)) {
@@ -396,7 +400,7 @@ export const handlers: HttpHandler[] = [
     })
   }),
 
-  // 금융정보 연동 동의 저장(지갑 WF-28·42). 가입(WF-05)과 문서 목록은 auth 목이 받는다
+  // 금융정보 연동 동의 저장(WF-05·28·42). 한 경로는 한 핸들러만 소유한다.
   http.post('/api/consents', async ({ request }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied

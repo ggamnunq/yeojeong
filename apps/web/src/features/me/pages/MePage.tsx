@@ -8,6 +8,7 @@ import { useSession } from '../../../app/session'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { Avatar, Dialog, Icon, ShellSub } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
+import { toast } from '../../../notifications'
 import { paymentMethodsQuery } from '../../wallet/api'
 import { formatMethodCounts } from '../../wallet/format'
 import { useBack } from '../../wallet/useBack'
@@ -38,7 +39,6 @@ function MeContent({ nickname, profileImageUrl }: { nickname: string; profileIma
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const methods = useQuery(paymentMethodsQuery())
-  const [confirmLogout, setConfirmLogout] = useState(false)
   const [deletion, setDeletion] = useState<DeletionRequestResponse | null>(null)
 
   const signedOut = useRef(false)
@@ -53,7 +53,6 @@ function MeContent({ nickname, profileImageUrl }: { nickname: string; profileIma
       queryClient.removeQueries({ queryKey: keys.session, exact: true })
       await navigate(paths.login(), { replace: true })
     },
-    onError: () => setConfirmLogout(false),
   })
   // 로그아웃 뒤 이 화면이 떨어지면 다른 사람이 보면 안 되는 캐시를 모두 비운다(세션 쿼리는 로그인 화면 가드가 쓰는 중)
   useEffect(
@@ -97,7 +96,8 @@ function MeContent({ nickname, profileImageUrl }: { nickname: string; profileIma
       <div className="flex flex-col items-center pb-4">
         <button
           type="button"
-          onClick={() => setConfirmLogout(true)}
+          disabled={signOut.isPending}
+          onClick={() => signOut.mutate()}
           className={clsx('flex items-center gap-1.5 rounded-sm px-3 pt-2.5 pb-1 text-body-m text-secondary', focusRing)}
         >
           <Icon name="logout" size={20} className="text-icon-subtle" />
@@ -123,22 +123,20 @@ function MeContent({ nickname, profileImageUrl }: { nickname: string; profileIma
       </div>
 
       <Dialog
-        open={confirmLogout}
-        title="로그아웃할까요?"
-        message="이 기기에서만 로그아웃돼요"
-        confirmLabel="로그아웃"
-        onCancel={() => setConfirmLogout(false)}
-        onConfirm={() => {
-          if (!signOut.isPending) signOut.mutate()
-        }}
-      />
-      <Dialog
         open={deletion !== null}
         title="탈퇴·삭제 요청"
         message={
-          <>
+          <button
+            type="button"
+            className={clsx('rounded-sm px-1 py-0.5 text-body-m text-secondary', focusRing)}
+            aria-label={`요청 코드 ${deletion?.code ?? ''} 복사`}
+            onClick={() => {
+              if (!deletion) return
+              void navigator.clipboard.writeText(deletion.code).then(() => toast.success('복사했어요'))
+            }}
+          >
             요청 코드 <span className="font-amount font-medium text-primary">{deletion?.code}</span>
-          </>
+          </button>
         }
         cancelLabel="닫기"
         confirmLabel="메일 보내기"

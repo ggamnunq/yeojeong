@@ -61,7 +61,7 @@ let consentRequiredHandler: ConsentRequiredHandler | null = null
 
 /**
  * 403 CONSENT_REQUIRED를 받았을 때 부를 처리기를 단다. 달려 있으면 토스트 없이 처리기만 부른다. 해제 함수를 돌려준다.
- * required는 details.required(없으면 details.missing)의 동의 항목 ID 목록.
+ * required는 details.missing을 우선하고, 없으면 details.required[].id를 읽은 동의 항목 ID 목록.
  */
 export function onConsentRequired(handler: ConsentRequiredHandler): () => void {
   consentRequiredHandler = handler
@@ -73,8 +73,17 @@ export function onConsentRequired(handler: ConsentRequiredHandler): () => void {
 /** CONSENT_REQUIRED면 다시 받아야 할 동의 항목 ID 목록, 아니면 null */
 export function consentRequiredIds(error: unknown): string[] | null {
   if (!isApiError(error) || (error.code as string) !== CONSENT_REQUIRED) return null
-  const list = error.details?.required ?? error.details?.missing
-  return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : []
+  const list = error.details?.missing ?? error.details?.required
+  if (!Array.isArray(list)) return []
+  return list
+    .map((item: unknown) =>
+      typeof item === 'string'
+        ? item
+        : typeof item === 'object' && item !== null && typeof (item as { id?: unknown }).id === 'string'
+          ? (item as { id: string }).id
+          : null,
+    )
+    .filter((id): id is string => id !== null)
 }
 
 // ── 코드별 반응 ─────────────────────────────────────────────────────
@@ -102,6 +111,10 @@ export function handleApiError(error: unknown, ctx: ApiErrorContext = {}): void 
   const required = consentRequiredIds(error)
   if (required && consentRequiredHandler) {
     consentRequiredHandler(error, required)
+    return
+  }
+  if (code === 'VERSION_CONFLICT') {
+    toast.info('최신 내용으로 바뀌었어요', { dedupeKey: 'VERSION_CONFLICT|latest' })
     return
   }
   // 폼이 fieldErrors(error)로 필드 옆에 보여 준다

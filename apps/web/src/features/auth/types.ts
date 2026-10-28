@@ -1,43 +1,18 @@
-import type { AuthSessionResponse, ConsentDocumentSummary } from '@yeojeong/shared'
-import type { ConsentId } from '../../api'
+import type { AuthSessionResponse, ConsentDocumentSummary, ConsentScreen } from '@yeojeong/shared'
 
 // 인증·동의 플로우에서만 쓰는 요청·응답 타입(기능명세 6-3 auth·consents·wallet).
 // 응답 모양은 @yeojeong/shared(서버 1차)를 쓰고, 요청 본문은 서버 DTO에 맞춰 여기 둔다.
 
-export type ConsentMethod = 'ALL' | 'INDIVIDUAL'
-
-/** 동의를 받은 화면(UserConsent.screen). 연동 동의 시트는 진입 화면 값을 보낸다 */
-export type FinConsentScreen = 'WF-05' | 'WF-28' | 'WF-42'
-
 /** GET /api/consents/documents?stage= 한 행 = 동의 문서 현재 시행 버전. 서버는 isDraft(시행 전 초안)도 싣는다 */
-export type ConsentDocument = ConsentDocumentSummary & { isDraft?: boolean }
-
-export interface ConsentAgreement {
-  consentId: ConsentId
-  version: string
-  agreed: boolean
-}
-
-/** POST /api/auth/signup → 201 Me(같은 카카오 계정이 이미 가입돼 있으면 200 Me) */
-export interface SignupRequest {
-  nickname: string
-  agreements: ConsentAgreement[]
-  method: ConsentMethod
-}
-
-/** POST /api/auth/reconsent → 204 */
-export interface ReconsentRequest {
-  agreements: ConsentAgreement[]
-  method: ConsentMethod
-}
-
-/** POST /api/consents → 201 { valid: true } */
-export interface FinConsentRequest {
-  stage: 'FIN_LINK'
-  agreements: ConsentAgreement[]
-  method: ConsentMethod
-  screen: FinConsentScreen
-}
+export type ConsentDocument = ConsentDocumentSummary
+export type FinConsentScreen = Extract<ConsentScreen, 'WF-05' | 'WF-28' | 'WF-42'>
+export type {
+  ConsentAgreementInput as ConsentAgreement,
+  ConsentMethod,
+  ConsentSubmitRequest as FinConsentRequest,
+  ReconsentRequest,
+  SignupRequest,
+} from '@yeojeong/shared'
 
 export type ConnectionPurpose = 'SIGNUP' | 'WALLET_ADD' | 'RECONNECT'
 

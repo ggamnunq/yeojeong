@@ -10,6 +10,7 @@ function me() {
     id: user.id,
     nickname: user.nickname,
     profileImageUrl: user.profileImageUrl,
+    hasProfileImage: user.profileImageUrl !== null,
     paymentMethodCount: methods.length,
     hasExpiredConnection: methods.some((p) => p.status === 'EXPIRED'),
   }
@@ -19,10 +20,15 @@ export const handlers: HttpHandler[] = [
   http.get('/api/health', () => HttpResponse.json({ status: 'ok', db: 'up' })),
 
   http.get('/api/auth/session', () => {
-    if (db.session === 'AUTHENTICATED' && db.consentRequired) return denyUnlessAuthenticated()!
     const body: SessionResponse =
       db.session === 'AUTHENTICATED'
-        ? { status: 'AUTHENTICATED', user: me() }
+        ? {
+            status: 'AUTHENTICATED',
+            user: me(),
+            ...(db.consentRequired?.length && {
+              reconsentRequired: db.consentRequired.map((id) => ({ id, version: '0.1-draft' })),
+            }),
+          }
         : db.session === 'SIGNUP_REQUIRED'
           ? { status: 'SIGNUP_REQUIRED', signupDraft: { kakaoNickname: '준용', profileImageUrl: null } }
           : { status: 'ANONYMOUS' }

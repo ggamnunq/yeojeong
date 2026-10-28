@@ -3,8 +3,9 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { keys } from '../../../api'
 import { paths } from '../../../app/paths'
+import { useShellCta } from '../../../app/shellCta'
 import { readLastTripId, rememberTripId, tripQuery, useTripDetail } from '../../../app/trip'
-import { Button, Dialog } from '../../../ds'
+import { Dialog, formatKrw } from '../../../ds'
 import { endPreviewQuery, useDeleteGroup, useEndTrip, useStartTrip } from '../../trips/api'
 import { copyInviteCode, shareInvite } from '../../trips/invite'
 import {
@@ -24,10 +25,10 @@ type OpenDialog = 'start' | 'end' | 'delete' | null
 /**
  * 여정 정보 탭(셸 안 본문). 단계로 화면이 바뀐다.
  * - 시작 전(HF-16): 출발까지 D-n · 경로 · 그룹원 · 초대코드 · (그룹장) 「여정 시작」 → HF-17 · 「그룹 삭제」(Danger)
- *   종료일이 지난 시작 전 여정(Q-26): 그룹장은 「기간 수정」, 멤버는 비활성 「여정 시작」
+ *   종료일이 지난 시작 전 여정(Q-26): 그룹장은 「기간 수정」, 멤버는 시작 버튼 없음
  * - 진행 중(HF-23): 여행 중 Day n / m · 그룹원 + 「추가」 · 초대코드 · (그룹장) 「여정 종료하기」 → HF-24
  * - 종료 후: 도착한 경로, 읽기 전용(초대코드·추가·버튼·연필 없음)
- * 버튼 노출은 서버 permissions(없으면 role·status로 같은 규칙)로 정한다.
+ * 버튼 노출은 서버 permissions로 정한다.
  */
 export default function TripInfoPage() {
   const trip: TripInfo = useTripDetail()
@@ -48,6 +49,13 @@ export default function TripInfoPage() {
   const deleteGroup = useDeleteGroup()
 
   const goToEdit = () => navigate(paths.tripEdit(tripId), { state: { from: 'info' } satisfies NavState })
+  useShellCta(
+    leader && trip.status === 'UPCOMING'
+      ? periodOver
+        ? { label: '기간 수정', onClick: goToEdit }
+        : { label: '여정 시작', disabled: !permissions.canStart, onClick: () => setDialog('start') }
+      : null,
+  )
   const refreshTrip = () => queryClient.fetchQuery({ ...tripQuery(tripId), staleTime: 0 }).catch(() => undefined)
   const close = () => setDialog(null)
 
@@ -131,7 +139,7 @@ export default function TripInfoPage() {
           end={formatRouteDate(trip.endDate)}
           days={trip.days}
           current={trip.status === 'ONGOING' ? tripDayIndex(trip, today) : undefined}
-          meta={tripMetaLine(trip)}
+          meta={trip.status === 'UPCOMING' ? tripMetaLine(trip) : `${trip.placeLabel} · 예산 ${formatKrw(trip.budgetKrw)}`}
           onEdit={permissions.canEdit ? goToEdit : undefined}
         />
       </div>
@@ -148,21 +156,9 @@ export default function TripInfoPage() {
 
       <div className="min-h-8 flex-1" />
 
-      {trip.status === 'UPCOMING' && (leader || periodOver) && (
-        <div className="flex flex-col items-center gap-1 px-gutter pb-3">
-          {leader && periodOver ? (
-            <Button type="primary" size="l" label="기간 수정" className="w-full" onClick={goToEdit} />
-          ) : (
-            <Button
-              type="primary"
-              size="l"
-              label="여정 시작"
-              className="w-full"
-              disabled={!permissions.canStart}
-              onClick={() => setDialog('start')}
-            />
-          )}
-          {permissions.canDeleteGroup && <TextLink onClick={() => setDialog('delete')}>그룹 삭제</TextLink>}
+      {trip.status === 'UPCOMING' && permissions.canDeleteGroup && (
+        <div className="flex justify-center px-gutter pb-2">
+          <TextLink onClick={() => setDialog('delete')}>그룹 삭제</TextLink>
         </div>
       )}
       {trip.status === 'ONGOING' && permissions.canEnd && (

@@ -9,7 +9,10 @@ import { mailto } from '../mailto'
 configure({ asyncUtilTimeout: 3000 })
 vi.setConfig({ testTimeout: 15_000 })
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('마이페이지(HF-30)', () => {
   it('위에서부터 프사·닉네임 → 내 지갑(계좌 1 · 카드 2) → 로그아웃 → 탈퇴·삭제 요청 → 푸터 링크', async () => {
@@ -34,11 +37,9 @@ describe('마이페이지(HF-30)', () => {
     expect(await screen.findByText('연결 안 됨')).toBeTruthy()
   })
 
-  it('로그아웃: 확인 → POST /auth/logout → 캐시 비움 → /login', async () => {
+  it('로그아웃: 확인 없이 POST /auth/logout → 캐시 비움 → /login', async () => {
     const { router, queryClient } = renderApp('/me')
     fireEvent.click(await screen.findByRole('button', { name: '로그아웃' }))
-    const dialog = await screen.findByRole('alertdialog', { name: '로그아웃할까요?' })
-    fireEvent.click(within(dialog).getByRole('button', { name: '로그아웃' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
     expect(router.state.location.search).toBe('')
     expect(db.session).toBe('ANONYMOUS')
@@ -49,21 +50,17 @@ describe('마이페이지(HF-30)', () => {
     expect(router.state.location.search).toBe('')
   })
 
-  it('로그아웃 취소는 그대로 남는다', async () => {
-    const { router } = renderApp('/me')
-    fireEvent.click(await screen.findByRole('button', { name: '로그아웃' }))
-    const dialog = await screen.findByRole('alertdialog', { name: '로그아웃할까요?' })
-    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
-    expect(router.state.location.pathname).toBe('/me')
-    expect(db.session).toBe('AUTHENTICATED')
-  })
-
-  it('탈퇴·삭제 요청: 요청 코드 안내 → "메일 보내기"는 코드가 든 메일 초안(mailto)을 연다', async () => {
+  it('탈퇴·삭제 요청: 요청 코드 복사 → "메일 보내기"는 코드가 든 메일 초안(mailto)을 연다', async () => {
     const open = vi.spyOn(mailto, 'open').mockImplementation(() => {})
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
     renderApp('/me')
     fireEvent.click(await screen.findByRole('button', { name: '탈퇴·삭제 요청' }))
     const dialog = await screen.findByRole('alertdialog', { name: '탈퇴·삭제 요청' })
     expect(within(dialog).getByText('YJD-7K2M-Q9XA-4TRP')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: /요청 코드 .* 복사/ }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('YJD-7K2M-Q9XA-4TRP'))
+    expect(await screen.findByText('복사했어요')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: '메일 보내기' }))
     expect(open).toHaveBeenCalledTimes(1)
     const url = open.mock.calls[0][0] as string

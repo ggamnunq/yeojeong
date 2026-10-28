@@ -1,6 +1,6 @@
 import { clsx } from 'clsx'
 import type { ReactNode } from 'react'
-import { Callout, Icon, IconButton, SegmentedControl } from '../../../ds'
+import { Callout, Icon, SegmentedControl } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import type { PaymentsView } from '../types'
 
@@ -26,10 +26,19 @@ export function ControlRow({ pendingCount, filterOn, onToggleFilter, view, onVie
     <div className="flex items-center justify-between gap-3 px-5 pb-0.5">
       {pendingCount > 0 ? (
         filterOn ? (
-          <div className="flex min-w-0 items-center gap-1 rounded-md border border-strong pr-1 pl-3">
-            <Callout tone="pending" style="inline" label={label} chevron={false} aria-pressed onClick={onToggleFilter} />
-            <IconButton size="s" icon="close" label="미확정만 보기 해제" onClick={onToggleFilter} />
-          </div>
+          <button
+            type="button"
+            aria-pressed
+            aria-label={`${label}, 미확정만 보기 해제`}
+            onClick={onToggleFilter}
+            className={clsx(
+              'flex h-9 min-w-0 items-center gap-1 rounded-full border border-focus bg-brand-subtle px-3 text-label-m text-brand',
+              focusRing,
+            )}
+          >
+            <span className="truncate">{label}</span>
+            <span aria-hidden>✕</span>
+          </button>
         ) : (
           <Callout tone="pending" style="inline" label={label} aria-pressed={false} onClick={onToggleFilter} />
         )

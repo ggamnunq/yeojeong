@@ -1,6 +1,7 @@
 // 최상위 이동·새 창. 테스트에서 vi.spyOn(browser, 'assign')으로 바꿔 끼운다(jsdom은 페이지 이동을 못 한다).
 
 export type PendingWindow = { go: (url: string) => void; cancel: () => void }
+export const TOSS_AUTH_WINDOW_NAME = 'yj-toss-auth'
 
 export const browser = {
   /** 이 탭을 다른 주소로(카카오 인가·토스 인증 같은 외부 이동) */
@@ -16,7 +17,7 @@ export const browser = {
   openPending(): PendingWindow {
     let popup: Window | null = null
     try {
-      popup = window.open('', '_blank')
+      popup = window.open('', TOSS_AUTH_WINDOW_NAME)
     } catch {
       popup = null
     }

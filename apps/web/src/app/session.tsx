@@ -42,13 +42,15 @@ export type Session = {
 
 export function useSession(): Session {
   const query = useQuery(sessionQuery())
-  const reconsentRequired = consentRequiredIds(query.error)
+  const legacyRequired = consentRequiredIds(query.error)
+  const responseRequired = query.data?.reconsentRequired?.map((requirement) => requirement.id) ?? null
+  const reconsentRequired = responseRequired?.length ? responseRequired : legacyRequired
   return {
     data: query.data,
     isPending: query.isPending,
     error: reconsentRequired ? null : query.error,
     refetch: () => void query.refetch(),
-    isAuthenticated: query.data?.status === 'AUTHENTICATED' || reconsentRequired !== null,
+    isAuthenticated: query.data?.status === 'AUTHENTICATED' || legacyRequired !== null,
     signupRequired: query.data?.status === 'SIGNUP_REQUIRED',
     user: query.data?.user ?? null,
     reconsentRequired,

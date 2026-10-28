@@ -10,9 +10,9 @@ let off: (() => void) | undefined
 afterEach(() => off?.())
 
 describe('CONSENT_REQUIRED', () => {
-  it('details.required(없으면 details.missing)를 읽는다', () => {
-    expect(consentRequiredIds(consentError({ required: ['TOS', 3] }))).toEqual(['TOS'])
-    expect(consentRequiredIds(consentError({ missing: ['PRIVACY'] }))).toEqual(['PRIVACY'])
+  it('details.missing을 우선하고, 없으면 details.required[].id를 읽는다', () => {
+    expect(consentRequiredIds(consentError({ required: [{ id: 'TOS', version: '1.0' }, 3] }))).toEqual(['TOS'])
+    expect(consentRequiredIds(consentError({ missing: ['PRIVACY'], required: [{ id: 'TOS' }] }))).toEqual(['PRIVACY'])
     expect(consentRequiredIds(consentError())).toEqual([])
     expect(consentRequiredIds(new ApiError({ code: 'FORBIDDEN', message: 'x', status: 403 }))).toBeNull()
   })

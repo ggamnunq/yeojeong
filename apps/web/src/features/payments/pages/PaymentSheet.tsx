@@ -106,7 +106,7 @@ function SheetView({ detail, preview, onClose }: SheetViewProps) {
       if (isApiError(error) && error.code === 'VERSION_CONFLICT' && error.details?.current) {
         // 최신 결제로 시트를 다시 그린다(details.current = ExpenseDetailResponse)
         queryClient.setQueryData(keys.trips.expense(trip.tripId, expenseId), error.details.current as PaymentDetail)
-        toast.info(COPY.versionConflict)
+        handleApiError(error)
       } else if (isApiError(error) && error.code === 'SHARED_IN_OTHER_TRIP') {
         // 시트는 그대로, [개인]만 고를 수 있다
         setSharedBlocked(true)

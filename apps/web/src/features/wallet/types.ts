@@ -1,4 +1,4 @@
-import type { ConsentId, FxPolicy } from '../../api'
+import type { ConsentId } from '../../api'
 
 // 지갑·토스 연결·환율 응답 타입(기능명세 6-3 "지갑"·"환율").
 // TODO(shared): 서버 2차(S2B-1 payment-methods · S2C fx)가 @yeojeong/shared에 같은 이름으로 넣으면 이 정의를 지우고 re-export로 바꾼다.
@@ -118,78 +118,8 @@ export type FinConsentId = (typeof FIN_CONSENT_IDS)[number]
 export type FinConsentScreen = 'WF-05' | 'WF-28' | 'WF-42'
 
 /** GET /api/consents/documents?stage=FIN_LINK 의 항목 */
-export interface ConsentDocumentSummary {
-  consentId: ConsentId
-  title: string
-  required: boolean
-  version: string
-  docUrl: string | null
-  hasDetail: boolean
-  hidden: boolean
-  summary: string | null
-}
-
-/** POST /api/consents */
-export interface SaveConsentsRequest {
-  stage: 'FIN_LINK'
-  agreements: { consentId: ConsentId; version: string; agreed: boolean }[]
-  method: 'ALL' | 'INDIVIDUAL'
-  screen: FinConsentScreen
-}
+export type { ConsentDocumentSummary, ConsentSubmitRequest as SaveConsentsRequest } from '@yeojeong/shared'
 
 // ── 환율 ─────────────────────────────────────────────────────────
 
-/** 한 통화의 매매기준율 고시 한 건(GET /api/fx?base=JPY) */
-export interface FxRateView {
-  baseCurrency: 'KRW'
-  currency: string
-  /** "엔", "달러" */
-  currencyNameKo: string
-  /** 고시 단위. JPY·IDR·VND = 100, 그 외 1 */
-  displayUnit: number
-  /** 1단위당 원 "9.192000" */
-  rate: string
-  /** 고시 단위당 원, 소수 둘째 자리 "919.20"(쉼표 없음) */
-  displayRate: string
-  /** "100엔 = 919.20원" */
-  label: string
-  rateType: 'MID'
-  /** "하나은행 매매기준율" */
-  source: string
-  /** 고시 시각. "HH:mm 갱신" */
-  effectiveAt: string
-  fetchedAt: string
-}
-
-/** GET /api/trips/:tripId/fx-policy (WF-29) */
-export interface TripFxView {
-  baseCurrency: 'KRW'
-  tripCurrency: string
-  currencyNameKo: string
-  displayUnit: number
-  /** KRW 여정이면 true(지갑 환율 섹션 숨김) */
-  isKrwTrip: boolean
-  /** 최신 고시. 없거나 KRW 여정이면 null("—") */
-  current: FxRateView | null
-  policy: FxPolicy
-  /** 고시 단위당 원 "919.20". FIXED가 아니어도 마지막 입력값 */
-  fixedRate: string | null
-  policyChangedAt: string | null
-  /** 그룹장 ∧ 시작 전·진행 중 ∧ 외화 여정 */
-  canEdit: boolean
-  /** Trip.version. PATCH에 그대로 보낸다 */
-  version: number
-}
-
-/** PATCH /api/trips/:tripId/fx-policy */
-export interface UpdateFxPolicyRequest {
-  policy: FxPolicy
-  /** FIXED일 때 필수. 고시 단위당 원 "919.20" */
-  fixedRate?: string
-  version: number
-}
-
-export interface UpdateFxPolicyResponse {
-  fx: TripFxView
-  recalculatedCount: number
-}
+export type { FxRateView, TripFxView, UpdateFxPolicyRequest, UpdateFxPolicyResponse } from '@yeojeong/shared'

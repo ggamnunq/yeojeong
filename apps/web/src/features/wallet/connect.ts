@@ -1,4 +1,5 @@
 import { paths, safeReturnTo } from '../../app/paths'
+import { TOSS_AUTH_WINDOW_NAME } from '../auth/browser'
 import type { AttemptPurpose, ConfirmConnectionResponse } from './types'
 
 // 토스 연결 흐름(WF-06 → 07 → 08)이 화면 사이에 넘기는 값. 가입(SIGNUP)·추가(WALLET_ADD)·재연결(RECONNECT) 공용.
@@ -10,7 +11,7 @@ import type { AttemptPurpose, ConfirmConnectionResponse } from './types'
 //   navigate(connectPath('toss', attemptId, { returnTo }), { state: { authUrl, purpose, from } })
 
 /** 토스 인증 창 이름. 인증이 끝나 우리 주소로 돌아온 창이 스스로 닫는 데 쓴다 */
-export const TOSS_WINDOW_NAME = 'yj-toss-auth'
+export const TOSS_WINDOW_NAME = TOSS_AUTH_WINDOW_NAME
 
 export type ConnectStep = 'toss' | 'select' | 'done'
 

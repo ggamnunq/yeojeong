@@ -80,7 +80,7 @@ describe('결제내역 · 리스트(WF-18)', () => {
       '551 호라이 난바본점',
       '패밀리마트 난바역점',
     ])
-    fireEvent.click(screen.getByRole('button', { name: '미확정만 보기 해제' }))
+    fireEvent.click(screen.getByRole('button', { name: /미확정만 보기 해제/ }))
     expect(await screen.findByRole('button', { name: /우메다/ })).toBeTruthy()
     expect(router.state.location.search).toBe('')
   })

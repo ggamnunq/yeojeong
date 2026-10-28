@@ -1,4 +1,5 @@
 import type {
+  ConsentId,
   ExpenseListItem,
   ExpenseStatus,
   FxPolicy,
@@ -255,8 +256,8 @@ const expenses: MockExpense[] = [
 
 export type MockDb = {
   session: 'AUTHENTICATED' | 'SIGNUP_REQUIRED' | 'ANONYMOUS'
-  /** 채우면 모든 로그인 API가 403 CONSENT_REQUIRED { required } */
-  consentRequired: string[] | null
+  /** 채우면 세션 응답에 재동의 필요 항목을 싣고 로그인 API는 403 CONSENT_REQUIRED를 준다 */
+  consentRequired: ConsentId[] | null
   meUserId: string
   lastViewedTripId: string | null
   users: MockUser[]
@@ -347,8 +348,24 @@ export function tripDetail(trip: MockTrip, viewerUserId = db.meUserId): TripDeta
   const me = activeMembership(trip.tripId, viewerUserId)
   if (!me) throw new Error(`${viewerUserId}는 ${trip.tripId}의 멤버가 아니다`)
   const nights = dateDiff(trip.endDate, trip.startDate)
-  const dDay = trip.status === 'UPCOMING' ? Math.max(0, dateDiff(trip.startDate, MOCK_NOW.slice(0, 10))) : null
+  const today = MOCK_NOW.slice(0, 10)
+  const dDay = trip.status === 'UPCOMING' && trip.startDate >= today ? dateDiff(trip.startDate, today) : null
   const hasExpired = db.paymentMethods.some((p) => p.userId === viewerUserId && p.status === 'EXPIRED')
+  const leader = me.role === 'LEADER'
+  const open = trip.status !== 'ENDED'
+  const editableFields = leader
+    ? trip.status === 'UPCOMING'
+      ? (['groupName', 'place', 'startDate', 'endDate', 'budgetKrw'] as const)
+      : trip.status === 'ONGOING'
+        ? (['groupName', 'budgetKrw', 'endDate'] as const)
+        : []
+    : []
+  const shell =
+    trip.status === 'UPCOMING'
+      ? { defaultTab: 'INFO' as const, secondTab: 'SUMMARY' as const, lockedTabs: ['EXPENSES', 'SUMMARY'] as const }
+      : trip.status === 'ENDED'
+        ? { defaultTab: 'SETTLEMENT' as const, secondTab: 'SETTLEMENT' as const, lockedTabs: [] }
+        : { defaultTab: 'EXPENSES' as const, secondTab: 'SUMMARY' as const, lockedTabs: [] }
   return {
     ...tripListItem(trip, viewerUserId),
     placeLabel: trip.placeLabel,
@@ -372,6 +389,26 @@ export function tripDetail(trip: MockTrip, viewerUserId = db.meUserId): TripDeta
       .filter((e) => e.tripId === trip.tripId && e.actorUserId !== viewerUserId && !e.seenBy.includes(viewerUserId))
       .map(({ id, type, payload }) => ({ id, type, payload })),
     version: trip.version,
+    city: trip.placeLabel.split(' ').at(-1) ?? null,
+    todayDayIndex:
+      trip.status === 'ONGOING' && today >= trip.startDate && today <= trip.endDate
+        ? dateDiff(today, trip.startDate) + 1
+        : null,
+    startedAt: trip.status === 'UPCOMING' ? null : `${trip.startDate}T00:00:00+09:00`,
+    endedAt: trip.status === 'ENDED' ? `${trip.endDate}T23:59:59+09:00` : null,
+    endReason: trip.status === 'ENDED' ? 'MANUAL' : null,
+    shell: { ...shell, lockedTabs: [...shell.lockedTabs] },
+    permissions: {
+      canEdit: editableFields.length > 0,
+      editableFields: [...editableFields],
+      canStart: leader && trip.status === 'UPCOMING' && trip.endDate >= today,
+      canEnd: leader && trip.status === 'ONGOING',
+      canDeleteGroup: leader && trip.status === 'UPCOMING',
+      canKick: leader && open,
+      canInvite: open,
+      canLeave: true,
+      canChangeFx: leader && open && trip.currency !== 'KRW',
+    },
   }
 }
 

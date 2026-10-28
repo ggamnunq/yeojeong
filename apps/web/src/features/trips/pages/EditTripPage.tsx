@@ -12,7 +12,7 @@ import type { NavState, TripFormValues, TripInfo } from '../types'
 
 /**
  * 여정 정보 수정(WF-10 수정 모드, FR-302). 그룹장만, 단계별로 고칠 수 있는 칸만(진행 중: 그룹명 · 예산 · 종료일). 종료 후는 들어올 수 없다.
- * 409(단계·version)는 최신 값으로 다시 채우고 "다른 곳에서 바뀌었어요", 403은 여정 정보로.
+ * 409(단계·version)는 최신 값으로 다시 채우고, 403은 여정 정보로 보낸다.
  */
 export default function EditTripPage() {
   const trip: TripInfo = useTripDetail()
@@ -51,10 +51,10 @@ function EditTripForm({ trip, today }: { trip: TripInfo; today: string }) {
         if (!isApiError(error)) return handleApiError(error)
         if (error.code === 'VALIDATION_FAILED') return setServerErrors(fieldErrors(error))
         if (error.status === 409) {
-          toast.info(COPY.changedElsewhere)
           const current = error.details?.current as TripInfo | undefined
           if (current) queryClient.setQueryData(keys.trips.detail(trip.tripId), current)
           else void queryClient.invalidateQueries({ queryKey: keys.trips.detail(trip.tripId) })
+          handleApiError(error)
           return
         }
         if (error.status === 403) {

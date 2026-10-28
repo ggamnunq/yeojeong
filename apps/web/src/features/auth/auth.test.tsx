@@ -324,7 +324,7 @@ describe('WF-05 토스 지갑 연동 안내 · WF-05b 연동 동의 시트', () 
     fireEvent.click(cta)
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/wallet/connect/toss'))
-    expect(router.state.location.search).toBe('?attempt=attempt-signup-1')
+    expect(router.state.location.search).toBe('?attempt=attempt-1')
     expect(router.state.location.state).toEqual({ authUrl: 'about:blank', purpose: 'SIGNUP', from: '/signup/wallet' })
     expect(go).toHaveBeenCalledWith('about:blank')
     expect(cancel).not.toHaveBeenCalled()
