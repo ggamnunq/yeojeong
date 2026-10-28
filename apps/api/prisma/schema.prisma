@@ -1,3 +1,5 @@
+// 스키마 규칙과 마이그레이션 절차는 prisma/README.md 참고
+
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -5,4 +7,17 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+/// 명세 확정 전 최소 구성. 카카오 로그인만 확정이라 나머지 필드는 명세가 나오면 추가한다.
+model User {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// 카카오 회원번호
+  kakaoId         String   @unique @map("kakao_id")
+  nickname        String
+  profileImageUrl String?  @map("profile_image_url")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("users")
 }
