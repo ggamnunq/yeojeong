@@ -54,7 +54,7 @@ const TX_OPTIONS = { timeout: 20_000, maxWait: 5_000 } as const;
  * 장기 미이용 파기(8-8 7단계)가 같은 함수를 쓴다. 한 트랜잭션이고, 이미 지워진 회원이면 아무것도 하지 않는다(멱등).
  *
  * 1. account.deleting 이벤트(트랜잭션 전, 외부 정리: 제공기관 토큰 폐기·카카오 연결 끊기)
- * 2. 트랜잭션: User 행 잠금 → 활성 멤버십의 그룹 행 잠금 → 멤버십 익명화·승계·빈 그룹 소프트 삭제 →
+ * 2. 트랜잭션: User 행 잠금 → 활성 멤버십의 Trip 행 잠금(S2A와 같은 순서) → 멤버십 익명화·승계·빈 그룹 소프트 삭제 →
  *    PENDING·PERSONAL 결제 삭제 → 거래 원본·결제수단·연결 시도·연결(토큰 포함) 삭제 → 세션 삭제 →
  *    동의 철회 기록 → AccountDeletion 완료 기록 → User 삭제
  * 3. membership.left(reason DELETED)·account.deleted 이벤트(커밋 후)
@@ -104,9 +104,9 @@ export class AccountDeletionService {
       '탈퇴 처리 완료',
     );
     for (const event of result.leftMemberships) {
-      this.emit(MEMBERSHIP_LEFT_EVENT, event);
+      await this.emit(MEMBERSHIP_LEFT_EVENT, event);
     }
-    this.emit(ACCOUNT_DELETED_EVENT, {
+    await this.emit(ACCOUNT_DELETED_EVENT, {
       userId,
       accountDeletionId: result.accountDeletionId,
       channel,
@@ -134,8 +134,12 @@ export class AccountDeletionService {
     });
     const membershipIds = memberships.map((m) => m.id);
 
-    const { leftMemberships, leadersSucceeded, groupsSoftDeleted } =
-      await this.leaveGroups(tx, memberships, userId, now);
+    const {
+      leftMemberships,
+      membershipsLeft,
+      leadersSucceeded,
+      groupsSoftDeleted,
+    } = await this.leaveGroups(tx, memberships, now);
     await tx.membership.updateMany({
       where: { userId },
       data: { userId: null },
@@ -199,7 +203,7 @@ export class AccountDeletionService {
         paymentMethods: paymentMethods.count,
         transactions: transactions.count,
         personalExpenses: personalExpenses.count,
-        membershipsLeft: leftMemberships.length,
+        membershipsLeft,
         leadersSucceeded,
         groupsSoftDeleted,
         consentsWithdrawn: consents.count,
@@ -211,22 +215,26 @@ export class AccountDeletionService {
   private async leaveGroups(
     tx: Tx,
     memberships: { id: string; groupId: string; leftAt: Date | null }[],
-    userId: string,
     now: Date,
   ) {
     const active = memberships.filter((m) => m.leftAt === null);
     const leftMemberships: MembershipLeftEvent[] = [];
     let leadersSucceeded = 0;
     let groupsSoftDeleted = 0;
-    if (active.length === 0) {
-      return { leftMemberships, leadersSucceeded, groupsSoftDeleted };
-    }
+    const result = () => ({
+      leftMemberships,
+      membershipsLeft: active.length,
+      leadersSucceeded,
+      groupsSoftDeleted,
+    });
+    if (active.length === 0) return result();
 
-    // 나가기·강퇴·참여와 겹치지 않게 그룹 행을 잠근다(기능명세 8-3). 교착을 피하려고 id 순서로
+    // 나가기·강퇴·참여(S2A)와 같은 순서로 잠근다: Trip 행 → Membership 행(그룹 1 : 여정 1이라 Trip 잠금이 그룹 잠금을 겸한다).
+    // 여러 여정이면 교착을 피하려고 id 순서로
     const groupIds = [...new Set(active.map((m) => m.groupId))].sort();
     await tx.$queryRaw`
-      SELECT id FROM groups
-      WHERE id IN (${Prisma.join(groupIds.map((id) => Prisma.sql`${id}::uuid`))})
+      SELECT id FROM trips
+      WHERE group_id IN (${Prisma.join(groupIds.map((id) => Prisma.sql`${id}::uuid`))})
       ORDER BY id FOR UPDATE`;
     const groups = await tx.group.findMany({
       where: { id: { in: groupIds } },
@@ -260,9 +268,7 @@ export class AccountDeletionService {
         data: anonymizedMembership(null, now),
       });
 
-      let newLeaderMembershipId: string | null = null;
       if (groupAlive && plan.successor) {
-        newLeaderMembershipId = plan.successor.id;
         await tx.membership.update({
           where: { id: plan.successor.id },
           data: { role: 'LEADER' },
@@ -286,7 +292,6 @@ export class AccountDeletionService {
         }
       }
 
-      let groupDeleted = false;
       if (groupAlive && plan.groupBecomesEmpty) {
         await tx.group.update({
           where: { id: group.id },
@@ -298,22 +303,23 @@ export class AccountDeletionService {
             data: { deletedAt: now },
           });
         }
-        groupDeleted = true;
         groupsSoftDeleted += 1;
       }
 
-      leftMemberships.push({
-        membershipId: mine.id,
-        groupId: group.id,
-        tripId: group.trip?.id ?? null,
-        userId,
-        reason: 'DELETED',
-        leftAt: now,
-        newLeaderMembershipId,
-        groupDeleted,
-      });
+      // 이미 삭제된 그룹·여정이면 구독자(S2B 인입 중단)가 할 일이 없어 보내지 않는다
+      if (groupAlive && trip) {
+        leftMemberships.push({
+          tripId: trip.id,
+          groupId: group.id,
+          membershipId: mine.id,
+          userId: null,
+          reason: 'DELETED',
+          eventSeq: await nextEventSeq(tx),
+          occurredAt: now,
+        });
+      }
     }
-    return { leftMemberships, leadersSucceeded, groupsSoftDeleted };
+    return result();
   }
 
   /** 내가 승계받았던 토스트 이벤트의 닉네임을 지운다(1회성 토스트 페이로드에 남은 개인정보) */
@@ -379,7 +385,8 @@ export class AccountDeletionService {
     }
   }
 
-  private emit(name: string, payload: object) {
+  /** 커밋 후 발행(S2A와 같이 emitAsync). 구독자 오류는 탈퇴 결과에 영향을 주지 않는다 */
+  private async emit(name: string, payload: object) {
     if (!this.events) {
       this.logger.warn(
         { event: name },
@@ -388,7 +395,7 @@ export class AccountDeletionService {
       return;
     }
     try {
-      this.events.emit(name, payload);
+      await this.events.emitAsync(name, payload);
     } catch (err) {
       this.logger.error(
         {
@@ -399,4 +406,11 @@ export class AccountDeletionService {
       );
     }
   }
+}
+
+/** S2A와 같은 순서 번호: trip_events.seq 시퀀스에서 받는다(Trip 행을 잠근 뒤라 여정 안에서 커밋 순서와 같다) */
+async function nextEventSeq(tx: Tx): Promise<bigint> {
+  const [row] = await tx.$queryRaw<{ seq: bigint }[]>`
+    SELECT nextval(pg_get_serial_sequence('trip_events', 'seq')) AS seq`;
+  return BigInt(row.seq);
 }

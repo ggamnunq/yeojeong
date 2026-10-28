@@ -405,16 +405,23 @@ describeWithDb('DELETE /api/users/me 서비스 내 탈퇴 (e2e, 실제 DB)', () 
       .filter((e) => e.name === MEMBERSHIP_LEFT_EVENT)
       .map((e) => e.payload as MembershipLeftEvent);
     expect(left).toHaveLength(3);
+    // S2A membership.left와 같은 모양: 탈퇴는 reason DELETED, userId null
+    expect(left.find((e) => e.groupId === s.ongoing.group.id)).toEqual({
+      tripId: s.ongoing.trip.id,
+      groupId: s.ongoing.group.id,
+      membershipId: s.ongoing.memberships[0].id,
+      userId: null,
+      reason: 'DELETED',
+      eventSeq: expect.any(BigInt),
+      occurredAt: expect.any(Date),
+    });
+    expect(left.every((e) => e.reason === 'DELETED' && e.userId === null)).toBe(
+      true,
+    );
+    // eventSeq는 같은 여정의 승계 토스트(TripEvent)보다 뒤
     expect(
-      left.every((e) => e.reason === 'DELETED' && e.userId === junyong.id),
-    ).toBe(true);
-    expect(left.find((e) => e.groupId === s.ongoing.group.id)).toMatchObject({
-      newLeaderMembershipId: s.ongoing.memberships[1].id,
-      groupDeleted: false,
-    });
-    expect(left.find((e) => e.groupId === s.solo.group.id)).toMatchObject({
-      groupDeleted: true,
-    });
+      left.find((e) => e.groupId === s.ongoing.group.id)!.eventSeq,
+    ).toBeGreaterThan(toast.seq);
 
     // 같은 카카오 계정은 신규 가입으로 다시 들어올 수 있다(FR-109 수락 기준 2)
     const again = await db.user.create({

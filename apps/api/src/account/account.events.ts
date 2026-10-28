@@ -2,32 +2,29 @@ import type { AccountDeletionChannel } from '@yeojeong/shared';
 
 // 탈퇴가 다른 모듈과 주고받는 도메인 이벤트(@nestjs/event-emitter). 다른 모듈의 서비스를 직접 부르지 않는다.
 
-/** 멤버가 그룹에서 빠졌다(나가기·강퇴·탈퇴). 커밋 후 발행 */
+/** 멤버가 그룹에서 빠졌다(나가기·강퇴·탈퇴). 커밋 후 발행. 이름은 S2A TRIP_EVENTS.MEMBERSHIP_LEFT와 같다 */
 export const MEMBERSHIP_LEFT_EVENT = 'membership.left';
 /** 탈퇴 트랜잭션 직전. emitAsync로 리스너를 기다린다 */
 export const ACCOUNT_DELETING_EVENT = 'account.deleting';
 /** 탈퇴 커밋 후 */
 export const ACCOUNT_DELETED_EVENT = 'account.deleted';
 
-/** DB의 LeaveReason(LEFT·KICKED)에 탈퇴(DELETED)를 더한 이벤트용 사유 */
-export type MembershipLeaveReason = 'LEFT' | 'KICKED' | 'DELETED';
+export type MembershipLeftReason = 'LEFT' | 'KICKED' | 'DELETED';
 
 /**
- * groups 모듈(S2A)의 membership.left와 같은 모양으로 맞춘다. 통합할 때 한쪽 정의로 합친다.
- * 탈퇴는 DB에 leaveReason = LEFT로 남기고(enum에 DELETED가 없다) userId = NULL로 구분한다.
+ * S2A `src/trips/events.ts`의 MembershipLeftEvent와 같은 모양(통합 때 그쪽 타입으로 바꾼다).
+ * 탈퇴는 reason DELETED, userId null로 보낸다. DB에는 leaveReason = LEFT로 남는다(enum에 DELETED가 없다).
+ * eventSeq는 S2A와 같은 방식으로 Trip 행을 잠근 뒤 trip_events.seq 시퀀스에서 받는다.
  */
 export interface MembershipLeftEvent {
-  membershipId: string;
+  tripId: string;
   groupId: string;
-  tripId: string | null;
-  /** 나간 사용자. 탈퇴면 이미 지워진 ID다(조회하지 않는다) */
-  userId: string;
-  reason: MembershipLeaveReason;
-  leftAt: Date;
-  /** 그룹장이 나가 승계가 일어났으면 새 그룹장 Membership ID */
-  newLeaderMembershipId: string | null;
-  /** 마지막 활성 멤버가 나가 그룹·여정을 소프트 삭제했으면 true(미결 Q-25 추천안) */
-  groupDeleted: boolean;
+  membershipId: string;
+  /** 탈퇴한 멤버면 null */
+  userId: string | null;
+  reason: MembershipLeftReason;
+  eventSeq: bigint;
+  occurredAt: Date;
 }
 
 /**
