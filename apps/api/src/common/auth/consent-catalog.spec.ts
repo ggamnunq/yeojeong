@@ -1,4 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { CONSENT_ID_VALUES } from '@yeojeong/shared';
 import {
+  CONSENT_DOCUMENT_VERSIONS,
   currentConsentVersion,
   isConsentSatisfied,
   type ConsentDocumentVersion,
@@ -103,6 +107,26 @@ describe('consent validity', () => {
         false,
       );
     });
+  });
+
+  it('keeps the seed constant equal to the draft rows in the migration', () => {
+    const sql = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../../../prisma/migrations/20261028101853_add_consent_documents_is_draft/migration.sql',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    );
+    expect(CONSENT_DOCUMENT_VERSIONS.map((d) => d.consentId)).toEqual(
+      CONSENT_ID_VALUES,
+    );
+    for (const doc of CONSENT_DOCUMENT_VERSIONS) {
+      expect(sql).toContain(
+        `('${doc.consentId}', '${doc.version}', '${doc.title}', ${doc.required}, '${doc.docPath}', '${doc.docHash}'`,
+      );
+    }
   });
 
   it('fails loudly when no document is in effect', () => {

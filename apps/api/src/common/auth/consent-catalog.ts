@@ -22,6 +22,82 @@ export interface ConsentDocumentVersion {
 
 type Catalog = readonly ConsentDocumentVersion[];
 
+const DRAFT_EFFECTIVE_AT = new Date('2026-10-28T00:00:00+09:00');
+const draft = (
+  consentId: ConsentId,
+  title: string,
+  required: boolean,
+  docPath: string,
+  docHash: string,
+): ConsentDocumentVersion => ({
+  consentId,
+  version: '0.1-draft',
+  title,
+  required,
+  docPath,
+  docHash,
+  effectiveAt: DRAFT_EFFECTIVE_AT,
+  changeType: 'MAJOR',
+  summary: null,
+  isDraft: true,
+});
+
+/**
+ * 마이그레이션 20261028101853_add_consent_documents_is_draft가 넣은 초안 행과 같은 값(테스트·픽스처용).
+ * 서버의 판정 기준은 이 상수가 아니라 consent_documents 테이블이다(ConsentCatalog).
+ */
+export const CONSENT_DOCUMENT_VERSIONS: Catalog = [
+  draft(
+    'TOS',
+    '서비스 이용약관',
+    true,
+    'docs/legal/서비스 이용약관.md',
+    'a3c2aef236bb1cc2577467871db229de8eac1697376a18b384d9cb26a5b8a1f3',
+  ),
+  draft(
+    'PRIVACY',
+    '개인정보 수집·이용',
+    true,
+    'docs/legal/개인정보 수집·이용 동의서.md',
+    '3007c0eae2df11b560ce7f740fe4e13eeee9fbca3804373ab1883932e0373f22',
+  ),
+  draft(
+    'AGE14',
+    '만 14세 이상입니다',
+    true,
+    'docs/legal/서비스 이용약관.md',
+    'a3c2aef236bb1cc2577467871db229de8eac1697376a18b384d9cb26a5b8a1f3',
+  ),
+  draft(
+    'MARKETING',
+    '마케팅 정보 수신',
+    false,
+    'docs/legal/개인정보 수집·이용 동의서.md',
+    '3007c0eae2df11b560ce7f740fe4e13eeee9fbca3804373ab1883932e0373f22',
+  ),
+  draft(
+    'FIN_LINK',
+    '금융정보 연동 약관',
+    true,
+    'docs/legal/금융정보 연동 이용약관(부속약관).md',
+    '12754e9251e8aa2313ed9fa7adabbf617d002b394b803c48b7837ce355b5a01a',
+  ),
+  draft(
+    'FIN_PRIVACY',
+    '금융정보 수집·이용',
+    true,
+    'docs/legal/개인정보 수집·이용 동의서.md',
+    '3007c0eae2df11b560ce7f740fe4e13eeee9fbca3804373ab1883932e0373f22',
+  ),
+  draft(
+    'THIRD_PARTY',
+    '공동 결제 그룹 공개',
+    true,
+    'docs/legal/개인정보 제3자 제공 동의서.md',
+    '3139434ccc3e99aaa30efcbe7941f4fc1eeef295d355e720de43dfda1b065ff9',
+  ),
+];
+
 function effective(id: ConsentId, catalog: Catalog, now: Date) {
   const versions = catalog
     .filter((doc) => doc.consentId === id && doc.effectiveAt <= now)
