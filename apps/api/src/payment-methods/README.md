@@ -76,7 +76,7 @@
 
 ## S2B-2(expenses)와의 경계
 
-- **기간 외 결제**: 후보·추가 API(`GET …/out-of-period-candidates`, `POST …/out-of-period-expenses`)는 S2B-2가 **저장된 Transaction**에서 고른다. 그래서 동기화가 진행 중 여정의 시작 60일 전(`OUT_OF_PERIOD_LOOKBACK_DAYS`)부터 가져와 **Transaction으로만 보관**한다(장부 Expense는 사용자가 추가할 때 S2B-2가 만든다). 이 구간도 성공 SyncRun 커버리지로 판정해 한 번 덮이면 다시 가져오지 않는다.
+- **기간 외 결제**: 후보 API는 제공자에서 실시간 조회하여 응답만 반환하고 거래를 저장하지 않는다. 5분 유효 서명 후보를 추가할 때 제공자에서 재확인하고 선택한 거래와 Expense를 함께 저장한다. 과거 선저장된 미사용 거래는 마이그레이션으로 정리한다.
 - **중복 의심**: 인입이 공동 결제의 순액을 바꾸면(환불 첨부) `DuplicateFlagger`를 부르고, 기본 구현은 `expenses/duplicates.ts`의 `flagDuplicates`다(`duplicate-flagger.ts`).
 - `ImportService.lockTrip(tx, tripId)`: Trip `FOR SHARE` + 환율 정책.
 

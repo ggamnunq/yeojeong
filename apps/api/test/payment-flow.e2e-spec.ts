@@ -21,8 +21,6 @@ import {
 const TEST_DB = process.env.PAYMENT_TEST_DATABASE_URL;
 const JOB_SECRET = 'test-internal-job-secret-0123456789';
 const DOC_HASH = 'a'.repeat(64);
-/** 여정 전 결제(기간 외 후보)를 보관하는 범위: 시작 60일 전 */
-const LOOKBACK_MS = 60 * 24 * 60 * 60 * 1000;
 
 describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
   let app: NestExpressApplication;
@@ -207,8 +205,8 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
     });
     expect(pending[2].originalAmount.toFixed(0)).toBe('1280');
     const txs = await prisma.transaction.findMany({ where: { userId: me.id } });
-    // 기간 내 10건 + 여정 전 4건(기간 외 후보로 Transaction에만 보관, 장부에는 없음)
-    expect(txs).toHaveLength(14);
+    // 기간 내 거래만 저장한다.
+    expect(txs).toHaveLength(10);
     expect(txs.filter((t) => t.sameUserDuplicateOfId)).toHaveLength(4);
     expect(
       txs.every(
@@ -236,12 +234,10 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
         trigger: 'METHOD_ADDED',
         status: 'OK',
         importedCount: 6,
-        fetchedCount: 14,
+        fetchedCount: 10,
       },
     ]);
-    expect(runs[0].fromAt).toEqual(
-      new Date(seed.startAt.getTime() - LOOKBACK_MS),
-    );
+    expect(runs[0].fromAt).toEqual(seed.startAt);
 
     const list = await request(server())
       .get('/api/payment-methods')
@@ -277,7 +273,7 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
     await runJob();
     expect(await expensesOf(seed.tripId, jy.membershipId!)).toHaveLength(6);
     expect(await prisma.transaction.count({ where: { userId: me.id } })).toBe(
-      14,
+      10,
     );
 
     // 마지막이 아닌 결제수단: purge 불가, 해제는 결제를 남긴다
@@ -499,9 +495,7 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
       where: { connectionId: sbConn.id, status: 'OK' },
     });
     expect(scheduled).toMatchObject({ trigger: 'SCHEDULED', importedCount: 2 });
-    expect(scheduled.fromAt).toEqual(
-      new Date(seed.startAt.getTime() - LOOKBACK_MS),
-    );
+    expect(scheduled.fromAt).toEqual(seed.startAt);
 
     // 잡을 한 번 더, 같은 이벤트를 다시(같은 eventSeq는 무시, 새 eventSeq도 멱등)
     await runJob();
@@ -596,7 +590,7 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
     ).toBe(1);
   });
 
-  it('expires on auth errors and backfills the gap on reconnect; pre-trip transactions are kept for out-of-period candidates (FR-805·404 AC2·408)', async () => {
+  it('expires on auth errors and backfills the gap on reconnect; pre-trip transactions are fetched only on demand (FR-805·404 AC2·408)', async () => {
     const seed = await seedTrip(prisma, {
       members: [{ nickname: '준용' }],
       status: 'ONGOING',
@@ -667,19 +661,43 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
       }),
     ).toMatchObject({ trigger: 'RECONNECT' });
 
-    // 기간 외 후보(S2B-2 기간 외 추가가 고르는 원천): 여정 전 60일 거래는 Transaction으로만 보관, 장부에는 없다
-    const preTrip = await prisma.transaction.findMany({
+    const before = await prisma.transaction.count({
       where: { userId: me.id, occurredAt: { lt: seed.startAt } },
-      orderBy: { occurredAt: 'asc' },
-      include: { expenses: { select: { id: true } } },
     });
-    expect(preTrip.map((t) => t.merchantNameRaw)).toEqual([
-      '아고다',
-      '제주항공 4매',
-      'KKday',
-      '인천공항 장기주차',
-    ]);
-    expect(preTrip.every((t) => t.expenses.length === 0)).toBe(true);
+    expect(before).toBe(0);
+    const membership = auth.addMembership({
+      user: me,
+      tripId: seed.tripId,
+      groupId: seed.groupId,
+    });
+    membership.membership.id = jy.membershipId!;
+    const response = await request(server())
+      .get(`/api/trips/${seed.tripId}/out-of-period-candidates?side=BEFORE`)
+      .set(auth.headers(me))
+      .expect(200);
+    expect(response.body.length).toBeGreaterThan(0);
+    expect(
+      await prisma.transaction.count({
+        where: { userId: me.id, occurredAt: { lt: seed.startAt } },
+      }),
+    ).toBe(0);
+    const candidateId = response.body[0].candidateId;
+    await request(server())
+      .post(`/api/trips/${seed.tripId}/out-of-period-expenses`)
+      .set(auth.headers(me))
+      .send({ candidateIds: [candidateId] })
+      .expect(201)
+      .expect((r) => expect(r.body.added).toBe(1));
+    expect(
+      await prisma.expense.count({
+        where: { tripId: seed.tripId, origin: 'OUT_OF_PERIOD' },
+      }),
+    ).toBe(1);
+    await request(server())
+      .post(`/api/trips/${seed.tripId}/out-of-period-expenses`)
+      .set(auth.headers(me))
+      .send({ candidateIds: [candidateId] })
+      .expect(400);
   });
 
   it('runs a FINAL sync on trip.auto-ending (FR-305)', async () => {
