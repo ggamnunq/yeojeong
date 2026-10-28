@@ -61,7 +61,7 @@
 
 ## 이벤트 (`transactions/trip-events.listener.ts`)
 
-S2A `src/trips/events.ts`와 같은 이름·모양(`trip-events.ts`, 합칠 때 그쪽 import로 교체).
+계약은 S2A `src/trips/events.ts`(`TRIP_EVENTS`, 페이로드 타입)를 그대로 import한다.
 
 | 이벤트 | 처리 |
 | --- | --- |
@@ -82,4 +82,4 @@ S2A `src/trips/events.ts`와 같은 이름·모양(`trip-events.ts`, 합칠 때 
 
 - 단위: `import-rules.spec.ts`(중복 제거·취소 매칭·자식 원화·중복 의심), `krw.spec.ts`, `sync-window.spec.ts`, `masking.spec.ts`, `token-cipher.spec.ts`, `demo-toss.adapter.spec.ts`, `event-seq.spec.ts`
 - e2e(DB 없이, CI): `test/payment-methods.e2e-spec.ts` — 동의 403, 로그인, 잡 시크릿·CSRF
-- e2e(실DB, `.env`의 DATABASE_URL이 있을 때만): `test/payment-flow.e2e-spec.ts` — 연결 → 선택 → 목록 → PENDING → 수동 동기화 → 해제 → purge, 환불, SH-2 자가 복구·이벤트 멱등·참여 소급·나간 멤버, 만료 → 재연결 소급, 기간 외 후보, FINAL
+- e2e(실DB, `PAYMENT_TEST_DATABASE_URL`이 있을 때만, DB 이름은 `_test`로 끝나야 함 · S2A의 `TEST_DATABASE_URL`은 시작 때 TRUNCATE하므로 다른 DB): `test/payment-flow.e2e-spec.ts` — 연결 → 선택 → 목록 → PENDING → 수동 동기화 → 해제 → purge, 환불, SH-2 자가 복구·이벤트 멱등·참여 소급·나간 멤버, 만료 → 재연결 소급, 기간 외 후보, FINAL

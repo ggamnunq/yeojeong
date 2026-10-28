@@ -3,15 +3,12 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { EventSeqTracker } from './event-seq.js';
 import { SyncService } from './sync.service.js';
 import {
-  MEMBERSHIP_JOINED,
-  MEMBERSHIP_LEFT,
-  TRIP_AUTO_ENDING,
-  TRIP_STARTED,
+  TRIP_EVENTS,
   type MembershipJoinedEvent,
   type MembershipLeftEvent,
   type TripAutoEndingEvent,
   type TripStartedEvent,
-} from './trip-events.js';
+} from '../trips/events.js';
 import { waitAtMost } from './wait.js';
 
 const LISTENER_OPTIONS = { async: true, promisify: true } as const;
@@ -19,7 +16,7 @@ const LISTENER_OPTIONS = { async: true, promisify: true } as const;
 const FINAL_SYNC_BUDGET_MS = 55_000;
 
 /**
- * S2A 이벤트 구독(기능명세 1-3, S2A src/trips/events.ts).
+ * S2A 이벤트 구독(기능명세 1-3, 계약은 src/trips/events.ts).
  * - 멱등: 인입 키(paymentMethodId, externalRef)·(tripId, transactionId)라 같은 이벤트가 두 번 와도 결제가 늘지 않는다.
  * - 소급(trip.started·membership.joined)은 오래 걸릴 수 있어 백그라운드로 돌리고 바로 돌아온다(발행 요청을 붙잡지 않는다).
  * - 실패: 예외를 잡아 error 로그(event, listener, tripId, errorCode)로 남기고, 실패한 연결은 SyncRun(FAILED)으로 남는다.
@@ -35,7 +32,7 @@ export class TripEventsListener {
   constructor(private readonly sync: SyncService) {}
 
   /** 여정 시작 → 전 멤버 소급 인입(FR-303 → FR-404, [startAt, now]) */
-  @OnEvent(TRIP_STARTED, LISTENER_OPTIONS)
+  @OnEvent(TRIP_EVENTS.STARTED, LISTENER_OPTIONS)
   onTripStarted(event: TripStartedEvent): Promise<void> {
     if (
       !event?.tripId ||
@@ -43,14 +40,17 @@ export class TripEventsListener {
     ) {
       return Promise.resolve();
     }
-    this.background(TRIP_STARTED, 'backfillTripStart', event.tripId, () =>
-      this.sync.backfillTripStart(event.tripId),
+    this.background(
+      TRIP_EVENTS.STARTED,
+      'backfillTripStart',
+      event.tripId,
+      () => this.sync.backfillTripStart(event.tripId),
     );
     return Promise.resolve();
   }
 
   /** 진행 중 여정 참여·재참여 → 새 멤버 소급 인입(FR-204 → FR-404). tripStatus는 참고만 하고 DB로 다시 확인한다 */
-  @OnEvent(MEMBERSHIP_JOINED, LISTENER_OPTIONS)
+  @OnEvent(TRIP_EVENTS.MEMBERSHIP_JOINED, LISTENER_OPTIONS)
   onMembershipJoined(event: MembershipJoinedEvent): Promise<void> {
     if (
       !event?.membershipId ||
@@ -58,8 +58,11 @@ export class TripEventsListener {
     ) {
       return Promise.resolve();
     }
-    this.background(MEMBERSHIP_JOINED, 'backfillJoin', event.tripId, () =>
-      this.sync.backfillJoin(event.membershipId),
+    this.background(
+      TRIP_EVENTS.MEMBERSHIP_JOINED,
+      'backfillJoin',
+      event.tripId,
+      () => this.sync.backfillJoin(event.membershipId),
     );
     return Promise.resolve();
   }
@@ -69,7 +72,7 @@ export class TripEventsListener {
    * 보므로 할 일이 없다. 기존 결제·ExpenseShare는 건드리지 않는다(나간 멤버의 부담은 정산에 남는다).
    * 순서 번호만 기록해 뒤늦게 온 이전 참여 이벤트가 소급을 다시 돌리지 않게 한다.
    */
-  @OnEvent(MEMBERSHIP_LEFT, LISTENER_OPTIONS)
+  @OnEvent(TRIP_EVENTS.MEMBERSHIP_LEFT, LISTENER_OPTIONS)
   onMembershipLeft(event: MembershipLeftEvent): Promise<void> {
     if (event?.membershipId) {
       this.seq.accept(`membership:${event.membershipId}`, event.eventSeq);
@@ -78,11 +81,11 @@ export class TripEventsListener {
   }
 
   /** 자동 종료 직전 → FINAL 동기화(FR-305, 종료 전 마지막 인입). 발행자가 기다리므로 끝날 때까지(최대 55초) 기다린다 */
-  @OnEvent(TRIP_AUTO_ENDING, LISTENER_OPTIONS)
+  @OnEvent(TRIP_EVENTS.AUTO_ENDING, LISTENER_OPTIONS)
   async onTripAutoEnding(event: TripAutoEndingEvent): Promise<void> {
     if (!event?.tripId) return;
     await waitAtMost(
-      this.guard(TRIP_AUTO_ENDING, 'finalSync', event.tripId, () =>
+      this.guard(TRIP_EVENTS.AUTO_ENDING, 'finalSync', event.tripId, () =>
         this.sync.finalSync(event.tripId),
       ),
       FINAL_SYNC_BUDGET_MS,

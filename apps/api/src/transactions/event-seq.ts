@@ -1,4 +1,5 @@
-import type { EventSeq } from './trip-events.js';
+/** 이벤트 순서 번호. S2A는 bigint(같은 여정 안 단조 증가), 테스트·다른 발행자를 위해 number·string도 받는다 */
+export type EventSeq = bigint | number | string;
 
 /**
  * 같은 대상(여정·멤버십)의 이벤트가 순서가 뒤바뀌어 오면 오래된 것을 버린다.

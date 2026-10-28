@@ -1,4 +1,3 @@
-import { config as loadEnv } from 'dotenv';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
@@ -17,13 +16,14 @@ import {
   type SeededTrip,
 } from './payment-helpers.js';
 
-// 실제 DB(apps/api/.env의 DATABASE_URL)에 붙는 결제수단·인입 e2e. DB가 없는 CI에서는 건너뛴다.
-loadEnv({ path: '.env', quiet: true });
-const hasDb = Boolean(process.env.DATABASE_URL);
+// 실제 DB에 붙는 결제수단·인입 e2e. PAYMENT_TEST_DATABASE_URL(이름이 _test로 끝나는 전용 DB)이 있을 때만 돈다(CI는 건너뜀).
+// S2A의 TEST_DATABASE_URL은 시작할 때 TRUNCATE하므로 같이 돌면 서로 지운다 — 다른 DB를 쓴다. 이 테스트는 자기가 만든 행만 지운다.
+// 예: PAYMENT_TEST_DATABASE_URL=postgresql://yeojeong:yeojeong@localhost:5432/yeojeong_s2b_test pnpm --filter @yeojeong/api test:e2e
+const TEST_DB = process.env.PAYMENT_TEST_DATABASE_URL;
 const JOB_SECRET = 'test-internal-job-secret-0123456789';
 const DOC_HASH = 'a'.repeat(64);
 
-describe.skipIf(!hasDb)('Payment flow (e2e, real DB)', () => {
+describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
   let app: NestExpressApplication;
   let auth: TestAuth;
   let adapter: FaultyDemoAdapter;
@@ -31,10 +31,19 @@ describe.skipIf(!hasDb)('Payment flow (e2e, real DB)', () => {
   const seeds: SeededTrip[] = [];
 
   beforeAll(async () => {
+    vi.stubEnv('DATABASE_URL', TEST_DB);
     vi.stubEnv('INTERNAL_JOB_SECRET', JOB_SECRET);
     auth = createTestAuth();
     ({ app, adapter } = await createPaymentTestApp({ auth, prisma: 'real' }));
     prisma = app.get(PrismaService);
+    const [{ db }] = await prisma.$queryRaw<
+      { db: string }[]
+    >`SELECT current_database() AS db`;
+    if (!db.endsWith('_test')) {
+      throw new Error(
+        `PAYMENT_TEST_DATABASE_URL은 이름이 _test로 끝나는 DB여야 합니다: ${db}`,
+      );
+    }
   });
 
   afterAll(async () => {
@@ -685,12 +694,10 @@ describe.skipIf(!hasDb)('Payment flow (e2e, real DB)', () => {
     adapter.failList = 'UNAVAILABLE';
     await connect(asUser(mj));
     adapter.failList = null;
-    await app
-      .get(EventEmitter2)
-      .emitAsync('trip.auto-ending', {
-        tripId: seed.tripId,
-        groupId: seed.groupId,
-      });
+    await app.get(EventEmitter2).emitAsync('trip.auto-ending', {
+      tripId: seed.tripId,
+      groupId: seed.groupId,
+    });
     const conn = await prisma.paymentConnection.findFirstOrThrow({
       where: { userId: mj.id },
     });
