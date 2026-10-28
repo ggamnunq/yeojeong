@@ -1,0 +1,105 @@
+import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
+import { apiFetch, keys } from '../../api'
+import type {
+  CreateTripRequest,
+  CreateTripResponse,
+  EndPreviewResponse,
+  EndTripResponse,
+  InvitePreview,
+  JoinTripResponse,
+  Place,
+  TripInfo,
+  UpdateTripRequest,
+} from './types'
+
+// 여정 생성·참여·여정 정보의 쿼리·뮤테이션(기능명세 6-3). 여정을 바꾸면 keys.trips.detail(tripId)를, 목록이 바뀌면 keys.trips.list를 무효화한다.
+
+/** GET /places?query= (장소 검색 시트) */
+export const placesQuery = (query: string) =>
+  queryOptions({
+    queryKey: keys.places(query),
+    queryFn: ({ signal }) => apiFetch<Place[]>(`/places?query=${encodeURIComponent(query)}`, { signal }),
+    staleTime: 5 * 60_000,
+  })
+
+/** GET /invites/:code. 오류 문구는 화면이 입력란에 보여 준다(silent) */
+export const invitePreviewQuery = (code: string) =>
+  queryOptions({
+    queryKey: keys.invite(code),
+    queryFn: ({ signal }) => apiFetch<InvitePreview>(`/invites/${code}`, { signal }),
+    meta: { silent: true },
+    retry: false,
+    staleTime: 0,
+  })
+
+/** GET /trips/:tripId/end-preview. 종료 다이얼로그를 열기 직전에 받는다 */
+export const endPreviewQuery = (tripId: string) =>
+  queryOptions({
+    queryKey: keys.trips.endPreview(tripId),
+    queryFn: ({ signal }) => apiFetch<EndPreviewResponse>(`/trips/${tripId}/end-preview`, { signal }),
+    staleTime: 0,
+  })
+
+/** POST /trips. 검증 실패는 폼이 fieldErrors로 보여 준다(전역 토스트 없음) */
+export function useCreateTrip() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: CreateTripRequest) => apiFetch<CreateTripResponse>('/trips', { body }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.trips.list }),
+  })
+}
+
+/** POST /invites/:code/join. 오류는 화면이 입력란에 보여 준다 */
+export function useJoinTrip() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (code: string) => apiFetch<JoinTripResponse>(`/invites/${code}/join`, { method: 'POST' }),
+    meta: { silent: true },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.trips.list }),
+  })
+}
+
+/** 여정 응답을 캐시에 넣고(단계가 바뀐 탭으로 바로 이동할 수 있게) 그 여정의 하위 키·목록을 다시 받는다 */
+function useApplyTrip() {
+  const queryClient = useQueryClient()
+  return (trip: TripInfo) => {
+    queryClient.setQueryData(keys.trips.detail(trip.tripId), trip)
+    void queryClient.invalidateQueries({ queryKey: keys.trips.detail(trip.tripId), refetchType: 'none' })
+    void queryClient.invalidateQueries({ queryKey: keys.trips.list })
+  }
+}
+
+/** PATCH /trips/:tripId. 409·403은 화면이 직접 안내한다 */
+export function useUpdateTrip(tripId: string) {
+  const apply = useApplyTrip()
+  return useMutation({
+    mutationFn: (body: UpdateTripRequest) => apiFetch<TripInfo>(`/trips/${tripId}`, { method: 'PATCH', body }),
+    meta: { silent: true },
+    onSuccess: apply,
+  })
+}
+
+/** POST /trips/:tripId/start */
+export function useStartTrip(tripId: string) {
+  const apply = useApplyTrip()
+  return useMutation({
+    mutationFn: (version: number) => apiFetch<TripInfo>(`/trips/${tripId}/start`, { body: { version } }),
+    onSuccess: apply,
+  })
+}
+
+/** POST /trips/:tripId/end */
+export function useEndTrip(tripId: string) {
+  const apply = useApplyTrip()
+  return useMutation({
+    mutationFn: (version: number) => apiFetch<EndTripResponse>(`/trips/${tripId}/end`, { body: { version } }),
+    onSuccess: (result) => apply(result.trip),
+  })
+}
+
+/** DELETE /groups/:groupId (시작 전 · 그룹장) */
+export function useDeleteGroup() {
+  return useMutation({
+    mutationFn: (groupId: string) => apiFetch<void>(`/groups/${groupId}`, { method: 'DELETE' }),
+  })
+}
