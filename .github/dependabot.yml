@@ -8,9 +8,16 @@ updates:
     cooldown:
       default-days: 3
     groups:
+      # vitest와 @vitest/* 는 버전이 맞아야 해서 메이저도 한 PR로 묶는다
+      vitest:
+        patterns: ['vitest', '@vitest/*']
       npm-minor-patch:
         patterns: ['*']
         update-types: [minor, patch]
+    ignore:
+      # Nest CLI가 쓰는 TypeScript 컴파일러 API가 7.0에 없다(7.1에서 복귀 예정). 그때 해제한다.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
     open-pull-requests-limit: 5
 
   - package-ecosystem: github-actions
