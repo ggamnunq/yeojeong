@@ -6,7 +6,6 @@ import type {
   AttemptStatus,
   ConnectionCandidate,
   ConnectionStatus,
-  ConsentDocumentSummary,
   FinConsentId,
   FxRateView,
   PaymentMethodsResponse,
@@ -75,12 +74,6 @@ const DEMO_CANDIDATES: MockCandidate[] = [
   { candidateId: 'cand-kakao-safebox', type: 'ACCOUNT', institutionName: '카카오뱅크', productName: '카카오뱅크 세이프박스', shortLabel: '카카오뱅크 통장', maskedNumber: '3333-**-****821', last4: '821' },
   { candidateId: 'cand-toss-check', type: 'CARD', institutionName: '토스뱅크', productName: '토스뱅크 체크카드', shortLabel: '토스뱅크 체크카드', maskedNumber: '5365-****-****-1934', last4: '1934' },
   { candidateId: 'cand-shinhan', type: 'CARD', institutionName: '신한카드', productName: '신한카드 Deep Dream', shortLabel: '신한카드', maskedNumber: '4518-****-****-1102', last4: '1102' },
-]
-
-const FIN_DOCS: ConsentDocumentSummary[] = [
-  { consentId: 'FIN_LINK', title: '금융정보 연동 약관', required: true, version: '2026-11-01', docUrl: '/terms/fin-link', hasDetail: true, hidden: false, summary: null },
-  { consentId: 'FIN_PRIVACY', title: '금융정보 수집·이용', required: true, version: '2026-11-01', docUrl: '/consents/FIN_PRIVACY', hasDetail: true, hidden: false, summary: null },
-  { consentId: 'THIRD_PARTY', title: '공동 결제 그룹 공개', required: true, version: '2026-11-01', docUrl: '/consents/THIRD_PARTY', hasDetail: true, hidden: false, summary: null },
 ]
 
 /** 통화별 최신 매매기준율(샘플 100엔 = 919.20원) */
@@ -237,6 +230,23 @@ function tripFxView(tripId: string): TripFxView | null {
   }
 }
 
+/** 가입 흐름 시도(auth 목이 만든 attempt-signup-N)는 처음 볼 때 여기 등록한다 */
+function signupAttempt(attemptId: string): MockAttempt | undefined {
+  const state = walletMock()
+  if (!attemptId.startsWith('attempt-signup-') || state.attempts[attemptId]) return undefined
+  const attempt: MockAttempt = {
+    id: attemptId,
+    userId: db.meUserId,
+    purpose: 'SIGNUP',
+    status: 'WAITING',
+    polls: 0,
+    expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    candidates: candidatesFor('SIGNUP'),
+  }
+  state.attempts[attemptId] = attempt
+  return attempt
+}
+
 // ── 핸들러 ────────────────────────────────────────────────────────
 
 export const handlers: HttpHandler[] = [
@@ -253,6 +263,8 @@ export const handlers: HttpHandler[] = [
     }
     state.lastManualSyncAt = Date.now()
     const startedAt = nowKst()
+    const ongoing = db.trips.some((t) => t.status === 'ONGOING' && activeMembership(t.tripId, db.meUserId))
+    if (!ongoing) return HttpResponse.json({ syncRunIds: [], startedAt, skipped: 'NO_ACTIVE_TRIP' }, { status: 202 })
     for (const c of mine) c.lastSyncedAt = startedAt
     return HttpResponse.json({ syncRunIds: mine.map((c) => `sync-${c.id}`), startedAt }, { status: 202 })
   }),
@@ -301,14 +313,14 @@ export const handlers: HttpHandler[] = [
       candidates: candidatesFor(body.purpose),
     }
     state.attempts[id] = attempt
-    // 데모 어댑터: 인증 주소가 곧바로 우리 콜백 → WF-07로 돌아온다. 새 창이면 WF-07이 스스로 닫힌다
-    return HttpResponse.json({ attemptId: id, authUrl: `/wallet/connect/select?attempt=${id}`, expiresAt: attempt.expiresAt }, { status: 201 })
+    // 데모 어댑터는 인증 주소가 곧바로 콜백 → WF-07이다. 목은 빈 창(auth 목과 같음)을 열고 폴링으로 넘어간다
+    return HttpResponse.json({ attemptId: id, authUrl: 'about:blank', expiresAt: attempt.expiresAt }, { status: 201 })
   }),
 
   http.get('/api/payment-connections/attempts/:attemptId', ({ params }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
-    const attempt = walletMock().attempts[String(params.attemptId)]
+    const attempt = signupAttempt(String(params.attemptId)) ?? walletMock().attempts[String(params.attemptId)]
     if (!attempt || attempt.userId !== db.meUserId) return mockError('NOT_FOUND', 404)
     if (attempt.status === 'EXPIRED') return mockError('ATTEMPT_EXPIRED', 410)
     // 데모: 첫 조회는 대기, 다음 조회부터 인증 완료
@@ -319,7 +331,7 @@ export const handlers: HttpHandler[] = [
   http.get('/api/payment-connections/attempts/:attemptId/candidates', ({ params }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
-    const attempt = walletMock().attempts[String(params.attemptId)]
+    const attempt = signupAttempt(String(params.attemptId)) ?? walletMock().attempts[String(params.attemptId)]
     if (!attempt || attempt.userId !== db.meUserId) return mockError('NOT_FOUND', 404)
     if (attempt.status === 'EXPIRED') return mockError('ATTEMPT_EXPIRED', 410)
     if (attempt.status === 'WAITING') attempt.status = 'AUTHORIZED'
@@ -330,7 +342,7 @@ export const handlers: HttpHandler[] = [
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const state = walletMock()
-    const attempt = state.attempts[String(params.attemptId)]
+    const attempt = signupAttempt(String(params.attemptId)) ?? state.attempts[String(params.attemptId)]
     if (!attempt || attempt.userId !== db.meUserId) return mockError('NOT_FOUND', 404)
     if (attempt.status === 'EXPIRED') return mockError('ATTEMPT_EXPIRED', 410)
     const { candidateIds } = (await request.json()) as { candidateIds: string[] }
@@ -377,20 +389,13 @@ export const handlers: HttpHandler[] = [
     })
   }),
 
-  // 금융정보 연동 동의(HF-05b) — W3A 목이 같은 경로를 먼저 받으면 그쪽이 쓰인다(handlers는 파일 이름 순)
-  http.get('/api/consents/documents', ({ request }) => {
-    const stage = new URL(request.url).searchParams.get('stage')
-    if (stage !== 'FIN_LINK') return HttpResponse.json([])
-    return HttpResponse.json(FIN_DOCS)
-  }),
-
+  // 금융정보 연동 동의 저장(지갑 WF-28·42). 가입(WF-05)과 문서 목록은 auth 목이 받는다
   http.post('/api/consents', async ({ request }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const body = (await request.json()) as SaveConsentsRequest
-    const ok = FIN_DOCS.every((doc) =>
-      body.agreements.some((a) => a.consentId === doc.consentId && a.agreed && a.version === doc.version),
-    )
+    const fin: FinConsentId[] = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
+    const ok = fin.every((id) => body.agreements?.some((a) => a.consentId === id && a.agreed && a.version))
     if (!ok) return mockError('TERMS_REQUIRED', 400, undefined, '필수 항목에 동의해 주세요')
     walletMock().finConsent = true
     return HttpResponse.json({ valid: true }, { status: 201 })

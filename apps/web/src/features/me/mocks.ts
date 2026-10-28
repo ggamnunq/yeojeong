@@ -3,17 +3,11 @@ import { db } from '../../mocks/data'
 import { mockError } from '../../mocks/utils'
 import type { DeletionRequestResponse } from './types'
 
-// 로그아웃 · 탈퇴·삭제 요청 코드(FR-106·108). GET /users/me는 core 목이 준다.
+// 탈퇴·삭제 요청 코드(FR-108). GET /users/me는 core 목, POST /auth/logout은 auth 목이 준다.
 // 고객센터 주소는 미정(미결 Q-35) — 서버 env SUPPORT_EMAIL 임시값과 같게 둔다.
 const SUPPORT_EMAIL = 'support@jinyeojeong.com'
 
 export const handlers: HttpHandler[] = [
-  http.post('/api/auth/logout', () => {
-    if (db.session !== 'AUTHENTICATED') return mockError('UNAUTHENTICATED', 401)
-    db.session = 'ANONYMOUS'
-    return new HttpResponse(null, { status: 204 })
-  }),
-
   // 재동의 전에도 부를 수 있다(서버 @SkipConsentCheck)
   http.post('/api/users/me/deletion-request', () => {
     if (db.session !== 'AUTHENTICATED') return mockError('UNAUTHENTICATED', 401)

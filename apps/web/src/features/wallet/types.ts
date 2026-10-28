@@ -57,6 +57,8 @@ export interface PaymentMethodsResponse {
 export interface ManualSyncResponse {
   syncRunIds: string[]
   startedAt: string
+  /** 진행 중 여정이 없으면 동기화하지 않는다(시각 그대로) */
+  skipped?: 'NO_ACTIVE_TRIP'
 }
 
 // ── 토스 연결 ────────────────────────────────────────────────────

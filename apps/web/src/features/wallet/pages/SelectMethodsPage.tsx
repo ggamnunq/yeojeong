@@ -5,9 +5,9 @@ import { isApiError, keys } from '../../../api'
 import { paths, safeReturnTo } from '../../../app/paths'
 import { LoadingScreen } from '../../../app/states'
 import { Checkbox, Icon, ShellOnboarding } from '../../../ds'
-import { toast } from '../../../notifications'
 import { attemptQuery, candidatesQuery, confirmConnection } from '../api'
 import { connectPath, external, originPath, readAttemptContext, writeAttemptContext } from '../connect'
+import { displayMaskedNumber } from '../format'
 import type { ConnectionCandidate } from '../types'
 
 /** WF-07 불러올 계좌·카드. 후보를 계좌 → 카드로 묶어 체크하고 "{n}개 연결" */
@@ -27,7 +27,9 @@ function SelectMethods({ attemptId, returnTo }: { attemptId: string; returnTo: s
   const candidates = useQuery(candidatesQuery(attemptId))
   const [picked, setPicked] = useState<ReadonlySet<string> | null>(null)
   const selected = picked ?? new Set(candidates.data?.filter((c) => c.preselected).map((c) => c.candidateId))
-  const origin = originPath(purpose)
+  const origin = originPath(purpose, context.from)
+  // 시도가 만료(410)되면 WF-06이 "연결 시간이 지났어요" + 「다시 연결」을 보여 준다
+  const toExpired = () => navigate(connectPath('toss', attemptId, { returnTo }), { replace: true })
 
   // 인증 창(새 창)이 콜백으로 여기 돌아왔으면 닫는다. 원래 탭이 폴링으로 이 화면을 이어 연다
   useEffect(() => {
@@ -37,9 +39,8 @@ function SelectMethods({ attemptId, returnTo }: { attemptId: string; returnTo: s
   const failed = isApiError(candidates.error) ? candidates.error.status : null
   useEffect(() => {
     if (failed === null) return
-    if (failed === 410) toast.error('다시 시도해 주세요')
-    navigate(origin, { replace: true })
-  }, [failed, origin, navigate])
+    navigate(failed === 410 ? connectPath('toss', attemptId, { returnTo }) : origin, { replace: true })
+  }, [failed, origin, navigate, attemptId, returnTo])
 
   const confirm = useMutation({
     mutationFn: (candidateIds: string[]) => confirmConnection(attemptId, { candidateIds }),
@@ -51,7 +52,7 @@ function SelectMethods({ attemptId, returnTo }: { attemptId: string; returnTo: s
       navigate(connectPath('done', attemptId, { returnTo }), { replace: true })
     },
     onError: (error) => {
-      if (isApiError(error) && error.status === 410) navigate(origin, { replace: true })
+      if (isApiError(error) && error.status === 410) toExpired()
     },
   })
 
@@ -128,7 +129,7 @@ function CandidateGroup({ title, items, selected, onToggle }: CandidateGroupProp
               </span>
               <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="truncate text-body-m-strong text-primary">{c.productName}</span>
-                <span className="truncate text-caption text-tertiary">{c.maskedNumber}</span>
+                <span className="truncate text-caption text-tertiary">{displayMaskedNumber(c.type, c.maskedNumber)}</span>
               </span>
             </span>
           }

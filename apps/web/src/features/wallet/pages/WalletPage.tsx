@@ -5,7 +5,7 @@ import { Link } from 'react-router'
 import { isApiError, keys } from '../../../api'
 import { paths } from '../../../app/paths'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
-import { useCurrentTrip } from '../../../app/trip'
+import { useCurrentTrip, useMyTrips } from '../../../app/trip'
 import {
   BottomSheet,
   Callout,
@@ -20,8 +20,8 @@ import {
 import { focusRing } from '../../../ds/styles'
 import { paymentMethodsQuery, requestSync, tripFxQuery } from '../api'
 import { RemoveMethodFlow } from '../components/RemoveMethodFlow'
-import { FinConsentSheet } from '../consent'
-import { formatFxLabel, formatKstTime, formatSyncedAt } from '../format'
+import { FinConsentSheet } from '../../auth/components/FinConsentSheet'
+import { displayMaskedNumber, formatFxLabel, formatKstTime, formatSyncedAt } from '../format'
 import type { PaymentMethodsResponse, PaymentMethodView } from '../types'
 import { useBack } from '../useBack'
 import { useTossConnect } from '../useTossConnect'
@@ -52,15 +52,18 @@ function WalletContent({ data }: { data: PaymentMethodsResponse }) {
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [menuFor, setMenuFor] = useState<PaymentMethodView | null>(null)
-  const addConnect = useTossConnect({ screen: 'WF-28' })
-  const reconnect = useTossConnect({ screen: 'WF-42' })
+  const connect = useTossConnect()
 
   const expiredConnection = data.connections.find((c) => c.status === 'EXPIRED')
+  // 동기화 대상은 진행 중 여정이 있는 사용자뿐이라 없으면 새로고침을 숨긴다(확정 명세)
+  const myTrips = useMyTrips()
+  const hasOngoingTrip = myTrips.data?.items.some((t) => t.status === 'ONGOING') ?? false
   const sync = useMutation({
     mutationFn: async () => {
       const before = data.lastSyncedAt
       try {
-        await requestSync()
+        const started = await requestSync()
+        if (started.skipped) return
       } catch (error) {
         // 60초 제한(429)·만료(409)·제공자 장애: 토스트 없이 목록만 다시 받는다(FR-402)
         if (isApiError(error) && error.status === 401) throw error
@@ -90,8 +93,8 @@ function WalletContent({ data }: { data: PaymentMethodsResponse }) {
             tone="disconnected"
             style="tone"
             label="토스 연결 만료"
-            disabled={reconnect.isPending}
-            onClick={() => reconnect.start({ purpose: 'RECONNECT', reconnectConnectionId: expiredConnection.id })}
+            disabled={connect.isPending}
+            onClick={() => connect.start({ purpose: 'RECONNECT', reconnectConnectionId: expiredConnection.id })}
           />
         </div>
       )}
@@ -109,7 +112,7 @@ function WalletContent({ data }: { data: PaymentMethodsResponse }) {
           {!empty && data.lastSyncedAt && (
             <div className="flex items-center gap-0.5">
               <span className="text-caption text-tertiary">{formatSyncedAt(data.lastSyncedAt)}</span>
-              {!expiredConnection && (
+              {!expiredConnection && hasOngoingTrip && (
                 <IconButton
                   size="s"
                   icon="refresh"
@@ -134,14 +137,14 @@ function WalletContent({ data }: { data: PaymentMethodsResponse }) {
                   type="value"
                   leadingIcon={method.type === 'CARD' ? 'card' : 'bank'}
                   title={method.productName}
-                  subtitle={method.maskedNumber}
+                  subtitle={displayMaskedNumber(method.type, method.maskedNumber)}
                   className="opacity-40"
                 />
               ) : (
                 <RowAccount
                   type={method.type === 'CARD' ? 'card' : 'bank'}
                   name={method.productName}
-                  masked={method.maskedNumber}
+                  masked={displayMaskedNumber(method.type, method.maskedNumber)}
                   moreLabel={`${method.productName} 더 보기`}
                   onMoreClick={() => setMenuFor(method)}
                 />
@@ -161,10 +164,10 @@ function WalletContent({ data }: { data: PaymentMethodsResponse }) {
         title="계좌·카드 추가"
         cta={{
           label: '연결',
-          disabled: addConnect.isPending,
+          disabled: connect.isPending,
           onClick: () => {
             setAdding(false)
-            addConnect.start({ purpose: 'WALLET_ADD' })
+            connect.start({ purpose: 'WALLET_ADD' })
           },
         }}
       >
@@ -176,8 +179,7 @@ function WalletContent({ data }: { data: PaymentMethodsResponse }) {
         isLastOfConnection={menuFor ? lastOfConnection(menuFor) : false}
         onClose={() => setMenuFor(null)}
       />
-      <FinConsentSheet {...addConnect.consentSheet} />
-      <FinConsentSheet {...reconnect.consentSheet} />
+      {connect.consentSheet && <FinConsentSheet {...connect.consentSheet} />}
     </>
   )
 }

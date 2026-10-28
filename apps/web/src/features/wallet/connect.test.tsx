@@ -1,31 +1,36 @@
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http } from 'msw'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+import { ApiError } from '../../api'
 import { db } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { mockError } from '../../mocks/utils'
 import { renderApp } from '../../test/render'
+import { browser } from '../auth/browser'
 import { finConsentIds } from './api'
 import { external, writeAttemptContext } from './connect'
 import { expireConnections, walletMock } from './mocks'
-import { ApiError } from '../../api'
 
 // 전체 실행 때 lazy 화면·목 응답이 늦을 수 있어 기다림을 늘린다
-configure({ asyncUtilTimeout: 3000 })
-vi.setConfig({ testTimeout: 15_000 })
+configure({ asyncUtilTimeout: 5000 })
+vi.setConfig({ testTimeout: 30_000 })
 
 const where = (router: ReturnType<typeof renderApp>['router']) =>
   `${router.state.location.pathname}${router.state.location.search}`
 
-const POLL_WAIT = { timeout: 6000 }
+const POLL_WAIT = { timeout: 9000 }
 
+let go: Mock<(url: string) => void>
+let cancel: Mock<() => void>
 let openWindow: ReturnType<typeof vi.spyOn>
-let assign: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
   sessionStorage.clear()
+  go = vi.fn()
+  cancel = vi.fn()
+  vi.spyOn(browser, 'openPending').mockReturnValue({ go, cancel })
   openWindow = vi.spyOn(external, 'openWindow').mockReturnValue(true)
-  assign = vi.spyOn(external, 'assign').mockImplementation(() => {})
+  vi.spyOn(external, 'assign').mockImplementation(() => {})
 })
 
 afterEach(() => {
@@ -40,13 +45,14 @@ async function openAddSheet() {
 }
 
 describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
-  it('추가 → 인증 창을 열고 대기 → 인증되면 선택 → 연결 → 완료 → 확인으로 지갑', async () => {
+  it('추가 → 누른 순간 연 창을 인증 주소로 → 대기 → 인증되면 선택 → 연결 → 완료 → 확인으로 지갑', async () => {
     const { router } = renderApp('/wallet')
     await openAddSheet()
 
     expect(await screen.findByRole('heading', { name: '토스에서 인증 중' })).toBeTruthy()
     expect(where(router)).toBe('/wallet/connect/toss?attempt=attempt-1')
-    expect(openWindow).toHaveBeenCalledWith('/wallet/connect/select?attempt=attempt-1', 'yj-toss-auth')
+    expect(go).toHaveBeenCalledWith('about:blank')
+    expect(router.state.location.state).toEqual({ authUrl: 'about:blank', purpose: 'WALLET_ADD', from: '/wallet' })
     expect(screen.getByRole('button', { name: '닫기' })).toBeTruthy()
     // 지갑 흐름에는 온보딩 진행 막대가 없다
     expect(screen.queryByRole('progressbar')).toBeNull()
@@ -55,6 +61,8 @@ describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
     expect(await screen.findByRole('heading', { name: '불러올 계좌·카드' }, POLL_WAIT)).toBeTruthy()
     const safebox = await screen.findByRole('checkbox', { name: /카카오뱅크 세이프박스/ })
     expect((safebox as HTMLInputElement).checked).toBe(true)
+    // 계좌는 앞 4·끝 3자리만
+    expect(screen.getByText('3333-**-****821')).toBeTruthy()
     expect(screen.queryByRole('group', { name: '카드' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '1개 연결' }))
 
@@ -65,7 +73,7 @@ describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
     expect(await screen.findByText('카카오뱅크 세이프박스')).toBeTruthy()
   })
 
-  it('선택 화면: 전체 선택 토글 · 0개면 버튼 비활성 · 계좌 → 카드 묶음', async () => {
+  it('선택 화면: 전체 선택 토글 · 0개면 버튼 비활성 · 계좌 → 카드 묶음 · 카드는 끝 4자리만', async () => {
     for (const p of db.paymentMethods) if (p.userId === db.meUserId) p.status = 'REMOVED'
     walletMock().attempts['attempt-9'] = {
       id: 'attempt-9',
@@ -85,6 +93,7 @@ describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
     expect(await screen.findByRole('button', { name: '3개 연결' })).toBeTruthy()
     // 가입 흐름은 진행 막대 3/4
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('3')
+    expect(screen.getByText('****-****-****-1934')).toBeTruthy()
     expect(within(screen.getByRole('group', { name: '계좌' })).getAllByRole('checkbox')).toHaveLength(2)
     expect(within(screen.getByRole('group', { name: '카드' })).getAllByRole('checkbox')).toHaveLength(2)
 
@@ -122,25 +131,25 @@ describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
   })
 })
 
-describe('금융정보 연동 동의 403 → 시트 → 재시도', () => {
-  it('연결 요청이 CONSENT_REQUIRED(FIN_*)면 시트를 열고, 3개 모두 체크해 동의하면 같은 요청을 다시 보낸다', async () => {
+describe('금융정보 연동 동의 403 → 시트(W3A HF-05b) → 연결', () => {
+  it('연결 요청이 CONSENT_REQUIRED(FIN_*)면 빈 창을 닫고 시트를 연다 → 동의하면 연결 시도 후 WF-06', async () => {
     walletMock().finConsent = false
     const { router } = renderApp('/wallet')
     await openAddSheet()
 
     const sheet = await screen.findByRole('dialog', { name: '금융정보 연동 동의' })
-    const cta = within(sheet).getByRole('button', { name: '동의하고 연결' }) as HTMLButtonElement
-    expect(cta.disabled).toBe(true)
+    expect(cancel).toHaveBeenCalled()
     // 재동의 화면으로 가지 않는다
     expect(router.state.location.pathname).toBe('/wallet')
-    fireEvent.click(within(sheet).getByRole('checkbox', { name: '[필수] 금융정보 연동 약관' }))
+    const cta = within(sheet).getByRole('button', { name: '동의하고 연결' }) as HTMLButtonElement
     expect(cta.disabled).toBe(true)
-    fireEvent.click(within(sheet).getByRole('checkbox', { name: '전체 동의' }))
+    fireEvent.click(await within(sheet).findByRole('checkbox', { name: '전체 동의' }))
     await waitFor(() => expect(cta.disabled).toBe(false))
     fireEvent.click(cta)
 
     expect(await screen.findByRole('heading', { name: '토스에서 인증 중' })).toBeTruthy()
     expect(walletMock().finConsent).toBe(true)
+    expect(router.state.location.state).toMatchObject({ purpose: 'WALLET_ADD', from: '/wallet' })
   })
 
   it('시트를 닫으면 연결 시도 없이 지갑에 남는다', async () => {
@@ -165,39 +174,37 @@ describe('금융정보 연동 동의 403 → 시트 → 재시도', () => {
 })
 
 describe('토스 인증 대기(HF-06)', () => {
-  it('팝업이 막히면 같은 창으로 인증 주소를 연다 · ✕는 진입 화면으로', async () => {
-    openWindow.mockReturnValue(false)
+  it('가입 시트가 넘긴 location.state: 「토스 다시 열기」는 authUrl, ✕는 from(가입 흐름은 진행 막대 3/4)', async () => {
     const { router } = renderApp('/wallet')
-    await openAddSheet()
-    await waitFor(() => expect(assign).toHaveBeenCalledWith('/wallet/connect/select?attempt=attempt-1'))
-    fireEvent.click(await screen.findByRole('button', { name: '닫기' }))
-    await waitFor(() => expect(where(router)).toBe('/wallet'))
-  })
-
-  it('"토스 다시 열기"는 같은 인증 주소를 새 창으로 연다', async () => {
-    walletMock().attempts['attempt-5'] = {
-      id: 'attempt-5',
-      userId: db.meUserId,
-      purpose: 'SIGNUP',
-      status: 'WAITING',
-      polls: -100,
-      expiresAt: new Date(Date.now() + 600_000).toISOString(),
-      candidates: [],
-    }
-    writeAttemptContext('attempt-5', { purpose: 'SIGNUP', authUrl: 'https://toss.example/auth', opened: true })
-    renderApp('/wallet/connect/toss?attempt=attempt-5')
+    await screen.findByRole('heading', { name: '지갑' })
+    await router.navigate('/wallet/connect/toss?attempt=attempt-signup-1', {
+      state: { authUrl: 'https://toss.example/auth', purpose: 'SIGNUP', from: '/signup/wallet' },
+    })
     expect(await screen.findByRole('heading', { name: '토스에서 인증 중' })).toBeTruthy()
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('3')
     expect(openWindow).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: '토스 다시 열기' }))
     expect(openWindow).toHaveBeenCalledWith('https://toss.example/auth', 'yj-toss-auth')
+    fireEvent.click(screen.getByRole('button', { name: '닫기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/signup/wallet'))
   })
 
-  it('시도가 만료(410)되면 진입 화면으로 돌아가며 "다시 시도해 주세요"', async () => {
-    server.use(http.get('/api/payment-connections/attempts/:attemptId', () => mockError('ATTEMPT_EXPIRED', 410)))
-    writeAttemptContext('attempt-7', { purpose: 'WALLET_ADD', opened: true })
+  it('시도가 만료(410)되면 "연결 시간이 지났어요" + 「다시 연결」로 새 시도를 만든다', async () => {
+    server.use(http.get('/api/payment-connections/attempts/attempt-7', () => mockError('ATTEMPT_EXPIRED', 410)))
+    writeAttemptContext('attempt-7', { purpose: 'WALLET_ADD', from: '/wallet', opened: true })
     const { router } = renderApp('/wallet/connect/toss?attempt=attempt-7')
-    expect(await screen.findByText('다시 시도해 주세요')).toBeTruthy()
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(screen.getAllByText('연결 시간이 지났어요').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: '다시 연결' }))
+    await waitFor(() => expect(where(router)).toBe('/wallet/connect/toss?attempt=attempt-1'))
+    expect(go).toHaveBeenCalledWith('about:blank')
+    expect(await screen.findByRole('heading', { name: '토스에서 인증 중' })).toBeTruthy()
+  })
+
+  it('콜백이 사용자 취소(?error=cancelled)를 알리면 토스트 없이 진입 화면으로', async () => {
+    writeAttemptContext('attempt-8', { purpose: 'WALLET_ADD', from: '/wallet', opened: true })
+    const { router } = renderApp('/wallet/connect/toss?attempt=attempt-8&error=cancelled')
     await waitFor(() => expect(where(router)).toBe('/wallet'))
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

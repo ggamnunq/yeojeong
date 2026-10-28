@@ -45,3 +45,22 @@ export const formatFxLabel = (displayUnit: number, currencyNameKo: string, displ
 export function formatMethodCounts(accounts: number, cards: number): string {
   return [accounts > 0 && `계좌 ${accounts}`, cards > 0 && `카드 ${cards}`].filter(Boolean).join(' · ')
 }
+
+/**
+ * 결제수단 번호 표시(확정 규칙): 계좌는 앞 4·끝 3자리, 카드는 끝 4자리만 보인다. 나머지 숫자는 *.
+ * 서버가 이미 마스킹해 주지만(카드 앞 4자리 포함 "5365-****-****-1934") 화면에서 한 번 더 규칙대로 가린다.
+ * "5365-****-****-1934" → "****-****-****-1934", "3333-01-2345821" → "3333-**-****821"
+ */
+export function displayMaskedNumber(type: 'ACCOUNT' | 'CARD', masked: string): string {
+  const slots = [...masked].filter((ch) => /[\d*]/.test(ch)).length
+  const head = type === 'ACCOUNT' ? 4 : 0
+  const tail = type === 'ACCOUNT' ? 3 : 4
+  let seen = 0
+  return [...masked]
+    .map((ch) => {
+      if (!/[\d*]/.test(ch)) return ch
+      seen += 1
+      return seen <= head || seen > slots - tail ? ch : '*'
+    })
+    .join('')
+}

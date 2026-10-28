@@ -1,6 +1,6 @@
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { db, TRIP } from '../../../mocks/data'
+import { db, findTrip, TRIP } from '../../../mocks/data'
 import { renderApp } from '../../../test/render'
 import { expireConnections, walletMock } from '../mocks'
 
@@ -16,9 +16,10 @@ describe('지갑(HF-27)', () => {
     expect(await screen.findByRole('heading', { name: '지갑' })).toBeTruthy()
     await screen.findByText('토스뱅크 통장')
     expect(methodNames()).toEqual([
-      '토스뱅크 통장1000-12**-**21',
-      '토스뱅크 체크카드5365-****-****-1934',
-      '신한카드 Deep Dream4518-****-****-1102',
+      // 계좌는 앞 4·끝 3자리, 카드는 끝 4자리만
+      '토스뱅크 통장1000-****-**21',
+      '토스뱅크 체크카드****-****-****-1934',
+      '신한카드 Deep Dream****-****-****-1102',
     ])
     expect(screen.getByText('18:32 동기화')).toBeTruthy()
     expect(screen.getByRole('button', { name: '계좌·카드 추가' })).toBeTruthy()
@@ -38,9 +39,16 @@ describe('지갑(HF-27)', () => {
   it('새로고침 → 동기화 시각이 바뀐다(FR-402)', async () => {
     renderApp('/wallet')
     await screen.findByText('18:32 동기화')
-    fireEvent.click(screen.getByRole('button', { name: '동기화' }))
+    fireEvent.click(await screen.findByRole('button', { name: '동기화' }))
     await waitFor(() => expect(screen.queryByText('18:32 동기화')).toBeNull())
     expect(screen.getByText(/^\d{2}:\d{2} 동기화$/)).toBeTruthy()
+  })
+
+  it('진행 중 여정이 없으면 새로고침을 숨긴다(동기화 대상이 아니다)', async () => {
+    findTrip(TRIP.osaka)!.status = 'ENDED'
+    renderApp('/wallet')
+    expect(await screen.findByText('18:32 동기화')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByRole('button', { name: '동기화' })).toBeNull())
   })
 
   it('연결 0개면 빈 상태와 추가 행, 동기화 시각은 없다', async () => {
