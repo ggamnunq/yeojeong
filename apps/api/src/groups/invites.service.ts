@@ -62,7 +62,8 @@ export class InvitesService {
 
   /**
    * Trip 행을 잠근 뒤 조건을 다시 보고 joinOrder = max + 1을 준다(동시 참여 순서 보장, 기능명세 8-3).
-   * 자진 이탈자는 같은 행을 되살린다(joinOrder 유지, 미결 Q-09 추천안). 강퇴자는 다시 참여할 수 없다.
+   * 자진 이탈자는 같은 행을 되살리되 joinOrder는 재참여 시각 기준 맨 뒤로 다시 매긴다(Q-09 확정).
+   * 강퇴자는 다시 참여할 수 없다(403 MEMBER_KICKED).
    */
   async join(
     code: string,
@@ -101,8 +102,15 @@ export class InvitesService {
 
         // 참여 전에 생긴 1회성 이벤트(승계 등)는 보여 주지 않는다
         const lastSeenTripEventSeq = await lastTripEventSeq(tx, locked.id);
+        // 새 참여도 재참여도 맨 뒤 순서(나간 행 포함 max + 1). 승계·목록 순서·이니셜 색이 이 값을 따른다
+        const max = await tx.membership.aggregate({
+          where: { groupId: group.id },
+          _max: { joinOrder: true },
+        });
+        const joinOrder = (max._max.joinOrder ?? 0) + 1;
         let membershipId: string;
         if (existing) {
+          // 같은 행을 되살려 이전 결제·부담·정산 기록(membershipId 참조)은 그대로 이어진다
           await tx.membership.update({
             where: { id: existing.id },
             data: {
@@ -110,22 +118,19 @@ export class InvitesService {
               leaveReason: null,
               kickedByMembershipId: null,
               role: 'MEMBER',
+              joinOrder,
               joinedAt: now,
               lastSeenTripEventSeq,
             },
           });
           membershipId = existing.id;
         } else {
-          const max = await tx.membership.aggregate({
-            where: { groupId: group.id },
-            _max: { joinOrder: true },
-          });
           const created = await tx.membership.create({
             data: {
               groupId: group.id,
               userId: user.id,
               role: 'MEMBER',
-              joinOrder: (max._max.joinOrder ?? 0) + 1,
+              joinOrder,
               joinedAt: now,
               lastSeenTripEventSeq,
             },

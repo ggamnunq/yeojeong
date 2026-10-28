@@ -274,7 +274,7 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       .expect(204);
     expect((await detail(taehyun, created.tripId)).unseenEvents).toEqual([]);
 
-    // 자진 이탈자 재참여: 같은 행, joinOrder 유지, 참여 전 토스트는 안 보임
+    // 자진 이탈자 재참여: 같은 행(membershipId 유지), joinOrder는 맨 뒤(강퇴된 수빈 4 다음 5), 참여 전 토스트는 안 보임
     const junyongMembershipId = mine.me.membershipId;
     await join(junyong, created.inviteCode).expect(201);
     mine = await detail(junyong, created.tripId);
@@ -282,10 +282,11 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       membershipId: junyongMembershipId,
       role: 'MEMBER',
     });
-    expect(mine.members.find((m) => m.isMe)).toMatchObject({
-      joinOrder: 1,
-      role: 'MEMBER',
-    });
+    expect(mine.members.map((m) => [m.nickname, m.joinOrder])).toEqual([
+      ['민지', 2],
+      ['태현', 3],
+      ['준용', 5],
+    ]);
     expect(mine.unseenEvents).toEqual([]);
     expect(
       ctx.events.filter((e) => e.name === 'membership.joined').at(-1)?.payload,
@@ -525,6 +526,55 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
     });
     // 그룹장이 먼저 잠그면 b → c 두 번 승계, b가 먼저면 a → c 한 번
     expect(events).toBeGreaterThanOrEqual(1);
+  });
+
+  it('puts a rejoining member at the back of the succession order (Q-09)', async () => {
+    const [a, b, c] = await Promise.all(
+      ['일', '이', '삼'].map((n) => ctx.addUser(n)),
+    );
+    const { inviteCode, groupId } = await createTrip(a);
+    await join(b, inviteCode).expect(201);
+    await join(c, inviteCode).expect(201);
+    const before = await ctx.prisma.membership.findFirstOrThrow({
+      where: { groupId, userId: b.id },
+      select: { id: true, joinOrder: true },
+    });
+    expect(before.joinOrder).toBe(2);
+
+    // b가 나갔다가 다시 들어오면 같은 행, joinOrder는 4(맨 뒤)
+    await request(server())
+      .post(`/api/groups/${groupId}/leave`)
+      .set(ctx.auth.headers(b))
+      .expect(200);
+    await join(b, inviteCode).expect(201);
+    const after = await ctx.prisma.membership.findFirstOrThrow({
+      where: { groupId, userId: b.id },
+      select: { id: true, joinOrder: true, leftAt: true },
+    });
+    expect(after).toEqual({ id: before.id, joinOrder: 4, leftAt: null });
+
+    // 그룹장이 나가면 재참여자(b)가 아니라 원래 다음 멤버(c)가 승계
+    const leave = await request(server())
+      .post(`/api/groups/${groupId}/leave`)
+      .set(ctx.auth.headers(a))
+      .expect(200);
+    expect(leave.body.newLeader).toMatchObject({
+      nickname: '삼',
+      joinOrder: 3,
+    });
+    const members = await request(server())
+      .get(`/api/groups/${groupId}/members`)
+      .set(ctx.auth.headers(b))
+      .expect(200);
+    expect(
+      members.body.map((m: { nickname: string; role: string }) => [
+        m.nickname,
+        m.role,
+      ]),
+    ).toEqual([
+      ['삼', 'LEADER'],
+      ['이', 'MEMBER'],
+    ]);
   });
 
   it('caps the group at 20 active members', async () => {

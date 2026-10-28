@@ -61,7 +61,7 @@ export interface MembershipJoinedEvent extends OrderedEvent {
   membershipId: string;
   userId: string;
   joinedAt: Date;
-  /** 자진 이탈 후 같은 행을 되살린 재참여(미결 Q-09) */
+  /** 자진 이탈 후 같은 행을 되살린 재참여(Q-09). membershipId는 예전과 같고 joinOrder는 맨 뒤로 바뀐다 */
   rejoined: boolean;
   /** 참여 시점 여정 단계 */
   tripStatus: TripStatus;
