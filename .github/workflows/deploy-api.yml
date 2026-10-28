@@ -33,6 +33,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # 마이그레이션용 Prisma CLI. 설치 스크립트가 클라우드 자격 증명을 보지 않도록 인증 전에 설치한다.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @yeojeong/api...
+
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
@@ -47,6 +55,22 @@ jobs:
         run: |
           gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
           docker push "$IMAGE"
+
+      # 배포 SA는 이 시크릿 하나만 읽을 수 있다. 값은 로그에서 자동으로 가려진다.
+      - id: db
+        uses: google-github-actions/get-secretmanager-secrets@bc9c54b29fdffb8a47776820a7d26e77b379d262 # v3.0.0
+        with:
+          secrets: |-
+            direct_url:${{ vars.GCP_PROJECT_ID }}/yeojeong-direct-url
+
+      # 새 리비전보다 먼저 적용한다. 실패하면 배포하지 않는다.
+      # 그 사이 옛 코드가 새 스키마 위에서 돌므로 마이그레이션은 하위 호환이어야 한다(apps/api/prisma/README.md).
+      - name: Migrate database
+        env:
+          DIRECT_URL_RAW: ${{ steps.db.outputs.direct_url }}
+        run: |
+          apps/api/scripts/prisma-prod.sh migrate deploy
+          apps/api/scripts/prisma-prod.sh migrate status
 
       - name: Deploy to Cloud Run
         run: |

@@ -61,3 +61,11 @@ resource "google_service_account_iam_member" "api_deployer_act_as_runtime" {
   role               = "roles/iam.serviceAccountUser"
   member             = google_service_account.api_deployer.member
 }
+
+# 배포 직전에 Prisma 마이그레이션을 돌리기 위한 세션 풀러 연결 정보. 이 시크릿 하나만 읽는다.
+# 런타임 연결(database_url)이나 origin_secret은 읽지 못한다.
+resource "google_secret_manager_secret_iam_member" "api_deployer_direct_url" {
+  secret_id = google_secret_manager_secret.this["direct_url"].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = google_service_account.api_deployer.member
+}

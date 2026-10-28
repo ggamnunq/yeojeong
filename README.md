@@ -99,7 +99,8 @@ terraform apply
 Supabase 프로젝트는 대시보드에서 만든 것을 `terraform import supabase_project.prod <project ref>`로 가져왔습니다. DB 비밀번호는 Terraform이 만든 값으로 바뀌어 state와 Secret Manager에만 있습니다.
 
 - 런타임 연결(`yeojeong-database-url`): Supavisor transaction 모드(6543)이고, Supabase CA로 인증서를 검증(`sslmode=verify-full`)합니다.
-- 마이그레이션용 연결(`yeojeong-direct-url`): session 모드(5432)입니다.
+- 마이그레이션용 연결(`yeojeong-direct-url`): session 모드(5432)입니다. API 배포 워크플로가 Cloud Run 배포 전에 이 연결로 마이그레이션을 적용하며, 배포 서비스 계정은 이 시크릿만 읽을 수 있습니다.
+- 마이그레이션 작성법, 하위 호환 규칙, 롤백, 운영 수동 실행은 [apps/api/prisma/README.md](apps/api/prisma/README.md)를 참고하세요.
 - Supabase Data API는 꺼 두었고, SSL 연결만 받으며, Supabase Auth 가입도 막혀 있습니다.
 
 ### 배포
