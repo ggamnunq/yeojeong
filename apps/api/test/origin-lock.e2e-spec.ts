@@ -1,5 +1,6 @@
 import { Controller, Get, Req } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { ERRORS } from '@yeojeong/shared';
 import type { Request } from 'express';
 import request from 'supertest';
 import { StrictThrottle } from './../src/common/throttle.js';
@@ -39,7 +40,11 @@ describe('Origin lock (e2e)', () => {
       const res = await request(app.getHttpServer())
         .get('/api/health')
         .expect(403);
-      expect(res.body).toEqual({ statusCode: 403, message: 'Forbidden' });
+      expect(res.body).toEqual({
+        code: 'FORBIDDEN',
+        message: ERRORS.FORBIDDEN.message,
+        requestId: res.headers['x-request-id'],
+      });
     });
 
     it('rejects a wrong secret', () => {

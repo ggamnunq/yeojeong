@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { ERRORS } from '@yeojeong/shared';
 import { IsString, MaxLength } from 'class-validator';
 import request from 'supertest';
 import { StrictThrottle } from './../src/common/throttle.js';
@@ -97,9 +98,11 @@ describe('Security baseline (e2e)', () => {
         .get('/api/security-probe/boom')
         .expect(500);
       expect(res.body).toEqual({
-        statusCode: 500,
-        message: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+        message: ERRORS.INTERNAL_ERROR.message,
+        requestId: res.headers['x-request-id'],
       });
+      expectNoLeak(res.text);
     });
 
     it('rejects malformed JSON without a stack trace', async () => {

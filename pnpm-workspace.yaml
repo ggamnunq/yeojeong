@@ -3,6 +3,8 @@ packages:
   - packages/*
 allowBuilds:
   '@prisma/engines': true
+  # swagger-ui-dist가 끌고 오는 사용 통계 전송 스크립트
+  '@scarf/scarf': false
   esbuild: false
   prisma: true
   workerd: false

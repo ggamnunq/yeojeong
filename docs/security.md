@@ -21,8 +21,9 @@
   - 클라이언트가 보낸 `X-Forwarded-For`, `X-Client-IP`, `X-Real-IP` 등은 Worker가 버린다. `CF-Connecting-IP`를 직접 보내면 Cloudflare가 요청을 거부한다.
   - `ORIGIN_SECRET` 없이 띄우면 예전처럼 trust proxy(Cloud Run 1단계, 로컬 0단계)로 판단한다.
 - **CORS**: 운영은 화면과 API가 같은 origin이라 CORS를 쓰지 않는다(`WEB_ORIGIN` 비움). 다른 origin에서 불러야 할 때만 `WEB_ORIGIN`에 정확한 origin을 적는다. 와일드카드나 경로가 붙은 값은 서버가 시작할 때 오류를 낸다.
-- **에러 응답**: 500 응답은 `Internal server error`만 돌려준다. 스택은 서버 로그에만 남긴다.
-- 위 내용은 `test/security.e2e-spec.ts`와 `test/origin-lock.e2e-spec.ts`로 확인한다.
+- **에러 응답**: 모든 에러는 `{ code, message, details?, requestId }` 형식이다. 500은 일반 문구만 돌려주고, 스택·내부 메시지·DB 오류는 서버 로그에만 남긴다(`apps/api/README.md`).
+- **로그**: 요청마다 method·path(쿼리 제외)·status·소요 시간·요청 ID·IP·user-agent만 남긴다. 본문과 헤더는 남기지 않고, 인증 헤더와 쿠키는 redact한다. 요청 ID는 서버가 만들고 클라이언트가 보낸 `x-request-id`는 믿지 않는다.
+- 위 내용은 `apps/api/test/`의 e2e 테스트(security, origin-lock, errors, logging)로 확인한다.
 
 ### 화면 (`apps/web`)
 
@@ -93,6 +94,7 @@
   - 카드번호, 계좌번호, 거래 내역
   - 이메일, 전화번호
   - 토큰
+- 금융·개인정보는 로그에 남기지 않는다. 필요하면 ID만 남기고, 요청 본문·쿼리스트링·DB 오류의 입력값을 객체째 로그에 넣지 않는다.
 - 카드번호와 계좌번호는 화면에서 마스킹한다.
 - 금융기관 접근 토큰은 3단계(금융 연동)에서 Cloud KMS 등으로 암호화해 저장한다. 평문으로 저장하지 않는다.
 - Supabase Data API(PostgREST)는 꺼 둔 상태다. DB에는 API 서버를 통해서만 접근한다.

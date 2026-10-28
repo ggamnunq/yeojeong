@@ -1,6 +1,8 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
+import { ERRORS, type ApiErrorBody } from '@yeojeong/shared';
 import type { NextFunction, Request, Response } from 'express';
+import { getRequestId } from './logging/request-id.js';
 
 const AUTH_HEADER = 'x-origin-auth';
 const CLIENT_IP_HEADER = 'x-client-ip';
@@ -23,7 +25,14 @@ export function originLock(secret: string) {
       typeof provided !== 'string' ||
       !timingSafeEqual(digest(provided), expected)
     ) {
-      res.status(403).json({ statusCode: 403, message: 'Forbidden' });
+      // Nest 밖의 미들웨어라 전역 필터를 거치지 않으므로 같은 형식으로 직접 쓴다
+      const body: ApiErrorBody = {
+        code: 'FORBIDDEN',
+        message: ERRORS.FORBIDDEN.message,
+        requestId: getRequestId(req),
+      };
+      res.locals.errorCode = body.code;
+      res.status(403).json(body);
       return;
     }
     delete req.headers[AUTH_HEADER];

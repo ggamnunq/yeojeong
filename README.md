@@ -3,6 +3,7 @@
 여행 공동 지갑 웹앱.
 
 보안 원칙은 [docs/security.md](docs/security.md), 취약점 신고는 [SECURITY.md](SECURITY.md)를 참고하세요.
+API 에러 형식·로깅·Swagger 규칙은 [apps/api/README.md](apps/api/README.md)에 있습니다.
 
 ## 구조
 
