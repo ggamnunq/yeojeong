@@ -1,14 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import type { HealthResponse } from '@yeojeong/shared'
-import { apiFetch } from './api'
-import { Logo } from './ds'
+import { apiFetch, keys } from '../../../api'
+import { Logo } from '../../../ds'
 
 type Check = 'checking' | 'up' | 'down'
 
-function App() {
+export default function HealthPage() {
   // 실패하면(연결·5xx는 두 번 더 시도한 뒤) 전역 처리기가 「다시 시도」 토스트를 띄운다
   const health = useQuery({
-    queryKey: ['health'],
+    queryKey: keys.health,
     queryFn: ({ signal }) => apiFetch<HealthResponse>('/health', { signal }),
   })
   const server: Check = health.isSuccess ? 'up' : health.isError ? 'down' : 'checking'
@@ -48,4 +48,3 @@ function StatusRow({ label, value }: { label: string; value: Check }) {
   )
 }
 
-export default App

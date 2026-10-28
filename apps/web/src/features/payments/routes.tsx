@@ -1,0 +1,13 @@
+import { PlaceholderPage } from '../../app/PlaceholderPage'
+import type { AppRoute } from '../../app/routes'
+
+// TODO(결제 플로우): 결제 상세는 목록 위 바텀시트라 목록의 하위 라우트(목록 페이지가 <Outlet />을 그린다)
+export const routes: AppRoute[] = [
+  {
+    layout: 'trip',
+    path: '/trips/:tripId/payments',
+    element: <PlaceholderPage inShell title="결제내역" />,
+    children: [{ path: '/trips/:tripId/payments/:expenseId', element: <p>결제 상세</p> }],
+  },
+  { layout: 'trip-page', path: '/trips/:tripId/payments/out-of-period', element: <PlaceholderPage title="기간 외 결제 추가" /> },
+]
