@@ -14,7 +14,7 @@ export const handlers: HttpHandler[] = [
     if (denied) return denied
     const trip = findTrip(tripId)
     if (!trip) return mockError('NOT_FOUND', 404)
-    if (trip.status === 'UPCOMING') return mockError('TRIP_PHASE_INVALID', 409, undefined, '지금 단계에서는 할 수 없어요')
+    if (trip.status === 'UPCOMING') return mockError('TRIP_PHASE_INVALID')
 
     const ledger = ledgerOf(tripId)
     const mine = ledger.members.find((m) => m.membershipId === membership.membershipId)

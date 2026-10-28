@@ -10,7 +10,7 @@ import type { SettlementMemberExpenses, SettlementMemberView, SettlementView } f
 // 개발 서버(브라우저)에서는 처음부터 제주 정산 샘플을 넣는다. 테스트는 정산·현황 API가 불릴 때 넣는다(다른 플로우 테스트에 영향 없음)
 if (import.meta.env.MODE !== 'test') seedJejuSettlement()
 
-const phaseInvalid = () => mockError('TRIP_PHASE_INVALID', 409, undefined, '지금 단계에서는 할 수 없어요')
+const phaseInvalid = () => mockError('TRIP_PHASE_INVALID')
 
 /** 여정 API 공통: 로그인·멤버·종료 확인. 통과면 여정 */
 function endedTrip(tripId: string): { denied: Response; trip?: undefined } | { denied?: undefined; trip: MockTrip } {
