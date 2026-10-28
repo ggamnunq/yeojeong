@@ -304,7 +304,10 @@ export class ExpenseDetailResponseDto
 }
 
 export class OutOfPeriodCandidateDto implements OutOfPeriodCandidate {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({
+    description: '5분 동안 유효한 서명된 임시 식별자',
+    example: 'eyJ1IjoiLi4uIn0.0123456789abcdef...',
+  })
   candidateId: string;
 
   @ApiProperty({ example: '2026-10-20T21:10:00+09:00' })

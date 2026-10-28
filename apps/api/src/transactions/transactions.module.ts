@@ -8,12 +8,13 @@ import {
 import { ImportService } from './import.service.js';
 import { InternalJobGuard } from './internal-job.guard.js';
 import { JobsController } from './jobs.controller.js';
+import { OutOfPeriodLookupService } from './out-of-period-lookup.service.js';
 import { SyncService } from './sync.service.js';
 import { TripEventsListener } from './trip-events.listener.js';
 
 /**
  * 거래 동기화·인입(기능명세 1-2의 imports + jobs/sync). 문서는 src/payment-methods/README.md.
- * 기간 외 후보·추가 API는 S2B-2(expenses)가 저장된 Transaction으로 처리하고, 이 모듈은 그 거래를 가져와 보관한다.
+ * 기간 외 후보는 OutOfPeriodLookupService가 제공자에서 즉시 조회하고, expenses가 고른 건만 저장한다.
  */
 @Module({
   imports: [PaymentProvidersModule, FxModule],
@@ -21,10 +22,11 @@ import { TripEventsListener } from './trip-events.listener.js';
   providers: [
     SyncService,
     ImportService,
+    OutOfPeriodLookupService,
     TripEventsListener,
     InternalJobGuard,
     { provide: DuplicateFlagger, useValue: expensesDuplicateFlagger },
   ],
-  exports: [SyncService, ImportService],
+  exports: [SyncService, ImportService, OutOfPeriodLookupService],
 })
 export class TransactionsModule {}

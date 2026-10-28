@@ -21,6 +21,7 @@ import {
   type MatchTx,
 } from './import-rules.js';
 
+type Db = PrismaService | Prisma.TransactionClient;
 type Tx = Prisma.TransactionClient;
 
 /** 인입 대상 여정(행 잠금 후 다시 읽은 값) */
@@ -67,6 +68,7 @@ export class ImportService {
     userId: string,
     paymentMethodId: string,
     items: readonly ProviderTransaction[],
+    db: Db = this.prisma,
   ): Promise<number> {
     const rows = items.flatMap((item) => {
       const row = this.toRow(userId, paymentMethodId, item);
@@ -76,7 +78,7 @@ export class ImportService {
       return row ? [row] : [];
     });
     if (rows.length === 0) return 0;
-    const existing = await this.prisma.transaction.findMany({
+    const existing = await db.transaction.findMany({
       where: {
         paymentMethodId,
         externalRef: { in: rows.map((r) => r.externalRef) },
@@ -90,7 +92,7 @@ export class ImportService {
     });
     const byRef = new Map(existing.map((e) => [e.externalRef, e]));
     const fresh = rows.filter((r) => !byRef.has(r.externalRef));
-    const created = await this.prisma.transaction.createMany({
+    const created = await db.transaction.createMany({
       data: fresh,
       skipDuplicates: true,
     });
@@ -101,7 +103,7 @@ export class ImportService {
         (prev.billedKrwAmount !== row.billedKrwAmount ||
           prev.providerKrwAmount !== row.providerKrwAmount)
       ) {
-        await this.prisma.transaction.update({
+        await db.transaction.update({
           where: { id: prev.id },
           data: {
             providerKrwAmount: row.providerKrwAmount,
@@ -254,8 +256,8 @@ export class ImportService {
   }
 
   /** 4-1-4 단계 1~3: 아직 원 결제를 못 찾은 취소 거래를 매칭한다 */
-  async matchCancels(userId: string): Promise<number> {
-    const cancels = await this.prisma.transaction.findMany({
+  async matchCancels(userId: string, db: Db = this.prisma): Promise<number> {
+    const cancels = await db.transaction.findMany({
       where: { userId, kind: 'CANCEL', cancelOfTransactionId: null },
       orderBy: { occurredAt: 'asc' },
     });
@@ -263,7 +265,7 @@ export class ImportService {
     const refs = cancels.flatMap((c) =>
       c.providerApprovalRef ? [c.providerApprovalRef] : [],
     );
-    const approvals = await this.prisma.transaction.findMany({
+    const approvals = await db.transaction.findMany({
       where: {
         userId,
         kind: 'APPROVAL',
@@ -306,7 +308,7 @@ export class ImportService {
     for (const cancel of cancels) {
       const originalId = matchCancel(toMatch(cancel), pool, matched);
       if (!originalId) continue;
-      await this.prisma.transaction.update({
+      await db.transaction.update({
         where: { id: cancel.id },
         data: { cancelOfTransactionId: originalId },
       });

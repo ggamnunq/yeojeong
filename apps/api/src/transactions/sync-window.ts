@@ -48,11 +48,6 @@ export interface WindowInput {
   requestedFromAt?: Date | null;
   /** 이 연결의 성공한 SyncRun 구간들(자가 복구 판정용) */
   succeededRuns: readonly Interval[];
-  /**
-   * 여정 시작 전 몇 ms까지 가져와 Transaction으로만 보관할지(기간 외 결제 후보, FR-408·4-1-6 "여정 전 60일").
-   * 장부(Expense)에는 넣지 않는다. 기본 0
-   */
-  lookbackMs?: number;
 }
 
 /**
@@ -62,7 +57,7 @@ export interface WindowInput {
  * - 소급 트리거면 그 시작까지 넓힌다
  * - 자가 복구(v0.4.2): 성공한 SyncRun 구간들이 각 여정 [startAt, min(now, autoEndAt)]을 덮지 못하면
  *   처음 덮이지 않은 시각부터로 넓힌다 → 소급 리스너가 실패해도 다음 주기 잡이 따라잡는다
- * - 진행 중 여정 기간(+ lookback) 밖은 가져오지 않는다(최소 수집, 8-2): from ≥ 가장 이른 startAt − lookback
+ * - 진행 중 여정 기간 밖은 가져오지 않는다(최소 수집, 8-2): from ≥ 가장 이른 startAt
  * @returns 대상 여정이 없으면 null
  */
 export function computeSyncWindow(
@@ -70,9 +65,7 @@ export function computeSyncWindow(
 ): { fromAt: Date; toAt: Date } | null {
   if (input.trips.length === 0) return null;
   const now = input.now.getTime();
-  const lookback = input.lookbackMs ?? 0;
-  const earliest =
-    Math.min(...input.trips.map((t) => t.startAt.getTime())) - lookback;
+  const earliest = Math.min(...input.trips.map((t) => t.startAt.getTime()));
 
   let from =
     input.lastSyncedAt && !input.hasUnsyncedMethod
@@ -84,7 +77,7 @@ export function computeSyncWindow(
   for (const trip of input.trips) {
     const gap = firstUncoveredAt(
       {
-        fromAt: new Date(trip.startAt.getTime() - lookback),
+        fromAt: trip.startAt,
         toAt: new Date(Math.min(now, trip.autoEndAt.getTime())),
       },
       input.succeededRuns,

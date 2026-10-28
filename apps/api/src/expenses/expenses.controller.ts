@@ -167,10 +167,11 @@ export class ExpensesController {
   @ApiOperation({
     summary: '기간 외 결제 후보 (FR-408)',
     description:
-      '본인 결제수단의 승인 거래 중 여정 전 [시작 − 60일, 시작) / 여정 후 (자동 종료, 지금]. 날짜 오름차순.',
+      '제공자에서 즉시 조회한 본인 승인 거래 중 여정 전 [시작 − 60일, 시작) / 여정 후 (자동 종료, 지금]. 응답만 하고 저장하지 않는다.',
   })
   @ApiOkResponse({ type: [OutOfPeriodCandidateDto] })
-  @ApiErrorResponse(409, 'TRIP_PHASE_INVALID')
+  @ApiErrorResponse(409, 'TRIP_PHASE_INVALID', 'CONNECTION_EXPIRED')
+  @ApiErrorResponse(503, 'PROVIDER_UNAVAILABLE')
   @Audited('VIEW_CANDIDATES', {
     resourceType: 'TRIP',
     resourceId: fromParam('tripId'),
@@ -192,8 +193,8 @@ export class ExpensesController {
   })
   @ApiCreatedResponse({ type: AddOutOfPeriodExpensesResponseDto })
   @ApiErrorResponse(400, 'VALIDATION_FAILED', 'OUT_OF_PERIOD_CANDIDATE_INVALID')
-  @ApiErrorResponse(409, 'TRIP_PHASE_INVALID')
-  @ApiErrorResponse(503, 'FX_RATE_UNAVAILABLE')
+  @ApiErrorResponse(409, 'TRIP_PHASE_INVALID', 'CONNECTION_EXPIRED')
+  @ApiErrorResponse(503, 'FX_RATE_UNAVAILABLE', 'PROVIDER_UNAVAILABLE')
   @RequireTripStatus('ONGOING')
   @Post('out-of-period-expenses')
   addOutOfPeriod(

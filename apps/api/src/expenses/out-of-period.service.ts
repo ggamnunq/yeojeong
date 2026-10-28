@@ -10,6 +10,12 @@ import type { MembershipContext } from '../common/auth/index.js';
 import { AppException, NotFoundError } from '../common/errors/index.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  OutOfPeriodLookupService,
+  type LiveCandidate,
+  type TimeRange,
+} from '../transactions/out-of-period-lookup.service.js';
+import { ImportService } from '../transactions/import.service.js';
 import { ExpenseQueryService } from './expense-query.service.js';
 import { changeSnapshot } from './expense-rules.js';
 import { formatOriginalAmount } from './expense-view.js';
@@ -31,9 +37,6 @@ import {
 type Db = PrismaService | Prisma.TransactionClient;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** 후보 목록 상한(화면은 체크 목록 한 장) */
-const CANDIDATE_LIST_MAX = 300;
-
 const TRIP_SELECT = {
   status: true,
   startAt: true,
@@ -45,6 +48,8 @@ const TRIP_SELECT = {
 
 const CANDIDATE_SELECT = {
   id: true,
+  paymentMethodId: true,
+  externalRef: true,
   occurredAt: true,
   merchantNameRaw: true,
   originalAmount: true,
@@ -91,7 +96,7 @@ export function outOfPeriodWindow(
   return now > trip.autoEndAt ? { gt: trip.autoEndAt, lte: now } : null;
 }
 
-/** 본인 승인 거래 중 후보가 될 수 있는 것(동일 사용자 중복·해제된 결제수단·이미 이 여정에 있는 거래 제외) */
+/** 저장 직전에도 본인 승인·활성 결제수단·여정 미추가를 다시 확인한다. */
 function candidateWhere(
   userId: string,
   tripId: string,
@@ -125,15 +130,35 @@ const tripFx = (trip: TripRecord): TripFx => ({
 });
 
 /**
- * 기간 외 결제 추가(FR-408, 4-1-6). 후보는 저장된 Transaction(본인 것)만 본다 —
- * 범위 밖 거래를 제공자에서 가져와 보관하는 일은 인입(S2B-1)이 맡는다.
+ * 기간 외 결제 추가(FR-408, I-11). 후보 조회는 제공자 응답만 사용하고, 선택한 건만
+ * Transaction + Expense(PENDING)를 같은 DB 트랜잭션에서 저장한다.
  */
 @Injectable()
 export class OutOfPeriodService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly query: ExpenseQueryService,
+    private readonly lookup: OutOfPeriodLookupService,
+    private readonly importer: ImportService,
   ) {}
+
+  private range(
+    trip: { startAt: Date; autoEndAt: Date },
+    side: OutOfPeriodSide,
+    now: Date,
+  ): TimeRange | null {
+    if (side === 'BEFORE') {
+      return {
+        fromAt: new Date(
+          trip.startAt.getTime() - OUT_OF_PERIOD_LOOKBACK_DAYS * DAY_MS,
+        ),
+        toAt: new Date(trip.startAt.getTime() - 1),
+      };
+    }
+    return now > trip.autoEndAt
+      ? { fromAt: new Date(trip.autoEndAt.getTime() + 1), toAt: now }
+      : null;
+  }
 
   private async rateFor(
     db: Db,
@@ -176,6 +201,32 @@ export class OutOfPeriodService {
     );
   }
 
+  private async liveKrwOf(
+    candidate: LiveCandidate,
+    trip: TripRecord,
+  ): Promise<KrwResult | null> {
+    const source = {
+      originalAmount: new Prisma.Decimal(candidate.originalAmount),
+      originalCurrency: candidate.originalCurrency,
+      providerKrwAmount: candidate.providerKrwAmount,
+      billedKrwAmount: candidate.billedKrwAmount,
+      spotKrwAmount: null,
+      spotRate: null,
+    };
+    return (
+      resolveKrw(source, tripFx(trip)) ??
+      resolveKrw(
+        source,
+        tripFx(trip),
+        await this.rateFor(
+          this.prisma,
+          candidate.originalCurrency,
+          candidate.occurredAt,
+        ),
+      )
+    );
+  }
+
   async candidates(
     tripId: string,
     me: MembershipContext,
@@ -187,31 +238,24 @@ export class OutOfPeriodService {
       select: TRIP_SELECT,
     });
     if (!trip) throw new NotFoundError();
-    const window = outOfPeriodWindow(trip, side, now);
-    if (!window) return [];
-
-    const records = await this.prisma.transaction.findMany({
-      where: { ...candidateWhere(me.userId, tripId), occurredAt: window },
-      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
-      take: CANDIDATE_LIST_MAX,
-      select: CANDIDATE_SELECT,
-    });
+    const range = this.range(trip, side, now);
+    if (!range) return [];
+    const records = await this.lookup.list(me.userId, tripId, range, now);
     const items: OutOfPeriodCandidate[] = [];
     for (const record of records) {
-      if (isFullyCancelled(record.originalAmount, record.cancels)) continue;
-      const krw = await this.krwOf(this.prisma, record, trip);
+      const krw = await this.liveKrwOf(record, trip);
       items.push({
-        candidateId: record.id,
+        candidateId: record.candidateId,
         occurredAt: toKstIso(record.occurredAt),
         localDate: kstDate(record.occurredAt),
-        merchantName: record.merchantNameRaw,
+        merchantName: record.merchantName,
         krwAmount: krw?.krwAmount ?? null,
         originalAmount: formatOriginalAmount(
-          record.originalAmount,
+          new Prisma.Decimal(record.originalAmount),
           record.originalCurrency,
         ),
         currency: record.originalCurrency,
-        paymentMethodLabel: `${record.paymentMethod.shortLabel} ${record.paymentMethod.last4}`,
+        paymentMethodLabel: record.paymentMethodLabel,
       });
     }
     return items;
@@ -223,6 +267,25 @@ export class OutOfPeriodService {
     candidateIds: readonly string[],
     now: Date = new Date(),
   ): Promise<AddOutOfPeriodExpensesResponse> {
+    const currentTrip = await this.prisma.trip.findFirst({
+      where: { id: tripId, deletedAt: null },
+      select: TRIP_SELECT,
+    });
+    if (!currentTrip) throw new NotFoundError();
+    if (currentTrip.status !== 'ONGOING') {
+      throw AppException.of('TRIP_PHASE_INVALID');
+    }
+    const ranges = (['BEFORE', 'AFTER'] as const)
+      .map((side) => this.range(currentTrip, side, now))
+      .filter((range): range is TimeRange => range !== null);
+    const confirmed = await this.lookup.confirm(
+      me.userId,
+      tripId,
+      candidateIds,
+      ranges,
+      now,
+    );
+
     let createdIds: string[];
     try {
       createdIds = await this.prisma.$transaction(async (tx) => {
@@ -237,16 +300,37 @@ export class OutOfPeriodService {
           where: { id: tripId },
           select: TRIP_SELECT,
         });
-
-        await lockTransactions(tx, candidateIds);
+        for (const batch of confirmed.batches) {
+          await this.importer.upsertProviderTransactions(
+            me.userId,
+            batch.paymentMethodId,
+            batch.items,
+            tx,
+          );
+        }
+        await this.importer.matchCancels(me.userId, tx);
         const windows = (['BEFORE', 'AFTER'] as const)
           .map((side) => outOfPeriodWindow(trip, side, now))
           .filter((w): w is Prisma.DateTimeFilter => w !== null);
+        const selectedWhere = confirmed.selected.map((item) => ({
+          paymentMethodId: item.paymentMethodId,
+          externalRef: item.externalRef,
+        }));
+        const selectedIds = await tx.transaction.findMany({
+          where: { userId: me.userId, OR: selectedWhere },
+          select: { id: true },
+        });
+        await lockTransactions(
+          tx,
+          selectedIds.map((item) => item.id),
+        );
         const records = await tx.transaction.findMany({
           where: {
             ...candidateWhere(me.userId, tripId),
-            id: { in: [...candidateIds] },
-            OR: windows.map((w) => ({ occurredAt: w })),
+            AND: [
+              { OR: selectedWhere },
+              { OR: windows.map((window) => ({ occurredAt: window })) },
+            ],
           },
           orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
           select: CANDIDATE_SELECT,
@@ -254,8 +338,17 @@ export class OutOfPeriodService {
         const valid = records.filter(
           (r) => !isFullyCancelled(r.originalAmount, r.cancels),
         );
-        const validIds = new Set(valid.map((r) => r.id));
-        const invalid = candidateIds.filter((id) => !validIds.has(id));
+        const validKeys = new Set(
+          valid.map(
+            (record) => `${record.paymentMethodId}:${record.externalRef}`,
+          ),
+        );
+        const invalid = confirmed.selected
+          .filter(
+            (item) =>
+              !validKeys.has(`${item.paymentMethodId}:${item.externalRef}`),
+          )
+          .map((item) => item.candidateId);
         if (invalid.length > 0) {
           throw AppException.of('OUT_OF_PERIOD_CANDIDATE_INVALID', {
             details: { invalidCandidateIds: invalid },
