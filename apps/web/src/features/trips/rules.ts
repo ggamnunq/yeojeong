@@ -1,3 +1,4 @@
+import { INVITE_CODE_LENGTH, formatInviteCode as formatInviteCodeFull } from '@yeojeong/shared'
 import type { TripStatus } from '../../api'
 import { formatKrw } from '../../ds'
 import type {
@@ -20,9 +21,6 @@ export const TRIP_MAX_DAYS = 31
 /** 시작일은 오늘로부터 며칠 전까지(미결 Q-29 추천안) */
 export const TRIP_START_PAST_LIMIT_DAYS = 30
 export const TRIP_BUDGET_MAX_KRW = 1_000_000_000
-export const INVITE_CODE_LENGTH = 6
-/** 헷갈리는 0·O·1·I·L을 뺀 문자 집합 */
-export const INVITE_CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'
 
 /** 단계별로 그룹장이 고칠 수 있는 항목(FR-302, 미결 Q-14 추천안). 진행 중 종료일은 오늘 이후로만 */
 export const TRIP_EDITABLE_FIELDS: Readonly<Record<TripStatus, readonly TripEditableField[]>> = {
@@ -81,9 +79,7 @@ export function formatPeriodInput(start: string, end: string): string {
   return `${formatInputDate(start)} – ${formatInputDate(end)}`
 }
 
-// ── 초대코드 ──────────────────────────────────────────────────────
-
-const INVITE_CODE = new RegExp(`^[${INVITE_CODE_ALPHABET}]{${INVITE_CODE_LENGTH}}$`)
+// ── 초대코드(저장 형식 검사 normalizeInviteCode는 @yeojeong/shared) ─────────
 
 /** 입력값 → 코드 글자(대문자·영숫자만, 6자까지). 하이픈·공백·기호는 버린다 */
 export function inviteInputChars(input: string): string {
@@ -93,15 +89,9 @@ export function inviteInputChars(input: string): string {
     .slice(0, INVITE_CODE_LENGTH)
 }
 
-/** 저장 형식 코드 또는 null(형식이 틀림). 대소문자·하이픈·공백 무시 */
-export function normalizeInviteCode(input: string): string | null {
-  const code = input.replace(/[\s-]/g, '').toUpperCase()
-  return INVITE_CODE.test(code) ? code : null
-}
-
-/** 표시용 3-3: K7M2QX → K7M-2QX. 입력 중이면 4번째 글자부터 하이픈을 넣는다 */
+/** 표시용 3-3: K7M2QX → K7M-2QX. 입력 중(3자 이하)이면 하이픈 없이 그대로 */
 export function formatInviteCode(code: string): string {
-  return code.length > 3 ? `${code.slice(0, 3)}-${code.slice(3)}` : code
+  return code.length > 3 ? formatInviteCodeFull(code) : code
 }
 
 // ── 금액 ─────────────────────────────────────────────────────────

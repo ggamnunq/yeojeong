@@ -1,3 +1,4 @@
+import { INVITE_CODE_ALPHABET, normalizeInviteCode } from '@yeojeong/shared'
 import { http, HttpResponse, type HttpHandler } from 'msw'
 import {
   activeMembership,
@@ -15,8 +16,6 @@ import {
   addDays,
   daysBetween,
   GROUP_NAME_MAX_LENGTH,
-  INVITE_CODE_ALPHABET,
-  normalizeInviteCode,
   TRIP_BUDGET_MAX_KRW,
   TRIP_EDITABLE_FIELDS,
   TRIP_MAX_DAYS,
@@ -39,7 +38,7 @@ import type {
 } from './types'
 
 // 여정 생성·참여·시작·종료·수정·그룹 삭제 목(기능명세 6-3). db를 고치고, 테스트마다 resetMockDb()가 되돌린다.
-// 서버 도메인 코드(NOT_LEADER·TRIP_PHASE_INVALID·VERSION_CONFLICT·INVITE_*)는 아직 shared ERRORS에 없어 status·문구를 직접 준다(S2A 문구와 같음).
+// 도메인 코드(NOT_LEADER·TRIP_PHASE_INVALID·VERSION_CONFLICT·INVITE_*)의 status·문구는 shared TRIP_ERRORS 기본값.
 //
 // 참여용 데모 여정(준용은 멤버 아님, 처음 조회할 때 db에 넣는다):
 //   T4K9YP 도쿄 먹방 여행(시작 전, 3명) · D7N3QA 다낭 가족여행(진행 중, 2명) · X2P8RW 타이베이 주말(준용 강퇴 이력 → 403)
@@ -142,14 +141,13 @@ try {
 // ── 공통 ──────────────────────────────────────────────────────────
 
 const domainError = {
-  notLeader: () => mockError('NOT_LEADER', 403, undefined, '그룹장만 할 수 있어요'),
-  phase: (details?: Record<string, unknown>) => mockError('TRIP_PHASE_INVALID', 409, details, '지금 단계에서는 할 수 없어요'),
-  versionConflict: (trip: MockTrip) =>
-    mockError('VERSION_CONFLICT', 409, { current: tripResponse(trip) }, '다른 곳에서 바뀌었어요'),
-  inviteInvalid: () => mockError('INVITE_CODE_INVALID', 404, undefined, '초대코드를 다시 확인해 주세요'),
-  inviteEnded: () => mockError('INVITE_TRIP_ENDED', 409, undefined, '참여할 수 없는 여정이에요'),
-  kicked: () => mockError('MEMBER_KICKED', 403, undefined, '참여할 수 없는 여정이에요'),
-  alreadyMember: () => mockError('ALREADY_MEMBER', 409, undefined, '이미 참여한 여정이에요'),
+  notLeader: () => mockError('NOT_LEADER'),
+  phase: (details?: Record<string, unknown>) => mockError('TRIP_PHASE_INVALID', undefined, details),
+  versionConflict: (trip: MockTrip) => mockError('VERSION_CONFLICT', undefined, { current: tripResponse(trip) }),
+  inviteInvalid: () => mockError('INVITE_CODE_INVALID'),
+  inviteEnded: () => mockError('INVITE_TRIP_ENDED'),
+  kicked: () => mockError('MEMBER_KICKED'),
+  alreadyMember: () => mockError('ALREADY_MEMBER'),
 }
 
 /** 서버 TripDetail 응답(S2A): 부록 B + permissions · todayDayIndex · city */
