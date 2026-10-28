@@ -1,4 +1,4 @@
-// design-tokens/*.json → src/styles/tokens.css (Tailwind 4 @theme)
+// design-tokens/tokens.json(Figma DS v1.4) → src/styles/tokens.css (Tailwind 4 @theme)
 //   node scripts/gen-tokens.mjs            docs/design에 원본이 있으면 복사해 온 뒤 생성
 //   node scripts/gen-tokens.mjs --check    생성 결과가 커밋된 파일과 다르면 실패 (CI)
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -9,7 +9,6 @@ const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 export const paths = {
   tokens: resolve(webRoot, 'design-tokens/tokens.json'),
-  styles: resolve(webRoot, 'design-tokens/styles.json'),
   out: resolve(webRoot, 'src/styles/tokens.css'),
   designSource: resolve(webRoot, '../../docs/design/design-system/tokens.json'),
 }
@@ -25,6 +24,16 @@ const slug = (name) =>
     .replace(/^-|-$/g, '')
 
 const px = (n) => (n === 0 ? '0' : `${n}px`)
+const comment = (text) => `/* ${String(text).replaceAll('*/', '* /')} */`
+
+// tokens.json의 typography는 Figma 서체 이름만 갖는다. CSS 변수 이름과 폴백 스택은 코드 쪽 결정이라 여기 둔다.
+// 순서 = --font-* 출력 순서. Noto Sans KR은 가변 폰트(@fontsource-variable)를 먼저 찾는다.
+const SYSTEM_FALLBACK = ['system-ui', '-apple-system', 'Apple SD Gothic Neo', 'Malgun Gothic', 'sans-serif']
+export const FONT_FAMILIES = {
+  'Noto Sans KR': { name: 'sans', stack: ['Noto Sans KR Variable', 'Noto Sans KR', ...SYSTEM_FALLBACK] },
+  // 금액(Amount/*). tabular-nums는 index.css의 font-amount 유틸이 켠다.
+  'IBM Plex Sans KR': { name: 'amount', stack: ['IBM Plex Sans KR', 'Noto Sans KR Variable', ...SYSTEM_FALLBACK] },
+}
 
 function hexToRgb(hex) {
   const m = /^#([0-9a-f]{6})$/i.exec(hex)
@@ -44,12 +53,40 @@ function paletteLookup(palette, ref) {
 
 const paletteVar = (ref) => `var(--color-${ref.replace('/', '-')})`
 
-export function generate(tokens, styles) {
-  const { palette, roles, size } = tokens
+/** hex → 팔레트 참조(group/step). 없으면 null. 팔레트 안에 같은 hex가 둘이면 어느 쪽인지 알 수 없어 실패한다. */
+function paletteRefOf(palette, hex) {
+  const refs = []
+  for (const [group, steps] of Object.entries(palette)) {
+    for (const [step, value] of Object.entries(steps)) {
+      if (value.toLowerCase() === hex.toLowerCase()) refs.push(`${group}/${step}`)
+    }
+  }
+  if (refs.length > 1) throw new Error(`팔레트에 같은 색이 여럿이라 참조를 정할 수 없음: ${hex} (${refs.join(', ')})`)
+  return refs[0] ?? null
+}
+
+// 그림자 색: 불투명이면 팔레트 변수, 반투명이면 rgb(r g b / a)
+function shadowColor(palette, { color, alpha }) {
+  if (alpha !== 1) return rgba(color, alpha)
+  const ref = paletteRefOf(palette, color)
+  return ref ? paletteVar(ref) : color.toLowerCase()
+}
+
+function requireKeys(tokens) {
+  for (const key of ['palette', 'roles', 'size', 'typography', 'elevation']) {
+    if (!tokens[key]) throw new Error(`tokens.json에 ${key}가 없다. DS v1.4 이상의 tokens.json이 필요하다.`)
+  }
+}
+
+export function generate(tokens) {
+  requireKeys(tokens)
+  const { palette, roles, size, typography, elevation, meta } = tokens
+  const rules = tokens.typography_rules ?? {}
   const lines = []
   const out = (s = '') => lines.push(s)
 
-  out('/* 자동 생성 파일 — 직접 고치지 말 것. 원본: apps/web/design-tokens/*.json')
+  const source = meta?.version ? ` (DS v${meta.version} · ${meta.updated})` : ''
+  out(`/* 자동 생성 파일 — 직접 고치지 말 것. 원본: apps/web/design-tokens/tokens.json${source}`)
   out(' * 다시 만들기: pnpm --filter @yeojeong/web ds:tokens')
   const space = Object.entries(size.space)
     .filter(([, v]) => v > 0)
@@ -78,7 +115,7 @@ export function generate(tokens, styles) {
     } else {
       value = role.alpha == null ? role.hex.toLowerCase() : rgba(role.hex, role.alpha)
     }
-    out(`  --color-${slug(role.name)}: ${value}; /* ${role.desc} */`)
+    out(`  --color-${slug(role.name)}: ${value}; ${comment(role.desc)}`)
   }
   out()
 
@@ -87,31 +124,39 @@ export function generate(tokens, styles) {
   out()
 
   out('  --shadow-*: initial;')
-  for (const effect of styles.effect) {
-    const layers = effect.shadows.map((s) => {
-      const color = s.alpha === 1 ? paletteVar(s.color) : rgba(paletteLookup(palette, s.color), s.alpha)
-      return `${px(s.x)} ${px(s.y)} ${px(s.blur)} ${px(s.spread)} ${color}`
-    })
-    out(`  --shadow-${slug(effect.name)}: ${layers.join(', ')};`)
+  for (const [name, shadows] of Object.entries(elevation)) {
+    const layers = shadows.map((s) => `${px(s.x)} ${px(s.y)} ${px(s.blur)} ${px(s.spread)} ${shadowColor(palette, s)}`)
+    out(`  --shadow-${slug(name)}: ${layers.join(', ')};`)
   }
   out()
 
   for (const [name, value] of Object.entries(size.layout)) out(`  --spacing-${name}: ${px(value)};`)
   out()
 
-  for (const [name, families] of Object.entries(styles.fontFamily)) {
-    const list = families.map((f) => (/^[a-z-]+$/.test(f) ? f : `'${f}'`)).join(', ')
+  const used = new Set(Object.values(typography).map((t) => t.fontFamily))
+  for (const [figmaName, { name, stack }] of Object.entries(FONT_FAMILIES)) {
+    if (!used.has(figmaName)) continue
+    const list = stack.map((f) => (/^[a-z-]+$/.test(f) ? f : `'${f}'`)).join(', ')
     out(`  --font-${name}: ${list};`)
   }
   out()
 
+  for (const [key, rule] of Object.entries(rules)) {
+    if (!typography[key]) out(`  ${comment(`${key}: ${rule}`)}`)
+  }
   out('  --text-*: initial;')
-  for (const t of styles.text) {
-    const key = `--text-${slug(t.name)}`
-    out(`  ${key}: ${px(t.size)};`)
+  for (const [name, t] of Object.entries(typography)) {
+    const family = FONT_FAMILIES[t.fontFamily]
+    if (!family) throw new Error(`${name}: 서체 ${t.fontFamily}의 CSS 스택이 없다. gen-tokens.mjs의 FONT_FAMILIES에 추가할 것.`)
+    if (t.tabularNums && family.name !== 'amount') {
+      throw new Error(`${name}: tabularNums는 font-amount(IBM Plex Sans KR)에서만 켜진다.`)
+    }
+    const key = `--text-${slug(name)}`
+    const rule = rules[name] ? ` ${comment(rules[name])}` : ''
+    out(`  ${key}: ${px(t.fontSize)};${rule}`)
     out(`  ${key}--line-height: ${px(t.lineHeight)};`)
     out(`  ${key}--letter-spacing: ${px(t.letterSpacing)};`)
-    out(`  ${key}--font-weight: ${t.weight};`)
+    out(`  ${key}--font-weight: ${t.fontWeight};`)
   }
   out('}')
   out()
@@ -145,7 +190,7 @@ function main(argv) {
     }
   }
 
-  const css = generate(readJson(paths.tokens), readJson(paths.styles))
+  const css = generate(readJson(paths.tokens))
   const current = existsSync(paths.out) ? readFileSync(paths.out, 'utf8') : ''
 
   if (check) {

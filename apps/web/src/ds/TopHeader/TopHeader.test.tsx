@@ -27,6 +27,26 @@ describe('TopHeader', () => {
     expect(screen.getByRole('button', { name: '오사카' })).toBeTruthy()
   })
 
+  it('group: dropdown="open"(v1.4)이면 ⌃ + aria-expanded, 기본은 ⌄ + 닫힘', () => {
+    const { rerender } = render(<TopHeader groupName="오사카" />)
+    const button = screen.getByRole('button', { name: '오사카' })
+    expect(button.getAttribute('aria-haspopup')).toBe('menu')
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(button.querySelector('.lucide-chevron-down')).toBeTruthy()
+    rerender(<TopHeader groupName="오사카" dropdown="open" />)
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(button.querySelector('.lucide-chevron-up')).toBeTruthy()
+  })
+
+  it('셸 덮어쓰기: divider={false}면 아래 구분선이 없고, groupNameSize="h2"면 그룹명이 H2', () => {
+    const { rerender } = render(<TopHeader groupName="오사카" />)
+    expect(screen.getByRole('banner').className).toContain('border-b')
+    expect(screen.getByText('오사카').className).toContain('text-h3')
+    rerender(<TopHeader groupName="오사카" divider={false} groupNameSize="h2" />)
+    expect(screen.getByRole('banner').className).not.toContain('border-b')
+    expect(screen.getByText('오사카').className).toContain('text-h2')
+  })
+
   it('back: 뒤로 가기 + 제목(h1), action은 있을 때만', () => {
     const onBack = vi.fn()
     const onAction = vi.fn()

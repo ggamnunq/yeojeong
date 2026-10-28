@@ -7,8 +7,12 @@ import { IconButton } from '../IconButton/IconButton'
 import { Logo } from '../Logo/Logo'
 import { focusRing } from '../styles'
 
-// Figma TopHeader(24:7328) · Type=Group/Back/Logo × Status badge · Menu. 높이 56(layout/header-height), 아래 1px border/default.
+// Figma TopHeader(24:7328) · Type=Group/Back/Logo × Dropdown=Closed/Open(v1.4, Group만) × Status badge · Menu.
+// 높이 56(layout/header-height), 아래 1px border/default.
+// divider · groupNameSize는 Figma 세트 속성이 아니라 Shell/App·Sub 인스턴스의 덮어쓰기(구분선 끔 · 그룹명 H2, spec 9-2 미승격 후보)다.
+// 화면에서는 직접 쓰지 말고 Shell* 컴포넌트를 쓴다.
 export type TopHeaderType = 'group' | 'back' | 'logo'
+export type TopHeaderDropdown = 'closed' | 'open'
 
 type Click = MouseEventHandler<HTMLButtonElement>
 
@@ -22,8 +26,12 @@ export type TopHeaderGroupProps = {
   statusBadge?: boolean
   /** 배지 상태(Figma 기본 Active) */
   status?: BadgeStatus
+  /** Figma Dropdown: open = 그룹 전환 드롭다운(DropdownMenu)이 펼쳐짐 → ⌃ + aria-expanded. 기본 closed */
+  dropdown?: TopHeaderDropdown
+  /** 그룹명 글자. Figma 세트 기본 h3, Shell/App 인스턴스는 h2 */
+  groupNameSize?: 'h3' | 'h2'
   onMenuClick?: Click
-  /** 그룹명 + ⌄ → 그룹 목록 */
+  /** 그룹명 + ⌄ → 그룹 전환 드롭다운 */
   onGroupClick?: Click
   onWalletClick?: Click
   onMyClick?: Click
@@ -44,7 +52,11 @@ export type TopHeaderLogoProps = {
   onMyClick?: Click
 }
 
-export type TopHeaderProps = { className?: string } & (TopHeaderGroupProps | TopHeaderBackProps | TopHeaderLogoProps)
+export type TopHeaderProps = {
+  /** 아래 1px 구분선. 기본 true, Shell 인스턴스는 false */
+  divider?: boolean
+  className?: string
+} & (TopHeaderGroupProps | TopHeaderBackProps | TopHeaderLogoProps)
 
 // Figma 좌우 패딩: Group 8/8 · Back 4/8 · Logo 20/8
 const PADDING = { group: 'pl-2', back: 'pl-1', logo: 'pl-5' } satisfies Record<TopHeaderType, string>
@@ -53,7 +65,8 @@ export function TopHeader(props: TopHeaderProps) {
   return (
     <header
       className={clsx(
-        'flex h-header-height shrink-0 items-center gap-1 border-b border-default bg-surface pr-2',
+        'flex h-header-height shrink-0 items-center gap-1 bg-surface pr-2',
+        (props.divider ?? true) && 'border-b border-default',
         PADDING[props.type ?? 'group'],
         props.className,
       )}
@@ -88,21 +101,32 @@ function Content(props: TopHeaderProps) {
     )
   }
 
-  const { groupName, menu = true, statusBadge = false, status = 'active', onMenuClick, onGroupClick } = props
+  const {
+    groupName,
+    menu = true,
+    statusBadge = false,
+    status = 'active',
+    dropdown = 'closed',
+    groupNameSize = 'h3',
+    onMenuClick,
+    onGroupClick,
+  } = props
+  const open = dropdown === 'open'
   return (
     <>
       {menu && <IconButton size="m" icon="menu" label="그룹 구성원" aria-haspopup="dialog" onClick={onMenuClick} />}
-      {/* Figma group switcher: 그룹명(H3) + ⌄ 20 (+ 배지), 간격 4. 누르는 높이만 44로 */}
+      {/* Figma group switcher: 그룹명(H3 · 셸은 H2) + ⌄/⌃ 20 (+ 배지), 간격 4. 누르는 높이만 44로 */}
       <div className="flex min-w-0 items-center gap-1">
         <h1 className="flex min-w-0">
           <button
             type="button"
-            aria-haspopup="dialog"
+            aria-haspopup="menu"
+            aria-expanded={open}
             onClick={onGroupClick}
             className={clsx('flex h-touch-min min-w-0 items-center gap-1 rounded-sm text-primary select-none', focusRing)}
           >
-            <span className="truncate text-h3">{groupName}</span>
-            <Icon name="chevron-down" size={20} className="shrink-0 text-icon-default" />
+            <span className={clsx('truncate', groupNameSize === 'h2' ? 'text-h2' : 'text-h3')}>{groupName}</span>
+            <Icon name={open ? 'chevron-up' : 'chevron-down'} size={20} className="shrink-0 text-icon-default" />
           </button>
         </h1>
         {statusBadge && <Badge status={status} size="s" />}

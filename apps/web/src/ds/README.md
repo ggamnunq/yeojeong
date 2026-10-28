@@ -1,12 +1,14 @@
 # 디자인 시스템 (`src/ds`)
 
-Figma 「여정」 v1.3 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다.
+Figma 「여정」 v1.4 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다.
 
 ## 토큰
 
-- 원본: `design-tokens/tokens.json`(Figma 변수 · `docs/design/design-system/tokens.json` 사본)과 `design-tokens/styles.json`(텍스트·이펙트 스타일 · spec 4·5장).
+- 원본: `design-tokens/tokens.json` 하나(`docs/design/design-system/tokens.json` v1.4 사본). `palette`·`roles`·`size`(Figma 변수) + `typography`(텍스트 스타일 18종) · `typography_rules` · `elevation`(이펙트 스타일) · `meta`. v1.3까지 따로 두던 `styles.json`은 없앴다.
+- 서체 폴백 스택은 tokens.json에 없어서(서체 이름만 있음) `scripts/gen-tokens.mjs`의 `FONT_FAMILIES`가 Figma 서체 이름 → `--font-sans`·`--font-amount` 스택을 정한다. 새 서체가 tokens.json에 나오면 생성기가 실패하니 여기에 추가한다. `tabularNums`는 `font-amount`(IBM Plex Sans KR)에서만 허용한다.
+- 그림자 색은 hex로 오는데, 팔레트에 같은 색이 있으면 불투명은 `var(--color-…)`, 반투명은 `rgb(r g b / a)`로 바꾼다. `typography_rules`는 해당 텍스트 스타일 옆 주석으로 남는다.
 - `pnpm --filter @yeojeong/web ds:tokens` → `src/styles/tokens.css`(Tailwind `@theme`) 생성. `docs/design`이 있으면 tokens.json을 먼저 복사해 온다. 생성 파일은 커밋한다.
-- `ds:tokens:check`는 CI에서 생성 결과와 커밋된 파일이 다르면 실패한다. tokens.css는 손으로 고치지 않는다.
+- `ds:tokens:check`는 CI에서 생성 결과와 커밋된 파일이 다르면 실패한다. tokens.css는 손으로 고치지 않는다. `scripts/__fixtures__/tokens-v1.3.css`(v1.3 생성 결과 고정 사본)와 비교하는 테스트가 기존 선언의 이름·값이 바뀌지 않았음을 보장한다.
 - Tailwind 기본 색·글자 크기·라운드·그림자는 지웠다. 토큰에 없는 값은 쓸 수 없다.
 
 | Figma | CSS 변수 | 유틸 |
@@ -20,8 +22,9 @@ Figma 「여정」 v1.3 디자인 시스템을 코드로 옮긴 것. 원본 문�
 | `space/20` | Tailwind 기본 4px 스케일 | `p-5` (space/N = N/4) |
 | `Body/M Strong` · `Heading/H1` | `--text-body-m-strong` · `--text-h1` | `text-body-m-strong` · `text-h1` (크기·행간·자간·굵기 한 번에) |
 | `Amount/L` | `--text-amount-l` + `--font-amount` | `font-amount text-amount-l` (`font-amount`에 tabular-nums 포함) |
+| `Amount/XL`(v1.4, 40/48 −1) | `--text-amount-xl` | `font-amount text-amount-xl` — 화면당 영웅 숫자 1개만 |
 
-예외: 카카오 버튼의 `#FEE500` · `#EDD500`(눌림) · 라벨 `#000 85%`는 카카오 가이드 고정값. Tag·Badge의 S 크기 글자(11px)는 Figma에 텍스트 스타일이 없어 `text-[11px]`을 쓴다.
+예외: 카카오 버튼의 `#FEE500` · `#EDD500`(눌림) · 라벨 `#000 85%`는 카카오 가이드 고정값. Tag·Badge의 S 크기 글자(11px)는 Figma에 텍스트 스타일이 없어 `text-[11px]`을 쓴다. Amount/XL 영웅 숫자 옆 단위(원·엔)는 `typography_rules`대로 같은 줄에 24 SemiBold로 작게 쓰는데 텍스트 스타일이 없어 `font-amount text-[24px] leading-8 font-semibold`을 쓴다.
 
 ## 컴포넌트 규칙
 
@@ -35,23 +38,24 @@ Figma 「여정」 v1.3 디자인 시스템을 코드로 옮긴 것. 원본 문�
 
 ## 레이아웃 · 오버레이
 
-- 화면은 `Screen`으로 조립한다(spec 7-1): `header`(TopHeader) → 본문(`gutter` 좌우 20, 기본 on) → `cta`(Button Primary L FILL) → `nav`(BottomNav). 390 폭 가운데 정렬, 바탕 `bg/canvas`. 스크롤은 문서가 하고 헤더·하단은 sticky.
+- 화면은 v1.4 셸로 조립한다(아래 「셸 사용 규칙」). `Screen`은 셸들이 공통으로 쓰는 레이아웃 틀(spec 7-1): `header` → 본문(`gutter` 좌우 20, 기본 on, `contentClassName`) → `cta`(Button Primary L FILL) → `nav`(BottomNav). 390 폭 가운데 정렬. 스크롤은 문서가 하고 헤더·하단은 sticky. 셸에 맞지 않는 화면(스플래시)만 `Screen`을 직접 쓴다.
 - 안전영역: `index.html`의 `viewport-fit=cover`가 있어야 `env(safe-area-inset-*)`가 잡힌다. 위는 Screen 헤더 자리, 아래는 BottomNav(없으면 CTA나 본문)와 BottomSheet가 채운다.
 - `BottomSheet`·`Dialog`는 네이티브 `<dialog>.showModal()`(최상위 레이어 + 배경 inert) 위에 `useModalDialog`가 ESC·Tab 가두기·포커스 되돌리기·스크롤 잠금을 더한다. 열림 상태는 부모가 쥐고(`open`), 닫기 요청은 `onClose`/`onCancel`로만 알린다. 시트는 딤을 누르면 닫히고, 다이얼로그는 딤으로 닫히지 않는다.
 - 모션은 시트 200ms·다이얼로그 150ms이고 `prefers-reduced-motion`이면 없다.
 - 내용이 필요한 Figma BOOLEAN은 객체를 넘기면 켜진다: BottomSheet `CTA` → `cta={{ label, onClick }}`, Toast `Action` → `action={{ label, onClick }}`, TopHeader Back의 `action` 버튼. `Type=SharedToPersonal`처럼 붙어 있는 값은 kebab-case(`type="shared-to-personal"`).
 - `Toast`는 겉모습만, `ToastViewport`는 자리(내비 위 16)만 잡는다. 큐·타이머·자동 닫힘은 쓰는 쪽이 붙인다. 화면 코드는 `src/notifications`의 `toast.*`를 쓰고(`ToastHost`가 그린다) DS Toast를 직접 그리지 않는다. 사용법은 `src/api/README.md`.
-- 카탈로그에서 열린 모습을 고정해 보여 줄 때는 `BottomSheetPanel`·`DialogPanel`(모달 동작 없는 겉모습)과 `catalog/PhoneFrame`을 쓴다. 화면 코드에서는 쓰지 않는다.
+- 카탈로그에서 열린 모습을 고정해 보여 줄 때는 `BottomSheetPanel`·`DialogPanel`·`PanelSidePanel`·`DropdownMenuPanel`(모달 동작 없는 겉모습)과 `catalog/PhoneFrame`을 쓴다. 화면 코드에서는 쓰지 않는다.
 
 ## 카탈로그
 
 - `pnpm --filter @yeojeong/web catalog` → http://localhost:5173/catalog.html (`catalog:build`는 `dist-catalog/`로 따로 빌드).
 - `**/*.catalog.tsx`가 `defineCatalog({ title, figma, group, order, Demo })`를 default export하면 `import.meta.glob`으로 자동 등록된다. 모든 변형을 Figma 세트 배치에 가깝게 보여 준다.
 - 운영 빌드(`pnpm build`)는 `index.html`만 묶으므로 카탈로그는 `dist/`에 들어가지 않는다.
+- `catalog.html?only=Shell/App`처럼 제목을 주면 그 항목만 그린다(헤드리스 브라우저로 찍어 Figma 스크린샷과 나란히 비교할 때).
 
 ## 아이콘
 
-- `<Icon name="wallet" size={20} className="text-icon-default" />`. 이름은 Figma `Icon/<이름>` 42종 그대로, 실제 모양은 `Icon/icons.ts`의 lucide 매핑. 색은 `currentColor`, 선 굵기는 1.75(Fluency Systems Regular에 맞춤).
+- `<Icon name="wallet" size={20} className="text-icon-default" />`. 이름은 Figma `Icon/<이름>` 44종(v1.4 `chevron-up`·`crown` 포함) 그대로, 실제 모양은 `Icon/icons.ts`의 lucide 매핑. 색은 `currentColor`, 선 굵기는 1.75(Fluency Systems Regular에 맞춤).
 - 아이콘을 추가하려면 Figma 이름을 키로 `ICONS`에 넣고 `icons.test.ts`의 목록도 같이 고친다.
 - `Brand/KakaoSymbol`은 카카오 공식 리소스 PNG(`Icon/kakao-symbol.png`)라 `KakaoSymbol`이 data URI 이미지로 그린다.
 
@@ -69,8 +73,33 @@ Avatar · AvatarStack · AvatarToggle · PaymentRow · DateHeader · TimelineIte
 - 글자 예외(Figma에 텍스트 스타일 없음): Avatar 이니셜 XS `text-[10px]` · XL `text-[24px]`, AvatarStack +N 칩 XS `text-[9px]`(S는 Tag와 같은 11px). 원통화 금액·타임라인 시각은 `font-amount text-caption font-medium`(IBM Plex Sans KR 500, `styles/fonts.css`).
 - EmptyState 일러스트는 Figma 세트의 Icons8 컬러 PNG 대신 DS v1.4 `Illust/Empty-Trip`(24:61381)을 토큰 색 SVG로 그린다.
 
+## 셸 · 하이파이 패턴 (Figma v1.4 「화면 셸 · 하이파이 패턴」, spec 9장)
+
+ShellApp · ShellSub · ShellOnboarding · ProgressSteps · RouteProgress · RowMemberAmount · BadgeMe · IllustEmptyTrip · IllustLinked · IllustSettled · IllustLinking · SheetContentReadOnly · SheetContentOption · RowOption · RowAccount · RowAdd · RowMember · PanelSide · DropdownMenu. Figma `A/B` 이름은 `AB` 컴포넌트 + `src/ds/A/B.tsx`(SheetContent/PaymentDetail과 같은 규칙).
+
+### 셸 사용 규칙 (spec 9-3)
+
+- **화면 = 셸 1개 + 내용(children = Figma `Content` 슬롯).** 여정 탭(결제내역·현황·여정 정보·정산) = `ShellApp`, 지갑·마이·환율·멤버별 내역·여정 생성·여정 없음 = `ShellSub`(여정 없음은 `header={{ type: 'logo' }}`), 인증 03~08 = `ShellOnboarding`(로그인은 `back={false}`, progress·cta 없음). 스플래시만 셸 없이.
+- 셸 바탕은 `bg/surface`(흰색). 헤더는 구분선이 없고, App 헤더 그룹명은 H2다(Figma 셸 인스턴스 덮어쓰기 — TopHeader의 `divider`·`groupNameSize`는 셸이 넣으니 화면에서 직접 쓰지 않는다).
+- 첫 블록 위 여백은 셸이 준다(App 8 · Sub 16 · Onboarding 24). 좌우 거터 20도 셸(기본 on). **전폭 DS 행(PaymentRow · TimelineItem · SettlementRow · ListItem · DateHeader · RowAccount · RowAdd)은 자체 좌우 20을 가지므로 거터 밖에 둔다** — 그런 행만 쌓는 화면은 `gutter={false}`, 섞이면 `gutter={false}` + 블록마다 `px-gutter`. `RowMemberAmount`는 거터 블록 안에 넣는다(Figma 350).
+- `ShellApp`: `header`(TopHeader Group props: groupName · menu · statusBadge · dropdown · onMenuClick · onGroupClick · onWalletClick · onMyClick) + `nav`(BottomNav props: active · phase(진행 중·시작 전 ongoing, 종료 후 ended) · onChange · hrefs) + `cta`. `ShellSub`: `header`(Back: title · onBack · action / Logo) + `cta`. `ShellOnboarding`: `back`(기본 true) · `onBack` · `progress`(1~4, 주면 켜짐) · `cta`.
+- 상태바(44)·홈 인디케이터(34)는 시안용이라 그리지 않는다(Figma `Time` 속성 없음). 안전영역은 `env(safe-area-inset-*)`로만 비운다.
+- 오버레이는 셸 위 최상위 레이어(네이티브 `<dialog>`)에 뜬다: 딤 → BottomSheet / Dialog / `PanelSide` / `DropdownMenu`. 열림 상태는 화면이 쥐고 셸 헤더 콜백에서 연다 — ≡ `onMenuClick` → `PanelSide`, 그룹명 `onGroupClick` → `DropdownMenu` + `header.dropdown={open ? 'open' : 'closed'}`(⌃ · aria-expanded).
+- `PanelSide`: 왼쪽 300, 오른쪽 radius 24, Elevation/3. `useModalDialog`로 ESC · 딤 · 닫기 · Tab 가두기 · 포커스 되돌리기. children = `RowMember` × n + `RowAdd`("초대코드 공유"). 강퇴는 그룹장 화면의 남의 행에만 `kick={{ onClick }}`.
+- `DropdownMenu`: 헤더 아래부터 딤(헤더는 딤 밖), 패널 radius 16 · Elevation/2. role=menu, 여정 = menuitemradio(현재 = checked · Selected 체크), `actions` = Row/Add(menuitem). ↑↓ · Home · End 이동, 고르면 닫고 `onSelect`, ESC · Tab · 바깥 탭으로 닫힘. 상태는 배지 대신 `meta` 글자("진행 중" · "시작 전 · 12.27" · "정산 완료"). 「초대코드로 참여」 행(WF-14)은 DS에 따로 없어 `actions`에 Row/Add로 넣는다(아이콘이 +인 점은 디자인 확인 필요).
+- 시트 내용: 결제자가 아닌 멤버·종료 후·결제자가 나간 결제는 `SheetContentReadOnly`(`locked` = 비활성 "변경 불가"), 단일 선택은 `SheetContentOption`(라디오 그룹, `RowOption`).
+- 일러스트는 `Illust*`(토큰 색 SVG, Icons8 금지): 결제 없음·여정 없음 = EmptyTrip, 연동 완료 = Linked, 정산 완료·연결 결과 = Settled, 지갑 연결 단계 = `IllustLinking phase`. 기본 140(120~160), 장식이라 `aria-hidden` — 뜻이 있으면 `label`. `EmptyState`도 IllustEmptyTrip을 쓴다.
+- `RouteProgress`는 영웅 카드(톤) 안에서만. Figma는 4일·진행 중 Day 2 고정이고, 코드는 `days`·`current`로 실제 일정을 받는다.
+
+### 명세 충돌 반영 (docs/spec README §7)
+
+- **C-05 스택·멤버 순서**: 나 먼저 → 가입 순, 결제자를 앞세우지 않는다(결제자는 행 왼쪽 아바타). 컴포넌트는 받은 순서대로 그리므로 데이터 순서는 호출자 책임 — `orderMembers(people)`로 정렬해서 넘긴다(AvatarStack · PaymentRow/TimelineItem `participants` · SheetContent 부담 인원 · 멤버별 부담 · 그룹원 패널).
+- **C-06 결제자 표기**: 메타 줄은 `paymentMeta('18:20', payer)` → "18:20 · 내 결제" / "18:20 · 민지"(접미사 없음), 타임라인처럼 앞부분이 다르면 `payerLabel(payer)`. 미확정은 메타에 붙이지 않는다(PaymentRow `type="pending"`이 칩을 그림). 결제 상세 결제자 행은 프사 + 닉네임, 나는 "나"(`SheetContentReadOnly`가 처리).
+- **C-08 나간 멤버**: 이름 뒤 "(나감)" 대신 프사 Left + `Tag type="left"`("나간 멤버"). SettlementRow `member="left"`, `RowMemberAmount`·`SheetContentReadOnly` 결제자는 `person.left`로 자동. 결제 행(PaymentRow)은 프사 Left만(메타는 닉네임 그대로).
+- 나(`me`)는 프사 Me 테두리와 「나」 배지(`BadgeMe`)를 같이 쓴다 — RowMemberAmount · RowMember · SettlementRow 공통.
+
 ## DS가 바뀌었을 때
 
-1. Figma에서 `docs/design/design-system/*.json`이 다시 나오면 `pnpm --filter @yeojeong/web ds:tokens` 후 `tokens.json`·`tokens.css` 변경을 커밋한다. 텍스트·이펙트 스타일이 바뀌었으면 `design-tokens/styles.json`을 고친다.
+1. Figma에서 `docs/design/design-system/*.json`이 다시 나오면 `pnpm --filter @yeojeong/web ds:tokens` 후 `tokens.json`·`tokens.css` 변경을 커밋한다(텍스트·이펙트 스타일도 tokens.json의 `typography`·`elevation`에서 온다). 기존 값이 바뀌는 게 의도라면 `scripts/__fixtures__/tokens-v1.3.css` 비교 테스트를 고친다.
 2. 컴포넌트 변형·속성이 바뀌었으면 같은 이름의 prop 유니온에 값을 더하거나 빼고, catalog에 변형을 추가한다(타입 오류가 쓰는 곳을 알려 준다).
 3. 카탈로그를 Figma 세트 스크린샷과 나란히 놓고 크기·색·굵기를 확인한다.

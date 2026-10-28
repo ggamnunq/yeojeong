@@ -7,11 +7,13 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CircleCheck,
   Clock3,
   Coins,
   Copy,
   CreditCard,
+  Crown,
   Ellipsis,
   Funnel,
   House,
@@ -44,7 +46,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-// Figma `Icon/<이름>`(Icons8 Fluency Systems Regular) → lucide 아이콘. 키는 Figma 이름 그대로.
+// Figma `Icon/<이름>`(Icons8 Fluency Systems Regular) → lucide 아이콘. 키는 Figma 이름 그대로. v1.4에 chevron-up·crown 추가(44종).
 export const ICONS = {
   'chevron-down': ChevronDown,
   'chevron-right': ChevronRight,
@@ -88,6 +90,9 @@ export const ICONS = {
   home: House,
   refresh: RefreshCw,
   menu: Menu,
+  // v1.4: 펼친 그룹 드롭다운(TopHeader Dropdown=Open) · 그룹장 왕관(Row/Member Leader)
+  'chevron-up': ChevronUp,
+  crown: Crown,
 } as const satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof ICONS

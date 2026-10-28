@@ -1,5 +1,4 @@
 import tokens from '../../../design-tokens/tokens.json'
-import styles from '../../../design-tokens/styles.json'
 import { defineCatalog } from '../catalog'
 import { Sub } from '../ui'
 
@@ -26,10 +25,10 @@ export default defineCatalog({
         </Sub>
         <Sub title="Effect style">
           <div className="flex flex-wrap gap-8 bg-canvas p-6">
-            {styles.effect.map((e) => (
-              <div key={e.name} className="flex flex-col items-center gap-3">
-                <div className="size-24 rounded-lg bg-surface" style={{ boxShadow: `var(--shadow-${slug(e.name)})` }} />
-                <p className="text-caption text-tertiary">shadow-{slug(e.name)}</p>
+            {Object.keys(tokens.elevation).map((name) => (
+              <div key={name} className="flex flex-col items-center gap-3">
+                <div className="size-24 rounded-lg bg-surface" style={{ boxShadow: `var(--shadow-${slug(name)})` }} />
+                <p className="text-caption text-tertiary">shadow-{slug(name)}</p>
               </div>
             ))}
           </div>

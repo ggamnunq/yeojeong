@@ -45,6 +45,25 @@ export default defineCatalog({
                 <TopHeader groupName="대학 동기들과 떠나는 오사카·교토 5박 6일 졸업여행" statusBadge />
               </Frame>
             </Variant>
+            <Variant name='dropdown="open" (v1.4 · 그룹 전환 드롭다운 펼침, ⌃)'>
+              <Frame>
+                <TopHeader groupName="오사카 우정여행" dropdown="open" />
+              </Frame>
+            </Variant>
+          </div>
+        </Sub>
+        <Sub title="Shell 인스턴스 덮어쓰기 — divider={false} · groupNameSize=&quot;h2&quot; (ShellApp·ShellSub가 넣는다)">
+          <div className="flex flex-wrap gap-6">
+            <Variant name="Shell/App 헤더">
+              <Frame>
+                <TopHeader groupName="오사카 3박 4일" divider={false} groupNameSize="h2" />
+              </Frame>
+            </Variant>
+            <Variant name="Shell/Sub 헤더">
+              <Frame>
+                <TopHeader type="back" title="지갑" divider={false} />
+              </Frame>
+            </Variant>
           </div>
         </Sub>
         <Sub title='type="back" · 상세·지갑·마이'>

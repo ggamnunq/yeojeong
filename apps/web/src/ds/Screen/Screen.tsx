@@ -5,6 +5,8 @@ import { Button, type ButtonProps } from '../Button/Button'
 // spec 7-1 화면 조립 규칙: 390 폭 · bg/canvas · TopHeader(56) → 본문(좌우 거터 20) → BottomNav(64 + 안전영역).
 // 하단 CTA는 Button Primary L을 거터 안에서 꽉 채운다. 데스크톱에서는 390 폭 그대로 가운데 정렬.
 // 스크롤은 문서 전체가 하고(모바일 주소창 접힘 유지), 헤더·하단 영역은 sticky로 붙인다.
+// DS v1.4부터 화면은 Shell/App · Shell/Sub · Shell/Onboarding(ShellApp·ShellSub·ShellOnboarding)으로 만든다(spec 9-3).
+// Screen은 셸들이 공통으로 쓰는 레이아웃 틀이고, 셸에 맞지 않는 화면(스플래시·로그인 등)만 직접 쓴다.
 export type ScreenCta = Pick<ButtonProps, 'label' | 'onClick' | 'disabled' | 'htmlType' | 'form'>
 export type ScreenBackground = 'canvas' | 'surface'
 
@@ -17,15 +19,26 @@ export type ScreenProps = {
   cta?: ScreenCta
   /** 본문 좌우 거터 20. 리스트처럼 행이 화면 끝까지 가야 하면 false. 기본 true */
   gutter?: boolean
-  /** 화면 바탕. spec은 bg/canvas */
+  /** 화면 바탕. spec 7-1은 bg/canvas, v1.4 셸은 bg/surface */
   background?: ScreenBackground
   children?: ReactNode
   className?: string
+  /** 본문(main)에 붙일 클래스. 셸이 첫 블록 위 여백(App 8 · Sub 16 · Onboarding 24)을 여기로 준다 */
+  contentClassName?: string
 }
 
 const BACKGROUND = { canvas: 'bg-canvas', surface: 'bg-surface' } satisfies Record<ScreenBackground, string>
 
-export function Screen({ header, nav, cta, gutter = true, background = 'canvas', children, className }: ScreenProps) {
+export function Screen({
+  header,
+  nav,
+  cta,
+  gutter = true,
+  background = 'canvas',
+  children,
+  className,
+  contentClassName,
+}: ScreenProps) {
   const bg = BACKGROUND[background]
   return (
     <div
@@ -38,7 +51,12 @@ export function Screen({ header, nav, cta, gutter = true, background = 'canvas',
     >
       {header && <div className="sticky top-0 z-10 bg-surface pt-[env(safe-area-inset-top)]">{header}</div>}
       <main
-        className={clsx('flex flex-1 flex-col', gutter && 'px-gutter', !nav && !cta && 'pb-[env(safe-area-inset-bottom)]')}
+        className={clsx(
+          'flex flex-1 flex-col',
+          gutter && 'px-gutter',
+          !nav && !cta && 'pb-[env(safe-area-inset-bottom)]',
+          contentClassName,
+        )}
       >
         {children}
       </main>
