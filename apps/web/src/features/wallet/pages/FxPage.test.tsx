@@ -25,6 +25,15 @@ describe('환율(HF-29)', () => {
     expect(screen.getByRole('button', { name: '새로고침' })).toBeTruthy()
   })
 
+  it('출처 링크가 필요한 고시(ExchangeRate-API)는 출처를 링크로 단다', async () => {
+    findTrip(TRIP.osaka)!.currency = 'TWD'
+    renderApp(`/trips/${TRIP.osaka}/fx`)
+    expect(await screen.findByText('TWD → KRW')).toBeTruthy()
+    const link = screen.getByRole('link', { name: 'Rates By Exchange Rate API' }) as HTMLAnchorElement
+    expect(link.href).toBe('https://www.exchangerate-api.com/')
+    expect(link.target).toBe('_blank')
+  })
+
   it('그룹장이 고르면 바로 저장하고 "새 환율로 다시 계산했어요"', async () => {
     renderApp(`/trips/${TRIP.osaka}/fx`)
     await screen.findByText('JPY → KRW')

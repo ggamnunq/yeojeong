@@ -86,7 +86,21 @@ function FxContent({ tripId, fx }: { tripId: string; fx: TripFxView }) {
               <span className="text-[24px] leading-8 font-semibold">원</span>
             </>
           }
-          sub={current && <span className="text-tertiary">{`${current.source} · ${formatKstTime(current.effectiveAt)} 갱신`}</span>}
+          sub={
+            current && (
+              <span className="text-tertiary">
+                {/* ExchangeRate-API 약관: 환율을 쓰는 화면에 출처 링크를 단다(sourceUrl) */}
+                {current.sourceUrl ? (
+                  <a href={current.sourceUrl} target="_blank" rel="noreferrer" className="underline">
+                    {current.source}
+                  </a>
+                ) : (
+                  current.source
+                )}
+                {` · ${formatKstTime(current.effectiveAt)} 갱신`}
+              </span>
+            )
+          }
         />
       </div>
 

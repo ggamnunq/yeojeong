@@ -138,7 +138,7 @@ documents() {}
 | `SUPPORT_EMAIL`                           | Cloud Run 일반 env                     | 임시 주소                               |
 | `KAKAO_ADMIN_KEY`                         | Secret Manager(사용자가 gcloud로 생성, `yeojeong-kakao-admin-key`) | 선택. 없으면 연결 끊기 알림 404. Terraform `enable_kakao_unlink` |
 | `KAKAO_APP_ID`                            | Cloud Run 일반 env(`kakao_app_id`)     | 선택. 연결 끊기 알림 app_id 확인         |
-| `EXIM_API_KEY`                            | Secret Manager(사용자가 gcloud로 생성, `yeojeong-exim-api-key`) | 선택. 있으면 환율 소스 koreaexim. Terraform `enable_exim_fx` |
+| `EXIM_API_KEY`                            | Secret Manager(사용자가 gcloud로 생성, `yeojeong-exim-api-key`) | 선택. 있으면 환율 소스 koreaexim+erapi(미고시 통화 TWD·VND·PHP는 ExchangeRate-API, 키 없음). Terraform `enable_exim_fx` |
 
 ### 내부 잡 인증
 

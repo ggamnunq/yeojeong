@@ -87,10 +87,18 @@ const DEMO_CANDIDATES: MockCandidate[] = [
 ]
 
 /** 통화별 최신 매매기준율(샘플 100엔 = 919.20원) */
-const RATES: Record<string, Pick<FxRateView, 'currencyNameKo' | 'displayUnit' | 'rate'>> = {
+const RATES: Record<string, Pick<FxRateView, 'currencyNameKo' | 'displayUnit' | 'rate'> & Partial<Pick<FxRateView, 'source' | 'sourceUrl'>>> = {
   JPY: { currencyNameKo: '엔', displayUnit: 100, rate: '9.192000' },
   USD: { currencyNameKo: '달러', displayUnit: 1, rate: '1380.500000' },
   EUR: { currencyNameKo: '유로', displayUnit: 1, rate: '1495.300000' },
+  // 한국수출입은행이 고시하지 않는 통화는 ExchangeRate-API 값(출처 링크 필수)
+  TWD: {
+    currencyNameKo: '대만 달러',
+    displayUnit: 1,
+    rate: '41.345000',
+    source: 'Rates By Exchange Rate API',
+    sourceUrl: 'https://www.exchangerate-api.com',
+  },
 }
 
 const ALL_FIN: readonly FinConsentId[] = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
@@ -256,7 +264,8 @@ function tripFxView(tripId: string): TripFxView | null {
           displayRate: (Number(rate.rate) * rate.displayUnit).toFixed(2),
           label: `${rate.displayUnit}${rate.currencyNameKo} = ${(Number(rate.rate) * rate.displayUnit).toFixed(2)}원`,
           rateType: 'MID',
-          source: '하나은행 매매기준율',
+          source: rate.source ?? '하나은행 매매기준율',
+          ...(rate.sourceUrl ? { sourceUrl: rate.sourceUrl } : {}),
           effectiveAt: todayKstAt(18, 0),
           fetchedAt: todayKstAt(18, 1),
         }

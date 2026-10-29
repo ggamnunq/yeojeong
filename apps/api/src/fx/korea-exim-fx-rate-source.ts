@@ -14,6 +14,35 @@ import { kstDate } from './kst.js';
 export const KOREA_EXIM_ENDPOINT =
   'https://oapi.koreaexim.go.kr/site/program/financial/exchangeJSON';
 
+/**
+ * 한국수출입은행 현재환율(AP01)이 고시하는 통화(2026-10 기준, CNH는 CNY로 읽는다).
+ * 동작에는 쓰지 않는다. 지원 통화 중 여기 없는 것(TWD·VND·PHP)은 보조 소스가 채운다는 커버리지 테스트용 기록이다.
+ */
+export const KOREA_EXIM_PUBLISHED_CURRENCIES: readonly string[] = [
+  'AED',
+  'AUD',
+  'BHD',
+  'BND',
+  'CAD',
+  'CHF',
+  'CNY',
+  'DKK',
+  'EUR',
+  'GBP',
+  'HKD',
+  'IDR',
+  'JPY',
+  'KWD',
+  'MYR',
+  'NOK',
+  'NZD',
+  'SAR',
+  'SEK',
+  'SGD',
+  'THB',
+  'USD',
+];
+
 /** 오늘 포함 8일(오늘 + 7일 전까지) */
 const LOOKBACK_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;

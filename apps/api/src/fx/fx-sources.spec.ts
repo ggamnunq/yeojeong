@@ -1,5 +1,7 @@
 import type { ConfigService } from '@nestjs/config';
 import { createFxRateSource, DemoFxRateSource } from './fx-rate-source.js';
+import { CompositeFxRateSource } from './composite-fx-rate-source.js';
+import { ExchangeRateApiFxRateSource } from './exchange-rate-api-fx-rate-source.js';
 import { KoreaEximFxRateSource } from './korea-exim-fx-rate-source.js';
 import { SpotRateTable } from './fx-rates.service.js';
 import { asOfFromQuery, toKstIso } from './kst.js';
@@ -86,7 +88,10 @@ describe('FxRateSource', () => {
     expect(pick({})).toBeInstanceOf(DemoFxRateSource);
     expect(pick({ FX_RATE_SOURCE: '' })).toBeInstanceOf(DemoFxRateSource);
     expect(pick({ EXIM_API_KEY: '  ' })).toBeInstanceOf(DemoFxRateSource);
-    expect(pick({ EXIM_API_KEY: key })).toBeInstanceOf(KoreaEximFxRateSource);
+    // 운영 기본: 한국수출입은행 + 미고시 통화만 ExchangeRate-API
+    const auto = pick({ EXIM_API_KEY: key });
+    expect(auto).toBeInstanceOf(CompositeFxRateSource);
+    expect(auto.id).toBe('koreaexim+erapi');
     // 명시하면 그대로
     expect(pick({ FX_RATE_SOURCE: 'DEMO' })).toBeInstanceOf(DemoFxRateSource);
     expect(pick({ FX_RATE_SOURCE: 'demo', EXIM_API_KEY: key })).toBeInstanceOf(
@@ -95,8 +100,17 @@ describe('FxRateSource', () => {
     expect(
       pick({ FX_RATE_SOURCE: 'koreaexim', EXIM_API_KEY: key }),
     ).toBeInstanceOf(KoreaEximFxRateSource);
+    expect(
+      pick({ FX_RATE_SOURCE: 'koreaexim+erapi', EXIM_API_KEY: key }),
+    ).toBeInstanceOf(CompositeFxRateSource);
+    expect(pick({ FX_RATE_SOURCE: 'erapi' })).toBeInstanceOf(
+      ExchangeRateApiFxRateSource,
+    );
     // koreaexim인데 키가 없으면 부팅 실패
     expect(() => pick({ FX_RATE_SOURCE: 'koreaexim' })).toThrow('EXIM_API_KEY');
+    expect(() => pick({ FX_RATE_SOURCE: 'koreaexim+erapi' })).toThrow(
+      'EXIM_API_KEY',
+    );
     expect(() => pick({ FX_RATE_SOURCE: 'scrape', EXIM_API_KEY: key })).toThrow(
       'FX_RATE_SOURCE',
     );

@@ -130,7 +130,7 @@ variable "kakao_app_id" {
 }
 
 variable "enable_exim_fx" {
-  description = "한국수출입은행 환율. true면 Secret Manager yeojeong-exim-api-key를 EXIM_API_KEY로 연결한다(시크릿이 먼저 있어야 한다). 연결되면 환율 소스가 koreaexim이 된다"
+  description = "한국수출입은행 환율. true면 Secret Manager yeojeong-exim-api-key를 EXIM_API_KEY로 연결한다(시크릿이 먼저 있어야 한다). 연결되면 환율 소스가 koreaexim+erapi(미고시 통화만 ExchangeRate-API)가 된다"
   type        = bool
   default     = false
 }

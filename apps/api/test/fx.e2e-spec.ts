@@ -32,7 +32,11 @@ describe('FX guards (e2e, no DB)', () => {
   const prisma = {
     $queryRaw: vi.fn().mockResolvedValue([]),
     trip: { findMany: vi.fn().mockResolvedValue([]) },
-    exchangeRate: { createMany: vi.fn().mockResolvedValue({ count: 17 }) },
+    exchangeRate: {
+      // 이상값 방어가 직전 고시를 찾는다. 없으면 비교 없이 저장
+      findFirst: vi.fn().mockResolvedValue(null),
+      createMany: vi.fn().mockResolvedValue({ count: 17 }),
+    },
   };
 
   afterEach(async () => {
@@ -58,6 +62,7 @@ describe('FX guards (e2e, no DB)', () => {
     expect(res.body).toMatchObject({
       source: '데모 매매기준율',
       inserted: 17,
+      rejected: 0,
       recalculatedTrips: 0,
     });
     expect(res.body.currencies).toContain('JPY');
