@@ -30,7 +30,6 @@ import { convertToKrw, type FxSpotRate } from '../fx/convert.js';
 import { SUPPORTED_CURRENCY_CODES } from '../fx/currencies.js';
 import { FxRatesService } from '../fx/fx-rates.service.js';
 import { Prisma } from '../generated/prisma/client.js';
-import { TokenCipher } from '../payment-methods/token-cipher.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   approvalRowsOf,
@@ -39,6 +38,7 @@ import {
 } from './approval-normalizer.js';
 import { CardImportLimits } from './card-import-limits.js';
 import { CodefAccountRemover } from './codef/codef-account-remover.js';
+import { ImportKeyHasher } from './import-key.js';
 import { ItemTokenSigner } from './item-token.js';
 import { CodefClient, type CodefResponse } from './codef/codef.client.js';
 import { CodefConfig } from './codef/codef.config.js';
@@ -129,7 +129,7 @@ export class CardImportService {
     private readonly codef: CodefClient,
     private readonly codefConfig: CodefConfig,
     private readonly sealer: TwoWayTokenSealer,
-    private readonly cipher: TokenCipher,
+    private readonly importKeys: ImportKeyHasher,
     private readonly consents: ConsentChecker,
     private readonly audit: AuditService,
     private readonly fx: FxRatesService,
@@ -216,7 +216,7 @@ export class CardImportService {
         },
       ]);
     }
-    const loginRef = this.cipher.hmacRef(
+    const loginRef = this.importKeys.hash(
       `card-import-login|${org.code}|${request.loginId}`,
     );
     if (
@@ -298,7 +298,7 @@ export class CardImportService {
         {
           userId,
           organization: org.code,
-          keyFn: (material) => this.cipher.hmacRef(material),
+          keyFn: (material) => this.importKeys.hash(material),
         },
       );
       if (dropped > 0) {

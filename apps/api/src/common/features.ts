@@ -64,6 +64,7 @@ export function parseAllowedUserIds(
  * - FEATURE_CARD_IMPORT(기본 off): 카드 승인내역 불러오기(S8, CODEF 일회성 조회). off | allowlist | on.
  *   allowlist면 CARD_IMPORT_ALLOWED_USER_IDS(쉼표 구분 사용자 ID, tfvars로만 넣는다)에 있는 사용자만 켜진다.
  *   CODEF 키(CODEF_CLIENT_ID·CODEF_CLIENT_SECRET·CODEF_PUBLIC_KEY)가 하나라도 없으면 단계와 무관하게 off다.
+ *   운영에서는 importKey 전용 키(IMPORT_KEY_HMAC_KEY)도 있어야 한다.
  *   꺼진 사용자에게는 /api/card-import/*·POST /api/wallet/entries/import가 404(CardImportGuard), 세션 features.cardImport = false
  */
 @Injectable()
@@ -83,7 +84,12 @@ export class FeatureFlags {
     this.cardImportAllowed = parseAllowedUserIds(
       config.get<string>('CARD_IMPORT_ALLOWED_USER_IDS'),
     );
-    const codefConfigured = CODEF_KEY_ENVS.every(
+    // importKey 전용 키는 운영에서만 필수(로컬·테스트는 고정 개발 키 — card-import/import-key.ts)
+    const required =
+      config.get<string>('NODE_ENV') === 'production'
+        ? [...CODEF_KEY_ENVS, 'IMPORT_KEY_HMAC_KEY']
+        : CODEF_KEY_ENVS;
+    const codefConfigured = required.every(
       (name) => (config.get<string>(name) ?? '').trim() !== '',
     );
     this.cardImportMode = codefConfigured ? mode : 'off';

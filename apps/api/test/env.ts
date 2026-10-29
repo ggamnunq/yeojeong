@@ -18,4 +18,6 @@ export const TEST_ENV = {
   INTERNAL_JOB_SECRET: 'test-internal-job-secret-not-production-000',
   // 접근 기록·동의 기록 IP 해시 키
   AUDIT_HMAC_KEY: 'test-audit-hmac-key-not-for-production-00000',
+  // 카드 승인내역 importKey 전용 키
+  IMPORT_KEY_HMAC_KEY: 'test-import-key-hmac-key-not-for-production-0',
 };

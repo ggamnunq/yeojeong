@@ -12,6 +12,7 @@ locals {
     TOKEN_ENCRYPTION_KEY = "token_encryption_key"
     USER_REF_HMAC_KEY    = "user_ref_hmac_key"
     AUDIT_HMAC_KEY       = "audit_hmac_key"
+    IMPORT_KEY_HMAC_KEY  = "import_key_hmac_key"
   }
 }
 

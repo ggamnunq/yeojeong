@@ -10,7 +10,8 @@ import {
 // ConfigService는 process.env(테스트 env는 플래그를 켠다)를 먼저 읽으므로 값만 돌려주는 가짜를 쓴다
 const flagsWith = (value: string | undefined) =>
   new FeatureFlags({
-    get: (name: string) => (name === 'FEATURE_ACCOUNT_LINK' ? value : undefined),
+    get: (name: string) =>
+      name === 'FEATURE_ACCOUNT_LINK' ? value : undefined,
   } as unknown as ConfigService);
 
 describe('기능 플래그(FR-006)', () => {
@@ -81,6 +82,20 @@ describe('기능 플래그(FR-006)', () => {
         ...keys,
       }),
     ).toThrow(/UUID/);
+
+    // 운영에서는 importKey 전용 키도 있어야 켜진다
+    expect(
+      flags({ NODE_ENV: 'production', FEATURE_CARD_IMPORT: 'on', ...keys })
+        .cardImportMode,
+    ).toBe('off');
+    expect(
+      flags({
+        NODE_ENV: 'production',
+        FEATURE_CARD_IMPORT: 'on',
+        IMPORT_KEY_HMAC_KEY: 'k'.repeat(64),
+        ...keys,
+      }).cardImportMode,
+    ).toBe('on');
 
     const ctx = (userId?: string) =>
       ({

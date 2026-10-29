@@ -41,6 +41,10 @@ locals {
       id   = "yeojeong-audit-hmac-key"
       data = random_password.audit_hmac_key.result
     }
+    import_key_hmac_key = {
+      id   = "yeojeong-import-key-hmac-key"
+      data = random_password.import_key_hmac_key.result
+    }
   }
 }
 
@@ -99,6 +103,17 @@ resource "random_password" "user_ref_hmac_key" {
 
 # 접속 IP는 원문 대신 HMAC-SHA256로만 기록한다. 키 교체 시 과거 로그를 같은 IP로 연결할 수 없다.
 resource "random_password" "audit_hmac_key" {
+  length  = 64
+  special = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# 교체 금지: 카드 승인내역 불러오기(S8)의 importKey(HMAC-SHA256(카드사·승인번호·승인 일시·금액, 이 키)) 전용 키다.
+# 지갑에 저장된 importKey와 다시 불러온 결과를 같은 승인으로 맞추는(중복 "추가됨") 기준이라 바꾸면 판정이 끊긴다. prevent_destroy로 교체를 막는다.
+resource "random_password" "import_key_hmac_key" {
   length  = 64
   special = false
 

@@ -353,23 +353,32 @@ describe.skipIf(!databaseUrl)(
         },
         consent: { valid: false, missing: ['CARD_IMPORT'] },
       });
+      // 현대·하나(카드번호 전체 필요)는 1차에서 뺐다
       expect(body.organizations.map((o) => o.code)).toEqual([
         '0301',
-        '0302',
         '0303',
         '0304',
         '0305',
         '0306',
         '0309',
         '0311',
-        '0313',
       ]);
+      expect(body.organizations.every((o) => !o.requiresCardNo)).toBe(true);
 
       const denied = await fetchAs(seed, '준용').expect(403);
       expect(denied.body.code).toBe('CONSENT_REQUIRED');
       expect(http.calls).toHaveLength(0);
 
       await consent(seed, '준용').expect(201);
+      // 현대·하나는 거절(400, CODEF 호출 없음)
+      for (const organization of ['0302', '0313']) {
+        await fetchAs(seed, '준용', {
+          organization,
+          loginCardNo: '9410123412341934',
+          encryptedCardPassword: PASSWORD_CIPHERTEXT,
+        }).expect(400);
+      }
+      expect(http.calls).toHaveLength(0);
       const txBefore = await prisma.transaction.count({ where: { userId } });
       const callsBefore = http.calls.length;
       logOutput = '';

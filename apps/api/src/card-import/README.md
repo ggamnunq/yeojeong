@@ -26,7 +26,7 @@ POST /api/wallet/entries/import ─▶  itemToken 검증 → CARD_IMPORT 지갑 
 |---|---|---|
 | 카드사 아이디(`loginId`) | DB·로그·접근 기록·응답·에러 | 요청 지역 변수로 CODEF에만 전달. 로거 redaction(`common/logging/logger.ts` `SENSITIVE_BODY_KEYS`), 검증 에러는 값을 되돌리지 않는다(`validationError.value=false`), e2e로 확인 |
 | 비밀번호 | 서버는 원문을 받지 않는다. 암호문도 저장·로그 안 함 | 브라우저 암호화(`apps/web/src/features/card-import/crypto.ts`) |
-| 카드번호 전체·카드 비밀번호(현대·하나) | 〃 | 〃 |
+| 카드번호 전체·카드 비밀번호(현대·하나) | 1차는 받지 않는다(`CARD_NUMBER_LOGIN_ENABLED = false` — 두 카드사를 config에서 빼고 fetch는 400). 켜면 비밀번호와 같은 규칙 | `codef/codef.constants.ts` |
 | 조회 결과(가맹점·금액·승인번호·승인 일시) | DB·로그 | 응답으로만. 로그는 건수·결과 코드만 |
 | 승인번호 원문·카드번호·가맹점 주소·사업자번호 | 응답에도 없다 | `approval-normalizer.ts`가 버린다. 중복 판정은 `importKey`(HMAC) |
 | connectedId | DB·로그 | direct는 만들지 않음. account는 지역 변수. **예외**: 삭제 3회 실패분만 암호화해 삭제 대기 큐(삭제 재시도에만 쓰고 조회에 쓰지 않음, 사용자 ID 없음) |
@@ -39,7 +39,7 @@ POST /api/wallet/entries/import ─▶  itemToken 검증 → CARD_IMPORT 지갑 
 
 | 메서드·경로 | 요청 | 응답 | 에러 |
 |---|---|---|---|
-| `GET /api/card-import/config` | — | `CardImportConfig { enabled, publicKey, publicKeyFingerprint, organizations[{code,name,maxRangeDays,maxLookbackDays,requiresCardNo}], maxRangeDays: 92, maxLookbackDays: 365, defaultRange{from,to,basis,tripId}, consent, twoWayTimeoutSeconds: 160, remainingToday }` | 404(꺼짐) |
+| `GET /api/card-import/config` | — | `CardImportConfig { enabled, publicKey, publicKeyFingerprint, organizations[{code,name,maxRangeDays,maxLookbackDays,requiresCardNo}](7곳 — 현대·하나 제외), maxRangeDays: 92, maxLookbackDays: 365, defaultRange{from,to,basis,tripId}, consent, twoWayTimeoutSeconds: 160, remainingToday }` | 404(꺼짐) |
 | `POST /api/card-import/fetch` | `{ organization, loginId, encryptedPassword, from, to, loginCardNo?, encryptedCardPassword?, twoWay?: {token, code} }` | 200 `{status:'OK', organization, from, to, items: CardApprovalItem[]}` · 200 `{status:'TWO_WAY_REQUIRED', twoWayToken, method:'SMS', expiresAt}` | 400 `VALIDATION_FAILED`·`CARD_LOGIN_FAILED{failedAttempts}`·`CARD_TWO_WAY_INVALID`·`CARD_PASSWORD_ENCRYPTION_INVALID`, 403 `CONSENT_REQUIRED`·`CSRF_REJECTED`, 404, 409 `CARD_IMPORT_IN_PROGRESS`·`CARD_ACCOUNT_ACTION_REQUIRED`·`CARD_TWO_WAY_UNSUPPORTED`, 410 `CARD_TWO_WAY_EXPIRED`, 429 `CARD_IMPORT_RATE_LIMITED`·`CARD_IMPORT_LOGIN_COOLDOWN`(`details{retryAfter(ISO UTC), retryAfterSec}` + `Retry-After`), 502 `CARD_IMPORT_FAILED`, 503 `CARD_COMPANY_UNAVAILABLE`·`CARD_IMPORT_DAILY_LIMIT` |
 | `POST /api/wallet/entries/import` | `{ items: [{importKey, itemToken, occurredAt, amount, currency, merchantName, krwAmount, tripId?}] }`(1~200) | 201 `{ items[{importKey, created, entry: WalletEntry}], created, skipped, linked }` | 400 `VALIDATION_FAILED`, 403, 404, 410 `CARD_IMPORT_RESULT_EXPIRED{invalidIndexes}`, 503 `FX_RATE_UNAVAILABLE` |
 | `GET /api/consents/status?stage=CARD_IMPORT` · `POST /api/consents {stage:'CARD_IMPORT', screen:'HF-51'}` | 기존 동의 API | `ConsentStatusResponse` | 동의 ID별 게이트: FIN_* = accountLink, CARD_IMPORT = 이 사용자의 cardImport(꺼지면 404) |
@@ -48,7 +48,7 @@ POST /api/wallet/entries/import ─▶  itemToken 검증 → CARD_IMPORT 지갑 
 
 `CardApprovalItem`: `importKey, approvedAt, amount(취소 줄은 음수), currency, krwAmount, estimatedKrwAmount, merchantName(40자), overseas, organization, organizationName, cardLast4, cardName, status(NEW|ALREADY_IMPORTED|SIMILAR|CANCELLED|PARTIAL_CANCEL), cancelState(NONE|PARTIAL|CANCELLED|ORPHAN_CANCEL), partialCancelAmount, alreadyImported, similarManualEntryId, inTripId, selectable, defaultSelected, blockReason, itemToken`.
 
-- `importKey` = `hmacRef("card-import:v1|사용자|기관|승인번호|승인일시|원 승인금액|통화")`(TokenCipher의 외부 참조 HMAC, 키 = TOKEN_ENCRYPTION_KEY 파생). 중복 저장은 `transactions_card_import_ref_key`(부분 유니크 user_id·external_ref WHERE source = CARD_IMPORT).
+- `importKey` = HMAC-SHA256(**전용 키 `IMPORT_KEY_HMAC_KEY`**, "card-import:v1|사용자|기관|승인번호|승인일시|원 승인금액|통화") hex(`import-key.ts`). 교체 금지("추가됨" 판정이 끊긴다), 다른 키를 교체해도 영향 없음. 중복 저장은 `transactions_card_import_ref_key`(부분 유니크 user_id·external_ref WHERE source = CARD_IMPORT).
 - `itemToken` = `"<만료 epoch 초>.<HMAC-SHA256>"`, 재료 = 사용자 + importKey + 승인 일시 + 금액 + 통화 + 가맹점명 + 카드사 원화 + 만료(30분). 저장은 서명이 맞는 항목만(위변조·임의 항목 주입 방지, 서버 무상태).
 - 저장한 CARD_IMPORT 항목은 지갑에서 직접 입력과 같은 규칙(수정·삭제·여정 바꾸기)이고 여정 결제는 `origin = MANUAL`(작성자 = 나).
 
@@ -89,7 +89,8 @@ CODEF가 준 메시지는 화면에 넘기지 않는다. 로그는 경로·결�
 | `CODEF_LOGIN_MODE` | `direct` | `direct` · `account` |
 | `CODEF_CLIENT_ID` · `CODEF_CLIENT_SECRET` · `CODEF_PUBLIC_KEY` | — | Secret Manager `yeojeong-codef-client-id`·`-client-secret`·`-public-key`(infra `enable_codef`) |
 | `CODEF_DAILY_CALL_BUDGET` | `100` | 서비스 전체 일일 CODEF 호출 예산 |
-| `TOKEN_ENCRYPTION_KEY` | (기존) | importKey·twoWayToken·itemToken·삭제 대기 암호화 키를 HKDF로 용도별 파생 |
+| `IMPORT_KEY_HMAC_KEY` | 로컬·테스트 고정 개발 키 | importKey 전용 HMAC 키(32자 이상). 운영 Secret Manager `yeojeong-import-key-hmac-key`(Terraform `random_password`, prevent_destroy). 운영에서 없으면 기능이 꺼진다. 교체 금지 |
+| `TOKEN_ENCRYPTION_KEY` | (기존) | twoWayToken·itemToken·삭제 대기 암호화 키를 HKDF로 용도별 파생 |
 
 ## CODEF 확인 사실(출처)
 
