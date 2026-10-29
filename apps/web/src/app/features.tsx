@@ -9,17 +9,10 @@ import { sessionQuery } from './session'
 // features.accountLink = 토스 연결(계좌·카드 불러오기). false면 연결 흐름·연동 동의·기간 외 결제·연결 만료·동기화를 숨기고
 // 지갑은 수동 지갑(HF-49), 가입은 2단계(닉네임 1/2 → 약관 2/2)다. 코드는 지우지 않는다.
 
-/**
- * 세션 응답의 features. TODO(S7): shared AuthSessionResponse에 features가 들어오면 그 타입으로 바꾼다.
- */
-export type SessionFeatures = { accountLink: boolean }
-
-/** 세션 응답 + features(S7 계약 전 로컬 타입) */
-export type SessionWithFeatures = SessionResponse & { features?: Partial<SessionFeatures> }
 
 /** 토스 연결 기능을 쓰는가. 응답이 없거나 값이 boolean true가 아니면 false */
 export function accountLinkOf(session: SessionResponse | undefined | null): boolean {
-  return (session as SessionWithFeatures | undefined | null)?.features?.accountLink === true
+  return session?.features?.accountLink === true
 }
 
 /**

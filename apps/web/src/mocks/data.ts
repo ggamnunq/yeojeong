@@ -104,9 +104,32 @@ export type MockExpense = {
   changed: boolean
   duplicateGroupId: string | null
   refunds: { id: string; occurredAt: string; krwAmount: number }[]
-  origin: 'AUTO' | 'OUT_OF_PERIOD'
-  paymentMethodId: string
+  /** MANUAL = 직접 입력(S7) */
+  origin: 'AUTO' | 'OUT_OF_PERIOD' | 'MANUAL'
+  /** 직접 입력은 null */
+  paymentMethodId: string | null
   version: number
+  /** 직접 입력 결제의 작성자(대신 기록이면 결제자와 다르다). 가져온 결제는 없음 */
+  createdByMembershipId?: string | null
+  /** 직접 입력 멱등 키(작성자 membership + 이 값이 같으면 처음 결과) */
+  clientRequestId?: string
+}
+
+/** 내 지갑 항목(Transaction). 직접 입력(MANUAL)만 목에 둔다 */
+export type MockWalletEntry = {
+  id: string
+  userId: string
+  occurredAt: string
+  /** 입력한 내용(비면 null → 표시 "결제") */
+  memo: string | null
+  amount: string
+  currency: string
+  /** 연결이 없을 때 지갑 표시 원화(입력 시점 최신 고시, Q-43) */
+  spotKrwAmount: number | null
+  /** 연결된 여정 결제(여정 쪽 삭제·종료 공동 삭제면 null로 끊긴다) */
+  expenseId: string | null
+  version: number
+  clientRequestId?: string
 }
 
 /** 1회성 토스트용 그룹 이벤트(FR-004). 행위자 본인과 이미 본(ack) 사람에게는 보이지 않는다 */
@@ -285,6 +308,17 @@ const expenses: MockExpense[] = [
   expense({ id: 'exp-551', occurredAt: at('13', '18:20'), merchantName: '551 호라이 난바본점', payerMembershipId: MEMBER.junyong, status: 'PENDING', krwAmount: 25_740, originalAmount: '2800', paymentMethodId: 'pm-shinhan' }),
 ]
 
+/** 준용의 지갑 샘플(HF-49): 오사카에 연결된 내 결제 + 연결 없는 항목 */
+const walletEntries: MockWalletEntry[] = [
+  { id: 'we-551', userId: USER.junyong, occurredAt: at('13', '18:20'), memo: '551 호라이 난바본점', amount: '2800', currency: 'JPY', spotKrwAmount: null, expenseId: 'exp-551', version: 1 },
+  { id: 'we-mk', userId: USER.junyong, occurredAt: at('13', '14:10'), memo: 'MK택시', amount: '2860', currency: 'JPY', spotKrwAmount: null, expenseId: 'exp-mk', version: 1 },
+  { id: 'we-famima', userId: USER.junyong, occurredAt: at('13', '08:50'), memo: '패밀리마트 난바역점', amount: '1280', currency: 'JPY', spotKrwAmount: null, expenseId: 'exp-famima', version: 1 },
+  { id: 'we-donki', userId: USER.junyong, occurredAt: at('12', '17:40'), memo: '돈키호테 도톤보리점', amount: '8640', currency: 'JPY', spotKrwAmount: null, expenseId: 'exp-donki', version: 1 },
+  { id: 'we-ichiran', userId: USER.junyong, occurredAt: at('12', '13:05'), memo: '이치란 라멘 도톤보리점', amount: '3960', currency: 'JPY', spotKrwAmount: null, expenseId: 'exp-ichiran', version: 1 },
+  { id: 'we-gs25', userId: USER.junyong, occurredAt: at('11', '21:10'), memo: 'GS25 역삼점', amount: '6800', currency: 'KRW', spotKrwAmount: 6_800, expenseId: null, version: 1 },
+  { id: 'we-coffee', userId: USER.junyong, occurredAt: '2026-10-30T09:15:00+09:00', memo: null, amount: '5600', currency: 'KRW', spotKrwAmount: 5_600, expenseId: null, version: 1 },
+]
+
 export type MockDb = {
   session: 'AUTHENTICATED' | 'SIGNUP_REQUIRED' | 'ANONYMOUS'
   /** 세션 응답 features.accountLink(FR-006). 기본 false = 토스 연결 숨김. 개발 서버는 localStorage 'yj:mock:accountLink' = '1'로 켠다 */
@@ -300,6 +334,7 @@ export type MockDb = {
   memberships: MockMembership[]
   paymentMethods: MockPaymentMethod[]
   expenses: MockExpense[]
+  walletEntries: MockWalletEntry[]
   tripEvents: MockTripEvent[]
 }
 
@@ -316,6 +351,7 @@ export function createMockDb(): MockDb {
     memberships,
     paymentMethods,
     expenses,
+    walletEntries,
     tripEvents: [],
   } satisfies MockDb)
 }

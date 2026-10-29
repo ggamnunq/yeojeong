@@ -101,6 +101,17 @@ const RATES: Record<string, Pick<FxRateView, 'currencyNameKo' | 'displayUnit' | 
   },
 }
 
+/**
+ * 원통화 1단위당 원(수동 결제 환산용). 여정을 주면 그 여정 환율 정책(FIXED면 고정 환율 ÷ 고시 단위), 아니면 최신 고시. 모르면 null
+ */
+export function mockRatePerUnit(currency: string, tripId?: string): string | null {
+  const trip = tripId ? findTrip(tripId) : undefined
+  const rate = RATES[currency]
+  const fixed = trip && trip.fxPolicy === 'FIXED' && trip.currency === currency ? walletMock().fixedRates[trip.tripId] : undefined
+  if (fixed && rate) return (Number(fixed) / rate.displayUnit).toFixed(6)
+  return rate?.rate ?? null
+}
+
 /** 통화 목록의 단위(모르는 통화는 코드 · 1) */
 const unitOf = (code: string) => SUPPORTED_CURRENCIES.find((c) => c.code === code) ?? { unitName: code, displayUnit: 1 }
 
@@ -120,7 +131,7 @@ export function finConsentRequired(missing: readonly FinConsentId[], reason?: st
   )
 }
 
-/** 내 개인·미확정 결제를 지운다(공동은 유지). paymentMethodIds를 주면 그 결제수단에서 온 것만 */
+/** 내 개인·미확정 결제를 지운다(공동은 유지). paymentMethodIds를 주면 그 결제수단에서 온 것만. 직접 입력은 지우지 않는다(I-14) */
 function purgePrivateExpenses(paymentMethodIds?: readonly string[]) {
   const mine = new Set(db.memberships.filter((m) => m.userId === db.meUserId).map((m) => m.membershipId))
   db.expenses = db.expenses.filter(
@@ -128,7 +139,8 @@ function purgePrivateExpenses(paymentMethodIds?: readonly string[]) {
       !(
         mine.has(e.payerMembershipId) &&
         e.status !== 'SHARED' &&
-        (!paymentMethodIds || paymentMethodIds.includes(e.paymentMethodId))
+        e.origin !== 'MANUAL' &&
+        (!paymentMethodIds || (e.paymentMethodId !== null && paymentMethodIds.includes(e.paymentMethodId)))
       ),
   )
 }
