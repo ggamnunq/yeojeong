@@ -4,7 +4,7 @@ import { Suspense } from 'react'
 import { Outlet, useNavigate } from 'react-router'
 import { paths } from '../../app/paths'
 import { ErrorScreen, LoadingScreen } from '../../app/states'
-import { DateHeader, EmptyState, PaymentRow, RowAdd, ShellSub } from '../../ds'
+import { DateHeader, EmptyState, IllustEmptyTrip, PaymentRow, RowAdd, ShellSub } from '../../ds'
 import { formatDateLabel } from '../payments/rules'
 import { useLoadMore } from '../payments/useLoadMore'
 import { useBack } from '../wallet/useBack'
@@ -54,7 +54,7 @@ export default function WalletListPage() {
       ) : empty ? (
         // HF-49b: 일러스트·문구는 남은 높이의 세로 가운데
         <>
-          <EmptyState type="no-payments" title="결제 기록이 없어요" message="" className="flex-1 justify-center" />
+          <EmptyState type="illust" illust={<IllustEmptyTrip size={144} />} title="결제 기록이 없어요" className="flex-1 justify-center" />
           {/* HF-49b: 버튼 바로 위 조용한 텍스트 버튼(2버튼이 아니다) */}
           {cardImport && <QuietButton onClick={openImport}>카드 내역 불러오기</QuietButton>}
         </>
