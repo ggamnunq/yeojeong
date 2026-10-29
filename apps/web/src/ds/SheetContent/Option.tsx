@@ -19,17 +19,22 @@ export type SheetContentOptionItem = {
   disabled?: boolean
 }
 
-export type SheetContentOptionProps = Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'onChange' | 'role'> & {
+export type SheetContentOptionProps = Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'onChange' | 'onSelect' | 'role'> & {
   options: readonly SheetContentOptionItem[]
   /** 선택된 옵션의 value(Row/Option Selected=On) */
   value?: string
   onChange?: (value: string) => void
+  /**
+   * 옵션을 누를 때마다(이미 선택된 옵션도) — "탭하면 바로 돌아가는" 단계(HF-48b 여정 선택)용.
+   * 라디오 onChange는 같은 값을 다시 누르면 오지 않는다
+   */
+  onSelect?: (value: string) => void
   /** 라디오 name. 기본은 자동 생성 */
   name?: string
   children?: never
 }
 
-export function SheetContentOption({ options, value, onChange, name, className, ...rest }: SheetContentOptionProps) {
+export function SheetContentOption({ options, value, onChange, onSelect, name, className, ...rest }: SheetContentOptionProps) {
   const autoName = useId()
   return (
     <div role="radiogroup" className={clsx('flex flex-col bg-surface', className)} {...rest}>
@@ -45,6 +50,7 @@ export function SheetContentOption({ options, value, onChange, name, className, 
           disabled={option.disabled}
           selected={value === option.value}
           onChange={() => onChange?.(option.value)}
+          onClick={onSelect && (() => onSelect(option.value))}
         />
       ))}
     </div>

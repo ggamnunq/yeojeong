@@ -1,6 +1,6 @@
 import { splitEvenly, toKrw, type SupportedCurrency } from '@yeojeong/shared'
 import type { MemberSummary } from '../../api'
-import { formatKrw, normalizeAmountInput, walletMeta as dsWalletMeta } from '../../ds'
+import { formatKrw, MINUS, normalizeAmountInput, walletMeta as dsWalletMeta } from '../../ds'
 import { formatOriginal, kst } from '../payments/rules'
 import type { TripFxView } from '../wallet/types'
 import {
@@ -157,6 +157,24 @@ export const walletMeta = (entry: Pick<WalletEntry, 'occurredAt' | 'linkedTrip'>
 
 /** 지갑 행 원통화 보조 금액(외화만) */
 export const walletOriginal = (entry: Pick<WalletEntry, 'amount' | 'currency'>) => formatOriginal(entry.amount, entry.currency)
+
+/**
+ * 지갑 행 금액(0-5). 원화가 있으면 주 금액 = 원화 · 보조 = 원통화(외화만).
+ * 원화가 없으면(krwAmount null — 결제 시점 고시가 없음) ₩0을 보이지 않는다: 주 금액 = 원통화 금액,
+ * 보조 줄 = 최신 고시로 추정한 "약 ₩X"(rate가 있을 때만, 없으면 숨김). 취소(음수)는 − 부호
+ */
+export function walletRowAmounts(entry: Pick<WalletEntry, 'amount' | 'currency' | 'krwAmount'>, rate?: string | null) {
+  if (entry.krwAmount !== null) return { amount: entry.krwAmount, originalAmount: walletOriginal(entry) ?? undefined }
+  const negative = Number(entry.amount) < 0
+  const sign = negative ? MINUS : ''
+  const original = formatOriginal(entry.amount, entry.currency) ?? formatKrw(Math.abs(Number(entry.amount)))
+  const estimate = rate ? previewKrw(entry.amount.replace(/^-/, ''), entry.currency, rate) : null
+  return {
+    amount: 0,
+    amountLabel: `${sign}${original}`,
+    originalAmount: estimate !== null && estimate > 0 ? `약 ${formatKrw(negative ? -estimate : estimate)}` : undefined,
+  }
+}
 
 /** 영웅 "이번 달" 금액(서버 monthTotalKrw). 추정치가 섞였으면 "약 ₩…" */
 export const monthTotalLabel = (krw: number, estimated?: boolean) => `${estimated ? '약 ' : ''}${formatKrw(krw)}`

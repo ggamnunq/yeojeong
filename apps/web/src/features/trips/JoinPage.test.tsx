@@ -27,6 +27,8 @@ describe('HF-12 초대코드로 참여 /join', () => {
 
   it('6자 미만이면 카드 없이 비활성, 입력은 대문자 + 3-3 하이픈', async () => {
     renderApp('/join')
+    // 헤더 제목(HF-12 · TopHeader Back h1)
+    expect(await screen.findByRole('heading', { level: 1, name: '초대코드로 참여' })).toBeTruthy()
     fireEvent.change(await screen.findByLabelText('초대코드'), { target: { value: 't4k9' } })
     expect(codeInput().value).toBe('T4K-9')
     expect(joinButton().disabled).toBe(true)

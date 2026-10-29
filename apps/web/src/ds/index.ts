@@ -207,7 +207,7 @@ export {
 } from './TimelineItem/TimelineItem'
 export { Toast, ToastViewport, type ToastProps, type ToastType, type ToastViewportProps } from './Toast/Toast'
 export { toastAnchorFor, useToastAnchor, type ToastAnchor } from './Toast/anchor'
-export { onModalOpen, type ModalKind } from './useModalDialog'
+export { onModalOpen, type ModalInitialFocus, type ModalKind } from './useModalDialog'
 export { Toggle, type ToggleProps } from './Toggle/Toggle'
 export {
   TopHeader,

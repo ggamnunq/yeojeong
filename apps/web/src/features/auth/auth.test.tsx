@@ -501,3 +501,19 @@ describe('재동의', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
   })
 })
+
+describe('가입 2단계(토스 연결 꺼짐, FR-006 기본)', () => {
+  it('진행 막대는 2단계 중 1·2단계로 읽힌다(4단계 변환 없음, W6 QA)', async () => {
+    db.accountLink = false
+    await openNickname()
+    const nickname = await screen.findByRole('progressbar')
+    expect(nickname.getAttribute('aria-valuenow')).toBe('1')
+    expect(nickname.getAttribute('aria-valuemax')).toBe('2')
+    expect(nickname.getAttribute('aria-valuetext')).toBe('2단계 중 1단계')
+    fireEvent.click(button('다음'))
+    await screen.findByRole('heading', { name: '약관에 동의해 주세요' })
+    const terms = screen.getByRole('progressbar')
+    expect(terms.getAttribute('aria-valuenow')).toBe('2')
+    expect(terms.getAttribute('aria-valuetext')).toBe('2단계 중 2단계')
+  })
+})

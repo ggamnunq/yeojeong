@@ -36,7 +36,7 @@ import {
   type UpdateTripExpenseRequest,
   type UpdateWalletEntryRequest,
   type WalletEntry,
-  type WalletEntriesPage,
+  type WalletEntryListResponse,
   type WalletEntryMutationResponse,
   type WalletTripCandidate,
   type WalletTripCandidatesResponse,
@@ -253,8 +253,8 @@ const meMembership = (tripId: string): MockMembership | undefined => activeMembe
 // ── 핸들러 ────────────────────────────────────────────────────────
 
 export const handlers: HttpHandler[] = [
-  // monthTotalKrw · monthTotalEstimated는 서버 S7b 예정 필드(KST 이번 달 합계). 화면은 없으면 영웅 숫자를 숨긴다
-  api.get<WalletEntriesPage>('/api/wallet/entries', ({ request }) => {
+  // monthTotalKrw · monthTotalEstimated = 서버 S7b(KST 이번 달 합계, 모든 페이지에 같은 값)
+  api.get<WalletEntryListResponse>('/api/wallet/entries', ({ request }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     ensureSeed()

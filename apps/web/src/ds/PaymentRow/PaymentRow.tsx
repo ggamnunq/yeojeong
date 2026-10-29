@@ -39,6 +39,8 @@ export type PaymentRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'typ
   meta: ReactNode
   /** 원화 금액. Refund는 부호와 상관없이 −로 보여 준다 */
   amount: number
+  /** 원화를 모를 때 주 금액 자리에 보일 글자(내 지갑: 고시가 없는 외화 항목은 원통화 "$12.50"). 주면 amount 대신 그린다 */
+  amountLabel?: ReactNode
   /** Figma original amount: "¥3,200"(formatMoney로 만든다) */
   originalAmount?: ReactNode
   /** Figma participants: 부담 인원(Shared만). 나 먼저 → 가입 순 */
@@ -58,6 +60,7 @@ export function PaymentRow({
   merchant,
   meta,
   amount,
+  amountLabel,
   originalAmount,
   participants,
   changed = false,
@@ -94,7 +97,7 @@ export function PaymentRow({
       </span>
       <span className="flex shrink-0 flex-col items-end gap-0.5">
         <span className={clsx('font-amount text-amount-s whitespace-nowrap', quiet ? 'text-secondary' : 'text-amount-default')}>
-          {formatKrw(type === 'refund' ? -Math.abs(amount) : amount)}
+          {amountLabel ?? formatKrw(type === 'refund' ? -Math.abs(amount) : amount)}
         </span>
         {originalAmount != null && (
           <span className="font-amount text-caption font-medium whitespace-nowrap text-tertiary">{originalAmount}</span>

@@ -31,7 +31,7 @@ async function fillForm({ start = '2026-11-20', end = '2026-11-23' } = {}) {
 describe('HF-10 여정 생성 /trips/new', () => {
   it('다섯 칸이 모두 유효해야 「여정 만들기」가 켜지고, 예산은 "₩1,200,000"으로 보인다', async () => {
     renderApp('/trips/new')
-    expect(await screen.findByRole('heading', { name: '새 여정' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { level: 1, name: '새 여정' })).toBeTruthy()
     expect(submitButton().disabled).toBe(true)
     // 처음 들어오면 그룹명에 포커스(HF-10 Focus)
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('그룹명')))

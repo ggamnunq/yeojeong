@@ -60,14 +60,17 @@ describe('결제 상세 · 미확정(HF-20·21)', () => {
     expect(db.expenses.find((e) => e.id === 'exp-551')!.participantMembershipIds).toHaveLength(3)
   })
 
-  it('[개인] → 개인으로 확정 → 개인 태그, 배너 n − 1', async () => {
-    const { sheet } = await openFromList(/패밀리마트/)
+  it('[개인] → 개인으로 확정 → 개인 태그, 배너 n − 1 · 지갑 목록도 다시 받는다(W6 QA)', async () => {
+    const { sheet, queryClient } = await openFromList(/패밀리마트/)
+    // 지갑 목록 캐시(연결 항목의 expenseStatus가 바뀐다)
+    queryClient.setQueryData(['wallet', 'entries'], { pages: [], pageParams: [] })
     expect(sheet.textContent).toContain('¥1,280 · 11.13 08:50 · 토스뱅크 체크카드 1934')
     fireEvent.click(segment(sheet, '개인'))
     // 개인은 부담 인원을 숨긴다(EX-01b)
     expect(within(sheet).queryByRole('group', { name: /부담 인원/ })).toBeNull()
     fireEvent.click(cta(sheet, '개인으로 확정'))
     expect(await screen.findByText('개인으로 확정했어요')).toBeTruthy()
+    expect(queryClient.getQueryState(['wallet', 'entries'])?.isInvalidated).toBe(true)
     expect(await screen.findByRole('button', { name: '확인 필요 1건' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /패밀리마트/ }).textContent).toContain('개인')
   })

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { BottomSheet, BottomSheetPanel } from './BottomSheet'
 
@@ -96,6 +96,70 @@ describe('BottomSheet', () => {
 
     fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
     expect(document.activeElement).toBe(cta)
+  })
+
+  describe('initialFocus(HF-46 · 48)', () => {
+    // 브라우저 showModal은 dialog 안 첫 포커스 영역(tabIndex=-1 제목 포함)에 포커스를 준다 — jsdom에는 없어 흉내 낸다
+    const proto = HTMLDialogElement.prototype as Partial<HTMLDialogElement>
+    const withShowModal = (run: () => void) => {
+      proto.showModal = function (this: HTMLDialogElement) {
+        this.setAttribute('open', '')
+        this.querySelector<HTMLElement>('h2')?.focus()
+      }
+      proto.close = function (this: HTMLDialogElement) {
+        this.removeAttribute('open')
+      }
+      try {
+        run()
+      } finally {
+        delete proto.showModal
+        delete proto.close
+      }
+    }
+
+    function FocusHarness({ initialFocus }: { initialFocus?: 'ref' | 'selector' }) {
+      const [open, setOpen] = useState(false)
+      const amount = useRef<HTMLInputElement>(null)
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            시트 열기
+          </button>
+          <BottomSheet
+            open={open}
+            onClose={() => setOpen(false)}
+            title="결제 추가"
+            initialFocus={initialFocus === 'ref' ? amount : initialFocus === 'selector' ? 'input[name="amount"]' : undefined}
+          >
+            <input aria-label="메모" />
+            <input ref={amount} name="amount" aria-label="금액" inputMode="numeric" />
+          </BottomSheet>
+        </>
+      )
+    }
+
+    it('없으면 showModal이 고른 제목에 포커스가 남는다(기본 동작)', () =>
+      withShowModal(() => {
+        render(<FocusHarness />)
+        openSheet2()
+        expect(document.activeElement?.tagName).toBe('H2')
+      }))
+
+    it('ref를 주면 열 때 그 입력에 포커스를 준다', () =>
+      withShowModal(() => {
+        render(<FocusHarness initialFocus="ref" />)
+        openSheet2()
+        expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '금액' }))
+      }))
+
+    it('선택자를 주면 시트 안에서 찾아 포커스를 준다', () =>
+      withShowModal(() => {
+        render(<FocusHarness initialFocus="selector" />)
+        openSheet2()
+        expect(document.activeElement).toBe(screen.getByRole('textbox', { name: '금액' }))
+      }))
+
+    const openSheet2 = () => fireEvent.click(screen.getByRole('button', { name: '시트 열기' }))
   })
 
   it('닫히면 연 버튼으로 포커스가 돌아간다', () => {

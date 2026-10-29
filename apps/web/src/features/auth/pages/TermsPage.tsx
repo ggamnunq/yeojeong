@@ -100,7 +100,7 @@ export default function TermsPage() {
 
   return (
     <ShellOnboarding
-      progress={signupProgress(2, accountLink)}
+      {...signupProgress(2, accountLink)}
       onBack={back}
       cta={{ label: COPY.next, onClick: submit, disabled: !consent.requiredDone, state: signup.isPending ? 'loading' : 'default' }}
     >

@@ -15,6 +15,7 @@ import {
   splitEvenly,
 } from '../../../ds'
 import { toast } from '../../../notifications'
+import { walletKeys } from '../../manual/api'
 import { paymentMethodsQuery } from '../../wallet/api'
 import { classifyExpense, dismissDuplicate, expenseQuery, findCachedExpense, isOutOfPeriodKey } from '../api'
 import { DetailText, LockedButton, LockedPersonal, RefundFacts, RefundSummary, SheetSkeleton } from '../components/SheetParts'
@@ -117,6 +118,8 @@ function SheetView({ detail, preview, onClose, onEdit }: SheetViewProps) {
   const noMethods = methods.data?.methods.length === 0
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.trips.detail(trip.tripId) })
+  // 분류·부담을 바꾸면 연결된 지갑 항목(linkedTrip.expenseStatus · 수정 가능 필드)도 바뀐다 — 지갑 목록만 다시 받는다(결제수단은 그대로)
+  const invalidateWallet = () => queryClient.invalidateQueries({ queryKey: walletKeys.entries })
 
   const classify = useMutation({
     mutationFn: (input: ClassificationInput) => classifyExpense(trip.tripId, expenseId, input),
@@ -140,6 +143,7 @@ function SheetView({ detail, preview, onClose, onEdit }: SheetViewProps) {
         handleApiError(error)
       }
       void invalidate()
+      void invalidateWallet()
     },
   })
 
@@ -163,10 +167,12 @@ function SheetView({ detail, preview, onClose, onEdit }: SheetViewProps) {
             queryKey: keys.trips.detail(trip.tripId),
             predicate: (q) => !isOutOfPeriodKey(q.queryKey) && q.queryKey.join('/') !== gone.join('/'),
           })
+          void invalidateWallet()
           return
         }
         toast.success(SUCCESS_TOAST[action])
         void invalidate()
+        void invalidateWallet()
         onClose()
       },
     })

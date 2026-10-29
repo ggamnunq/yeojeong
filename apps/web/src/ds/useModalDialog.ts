@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type KeyboardEvent, type SyntheticEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, type KeyboardEvent, type RefObject, type SyntheticEvent } from 'react'
 
 // BottomSheet·Dialog가 같이 쓰는 모달 동작. 네이티브 <dialog>.showModal()로 최상위 레이어·배경 inert를 얻고,
 // 나머지(ESC·포커스 가두기·포커스 되돌리기·body 스크롤 잠금)는 여기서 직접 맞춘다.
@@ -56,11 +56,23 @@ function lockScroll() {
   }
 }
 
-export function useModalDialog(open: boolean, onClose: () => void, kind: ModalKind = 'dialog') {
+/**
+ * 열 때 처음 포커스를 줄 곳(ref 또는 dialog 안 CSS 선택자). 없거나 찾지 못하면 기본 동작:
+ * showModal이 고른 곳(시트는 제목) → 그것도 dialog 밖이면 첫 포커스 가능 요소
+ */
+export type ModalInitialFocus = RefObject<HTMLElement | null> | string
+
+function resolveInitialFocus(dialog: HTMLDialogElement, target: ModalInitialFocus | undefined): HTMLElement | null {
+  if (!target) return null
+  const el = typeof target === 'string' ? dialog.querySelector<HTMLElement>(target) : target.current
+  return el && dialog.contains(el) ? el : null
+}
+
+export function useModalDialog(open: boolean, onClose: () => void, kind: ModalKind = 'dialog', initialFocus?: ModalInitialFocus) {
   const ref = useRef<HTMLDialogElement>(null)
-  const latest = useRef({ open, onClose, kind })
+  const latest = useRef({ open, onClose, kind, initialFocus })
   useLayoutEffect(() => {
-    latest.current = { open, onClose, kind }
+    latest.current = { open, onClose, kind, initialFocus }
   })
 
   useEffect(() => {
@@ -73,7 +85,11 @@ export function useModalDialog(open: boolean, onClose: () => void, kind: ModalKi
     } else {
       dialog.setAttribute('open', '')
     }
-    if (!dialog.contains(document.activeElement)) (getFocusables(dialog)[0] ?? dialog).focus()
+    // showModal은 dialog 안 첫 포커스 영역(tabIndex=-1인 시트 제목 포함)에 포커스를 준다 — 그 전에 그려진 autoFocus는 덮인다.
+    // 처음 포커스할 곳(initialFocus — 금액 입력 등)이 있으면 거기로 옮긴다
+    const initial = resolveInitialFocus(dialog, latest.current.initialFocus)
+    if (initial) initial.focus()
+    else if (!dialog.contains(document.activeElement)) (getFocusables(dialog)[0] ?? dialog).focus()
     const unlock = lockScroll()
     for (const listener of [...modalOpenListeners]) listener(latest.current.kind)
 

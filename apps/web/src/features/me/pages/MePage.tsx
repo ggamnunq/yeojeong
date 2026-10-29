@@ -11,7 +11,6 @@ import { Avatar, Dialog, Icon, ShellSub, Tag } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { toast } from '../../../notifications'
 import { entryCountLabel } from '../../manual/rules'
-import type { MeWithWallet } from '../../manual/types'
 import { paymentMethodsQuery } from '../../wallet/api'
 import { formatMethodCounts } from '../../wallet/format'
 import { useBack } from '../../wallet/useBack'
@@ -28,7 +27,7 @@ export default function MePage() {
   return (
     <ShellSub header={{ title: '마이페이지', onBack: back }}>
       {me.data ? (
-        <MeContent nickname={me.data.nickname} profileImageUrl={me.data.profileImageUrl} walletEntryCount={(me.data as MeWithWallet).walletEntryCount} />
+        <MeContent nickname={me.data.nickname} profileImageUrl={me.data.profileImageUrl} walletEntryCount={me.data.walletEntryCount} />
       ) : me.isPending ? (
         <LoadingScreen inset />
       ) : (
@@ -45,7 +44,7 @@ function MeContent({
 }: {
   nickname: string
   profileImageUrl: string | null
-  /** 서버 Me.walletEntryCount(S7b 예정). 없으면 지갑 줄은 "내 지갑"만 */
+  /** 서버 Me.walletEntryCount(S7b). 없으면(전환 기간) 지갑 줄은 "내 지갑"만 */
   walletEntryCount?: number
 }) {
   const navigate = useNavigate()

@@ -43,7 +43,7 @@ describe('마이페이지(HF-30)', () => {
 
   it('위에서부터 프사·닉네임 → 내 지갑(계좌 1 · 카드 2) → 로그아웃 → 탈퇴·삭제 요청 → 푸터 링크', async () => {
     renderApp('/me')
-    expect(await screen.findByRole('heading', { name: '마이페이지' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { level: 1, name: '마이페이지' })).toBeTruthy()
     expect(await screen.findByRole('heading', { name: '준용' })).toBeTruthy()
     const wallet = screen.getByRole('link', { name: /내 지갑/ })
     expect(wallet.getAttribute('href')).toBe('/wallet')

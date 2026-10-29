@@ -1,6 +1,5 @@
-import type { HealthResponse, TripDetailResponse } from '@yeojeong/shared'
+import type { HealthResponse, Me, TripDetailResponse } from '@yeojeong/shared'
 import { HttpResponse, type HttpHandler } from 'msw'
-import type { MeWithWallet } from '../manual/types'
 import type { MyTripsResponse, SessionResponse } from '../../api'
 import { db, findTrip, meOf, tripDetail, tripListItem } from '../../mocks/data'
 import { api, denyUnlessAuthenticated, mockError, requireMember } from '../../mocks/utils'
@@ -29,11 +28,11 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  // walletEntryCount는 서버 S7b 예정 필드(수동 지갑 항목 수, HF-30). shared 타입 전이라 화면은 선택 필드로 읽는다
-  api.get<MeWithWallet>('/api/users/me', () => {
+  // walletEntryCount = 서버 S7b(지갑 항목 수, HF-30)
+  api.get<Me>('/api/users/me', () => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
-    const body: MeWithWallet = { ...meOf(), walletEntryCount: db.walletEntries.filter((w) => w.userId === db.meUserId).length }
+    const body: Me = { ...meOf(), walletEntryCount: db.walletEntries.filter((w) => w.userId === db.meUserId).length }
     return HttpResponse.json(body)
   }),
 

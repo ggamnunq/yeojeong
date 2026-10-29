@@ -1,4 +1,4 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQueries } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { Suspense } from 'react'
 import { Outlet, useNavigate } from 'react-router'
@@ -8,12 +8,12 @@ import { DateHeader, EmptyState, PaymentRow, RowAdd, ShellSub } from '../../ds'
 import { formatDateLabel } from '../payments/rules'
 import { useLoadMore } from '../payments/useLoadMore'
 import { useBack } from '../wallet/useBack'
-import { walletEntriesQuery } from './api'
-import { monthTotalLabel, walletMeta, walletOriginal } from './rules'
+import { latestFxQuery, walletEntriesQuery } from './api'
+import { monthTotalLabel, walletMeta, walletRowAmounts } from './rules'
 import type { WalletEntry } from './types'
 
 // WF-49 내 지갑(수동, accountLink=false) · WF-49b 빈 상태. 행 탭 → WF-50(지갑 폼), "결제 추가" → WF-48.
-// "이번 달" 합계는 서버 필드(monthTotalKrw · monthTotalEstimated, S7b 예정)가 있을 때만 보인다.
+// "이번 달" 합계는 서버 S7b 필드(monthTotalKrw · 추정이 섞이면 monthTotalEstimated → "약 ₩…")를 그대로 쓴다.
 
 export default function WalletListPage() {
   const back = useBack(paths.splash())
@@ -21,9 +21,12 @@ export default function WalletListPage() {
   const query = useInfiniteQuery(walletEntriesQuery())
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query
   const items = query.data?.pages.flatMap((p) => p.items) ?? []
-  // "이번 달"은 서버 합계(monthTotalKrw, S7b)만 쓴다 — 페이지를 더하지 않는다. 없으면 영웅 숫자를 숨긴다
+  // "이번 달"은 서버 합계(monthTotalKrw, S7b)만 쓴다 — 페이지를 더하지 않는다(첫 페이지 값)
   const first = query.data?.pages[0]
-  const monthTotal = first?.monthTotalKrw
+  // 원화가 없는 외화 항목(결제 시점 고시 없음)은 최신 고시로 "약 ₩X"를 추정한다(통화별 한 번, 실패하면 원화 줄 숨김)
+  const unknownCurrencies = [...new Set(items.filter((e) => e.krwAmount === null && e.currency !== 'KRW').map((e) => e.currency))]
+  const fx = useQueries({ queries: unknownCurrencies.map((currency) => latestFxQuery(currency)) })
+  const rateOf = (currency: string) => fx[unknownCurrencies.indexOf(currency)]?.data?.rate ?? null
   const sentinel = useLoadMore<HTMLDivElement>(Boolean(hasNextPage) && !isFetchingNextPage, () => void fetchNextPage())
 
   const add = () => navigate(paths.walletNew(), { state: { fromList: true } })
@@ -31,22 +34,23 @@ export default function WalletListPage() {
   const empty = query.isSuccess && items.length === 0
 
   return (
-    <ShellSub header={{ title: '내 지갑', onBack: back }} gutter={false} cta={empty ? { label: '결제 추가', onClick: add } : undefined}>
+    <ShellSub header={{ title: '내 지갑', onBack: back }} gutter={false} cta={empty ? { label: '결제 추가', leadingIcon: true, icon: 'plus', onClick: add } : undefined}>
       {query.isPending ? (
         <LoadingScreen inset gutter />
       ) : query.isError && !query.data ? (
         <ErrorScreen error={query.error} onRetry={() => void query.refetch()} />
       ) : empty ? (
-        <EmptyState type="no-payments" title="결제 기록이 없어요" message="" className="flex-1 pt-16" />
+        // HF-49b: 일러스트·문구는 남은 높이의 세로 가운데
+        <EmptyState type="no-payments" title="결제 기록이 없어요" message="" className="flex-1 justify-center" />
       ) : (
         <>
-          {monthTotal !== undefined && (
+          {first && (
             <div className="flex flex-col gap-1 px-gutter">
               <p className="text-body-s-strong text-secondary">이번 달</p>
-              <p className="font-amount text-amount-xl text-primary">{monthTotalLabel(monthTotal, first?.monthTotalEstimated)}</p>
+              <p className="font-amount text-amount-xl text-primary">{monthTotalLabel(first.monthTotalKrw, first.monthTotalEstimated)}</p>
             </div>
           )}
-          <RowAdd label="결제 추가" className={clsx(monthTotal !== undefined && 'mt-4')} onClick={add} />
+          <RowAdd label="결제 추가" className="mt-4" onClick={add} />
           <div className="h-1" />
           {groupEntries(items).map((group, index) => (
             <section key={group.localDate} aria-label={group.label} className={clsx(index > 0 && 'pt-4')}>
@@ -57,8 +61,7 @@ export default function WalletListPage() {
                   leading="none"
                   merchant={entry.merchantName}
                   meta={walletMeta(entry)}
-                  amount={entry.krwAmount ?? 0}
-                  originalAmount={walletOriginal(entry) ?? undefined}
+                  {...walletRowAmounts(entry, entry.krwAmount === null ? rateOf(entry.currency) : null)}
                   onClick={() => open(entry)}
                 />
               ))}

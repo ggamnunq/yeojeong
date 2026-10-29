@@ -23,6 +23,37 @@ test.describe('수동 결제(W6)', () => {
     const edit = page.getByRole('dialog', { name: '결제 수정' })
     await expect(edit.getByRole('button', { name: '삭제' })).toBeVisible()
     await expect(edit.getByRole('button', { name: '저장' })).toBeDisabled()
+    // 저장 → 상세 시트가 다시 열려도 "저장했어요"는 남는다(W6b · HF-50 — 시트 열림 dismiss는 사용자가 새로 열 때만)
+    await edit.getByRole('textbox', { name: '내용' }).fill('타코야키 8개')
+    await edit.getByRole('button', { name: '저장' }).click()
+    await expect(page.getByRole('dialog', { name: '타코야키 8개' })).toBeVisible()
+    await expect(page.getByText('저장했어요')).toBeVisible()
+  })
+
+  test('추가 시트는 열자마자 금액 입력에 포커스 · 12자리에서 더 치면 무시(W6b · HF-46 · 48)', async ({ page }) => {
+    await useMockScenario(page)
+    await page.goto('/trips/trip-osaka/payments')
+    await page.getByRole('button', { name: '결제 추가' }).click()
+    const amount = page.getByRole('dialog', { name: '결제 추가' }).getByRole('textbox', { name: '금액' })
+    await expect(amount).toBeFocused()
+    await expect(amount).toHaveAttribute('inputmode', 'numeric')
+    await amount.pressSequentially('123456789012')
+    await amount.press('Home')
+    await amount.pressSequentially('9')
+    await expect(amount).toHaveValue('123,456,789,012')
+    expect(await amount.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(0)
+  })
+
+  test('지갑 여정 선택: 이미 고른 여정을 다시 눌러도 폼으로 돌아간다(W6b · HF-48b)', async ({ page }) => {
+    await useMockScenario(page)
+    await page.goto('/wallet/new')
+    const sheet = page.getByRole('dialog', { name: '결제 추가' })
+    const tripRow = sheet.getByRole('button', { name: /^여정/ })
+    await expect(tripRow).toContainText(/오사카 3박 4일|후쿠오카/)
+    const tripName = ((await tripRow.textContent()) ?? '').replace(/^여정\s*/, '').trim()
+    await tripRow.click()
+    await page.getByRole('dialog', { name: '여정' }).getByText(tripName, { exact: true }).click()
+    await expect(page.getByRole('dialog', { name: '결제 추가' }).getByRole('button', { name: /^여정/ })).toContainText(tripName)
   })
 
   test('내 지갑: 이번 달 합계 · 결제 추가(진행 중 여정 자동 제안) → 지갑 목록 맨 위', async ({ page }) => {
