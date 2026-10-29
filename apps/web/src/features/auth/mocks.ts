@@ -5,10 +5,10 @@ import {
   SIGNUP_REQUIRED_CONSENTS,
   type ConsentId,
 } from '@yeojeong/shared'
-import { http, HttpResponse, type HttpHandler } from 'msw'
+import { HttpResponse, type HttpHandler } from 'msw'
 import type { Me } from '../../api'
 import { db, findUser } from '../../mocks/data'
-import { mockError } from '../../mocks/utils'
+import { api, mockError, noContent, type NoContent } from '../../mocks/utils'
 import type {
   ConsentAgreement,
   ConsentDocument,
@@ -106,7 +106,7 @@ function meOf(userId: string): Me {
 }
 
 export const handlers: HttpHandler[] = [
-  http.get('/api/consents/documents', ({ request }) => {
+  api.get<ConsentDocument[]>('/api/consents/documents', ({ request }) => {
     const stage = new URL(request.url).searchParams.get('stage')
     if (stage !== 'SIGNUP' && stage !== 'FIN_LINK') {
       return mockError('VALIDATION_FAILED', 400, {
@@ -117,7 +117,7 @@ export const handlers: HttpHandler[] = [
   }),
 
   // 실제 서버는 302로 카카오 인가 페이지에 보낸다. 목 모드 화면은 fetch로 불러 로그인 + 콜백 결과만 받는다
-  http.get('/api/auth/kakao', ({ request }) => {
+  api.get<MockKakaoResponse>('/api/auth/kakao', ({ request }) => {
     let existing = false
     try {
       existing = localStorage.getItem('yj:mock:kakao') === 'existing'
@@ -131,11 +131,11 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  http.post('/api/auth/signup', async ({ request }) => {
+  api.post<Me, SignupRequest>('/api/auth/signup', async ({ request }) => {
     if (db.session !== 'SIGNUP_REQUIRED') {
       return mockError('UNAUTHENTICATED', 401, undefined, '가입 시간이 지났어요. 다시 로그인해 주세요')
     }
-    const body = (await request.json()) as Partial<SignupRequest>
+    const body: Partial<SignupRequest> = await request.json()
     const problem = nicknameProblem(body.nickname)
     if (problem) return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'nickname', ...problem }] })
     if (!agreedAll(body.agreements, SIGNUP_REQUIRED_CONSENTS)) return mockError('TERMS_REQUIRED', 400)
@@ -149,9 +149,9 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(meOf(id), { status: 201 })
   }),
 
-  http.post('/api/auth/reconsent', async ({ request }) => {
+  api.post<NoContent, ReconsentRequest>('/api/auth/reconsent', async ({ request }) => {
     if (db.session !== 'AUTHENTICATED') return mockError('UNAUTHENTICATED', 401)
-    const body = (await request.json()) as Partial<ReconsentRequest>
+    const body: Partial<ReconsentRequest> = await request.json()
     const required = db.consentRequired?.length ? db.consentRequired : SIGNUP_REQUIRED_CONSENTS
     if (!agreedAll(body.agreements, required)) return mockError('TERMS_REQUIRED', 400)
     db.consentRequired = null
@@ -160,14 +160,14 @@ export const handlers: HttpHandler[] = [
     } catch {
       // 저장소가 없는 환경
     }
-    return new HttpResponse(null, { status: 204 })
+    return noContent()
   }),
 
-  http.post('/api/auth/logout', () => {
+  api.post<NoContent>('/api/auth/logout', () => {
     db.session = 'ANONYMOUS'
     db.consentRequired = null
     persistSession()
-    return new HttpResponse(null, { status: 204 })
+    return noContent()
   }),
 
 ]

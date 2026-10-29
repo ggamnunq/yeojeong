@@ -1,9 +1,10 @@
-import { http, HttpResponse, type HttpHandler } from 'msw'
+import type { HealthResponse, Me, TripDetailResponse } from '@yeojeong/shared'
+import { HttpResponse, type HttpHandler } from 'msw'
 import type { MyTripsResponse, SessionResponse } from '../../api'
 import { db, findTrip, findUser, tripDetail, tripListItem } from '../../mocks/data'
-import { denyUnlessAuthenticated, mockError, requireMember } from '../../mocks/utils'
+import { api, denyUnlessAuthenticated, mockError, requireMember } from '../../mocks/utils'
 
-function me() {
+function me(): Me {
   const user = findUser(db.meUserId)!
   const methods = db.paymentMethods.filter((p) => p.userId === user.id && p.status !== 'REMOVED')
   return {
@@ -17,9 +18,9 @@ function me() {
 }
 
 export const handlers: HttpHandler[] = [
-  http.get('/api/health', () => HttpResponse.json({ status: 'ok', db: 'up' })),
+  api.get<HealthResponse>('/api/health', () => HttpResponse.json({ status: 'ok', db: 'up' })),
 
-  http.get('/api/auth/session', () => {
+  api.get<SessionResponse>('/api/auth/session', () => {
     const body: SessionResponse =
       db.session === 'AUTHENTICATED'
         ? {
@@ -35,9 +36,9 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  http.get('/api/users/me', () => denyUnlessAuthenticated() ?? HttpResponse.json(me())),
+  api.get<Me>('/api/users/me', () => denyUnlessAuthenticated() ?? HttpResponse.json(me())),
 
-  http.get('/api/me/trips', () => {
+  api.get<MyTripsResponse>('/api/me/trips', () => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const mine = db.trips.filter((t) =>
@@ -50,7 +51,7 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  http.get('/api/trips/:tripId', ({ params }) => {
+  api.get<TripDetailResponse>('/api/trips/:tripId', ({ params }) => {
     const tripId = String(params.tripId)
     const { denied } = requireMember(tripId)
     if (denied) return denied
