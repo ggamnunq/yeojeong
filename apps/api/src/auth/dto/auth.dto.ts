@@ -5,6 +5,7 @@ import type {
   ReconsentRequest,
   SignupDraft,
   SignupRequest,
+  SignupResponse,
 } from '@yeojeong/shared';
 import { IsString, MaxLength } from 'class-validator';
 import {
@@ -38,6 +39,26 @@ class SignupDraftDto implements SignupDraft {
 
   @ApiProperty({ type: String, nullable: true })
   profileImageUrl: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: '/join?code=K7M2QX',
+    description:
+      '로그인 시작 때 받은 돌아갈 화면 경로(같은 origin 상대 경로만). 가입을 마친 뒤 이리로 보낸다',
+  })
+  returnTo: string | null;
+}
+
+export class SignupResponseDto extends MeDto implements SignupResponse {
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: '/join?code=K7M2QX',
+    description:
+      '가입을 마친 뒤 갈 화면(로그인 시작 때 받은 returnTo, 같은 origin 상대 경로만). null이면 진입 라우팅',
+  })
+  returnTo: string | null;
 }
 
 export class AuthSessionResponseDto implements AuthSessionResponse {

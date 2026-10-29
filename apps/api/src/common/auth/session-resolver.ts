@@ -86,11 +86,27 @@ export class SessionService extends SessionResolver {
 
   /** 가입 대기 쿠키의 SignupTicket id(서명·만료가 맞을 때만) */
   signupTicketId(req: Request): string | null {
-    const id = this.config.signer.verify<unknown>(
+    return this.signupCookie(req)?.ticketId ?? null;
+  }
+
+  /**
+   * 가입 대기 쿠키(서명). 값은 { t: SignupTicket id, r: 돌아갈 화면 경로 | null }.
+   * 예전 형식(id 문자열만)도 읽는다(배포 직후 30분 안의 가입 대기). r은 서명돼 있지만 쓰는 쪽이 safeReturnTo로 한 번 더 거른다.
+   */
+  signupCookie(
+    req: Request,
+  ): { ticketId: string; returnTo: string | null } | null {
+    const value = this.config.signer.verify<unknown>(
       SIGNUP_PURPOSE,
       readCookie(req, SIGNUP_COOKIE),
     );
-    return typeof id === 'string' && UUID.test(id) ? id : null;
+    if (typeof value === 'string') {
+      return UUID.test(value) ? { ticketId: value, returnTo: null } : null;
+    }
+    if (typeof value !== 'object' || value === null) return null;
+    const { t, r } = value as { t?: unknown; r?: unknown };
+    if (typeof t !== 'string' || !UUID.test(t)) return null;
+    return { ticketId: t, returnTo: typeof r === 'string' ? r : null };
   }
 
   async resolve(req: Request, res: Response): Promise<SessionState> {
