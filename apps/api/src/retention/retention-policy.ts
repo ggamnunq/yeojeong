@@ -27,6 +27,8 @@ export const RETENTION = {
   accessLog: { years: 1 },
   /** 10단계: 권리 행사 처리 완료 + 3년 */
   accountDeletion: { years: 3 },
+  /** 11단계: 카드 승인내역 불러오기 호출 보호 카운터(로그인 실패 수·CODEF 일일 호출 수). 내용 없음, 운영 확인용으로 7일 */
+  cardImportCounters: { days: 7 },
 } as const satisfies Record<string, RetentionPeriod>;
 
 const DAY_MS = 86_400_000;

@@ -90,6 +90,7 @@ describe('isPastRetention (경계)', () => {
       withdrawnConsent: { years: 3 },
       accessLog: { years: 1 },
       accountDeletion: { years: 3 },
+      cardImportCounters: { days: 7 },
     });
   });
 });

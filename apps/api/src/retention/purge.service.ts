@@ -72,6 +72,7 @@ export class PurgeService {
     const consent = cutoff(now, RETENTION.withdrawnConsent);
     const accessLog = cutoff(now, RETENTION.accessLog);
     const deletion = cutoff(now, RETENTION.accountDeletion);
+    const counters = cutoff(now, RETENTION.cardImportCounters);
     const { rows, groups } = PURGE_LIMITS;
 
     return [
@@ -287,6 +288,32 @@ export class PurgeService {
             remove: (ids) =>
               tx.accountDeletion.deleteMany({ where: { id: { in: ids } } }),
           });
+        },
+      ],
+      [
+        'CARD_IMPORT_COUNTERS',
+        async (tx, dryRun) => {
+          // 행이 작고(사용자·기관·날짜·개수) 많지 않아 한 번에 지운다. 잠금은 만료된 것만(진행 중 조회는 건드리지 않는다)
+          const failures = { lastFailedAt: { lte: counters } };
+          const usage = { day: { lte: counters } };
+          const locks = { expiresAt: { lte: now } };
+          if (dryRun) {
+            const counts = await Promise.all([
+              tx.cardImportLoginFailure.count({ where: failures }),
+              tx.codefDailyUsage.count({ where: usage }),
+              tx.cardImportLock.count({ where: locks }),
+            ]);
+            return { count: counts.reduce((a, b) => a + b, 0), hasMore: false };
+          }
+          const results = await Promise.all([
+            tx.cardImportLoginFailure.deleteMany({ where: failures }),
+            tx.codefDailyUsage.deleteMany({ where: usage }),
+            tx.cardImportLock.deleteMany({ where: locks }),
+          ]);
+          return {
+            count: results.reduce((a, r) => a + r.count, 0),
+            hasMore: false,
+          };
         },
       ],
     ];
