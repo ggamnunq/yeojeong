@@ -4,13 +4,14 @@ import { Icon } from '../Icon/Icon'
 import type { IconName } from '../Icon/icons'
 
 // Figma Tag(24:7086) · Type × Size. 비대화형 라벨. Shared는 레거시(공동 결제는 AvatarStack). Changed는 v1.4(미확정과 같은 중립 회색).
-export type TagType = 'shared' | 'personal' | 'pending' | 'duplicate' | 'refund' | 'left' | 'changed'
+// Warning(v1.6.2 · M 70:10539 · S 70:10544) = "연결 만료" — HF-30 마이페이지 지갑 줄 오른쪽. 옅은 warning 면 + 진한 warning 글자, 아이콘 없음.
+export type TagType = 'shared' | 'personal' | 'pending' | 'duplicate' | 'refund' | 'left' | 'changed' | 'warning'
 export type TagSize = 'm' | 's'
 
 export type TagProps = Omit<HTMLAttributes<HTMLSpanElement>, 'children'> & {
   type: TagType
   size?: TagSize
-  /** 기본 문구(공동·개인·미확정·중복 의심·환불·나간 멤버)를 바꿀 때 */
+  /** 기본 문구(공동·개인·미확정·중복 의심·환불·나간 멤버·변경됨·연결 만료)를 바꿀 때 */
   label?: ReactNode
   children?: never
 }
@@ -23,6 +24,7 @@ const TYPE: Record<TagType, { icon: IconName | null; label: string; color: strin
   refund: { icon: 'refresh', label: '환불', color: 'bg-feedback-info-bg text-feedback-info-fg' },
   left: { icon: 'logout', label: '나간 멤버', color: 'bg-muted text-secondary' },
   changed: { icon: null, label: '변경됨', color: 'bg-expense-pending-bg text-expense-pending-fg' },
+  warning: { icon: null, label: '연결 만료', color: 'bg-feedback-warning-bg text-feedback-warning-fg' },
 }
 
 // S는 Figma에서 11px(텍스트 스타일 없음)이다

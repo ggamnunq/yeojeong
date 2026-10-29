@@ -19,4 +19,11 @@ describe('StatCard', () => {
     expect(container.querySelector('svg')).toBeTruthy()
     expect(screen.getByText('보낼 예정')).toBeTruthy()
   })
+
+  it('라벨 앞 아이콘은 박스 20 그대로(18로 줄이지 않는다, spec §6 · DS17)', () => {
+    const { container } = render(<StatCard label="총지출" amount={1000} />)
+    const icon = container.querySelector('svg') as SVGElement
+    expect(icon.getAttribute('width')).toBe('20')
+    expect(icon.getAttribute('class')).not.toContain('size-4.5')
+  })
 })

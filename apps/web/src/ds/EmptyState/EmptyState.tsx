@@ -7,7 +7,10 @@ import { IllustEmptyTrip } from '../Illust/Illust'
 // DS v1.4 브랜드 일러스트 Illust/Empty-Trip(24:61381)을 96으로 줄여 쓴다.
 // Illust(하이파이 기본 HF-09) = 일러스트 160 → 28 → 제목 H2 → 40 → 버튼 1~2(Button L FILL, 간격 8). 설명 없음.
 // 화면에서는 버튼을 하단 CTA 자리에 붙이는 경우가 많다 — 그때는 actions를 비우고 버튼을 셸 cta/아래 블록에 둔다.
+// v1.6.2 Layout=Vertical/Horizontal: Type=Illust, Layout=Horizontal(70:10489) = 버튼 가로 2열(왼쪽 secondary · 오른쪽 primary,
+// 간격 8, 1:1, Button 2 끄면 primary 하나가 350 FILL). Type=Illust, Layout=Vertical(버튼 세로)은 비권장. NoTrip·NoPayments는 Vertical만.
 export type EmptyStateType = 'no-trip' | 'no-payments' | 'illust'
+export type EmptyStateLayout = 'vertical' | 'horizontal'
 
 export type EmptyStateProps = Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'title'> & {
   type: EmptyStateType
@@ -22,6 +25,11 @@ export type EmptyStateProps = Omit<HTMLAttributes<HTMLDivElement>, 'children' | 
    * Illust = Primary L + (Button 2) Secondary L, 둘 다 w-full
    */
   actions?: ReactNode
+  /**
+   * Figma Layout(v1.6.2, type="illust"만). 기본 vertical(v1.6 모습, 비권장).
+   * horizontal = actions를 가로 2열(간격 8, 1:1)로 — 왼쪽 Secondary L, 오른쪽 Primary L 순서로 넘긴다. 하나면 꽉 채운다.
+   */
+  layout?: EmptyStateLayout
   children?: never
 }
 
@@ -31,14 +39,25 @@ const COPY = {
   illust: { title: '참여한 여정이 없어요', message: '' },
 } satisfies Record<EmptyStateType, { title: string; message: string }>
 
-export function EmptyState({ type, title, message, illust, actions, className, ...rest }: EmptyStateProps) {
+export function EmptyState({ type, title, message, illust, actions, layout = 'vertical', className, ...rest }: EmptyStateProps) {
   const copy = COPY[type]
   if (type === 'illust') {
     return (
       <div className={clsx('flex flex-col items-center text-center', className)} {...rest}>
         <div className="flex shrink-0 justify-center">{illust ?? <IllustEmptyTrip size={160} />}</div>
         <h2 className="mt-7 text-h2 text-primary">{title ?? copy.title}</h2>
-        {actions && <div className="mt-10 flex w-full flex-col gap-2">{actions}</div>}
+        {actions && (
+          <div
+            data-layout={layout}
+            className={clsx(
+              'mt-10 flex w-full gap-2',
+              // 버튼 폭은 부모가 정한다(1:1 · 하나면 FILL). 버튼에 w-full을 줘도 같다
+              layout === 'horizontal' ? '*:min-w-0 *:flex-1' : 'flex-col',
+            )}
+          >
+            {actions}
+          </div>
+        )}
       </div>
     )
   }

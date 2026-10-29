@@ -141,7 +141,7 @@ export type DropdownMenuProps = Omit<DropdownMenuPanelProps, 'onClose' | 'classN
 }
 
 export function DropdownMenu({ open, onClose, 'aria-label': ariaLabel = '여정 전환', ...panel }: DropdownMenuProps) {
-  const { dialogProps, requestClose } = useModalDialog(open, onClose)
+  const { dialogProps, requestClose } = useModalDialog(open, onClose, 'menu')
   // 헤더 높이 + 위 안전영역. 딤과 패널은 그 아래에서 시작한다.
   const below = 'top-[calc(var(--spacing-header-height)+env(safe-area-inset-top))]'
 

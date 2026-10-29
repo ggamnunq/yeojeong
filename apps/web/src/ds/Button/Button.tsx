@@ -5,7 +5,9 @@ import type { IconName } from '../Icon/icons'
 import { focusRing, touchTarget } from '../styles'
 
 // Figma Button(24:6232) · Type × Size × State(Pressed = :active, Disabled = disabled, Loading = state="loading"(v1.5))
-export type ButtonType = 'primary' | 'secondary' | 'ghost' | 'danger'
+// v1.6.2: Type=Danger-weak = 옅은 에러 면(feedback/error/bg) + 글자·아이콘·스피너 text/error, 테두리 없음.
+// 하단 2버튼(BottomCTA Horizontal) 왼쪽의 파괴적 보조 행동(그룹 삭제 등). 크기·라운드는 Secondary와 같다.
+export type ButtonType = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-weak'
 export type ButtonSize = 'l' | 'm' | 's'
 /** Figma State 중 prop으로 받는 것. Pressed·Disabled는 CSS·disabled 속성으로 */
 export type ButtonState = 'default' | 'loading'
@@ -34,6 +36,8 @@ const TYPE = {
   secondary: 'border border-strong bg-surface text-primary disabled:border-default disabled:bg-subtle',
   ghost: 'text-brand',
   danger: 'bg-danger text-inverse disabled:bg-muted',
+  // Disabled = Secondary Disabled에서 테두리만 뺀 것(bg/subtle + text/disabled)
+  'danger-weak': 'bg-feedback-error-bg text-error disabled:bg-subtle',
 } satisfies Record<ButtonType, string>
 
 // Pressed. 로딩 중에는 눌림 색을 바꾸지 않는다
@@ -42,6 +46,8 @@ const PRESSED = {
   secondary: 'enabled:active:bg-pressed',
   ghost: 'enabled:active:bg-brand-subtle',
   danger: 'enabled:active:bg-danger-pressed',
+  // Pressed = 글자 error/800. 전용 눌림 면 토큰이 없어(새 토큰 만들지 않음) 면은 5% 어둡게만
+  'danger-weak': 'enabled:active:brightness-95 enabled:active:text-error-800',
 } satisfies Record<ButtonType, string>
 
 const ICON_COLOR = {
@@ -49,6 +55,7 @@ const ICON_COLOR = {
   secondary: 'text-icon-default',
   ghost: 'text-icon-brand',
   danger: 'text-icon-inverse',
+  'danger-weak': 'text-error',
 } satisfies Record<ButtonType, string>
 
 const SIZE = {

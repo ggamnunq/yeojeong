@@ -20,6 +20,21 @@ export function getFocusables(root: HTMLElement) {
   )
 }
 
+// 모달(BottomSheet·Dialog)이 열릴 때 알림(DS17). 화면명세 v0.5.8 0-4: 시트·다이얼로그가 열리면 떠 있던 토스트는 즉시 닫는다.
+// DS는 토스트 큐를 갖지 않으므로 호스트(앱 ToastHost)가 구독해서 큐를 비운다.
+/** 어떤 모달이 열렸는지. 토스트를 닫는 규칙은 sheet·dialog에만 걸린다(패널·드롭다운은 호스트가 정한다) */
+export type ModalKind = 'sheet' | 'dialog' | 'panel' | 'menu'
+
+const modalOpenListeners = new Set<(kind: ModalKind) => void>()
+
+/** BottomSheet·Dialog·Panel/Side·Dropdown/Menu가 열릴 때마다 kind와 함께 부른다. 반환값으로 구독을 끊는다 */
+export function onModalOpen(listener: (kind: ModalKind) => void): () => void {
+  modalOpenListeners.add(listener)
+  return () => {
+    modalOpenListeners.delete(listener)
+  }
+}
+
 // 시트 위에 다이얼로그가 겹쳐도 마지막 하나가 닫힐 때까지 잠가 둔다
 let lockCount = 0
 let saved = { overflow: '', paddingRight: '' }
@@ -41,11 +56,11 @@ function lockScroll() {
   }
 }
 
-export function useModalDialog(open: boolean, onClose: () => void) {
+export function useModalDialog(open: boolean, onClose: () => void, kind: ModalKind = 'dialog') {
   const ref = useRef<HTMLDialogElement>(null)
-  const latest = useRef({ open, onClose })
+  const latest = useRef({ open, onClose, kind })
   useLayoutEffect(() => {
-    latest.current = { open, onClose }
+    latest.current = { open, onClose, kind }
   })
 
   useEffect(() => {
@@ -60,6 +75,7 @@ export function useModalDialog(open: boolean, onClose: () => void) {
     }
     if (!dialog.contains(document.activeElement)) (getFocusables(dialog)[0] ?? dialog).focus()
     const unlock = lockScroll()
+    for (const listener of [...modalOpenListeners]) listener(latest.current.kind)
 
     return () => {
       unlock()

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { BottomNav, type BottomNavProps } from '../BottomNav/BottomNav'
-import { Screen, type ScreenCta } from '../Screen/Screen'
+import { Screen, type ScreenCtaValue } from '../Screen/Screen'
 import { TopHeader, type TopHeaderGroupProps } from '../TopHeader/TopHeader'
 
 // Figma Shell/App(24:61193) · Time(TEXT) · Content(INSTANCE_SWAP). 여정 탭 화면(결제내역·현황·여정 정보·정산)의 셸.
@@ -12,8 +12,8 @@ export type ShellAppProps = {
   header: Omit<TopHeaderGroupProps, 'type' | 'groupNameSize'>
   /** Figma nav(BottomNav Tabs=3): active · phase(진행 중·시작 전 ongoing, 종료 후 ended) · onChange · hrefs */
   nav?: Omit<BottomNavProps, 'children'>
-  /** 화면 하단 CTA(Button Primary L FILL) — 내비 위에 붙는다 */
-  cta?: ScreenCta
+  /** 화면 하단 BottomCTA(Single · Horizontal, 버튼마다 state) — 내비 위에 붙는다 */
+  cta?: ScreenCtaValue
   /** 내용 좌우 거터 20. 전폭 DS 행(PaymentRow·TimelineItem·SettlementRow·ListItem·DateHeader…)만 쌓는 화면이면 false */
   gutter?: boolean
   /** Figma Content 슬롯(390 × 646) */

@@ -36,6 +36,29 @@ describe('Button', () => {
     expect(container.querySelector('svg')).toBeNull()
   })
 
+  describe('type="danger-weak"(v1.6.2 Type=Danger-weak)', () => {
+    it('옅은 에러 면 + 에러 글자, 비활성은 bg/subtle + 비활성 글자', () => {
+      render(<Button type="danger-weak" label="그룹 삭제" />)
+      const button = screen.getByRole('button', { name: '그룹 삭제' })
+      expect(button.className).toContain('bg-feedback-error-bg')
+      expect(button.className).toContain('text-error')
+      expect(button.className).not.toContain('border')
+      expect(button.className).toContain('disabled:bg-subtle')
+      expect(button.className).toContain('enabled:active:')
+    })
+
+    it('Loading이면 스피너는 에러 글자색, 누름 무시', () => {
+      const onClick = vi.fn()
+      const { container } = render(<Button type="danger-weak" label="그룹 삭제" state="loading" onClick={onClick} />)
+      const button = screen.getByRole('button', { name: '그룹 삭제' })
+      expect(button.getAttribute('aria-busy')).toBe('true')
+      expect(container.querySelector('[data-spinner]')).toBeTruthy()
+      expect(button.className).not.toContain('enabled:active:')
+      fireEvent.click(button)
+      expect(onClick).not.toHaveBeenCalled()
+    })
+  })
+
   describe('state="loading"(v1.5)', () => {
     it('aria-busy + 이름은 그대로, 라벨·아이콘은 투명(크기 유지)하고 스피너를 그린다', () => {
       const { container } = render(<Button label="동의하고 연결" state="loading" leadingIcon icon="link" />)

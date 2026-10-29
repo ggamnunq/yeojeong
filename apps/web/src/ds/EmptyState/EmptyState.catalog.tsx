@@ -27,7 +27,7 @@ export default defineCatalog({
         <Variant name='type="no-payments"'>
           <EmptyState className="w-[350px]" type="no-payments" actions={<Button size="s" type="ghost" label="지갑 연결 확인" />} />
         </Variant>
-        <Variant name='type="illust" (v1.6 · HF-09) · 버튼 2개'>
+        <Variant name='type="illust" layout="vertical" (v1.6 · 비권장) · 버튼 2개'>
           <EmptyState
             className="w-[350px] py-8"
             type="illust"
@@ -37,6 +37,27 @@ export default defineCatalog({
                 <Button type="secondary" label="초대코드로 참여" className="w-full" />
               </>
             }
+          />
+        </Variant>
+        <Variant name='type="illust" layout="horizontal" (v1.6.2 · 70:10489) · secondary | primary'>
+          <EmptyState
+            className="w-[350px] py-8"
+            type="illust"
+            layout="horizontal"
+            actions={
+              <>
+                <Button type="secondary" label="초대코드로 참여" />
+                <Button label="여정 만들기" />
+              </>
+            }
+          />
+        </Variant>
+        <Variant name='type="illust" layout="horizontal" · Button 2 off'>
+          <EmptyState
+            className="w-[350px] py-8"
+            type="illust"
+            layout="horizontal"
+            actions={<Button label="여정 만들기" />}
           />
         </Variant>
         <Variant name='type="illust" · Button 2 off · illust 교체'>

@@ -48,7 +48,7 @@ export type PanelSideProps = Omit<PanelSidePanelProps, 'onClose' | 'titleId'> & 
 
 export function PanelSide({ open, onClose, 'aria-describedby': describedBy, ...panel }: PanelSideProps) {
   const titleId = useId()
-  const { dialogProps, requestClose } = useModalDialog(open, onClose)
+  const { dialogProps, requestClose } = useModalDialog(open, onClose, 'panel')
 
   return (
     <dialog
