@@ -1,14 +1,16 @@
 import type { HealthResponse, Me, TripDetailResponse } from '@yeojeong/shared'
 import { HttpResponse, type HttpHandler } from 'msw'
 import type { MyTripsResponse, SessionResponse } from '../../api'
+import type { SessionWithFeatures } from '../../app/features'
 import { db, findTrip, meOf, tripDetail, tripListItem } from '../../mocks/data'
 import { api, denyUnlessAuthenticated, mockError, requireMember } from '../../mocks/utils'
 
 export const handlers: HttpHandler[] = [
   api.get<HealthResponse>('/api/health', () => HttpResponse.json({ status: 'ok', db: 'up' })),
 
-  api.get<SessionResponse>('/api/auth/session', () => {
-    const body: SessionResponse =
+  // features(FR-006)는 모든 status에 싣는다. TODO(S7): shared 계약에 features가 들어오면 SessionResponse로
+  api.get<SessionWithFeatures>('/api/auth/session', () => {
+    const status: SessionResponse =
       db.session === 'AUTHENTICATED'
         ? {
             status: 'AUTHENTICATED',
@@ -23,6 +25,7 @@ export const handlers: HttpHandler[] = [
               signupDraft: { kakaoNickname: '준용', profileImageUrl: null, returnTo: db.signupReturnTo },
             }
           : { status: 'ANONYMOUS' }
+    const body: SessionWithFeatures = { ...status, features: { accountLink: db.accountLink } }
     return HttpResponse.json(body)
   }),
 

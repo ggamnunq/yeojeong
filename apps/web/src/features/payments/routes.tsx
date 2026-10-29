@@ -1,4 +1,6 @@
 import { lazy } from 'react'
+import { accountLinkOnly } from '../../app/features'
+import { paths } from '../../app/paths'
 import type { AppRoute } from '../../app/routes'
 import PaymentsRoute from './pages/PaymentsRoute'
 
@@ -10,5 +12,13 @@ export const routes: AppRoute[] = [
     Component: PaymentsRoute,
     children: [{ path: '/trips/:tripId/payments/:expenseId', Component: lazy(() => import('./pages/PaymentSheet')) }],
   },
-  { layout: 'trip-page', path: '/trips/:tripId/payments/out-of-period', Component: lazy(() => import('./pages/OutOfPeriodPage')) },
+  // 기간 외 결제 후보는 토스 연결 기능이 켜져 있을 때만(FR-006). 꺼져 있으면 결제내역으로
+  {
+    layout: 'trip-page',
+    path: '/trips/:tripId/payments/out-of-period',
+    Component: accountLinkOnly(
+      lazy(() => import('./pages/OutOfPeriodPage')),
+      ({ tripId = '' }) => paths.payments(tripId),
+    ),
+  },
 ]

@@ -1,5 +1,8 @@
 import { lazy } from 'react'
+import { accountLinkOnly } from '../../app/features'
+import { paths } from '../../app/paths'
 import type { AppRoute } from '../../app/routes'
+import { readSignupReturnTo } from '../../app/signupReturnTo'
 
 // A 인증(WF-02~05b, 재동의). 스플래시(WF-01)는 core, 토스 인증·선택·완료(WF-06~08, /wallet/connect/*)는 wallet 플로우.
 export const routes: AppRoute[] = [
@@ -7,7 +10,15 @@ export const routes: AppRoute[] = [
   { layout: 'signup', path: '/signup/nickname', Component: lazy(() => import('./pages/NicknamePage')) },
   // 가입 성공 순간 세션이 로그인으로 바뀌면 RequireSignup이 '/'로 보내 WF-05를 건너뛴다. 그래서 같은 가드를 화면이 직접 한다
   { layout: 'public', path: '/signup/terms', Component: lazy(() => import('./pages/TermsPage')) },
-  { layout: 'auth', path: '/signup/wallet', Component: lazy(() => import('./pages/SignupWalletPage')) },
+  // 토스 연결이 꺼져 있으면(FR-006) 가입 토스 안내가 없다 — 주소로 오면 returnTo 또는 진입 라우팅
+  {
+    layout: 'auth',
+    path: '/signup/wallet',
+    Component: accountLinkOnly(
+      lazy(() => import('./pages/SignupWalletPage')),
+      () => readSignupReturnTo() ?? paths.splash(),
+    ),
+  },
   // 세션 확인이 403 CONSENT_REQUIRED여도 열려야 하므로 가드 없이 두고 화면이 직접 판단한다
   { layout: 'public', path: '/reconsent', Component: lazy(() => import('./pages/ReconsentPage')) },
 ]

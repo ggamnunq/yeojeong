@@ -8,6 +8,7 @@ const SESSION_KEY = 'yj:mock:session'
 /**
  * 개발 서버에서 VITE_MOCK_API=1일 때만 main.tsx가 동적으로 불러온다(운영 번들에 들어가지 않는다).
  * 로그인 전 화면: 콘솔에서 localStorage.setItem('yj:mock:session', 'ANONYMOUS') 후 새로고침.
+ * 토스 연결 기능(features.accountLink) 켜기: localStorage.setItem('yj:mock:accountLink', '1') 후 새로고침.
  * QA 시나리오(시점 전환 · 엣지 응답 · 5명 넘는 진행 중 여정 · 패널)는 scenario.ts 머리 주석.
  */
 export async function startMockWorker() {
@@ -15,6 +16,8 @@ export async function startMockWorker() {
     const session = localStorage.getItem(SESSION_KEY)
     if (session === 'ANONYMOUS' || session === 'SIGNUP_REQUIRED' || session === 'AUTHENTICATED') db.session = session
     if (db.session === 'SIGNUP_REQUIRED') db.signupReturnTo = localStorage.getItem('yj:mock:signupReturnTo')
+    // 토스 연결 기능 플래그(FR-006). 기본 꺼짐, '1'이면 켠다
+    db.accountLink = localStorage.getItem('yj:mock:accountLink') === '1'
   } catch {
     // 저장소를 못 쓰면 기본(로그인 상태)
   }

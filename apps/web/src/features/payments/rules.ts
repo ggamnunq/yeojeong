@@ -128,9 +128,13 @@ export function storeView(userId: string | undefined, view: PaymentsView) {
  * 상세 줄(화면명세 0-5): 결제자 "¥1,280 · 11.13 08:50 · 토스뱅크 체크카드 1934" / 비결제자 "¥2,860 · 11.13 14:10".
  * 결제수단은 서버가 결제자에게만 준다(paymentMethodLabel). KRW면 원통화를 뺀다.
  */
-export function detailLine(detail: Pick<PaymentDetail, 'occurredAt' | 'originalAmount' | 'originalCurrency' | 'paymentMethodLabel'>) {
+export function detailLine(
+  detail: Pick<PaymentDetail, 'occurredAt' | 'originalAmount' | 'originalCurrency' | 'paymentMethodLabel'>,
+  /** 결제수단을 붙일지. 토스 연결이 꺼져 있거나(FR-006) 수동 결제(HF-20b)면 false */
+  showMethod = true,
+) {
   const at = kst(detail.occurredAt)
-  return [formatOriginal(detail.originalAmount, detail.originalCurrency), `${at.monthDay} ${at.time}`, detail.paymentMethodLabel]
+  return [formatOriginal(detail.originalAmount, detail.originalCurrency), `${at.monthDay} ${at.time}`, showMethod && detail.paymentMethodLabel]
     .filter(Boolean)
     .join(' · ')
 }

@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { handleApiError, keys } from '../../../api'
+import { accountLinkOf } from '../../../app/features'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { rememberSignupReturnTo } from '../../../app/signupReturnTo'
@@ -8,6 +9,7 @@ import { Input, ShellOnboarding } from '../../../ds'
 import { postLogout } from '../api'
 import { COPY } from '../copy'
 import { useFlowState } from '../historyState'
+import { signupProgress } from '../steps'
 import {
   graphemeLength,
   isNicknameValid,
@@ -67,7 +69,7 @@ export default function NicknamePage() {
 
   return (
     <ShellOnboarding
-      progress={1}
+      progress={signupProgress(1, accountLinkOf(session.data))}
       onBack={() => void back()}
       cta={{ label: COPY.next, htmlType: 'submit', form: formId, disabled: !isNicknameValid(value) || leaving }}
     >

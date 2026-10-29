@@ -18,9 +18,9 @@ async function signupFromInviteLink(page: Page) {
   await expect(page.getByRole('heading', { name: '토스 지갑을 연결해 주세요' })).toBeVisible()
 }
 
-test.describe('returnTo — 신규 회원도 가입 단계를 마치면 초대 링크로(QA ③ HF-12)', () => {
+test.describe('returnTo — 신규 회원도 가입 단계를 마치면 초대 링크로(QA ③ HF-12, 토스 연결 켬)', () => {
   test('닉네임 → 약관 → 토스 안내 「나중에」 → /join?code= 미리보기', async ({ page }) => {
-    await useMockScenario(page, { session: 'ANONYMOUS' })
+    await useMockScenario(page, { session: 'ANONYMOUS', accountLink: true })
     await signupFromInviteLink(page)
     await page.getByRole('button', { name: '나중에' }).click()
     await expect(page).toHaveURL(JOIN)
@@ -29,7 +29,7 @@ test.describe('returnTo — 신규 회원도 가입 단계를 마치면 초대 �
   })
 
   test('토스 연결 → WF-08에서 브라우저 뒤로 가기 = 「여정으로 가기」(토스 안내로 돌아가지 않음, HF-08)', async ({ page }) => {
-    await useMockScenario(page, { session: 'ANONYMOUS' })
+    await useMockScenario(page, { session: 'ANONYMOUS', accountLink: true })
     await signupFromInviteLink(page)
     // 인증 창(목: about:blank)은 새 창으로 열리고 이 탭은 대기 화면 → 목이 다음 폴링에서 인증 완료로 바꾼다
     await page.getByRole('button', { name: '토스로 연결' }).click()

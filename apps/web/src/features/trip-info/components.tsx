@@ -1,9 +1,14 @@
 import { clsx } from 'clsx'
+import { useQuery } from '@tanstack/react-query'
 import { useId, type ReactNode } from 'react'
+import { Link } from 'react-router'
 import { Avatar, CardHeroTone, Icon, LeaderCrown, orderMembers, RowTone, type RouteProgressPhase } from '../../ds'
 import { focusRing, touchTarget } from '../../ds/styles'
 import type { MemberSummary, TripStatus } from '../../api'
+import { paths } from '../../app/paths'
 import { formatInviteCode } from '../trips/rules'
+import { tripFxQuery } from '../wallet/api'
+import { formatFxLabel } from '../wallet/format'
 
 // 여정 정보 탭(HF-16·23) 블록. Figma 06 로컬 패턴(영웅 카드·톤 · 아바타 줄 · 톤 행 · 텍스트 링크)을 DS 부품과 토큰으로 조합했다.
 
@@ -138,5 +143,34 @@ export function TextLink({ children, onClick, disabled }: { children: ReactNode;
     >
       {children}
     </button>
+  )
+}
+
+/**
+ * 환율 톤 행(HF-23, v0.6.0): "환율" + "100엔 = 919.20원" ›  → 환율 화면(HF-29). 외화 여정만.
+ * 지갑에 있던 환율 진입점을 여기로 옮겼다(화면명세 WF-23 5b). 고시가 아직 없으면 값 자리에 "—"
+ */
+export function FxRow({ tripId }: { tripId: string }) {
+  const fx = useQuery({ ...tripFxQuery(tripId), meta: { silent: true } })
+  const current = fx.data?.current
+  const value = current
+    ? formatFxLabel(current.displayUnit, current.currencyNameKo, current.displayRate)
+    : fx.data
+      ? `${fx.data.displayUnit}${fx.data.currencyNameKo} = —`
+      : '—'
+  return (
+    <Link
+      to={paths.fx(tripId)}
+      className={clsx(
+        'flex w-full items-center justify-between gap-3 rounded-lg bg-subtle py-4 pr-4 pl-5 transition-[filter] select-none active:brightness-95',
+        focusRing,
+      )}
+    >
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-caption text-tertiary">환율</span>
+        <span className="truncate font-amount text-amount-m text-amount-default">{value}</span>
+      </span>
+      <Icon name="chevron-right" size={20} className="shrink-0 text-icon-subtle" />
+    </Link>
   )
 }

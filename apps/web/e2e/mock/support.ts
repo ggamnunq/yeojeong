@@ -5,6 +5,8 @@ export type MockScenario = {
   session?: 'AUTHENTICATED' | 'SIGNUP_REQUIRED' | 'ANONYMOUS'
   /** 지갑 목 상태: 'expired' | 'empty' | 'no-consent' */
   wallet?: 'expired' | 'empty' | 'no-consent'
+  /** 세션 features.accountLink(토스 연결). 기본 false */
+  accountLink?: boolean
 }
 
 export async function useMockScenario(page: Page, scenario: MockScenario = {}) {
@@ -15,5 +17,6 @@ export async function useMockScenario(page: Page, scenario: MockScenario = {}) {
     localStorage.clear()
     if (s.session) localStorage.setItem('yj:mock:session', s.session)
     if (s.wallet) localStorage.setItem('yj:mock:wallet', s.wallet)
+    if (s.accountLink) localStorage.setItem('yj:mock:accountLink', '1')
   }, scenario)
 }

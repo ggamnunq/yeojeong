@@ -5,7 +5,7 @@ import { useMockScenario } from './support'
 
 test.describe('가입 · 약관(HF-03·04·05·05b)', () => {
   test('닉네임(Input L) → 약관 Row/Consent → › 전문 → 돌아와도 체크 유지 → 가입 → 토스 연결 안내(나중에)', async ({ page }) => {
-    await useMockScenario(page, { session: 'SIGNUP_REQUIRED' })
+    await useMockScenario(page, { session: 'SIGNUP_REQUIRED', accountLink: true })
     await page.goto('/signup/nickname')
     const nickname = page.getByRole('textbox', { name: '닉네임' })
     await expect(nickname).toHaveValue('준용')
@@ -72,7 +72,7 @@ test.describe('현황 · 정산(HF-22·25)', () => {
 
 test.describe('지갑 해제(부록 C-5, v0.5.7)', () => {
   test('일부 해제: "이후 결제는 불러오지 않아요", 연결의 마지막이 아니면 체크 없음', async ({ page }) => {
-    await useMockScenario(page)
+    await useMockScenario(page, { accountLink: true })
     await page.goto('/wallet')
     await page.getByRole('button', { name: '신한카드 Deep Dream 더 보기' }).click()
     await page.getByRole('button', { name: '연결 해제' }).click()
@@ -83,7 +83,7 @@ test.describe('지갑 해제(부록 C-5, v0.5.7)', () => {
   })
 
   test('전부 해제: "개인·미확정 결제도 지워져요"(체크 없음) → 결제내역에서 내 미확정이 사라진다', async ({ page }) => {
-    await useMockScenario(page)
+    await useMockScenario(page, { accountLink: true })
     // 목 db는 페이지 메모리에 있다 — 새로 불러오지 않고 앱 안에서만 이동한다
     await page.goto('/trips/trip-osaka/payments')
     await expect(page.getByRole('button', { name: /551 호라이/ })).toBeVisible()
@@ -108,7 +108,7 @@ test.describe('지갑 해제(부록 C-5, v0.5.7)', () => {
 
 test.describe('결제수단 0개 · 결제 상세(WF-32 변형, v0.5.7)', () => {
   test('공동으로 확정 → 403 NO_ACTIVE_PAYMENT_METHOD → 시트 유지 + 계좌·카드 추가 시트, 토스트 없음', async ({ page }) => {
-    await useMockScenario(page, { wallet: 'empty' })
+    await useMockScenario(page, { wallet: 'empty', accountLink: true })
     // 결제수단을 지운 상태에서도 미확정이 남아 있는 경우(서버 파기 전 데이터)를 흉내 낸다
     await page.goto('/trips/trip-osaka/payments/exp-551')
     const sheet = page.getByRole('dialog', { name: '551 호라이 난바본점' })
@@ -120,7 +120,7 @@ test.describe('결제수단 0개 · 결제 상세(WF-32 변형, v0.5.7)', () => 
   })
 
   test('공동 → 개인: 본문 "내 결제내역에서도 지워져요" → 바꾸기 → "결제를 지웠어요" + 목록으로', async ({ page }) => {
-    await useMockScenario(page, { wallet: 'empty' })
+    await useMockScenario(page, { wallet: 'empty', accountLink: true })
     await page.goto('/trips/trip-osaka/payments')
     await page.getByRole('button', { name: /이치란/ }).click()
     const sheet = page.getByRole('dialog', { name: '이치란 라멘 도톤보리점' })

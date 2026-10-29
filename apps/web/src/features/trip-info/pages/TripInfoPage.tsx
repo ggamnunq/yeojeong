@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
+import { clsx } from 'clsx'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { keys } from '../../../api'
@@ -18,7 +19,7 @@ import {
   tripPermissions,
 } from '../../trips/rules'
 import type { NavState, TripInfo } from '../../trips/types'
-import { InviteCodeRow, MemberAvatars, TextLink, TripHeroCard, TripMeta } from '../components'
+import { FxRow, InviteCodeRow, MemberAvatars, TextLink, TripHeroCard, TripMeta } from '../components'
 
 type OpenDialog = 'start' | 'end' | 'delete' | null
 
@@ -158,6 +159,13 @@ export default function TripInfoPage() {
       {code && (
         <div className="px-gutter pt-8">
           <InviteCodeRow code={code} onCopy={() => void copyInviteCode(code)} />
+        </div>
+      )}
+
+      {/* 외화 여정만 환율 행(HF-23) → 환율(HF-29). KRW 여정은 trip.fx = null */}
+      {trip.fx && (
+        <div className={clsx('px-gutter', code ? 'pt-3' : 'pt-8')}>
+          <FxRow tripId={tripId} />
         </div>
       )}
 

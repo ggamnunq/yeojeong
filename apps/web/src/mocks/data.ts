@@ -287,6 +287,8 @@ const expenses: MockExpense[] = [
 
 export type MockDb = {
   session: 'AUTHENTICATED' | 'SIGNUP_REQUIRED' | 'ANONYMOUS'
+  /** 세션 응답 features.accountLink(FR-006). 기본 false = 토스 연결 숨김. 개발 서버는 localStorage 'yj:mock:accountLink' = '1'로 켠다 */
+  accountLink: boolean
   /** 가입 대기(SIGNUP_REQUIRED)에 담긴 돌아갈 경로(서버 yj_signup 쿠키의 r). 로그인 시작 returnTo를 서버 규칙으로 거른 값 */
   signupReturnTo: string | null
   /** 채우면 세션 응답에 재동의 필요 항목을 싣고 로그인 API는 403 CONSENT_REQUIRED를 준다 */
@@ -304,6 +306,7 @@ export type MockDb = {
 export function createMockDb(): MockDb {
   return structuredClone({
     session: 'AUTHENTICATED',
+    accountLink: false,
     signupReturnTo: null,
     consentRequired: null,
     meUserId: USER.junyong,

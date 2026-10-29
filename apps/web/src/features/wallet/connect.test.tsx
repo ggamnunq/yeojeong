@@ -25,6 +25,8 @@ let cancel: Mock<() => void>
 let openWindow: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
+  // 토스 연결 흐름은 기능 플래그가 켜져 있을 때만(FR-006)
+  db.accountLink = true
   sessionStorage.clear()
   go = vi.fn()
   cancel = vi.fn()
