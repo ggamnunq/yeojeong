@@ -75,3 +75,42 @@ describe('Input', () => {
     expect(icon.getAttribute('class')).toContain('text-icon-subtle')
   })
 })
+
+describe('Input Type=Password (v1.7)', () => {
+  it('가려서 시작하고, 보기 토글(aria-pressed)로 type password ↔ text · eye ↔ eye-off', () => {
+    render(<Input type="password" label="비밀번호" defaultValue="secret12" />)
+    const input = screen.getByLabelText('비밀번호') as HTMLInputElement
+    const toggle = screen.getByRole('button', { name: '비밀번호 보기' })
+    expect(input.type).toBe('password')
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(toggle.getAttribute('aria-controls')).toBe(input.id)
+    expect(toggle.querySelector('.lucide-eye')).toBeTruthy()
+    fireEvent.click(toggle)
+    expect(input.type).toBe('text')
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(toggle.querySelector('.lucide-eye-off')).toBeTruthy()
+    fireEvent.click(toggle)
+    expect(input.type).toBe('password')
+  })
+
+  it('Error·onClear여도 경고 아이콘·✕ 대신 토글만 있다', () => {
+    const { container } = render(<Input type="password" label="비밀번호" value="x" onChange={() => {}} onClear={() => {}} error helper="맞지 않아요" />)
+    expect(screen.getByRole('button', { name: '비밀번호 보기' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '입력 지우기' })).toBeNull()
+    expect(container.querySelector('.lucide-triangle-alert')).toBeNull()
+    expect(screen.getByLabelText('비밀번호').getAttribute('aria-invalid')).toBe('true')
+  })
+
+  it('Disabled면 토글도 꺼지고 icon/disabled', () => {
+    render(<Input type="password" label="비밀번호" disabled revealLabel="비밀번호 표시" />)
+    const toggle = screen.getByRole('button', { name: '비밀번호 표시' }) as HTMLButtonElement
+    expect(toggle.disabled).toBe(true)
+    expect(toggle.className).toContain('text-icon-disabled')
+  })
+
+  it('password가 아니면 토글이 없다', () => {
+    render(<Input label="이메일" type="email" />)
+    expect(screen.queryByRole('button', { name: '비밀번호 보기' })).toBeNull()
+    expect((screen.getByLabelText('이메일') as HTMLInputElement).type).toBe('email')
+  })
+})

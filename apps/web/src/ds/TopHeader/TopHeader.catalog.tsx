@@ -80,6 +80,32 @@ export default defineCatalog({
             </Variant>
           </div>
         </Sub>
+        <Sub title='type="back" (v1.7 · 24:7296) — Title visible · Title(title) · Action · text action(textAction, Button Ghost S)'>
+          <div className="flex flex-wrap gap-6">
+            <Variant name="Figma 기본: Title visible off · Action off → title 없음">
+              <Frame>
+                <TopHeader type="back" />
+              </Frame>
+            </Variant>
+            <Variant name='title="내 지갑" · textAction(기본 "불러오기")'>
+              <div data-figma="118:15440">
+                <Frame>
+                  <TopHeader type="back" title="내 지갑" textAction={{ onClick: () => {} }} />
+                </Frame>
+              </div>
+            </Variant>
+            <Variant name='textAction label="수정" · disabled'>
+              <div className="flex flex-col gap-2">
+                <Frame>
+                  <TopHeader type="back" title="결제 상세" textAction={{ label: '수정', onClick: () => {} }} />
+                </Frame>
+                <Frame>
+                  <TopHeader type="back" title="결제 상세" textAction={{ label: '수정', disabled: true }} />
+                </Frame>
+              </div>
+            </Variant>
+          </div>
+        </Sub>
         <Sub title='type="close" (v1.6) · 흐름 닫기 — 생성 완료(HF-11) 등'>
           <div className="flex flex-wrap gap-6">
             <Variant name='type="close" (Center title off)'>

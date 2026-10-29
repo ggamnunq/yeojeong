@@ -80,6 +80,15 @@ describe('RowConsent', () => {
     expect(screen.queryByRole('button')).toBeNull()
     expect(screen.queryByRole('link')).toBeNull()
   })
+
+  it('v1.7 정렬(HF-04): 위아래 15 · 오른쪽 0 · 글자 text/primary', () => {
+    const { container } = render(<RowConsent title="카드 내역 조회 동의" checked={false} readOnly chevron={{ label: '전문' }} />)
+    const row = container.firstElementChild as HTMLElement
+    expect(row.className).toContain('pl-5')
+    expect(row.className).not.toMatch(/\bpr-/)
+    expect(screen.getByText('카드 내역 조회 동의').closest('label')?.className).toContain('py-3.75')
+    expect(screen.getByText('카드 내역 조회 동의').parentElement?.className).toContain('text-primary')
+  })
 })
 
 describe('SheetContentConsent', () => {

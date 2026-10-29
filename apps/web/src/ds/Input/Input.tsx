@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import { useId, type InputHTMLAttributes, type ReactNode, type Ref } from 'react'
+import { useId, useState, type InputHTMLAttributes, type ReactNode, type Ref } from 'react'
 import { Icon } from '../Icon/Icon'
 import type { IconName } from '../Icon/icons'
 import { focusRing, touchTarget } from '../styles'
@@ -9,6 +9,8 @@ import { focusRing, touchTarget } from '../styles'
 // Size=M = 필드 52 · 값 Body/L. Size=L = 온보딩 큰 입력(필드 60 · 값 Heading/H3, HF-03).
 // 필드 안 순서: 값 → Suffix("원", text/secondary) → 상태 아이콘(지우기/경고) → Trailing icon 슬롯(20, icon/subtle).
 // v1.6.1: 헬퍼 텍스트는 기본 숨김 — 설명형 헬퍼는 쓰지 않고 오류 문구(error와 같이)만 쓴다.
+// v1.7 Type=Password(Default 114:16616 · Focus 114:16634 · Error 114:16652 · Disabled 114:16672) = HTML `type="password"`:
+// 값은 가림 점, 오른쪽에 보기 토글(Icon/eye 20 · 보이는 중 eye-off, icon/subtle · Disabled icon/disabled). Focus·Error에서도 ✕·경고 아이콘 대신 토글.
 export type InputSize = 'm' | 'l'
 
 export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> & {
@@ -32,6 +34,8 @@ export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> & {
   /** 넘기면 입력값이 있을 때 포커스 중에 지우기 버튼(Icon close)을 보인다 */
   onClear?: () => void
   clearLabel?: string
+  /** Type=Password 보기 토글의 접근성 이름(보임 여부는 aria-pressed). 기본 "비밀번호 보기" */
+  revealLabel?: string
   /** HTML input size(보이는 글자 수). Figma Size와 이름이 겹쳐 따로 둔다 */
   htmlSize?: number
   ref?: Ref<HTMLInputElement>
@@ -59,7 +63,9 @@ export function Input({
   error = false,
   onClear,
   clearLabel = '입력 지우기',
+  revealLabel = '비밀번호 보기',
   htmlSize,
+  type,
   disabled,
   id,
   className,
@@ -71,6 +77,8 @@ export function Input({
   const suffixId = `${inputId}-suffix`
   const describedBy = [suffix ? suffixId : null, helper ? helperId : null].filter(Boolean).join(' ') || undefined
   const hasValue = rest.value === undefined ? true : String(rest.value).length > 0
+  const password = type === 'password'
+  const [revealed, setRevealed] = useState(false)
 
   return (
     <div className={clsx('flex flex-col gap-2', className)}>
@@ -94,6 +102,7 @@ export function Input({
       >
         <input
           id={inputId}
+          type={password && revealed ? 'text' : type}
           size={htmlSize}
           disabled={disabled}
           aria-invalid={error || undefined}
@@ -109,7 +118,26 @@ export function Input({
             {suffixText}
           </span>
         )}
-        {error ? (
+        {password ? (
+          <button
+            type="button"
+            aria-label={revealLabel}
+            aria-pressed={revealed}
+            aria-controls={inputId}
+            disabled={disabled}
+            // 누르는 동안 입력이 포커스를 잃지 않게(보면서 이어서 입력)
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setRevealed((v) => !v)}
+            className={clsx(
+              'inline-flex shrink-0 rounded-full',
+              disabled ? 'text-icon-disabled' : 'text-icon-subtle',
+              focusRing,
+              touchTarget,
+            )}
+          >
+            <Icon name={revealed ? 'eye-off' : 'eye'} size={20} />
+          </button>
+        ) : error ? (
           <Icon name="alert" size={20} className="shrink-0 text-error" />
         ) : (
           onClear &&

@@ -1,6 +1,6 @@
 # 디자인 시스템 (`src/ds`)
 
-Figma 「여정」 v1.6.3 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다. v1.6 추가분은 아래 「v1.6 추가분 → 화면 교체 대응표」, v1.6.2(DS17)는 「v1.6.2 추가분」, v1.6.3(DS18 · 수동 결제)은 「v1.6.3 추가분」.
+Figma 「여정」 v1.7.0 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다. v1.6 추가분은 아래 「v1.6 추가분 → 화면 교체 대응표」, v1.6.2(DS17)는 「v1.6.2 추가분」, v1.6.3(DS18 · 수동 결제)은 「v1.6.3 추가분」, v1.7.0(DS19)은 「v1.7.0 추가분」.
 
 ## 토큰
 
@@ -180,6 +180,25 @@ W5 화면 통합에서는 아래 임시 조합을 지우고 오른쪽 DS 공개 
 - **C-06 결제자 표기**: 메타 줄은 `paymentMeta('18:20', payer)` → "18:20 · 내 결제" / "18:20 · 민지"(접미사 없음), 타임라인처럼 앞부분이 다르면 `payerLabel(payer)`. 미확정은 메타에 붙이지 않는다(PaymentRow `type="pending"`이 칩을 그림). 결제 상세 결제자 행은 프사 + 닉네임, 나는 "나"(`SheetContentReadOnly`가 처리).
 - **C-08 나간 멤버**: 이름 뒤 "(나감)" 대신 프사 Left + `Tag type="left"`("나간 멤버"). SettlementRow `member="left"`, `RowMemberAmount`·`SheetContentReadOnly` 결제자는 `person.left`로 자동. 결제 행(PaymentRow)은 프사 Left만(메타는 닉네임 그대로).
 - 나(`me`)는 프사 Me 테두리와 「나」 배지(`BadgeMe`)를 같이 쓴다 — RowMemberAmount · RowMember · SettlementRow 공통.
+
+## v1.7.0 추가분 (DS19 · spec §9-6)
+
+기존 호출은 그대로 컴파일된다. 모습이 바뀌는 건 Row/Consent(높이 50 → 52, 글자 text/primary, › 오른쪽 끝)와 HF-43 행(로컬 Checkbox 조합 → Row/Pick, 66 → 68)뿐이다.
+
+| Figma v1.7.0 | 코드 | 화면에서 쓸 곳 |
+| --- | --- | --- |
+| **Row/Pick**(115:15176) · State=Default/Selected/Disabled | `RowPick`: `title` · `meta?`(Meta off = 생략) · `amount` · `subAmount?`(Sub amount off = 생략) · `chip?`(Tag Pending S 라벨, 생략 = Chip off) · `checked`(Selected) · `disabled`(Disabled) + 나머지 input 속성(`onChange` 등). 행 전체가 체크박스 라벨 | HF-43 기간 외 결제(적용됨, Sub amount off · Meta = 날짜) · HF-56 · 56s · 56c 카드 내역 불러오기 |
+| Tag `Label#114:4` | 기존 `label`(Pending M·S): `<Tag type="pending" size="s" label="추가됨" />` — "취소됨" · "비슷한 기록"도 같은 회색 칩 | Row/Pick `chip` |
+| Input `Type=Password` | `<Input type="password" />`: 가림 + 오른쪽 보기 토글(`aria-pressed`, 이름 `revealLabel` 기본 "비밀번호 보기", eye ↔ eye-off 20). Focus·Error에서도 ✕(`onClear`)·경고 아이콘 대신 토글. Disabled면 토글도 꺼짐 | HF-53 · 53b 카드사 로그인 |
+| Icon/eye · Icon/eye-off | `Icon name="eye" \| "eye-off"`(lucide Eye · EyeOff, viewBox를 Figma bbox에 맞춤) | 비밀번호 토글 |
+| Checkbox `Checked=Indeterminate` | `indeterminate`(DOM `indeterminate` + `aria-checked="mixed"` + 막대). 누르면 onChange(checked 반전) — 부모가 전체 선택/해제를 정하고 다시 계산. 상자만 필요하면 `CheckboxBox` | HF-56 "전체 선택"(일부) |
+| TopHeader Back `Title visible` · `Title` · `Action` · text action | `title?`(없으면 ‹만) · `textAction={{ label?(기본 "불러오기"), onClick, disabled? }}`(Button Ghost S, 오른쪽 끝). Shell/Sub는 `header={{ title, textAction }}` 그대로 | 카드 결과 "불러오기" · "수정" |
+| **SheetContent/DateTime**(117:15428, B-27) · Mode=DateTime/Date · CTA | `SheetContentDateTime`: `mode`(기본 `"datetime"`) · `value: DateTimeDraft`(`{ date, hour, minute }`) · `onChange` · `now?`(epoch ms, 기본 처음 그릴 때) · `min?`/`max?`(epoch ms, 기본 지금 − 365일 / 지금 + 5분) · `cta?`(객체 = on, 기본 "확인", 기본 비활성 = `dateTimeProblem`). 규칙: `dateTimeDraft(isoOrNull, now)` · `dateTimeIso(draft)` → KST ISO · `dateTimeProblem` · `formatDateTimeValue(isoOrNull)` → "지금" / "11.13 15:20" · `kstParts` · `dateTimeLimits` | HF-46d 수동 결제 날짜 단계(manual 시트의 date/time 입력 교체 — 이번 PR 범위 밖) |
+| Row/Consent 정렬 | 패딩 15/0/15/20(높이 52), 글자 text/primary, › 오른쪽 끝 | HF-04 · 05b · 51 |
+
+- **날짜 단계 쓰는 법(HF-46d)**: 같은 `BottomSheet`에서 `title="날짜"` · `leading="back"`(✕ 없음) · 시트 `cta` 끔 → children = `<SheetContentDateTime value={draft} onChange={setDraft} now={now} cta={{ onClick: () => { setOccurredAt(dateTimeIso(draft)); back() } }} />`. 단계를 열 때 `setDraft(dateTimeDraft(occurredAt, now))`. Row/Field 값은 `formatDateTimeValue(occurredAt)`.
+- **시각 입력**: 휠·네이티브 time 대신 숫자 두 칸(`inputmode="numeric"` 2자리). 칸을 누르면 전체 선택, 시를 2자리 치면 분으로 이동, 1자리로 떠나면 앞에 0. 두 칸이 다 차 있는데 범위 밖이면 칸이 빨간 테두리(`aria-invalid`)이고 확인이 꺼진다(Figma에는 오류 모습이 없어 Input Error 테두리를 빌림).
+- **시간대**: 달력·시각은 KST 벽시계(+9, 서머타임 없음). 기기 시간대와 무관하다.
 
 ## DS가 바뀌었을 때
 

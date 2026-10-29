@@ -82,3 +82,24 @@ describe('TopHeader', () => {
     expect(title.className).toContain('text-h3')
   })
 })
+
+describe('TopHeader Back (v1.7) · Title visible · Action', () => {
+  it('title이 없으면 제목 없이 ‹만(Figma 기본 Title visible off)', () => {
+    render(<TopHeader type="back" />)
+    expect(screen.queryByRole('heading')).toBeNull()
+    expect(screen.getByRole('button', { name: '뒤로 가기' })).toBeTruthy()
+  })
+
+  it('textAction: 오른쪽 끝 Button Ghost S, 기본 라벨 "불러오기"', () => {
+    const onClick = vi.fn()
+    const { rerender } = render(<TopHeader type="back" title="내 지갑" textAction={{ onClick }} />)
+    expect(screen.getByRole('heading', { level: 1, name: '내 지갑' }).className).toContain('text-h3')
+    const button = screen.getByRole('button', { name: '불러오기' })
+    expect(button.className).toContain('text-brand')
+    expect(button.className).toContain('h-9')
+    fireEvent.click(button)
+    expect(onClick).toHaveBeenCalledTimes(1)
+    rerender(<TopHeader type="back" title="결제 상세" textAction={{ label: '수정', disabled: true }} />)
+    expect((screen.getByRole('button', { name: '수정' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})

@@ -43,6 +43,13 @@ export default defineCatalog({
             <RowConsent title="금융정보 수집·이용" checked readOnly />
           </Variant>
         </Row>
+        <Row className="gap-5">
+          <Variant name="v1.7 정렬 — 높이 52 · 15/0/15/20 · 글자 text/primary · › 오른쪽 끝" className="w-[350px]">
+            <div data-figma="118:15461" className="w-full">
+              <RowConsent title="카드 내역 조회 동의" checked={false} chevron={{ label: '카드 내역 조회 동의 전문', onClick: () => {} }} readOnly />
+            </div>
+          </Variant>
+        </Row>
       </div>
     )
   },

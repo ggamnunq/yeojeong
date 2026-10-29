@@ -32,6 +32,13 @@ export default defineCatalog({
             </ShellSub>
           </PhoneFrame>
         </Variant>
+        <Variant name="v1.7 header · title + textAction(불러오기) — 카드 결과 등">
+          <PhoneFrame>
+            <ShellSub header={{ title: '내 지갑', textAction: { onClick: () => {} } }}>
+              <SlotScreen />
+            </ShellSub>
+          </PhoneFrame>
+        </Variant>
         <Variant name="여정 생성 · cta (아래 16 + 안전영역)">
           <PhoneFrame>
             <ShellSub header={{ title: '여정 만들기' }} cta={{ label: '다음' }}>

@@ -5,11 +5,12 @@ import { TopHeader, type TopHeaderBackProps, type TopHeaderCloseProps, type TopH
 // Figma Shell/Sub(24:61242) · Time(TEXT) · Content(INSTANCE_SWAP). 서브 화면 셸: 지갑·마이·환율·멤버별 내역·여정 생성·여정 없음.
 // TopHeader Back(제목 H3 · 구분선 없음 · action은 기본 숨김) → 내용(첫 블록 위 16, 좌우 거터 20). 내비 없음. 바탕 bg/surface.
 // 여정 없음(HF-09)은 header={{ type: 'logo' }}, 흐름을 닫는 화면(생성 완료 HF-11)은 header={{ type: 'close' }}(v1.6).
+// v1.7: header의 Title visible · Title = `title`(없으면 ‹만), Action · text action = `textAction`(오른쪽 끝 Button Ghost S, 기본 "불러오기"/"수정").
 // 상태바·홈 인디케이터는 그리지 않는다(안전영역만).
 export type ShellSubHeader = (Omit<TopHeaderBackProps, 'type'> & { type?: 'back' }) | TopHeaderLogoProps | TopHeaderCloseProps
 
 export type ShellSubProps = {
-  /** Figma header: 기본 TopHeader Back(title · onBack · action), 여정 없음은 { type: 'logo' }, 닫기는 { type: 'close', title?, onClose } */
+  /** Figma header: 기본 TopHeader Back(title · onBack · action · textAction(v1.7)), 여정 없음은 { type: 'logo' }, 닫기는 { type: 'close', title?, onClose } */
   header: ShellSubHeader
   /** 하단 BottomCTA(Single = Primary L FILL · layout: "horizontal" = 가로 2버튼, 버튼마다 state), 아래 16 + 안전영역 — 여정 생성 등 */
   cta?: ScreenCtaValue

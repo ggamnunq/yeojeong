@@ -16,3 +16,14 @@ describe('Tag', () => {
     expect(screen.getByText('만료').className).toContain('text-[11px]')
   })
 })
+
+describe('Tag Label (v1.7)', () => {
+  it('pending은 기본 "미확정", label로 "추가됨" 등을 같은 회색 칩에 넣는다', () => {
+    const { rerender } = render(<Tag type="pending" size="s" />)
+    expect(screen.getByText('미확정').className).toContain('bg-expense-pending-bg')
+    rerender(<Tag type="pending" size="s" label="비슷한 기록" />)
+    const tag = screen.getByText('비슷한 기록')
+    expect(tag.className).toContain('bg-expense-pending-bg')
+    expect(tag.className).toContain('text-expense-pending-fg')
+  })
+})
