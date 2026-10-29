@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { CardApprovalItem, FetchCardApprovalsResponse, ImportWalletEntryItem } from '@yeojeong/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useBlocker, useNavigate, useParams } from 'react-router'
+import { flushSync } from 'react-dom'
 import { isApiError } from '../../../api'
 import { paths } from '../../../app/paths'
 import { LoadingScreen } from '../../../app/states'
@@ -131,7 +132,9 @@ export default function FlowPage() {
   // bfcache: 페이지를 떠날 때(pagehide) 메모리의 아이디·비밀번호·결과·itemToken을 비우고,
   // 뒤로 가기로 복원되면(pageshow persisted) 처음(로그인 전)부터 다시 시작한다
   useEffect(() => {
-    const wipe = () => {
+    // bfcache로 얼기 전에 화면에서도 지워지도록 동기로 렌더한다
+    const wipe = () => flushSync(wipeState)
+    const wipeState = () => {
       cancelRequest()
       resetFetcher()
       setLoginId('')
@@ -289,7 +292,11 @@ export default function FlowPage() {
     const { gen, signal } = beginRequest()
     const input = { publicKey: config.data.publicKey, organization: org.code, loginId: id, password: secret, from: range.from, to: range.to }
     void buildFetchRequest(input).then(
-      (request) => settle(gen, fetcher.start(request, signal)),
+      (request) => {
+        // 암호화하는 사이에 취소·이탈했으면 요청도 기억도 남기지 않는다
+        if (gen !== generation.current || signal.aborted) return
+        return settle(gen, fetcher.start(request, signal))
+      },
       (error: unknown) => {
         if (gen === generation.current) onFailure(error)
       },
