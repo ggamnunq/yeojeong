@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { DUPLICATE_WINDOW_SECONDS } from '@yeojeong/shared';
+import {
+  DUPLICATE_WINDOW_SECONDS,
+  MANUAL_DUPLICATE_WINDOW_SECONDS,
+} from '@yeojeong/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 
 // 멤버 간 중복 의심(기능명세 4-1-5, FR-407·511). 판정은 결제가 공동이 될 때 이 모듈이 한다.
@@ -18,6 +21,10 @@ export function merchantKeyOf(name: string): string {
 export interface DuplicateCandidate {
   id: string;
   payerMembershipId: string;
+  /** 직접 입력한 결제(origin MANUAL)인지 */
+  manual?: boolean;
+  /** 순액(원). 직접 입력 판정 기준 */
+  netKrwAmount?: number;
   merchantKey: string;
   originalCurrency: string;
   /** 비교용 정규화 문자열(Decimal.toFixed(4)) */
@@ -25,13 +32,26 @@ export interface DuplicateCandidate {
   occurredAt: Date;
 }
 
-/** 결제자가 다르고, 가맹점 키·원통화·원통화 금액이 같고, 시각 차이 ≤ 120초 */
+/**
+ * 중복 의심 쌍(FR-407).
+ * - 둘 중 하나라도 직접 입력(origin MANUAL)이면(Q-42): 같은 원화 순액 + 시각 차이 ±30분, 결제자와 상관없이.
+ *   두 멤버가 같은 결제를 각자 기록하는 실수를 잡는다(내용·시각이 사람 입력이라 가맹점·원통화는 보지 않는다).
+ * - 가져온 결제끼리(기존): 결제자가 다르고, 가맹점 키·원통화·원통화 금액이 같고, 시각 차이 ≤ 120초.
+ */
 export function isDuplicatePair(
   a: DuplicateCandidate,
   b: DuplicateCandidate,
 ): boolean {
+  if (a.id === b.id) return false;
+  if (a.manual || b.manual) {
+    return (
+      a.netKrwAmount !== undefined &&
+      a.netKrwAmount === b.netKrwAmount &&
+      Math.abs(a.occurredAt.getTime() - b.occurredAt.getTime()) <=
+        MANUAL_DUPLICATE_WINDOW_SECONDS * 1000
+    );
+  }
   return (
-    a.id !== b.id &&
     a.payerMembershipId !== b.payerMembershipId &&
     a.merchantKey === b.merchantKey &&
     a.originalCurrency === b.originalCurrency &&
@@ -50,6 +70,9 @@ const DUP_SELECT = {
   occurredAt: true,
   duplicateGroupId: true,
   duplicateDismissedAt: true,
+  origin: true,
+  krwAmount: true,
+  netKrwAmount: true,
   transaction: { select: { merchantKey: true } },
 } satisfies Prisma.ExpenseSelect;
 
@@ -64,6 +87,8 @@ function toCandidate(row: DupRow): DuplicateCandidate {
     originalCurrency: row.originalCurrency,
     originalAmount: row.originalAmount.toFixed(4),
     occurredAt: row.occurredAt,
+    manual: row.origin === 'MANUAL',
+    netKrwAmount: row.netKrwAmount ?? row.krwAmount,
   };
 }
 
@@ -89,19 +114,33 @@ export async function flagDuplicates(
     return [];
   }
   const window = DUPLICATE_WINDOW_SECONDS * 1000;
+  const manualWindow = MANUAL_DUPLICATE_WINDOW_SECONDS * 1000;
+  const net = target.netKrwAmount ?? target.krwAmount;
+  const near = (ms: number) => ({
+    gte: new Date(target.occurredAt.getTime() - ms),
+    lte: new Date(target.occurredAt.getTime() + ms),
+  });
+  // 직접 입력 판정(Q-42): 상대가 아무 결제든(이 결제가 직접 입력일 때) 또는 상대가 직접 입력일 때, 같은 순액 ±30분
+  const manualRule: Prisma.ExpenseWhereInput = {
+    ...(target.origin !== 'MANUAL' && { origin: 'MANUAL' }),
+    netKrwAmount: net,
+    occurredAt: near(manualWindow),
+  };
+  const providerRule: Prisma.ExpenseWhereInput = {
+    origin: { not: 'MANUAL' },
+    payerMembershipId: { not: target.payerMembershipId },
+    originalCurrency: target.originalCurrency,
+    originalAmount: target.originalAmount,
+    occurredAt: near(window),
+  };
   const rows = await tx.expense.findMany({
     where: {
       tripId: target.tripId,
       status: 'SHARED',
       refundOfExpenseId: null,
       id: { not: target.id },
-      payerMembershipId: { not: target.payerMembershipId },
-      originalCurrency: target.originalCurrency,
-      originalAmount: target.originalAmount,
-      occurredAt: {
-        gte: new Date(target.occurredAt.getTime() - window),
-        lte: new Date(target.occurredAt.getTime() + window),
-      },
+      OR:
+        target.origin === 'MANUAL' ? [manualRule] : [providerRule, manualRule],
     },
     select: DUP_SELECT,
   });

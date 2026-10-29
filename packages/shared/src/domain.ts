@@ -26,7 +26,8 @@ export const EXPENSE_STATUS_VALUES = ['PENDING', 'PERSONAL', 'SHARED'] as const;
 export type ExpenseStatus = (typeof EXPENSE_STATUS_VALUES)[number];
 export const ExpenseStatus = enumObject(EXPENSE_STATUS_VALUES);
 
-export const EXPENSE_ORIGIN_VALUES = ['AUTO', 'OUT_OF_PERIOD'] as const;
+export const EXPENSE_ORIGIN_VALUES = ['AUTO', 'OUT_OF_PERIOD', 'MANUAL'] as const;
+/** AUTO = 가져온 결제(기간 안) · OUT_OF_PERIOD = 기간 외 결제 추가 · MANUAL = 직접 입력(지갑 자동 연결 또는 여정에서 추가). 표시 그룹(여정 전/후)은 origin이 아니라 periodSide로 정한다 */
 export type ExpenseOrigin = (typeof EXPENSE_ORIGIN_VALUES)[number];
 export const ExpenseOrigin = enumObject(EXPENSE_ORIGIN_VALUES);
 
@@ -85,6 +86,11 @@ export const TX_KIND_VALUES = ['APPROVAL', 'CANCEL'] as const;
 export type TxKind = (typeof TX_KIND_VALUES)[number];
 export const TxKind = enumObject(TX_KIND_VALUES);
 
+export const TX_SOURCE_VALUES = ['PROVIDER', 'MANUAL'] as const;
+/** 지갑 거래의 출처. PROVIDER = 계좌·카드에서 가져옴, MANUAL = 직접 입력 */
+export type TxSource = (typeof TX_SOURCE_VALUES)[number];
+export const TxSource = enumObject(TX_SOURCE_VALUES);
+
 export const RATE_TYPE_VALUES = ['MID'] as const;
 export type RateType = (typeof RATE_TYPE_VALUES)[number];
 export const RateType = enumObject(RATE_TYPE_VALUES);
@@ -124,6 +130,8 @@ export const CHANGE_ACTION_VALUES = [
   'DUPLICATE_FLAGGED',
   'DUPLICATE_DISMISSED',
   'FX_RECALCULATED',
+  'MANUAL_ADDED',
+  'MANUAL_EDITED',
 ] as const;
 export type ChangeAction = (typeof CHANGE_ACTION_VALUES)[number];
 export const ChangeAction = enumObject(CHANGE_ACTION_VALUES);
@@ -139,6 +147,10 @@ export const ACCESS_ACTION_VALUES = [
   'CLASSIFY_EXPENSE',
   'VIEW_SETTLEMENT',
   'DELETE_ACCOUNT',
+  'LIST_WALLET_ENTRIES',
+  'CREATE_EXPENSE',
+  'EDIT_EXPENSE',
+  'DELETE_EXPENSE',
 ] as const;
 /** 금융 데이터 접근 로그(AccessLog.action) */
 export type AccessAction = (typeof ACCESS_ACTION_VALUES)[number];
@@ -151,6 +163,8 @@ export const BudgetState = enumObject(BUDGET_STATE_VALUES);
 
 export const EDIT_BLOCK_REASON_VALUES = [
   'NOT_PAYER',
+  /** 직접 입력한 결제: 작성자만 바꿀 수 있다 */
+  'NOT_AUTHOR',
   'TRIP_ENDED',
   'TRIP_NOT_STARTED',
   'PAYER_LEFT',

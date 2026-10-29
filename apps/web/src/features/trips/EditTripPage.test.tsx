@@ -10,12 +10,12 @@ const path = (router: ReturnType<typeof renderApp>['router']) => router.state.lo
 const saveButton = () => screen.getByRole('button', { name: '저장' }) as HTMLButtonElement
 
 describe('여정 정보 수정 /trips/:tripId/edit', () => {
-  it('진행 중 그룹장: 서버 editableFields 밖(장소·통화)은 잠금, 값이 바뀌어야 저장, 저장하면 여정 정보 + "저장했어요"', async () => {
+  it('진행 중 그룹장: 장소는 고칠 수 있고(v0.5.8) 통화는 잠금, 값이 바뀌어야 저장, 저장하면 여정 정보 + "저장했어요"', async () => {
     const { router } = renderApp('/trips/trip-osaka/edit')
     expect(await screen.findByRole('heading', { name: '여정 수정' })).toBeTruthy()
     expect((screen.getByLabelText('그룹명') as HTMLInputElement).value).toBe('오사카 3박 4일')
     expect((screen.getByLabelText('여행 장소') as HTMLInputElement).value).toBe('오사카')
-    expect((screen.getByLabelText('여행 장소') as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByLabelText('여행 장소') as HTMLInputElement).disabled).toBe(false)
     const currency = screen.getByRole('button', { name: /^현지 통화/ }) as HTMLButtonElement
     expect(currency.disabled).toBe(true)
     await waitFor(() => expect(currency.textContent).toContain('JPY · 일본 엔'))

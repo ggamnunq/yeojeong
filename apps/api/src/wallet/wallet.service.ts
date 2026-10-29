@@ -1,0 +1,712 @@
+import { Injectable } from '@nestjs/common';
+import {
+  WALLET_ENTRY_FIELD_VALUES,
+  WALLET_ENTRY_LIST_LIMIT,
+  type CreateWalletEntryRequest,
+  type ExpenseDetailResponse,
+  type TripStatus,
+  type UpdateWalletEntryRequest,
+  type WalletEntry,
+  type WalletEntryField,
+  type WalletEntryListResponse,
+  type WalletEntryMutationResponse,
+  type WalletLinkedTrip,
+  type WalletTripCandidatesResponse,
+} from '@yeojeong/shared';
+import {
+  AppException,
+  NotFoundError,
+  ValidationFailedError,
+} from '../common/errors/index.js';
+import { decodeCursor, encodeCursor } from '../expenses/cursor.js';
+import { effectiveStatus } from '../expenses/expense-rules.js';
+import { formatOriginalAmount } from '../expenses/expense-view.js';
+import { isUuid } from '../expenses/expense-query.service.js';
+import { dateOnly, kstDate, toKstIso } from '../expenses/kst.js';
+import { lockTransactions, lockTripExpenses } from '../expenses/locks.js';
+import {
+  checkInputs,
+  ManualExpenseService,
+  type ManualEditRecord,
+  type ManualMember,
+  type ManualTrip,
+} from '../expenses/manual-expense.service.js';
+import {
+  defaultWalletCurrency,
+  manualAmountError,
+  manualKrwError,
+  memoOf,
+  merchantNameOf,
+  rankTripCandidates,
+  suggestedTripOf,
+  type TripCandidateInput,
+} from '../expenses/manual-input.js';
+import { krwAmountOf } from '../fx/convert.js';
+import { Prisma } from '../generated/prisma/client.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+
+type Tx = Prisma.TransactionClient;
+
+/** 연결 후보(내가 활성 멤버인 예정·진행 중 여정) */
+interface TripOption extends TripCandidateInput {
+  membershipId: string;
+  groupName: string;
+  placeLabel: string;
+  startDate: string;
+  endDate: string;
+}
+
+const ENTRY_SELECT = {
+  id: true,
+  source: true,
+  kind: true,
+  occurredAt: true,
+  merchantNameRaw: true,
+  originalAmount: true,
+  originalCurrency: true,
+  providerKrwAmount: true,
+  billedKrwAmount: true,
+  spotKrwAmount: true,
+  version: true,
+  paymentMethod: { select: { shortLabel: true, last4: true } },
+  expenses: {
+    where: { refundOfExpenseId: null },
+    select: {
+      id: true,
+      status: true,
+      krwAmount: true,
+      version: true,
+      payer: { select: { leftAt: true } },
+      trip: {
+        select: {
+          id: true,
+          status: true,
+          placeLabel: true,
+          deletedAt: true,
+          group: { select: { name: true, deletedAt: true } },
+        },
+      },
+    },
+  },
+} satisfies Prisma.TransactionSelect;
+
+type EntryRecord = Prisma.TransactionGetPayload<{
+  select: typeof ENTRY_SELECT;
+}>;
+type LinkRecord = EntryRecord['expenses'][number];
+
+/** 장부를 더 바꿀 수 없는 연결(종료·삭제된 여정, 내가 나간 여정) */
+function ledgerLocked(link: LinkRecord): boolean {
+  return (
+    link.trip.status === 'ENDED' ||
+    link.trip.deletedAt !== null ||
+    link.trip.group.deletedAt !== null ||
+    link.payer.leftAt !== null
+  );
+}
+
+/** 보여 줄 연결: 내가 활성 멤버로 남아 있는 여정. 여럿이면(가져온 거래) 공동 먼저 */
+function visibleLink(record: EntryRecord): LinkRecord | null {
+  const links = record.expenses.filter(
+    (e) =>
+      e.payer.leftAt === null &&
+      e.trip.deletedAt === null &&
+      e.trip.group.deletedAt === null,
+  );
+  return links.find((e) => e.status === 'SHARED') ?? links[0] ?? null;
+}
+
+const fieldError = (path: string, code: string, message: string) =>
+  new ValidationFailedError([{ path, code, message }]);
+
+const tripNotAvailable = () =>
+  fieldError('tripId', 'tripNotAvailable', '추가할 수 없는 여정이에요');
+
+const isUniqueViolation = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === 'P2002';
+
+/**
+ * 내 지갑(S7, 명세 v0.6.0): 직접 입력한 결제(Transaction.source MANUAL)와 계좌·카드에서 가져온 거래를 함께 보여 준다.
+ * 직접 입력은 날짜가 기간 안인 예정·진행 중 여정에 자동으로 미확정(PENDING, 결제자 = 나)으로 연결된다(가져온 결제와 같은 분류 흐름).
+ * 지갑 항목은 본인만 본다(userId 조건). 여정 쪽 잠금 순서는 결제 변경과 같고, 거래 행은 마지막에 잠근다.
+ */
+@Injectable()
+export class WalletService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly manual: ManualExpenseService,
+  ) {}
+
+  // ─── 연결 후보 ───
+
+  async tripCandidates(
+    userId: string,
+    at: Date,
+  ): Promise<WalletTripCandidatesResponse> {
+    const ranked = rankTripCandidates(await this.tripOptions(userId), at);
+    return {
+      items: ranked.map(({ trip, inPeriod }) => ({
+        tripId: trip.tripId,
+        groupName: trip.groupName,
+        placeLabel: trip.placeLabel,
+        status: trip.status as 'UPCOMING' | 'ONGOING',
+        startDate: trip.startDate,
+        endDate: trip.endDate,
+        currency: trip.currency,
+        inPeriod,
+      })),
+      suggestedTripId: suggestedTripOf(ranked)?.tripId ?? null,
+      defaultCurrency: defaultWalletCurrency(ranked),
+    };
+  }
+
+  private async tripOptions(userId: string): Promise<TripOption[]> {
+    const rows = await this.prisma.membership.findMany({
+      where: {
+        userId,
+        leftAt: null,
+        group: {
+          deletedAt: null,
+          trip: {
+            status: { in: ['UPCOMING', 'ONGOING'] },
+            deletedAt: null,
+          },
+        },
+      },
+      select: {
+        id: true,
+        group: {
+          select: {
+            name: true,
+            trip: {
+              select: {
+                id: true,
+                status: true,
+                placeLabel: true,
+                currency: true,
+                startDate: true,
+                endDate: true,
+                startAt: true,
+                autoEndAt: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    return rows.flatMap((r) => {
+      const trip = r.group.trip;
+      if (!trip) return [];
+      return [
+        {
+          tripId: trip.id,
+          membershipId: r.id,
+          groupName: r.group.name,
+          placeLabel: trip.placeLabel,
+          status: trip.status as TripStatus,
+          currency: trip.currency,
+          startDate: dateOnly(trip.startDate),
+          endDate: dateOnly(trip.endDate),
+          startAt: trip.startAt,
+          autoEndAt: trip.autoEndAt,
+        },
+      ];
+    });
+  }
+
+  // ─── 목록 ───
+
+  async list(
+    userId: string,
+    options: { cursor?: string; limit?: number },
+  ): Promise<WalletEntryListResponse> {
+    const limit = Math.min(
+      Math.max(options.limit ?? WALLET_ENTRY_LIST_LIMIT.DEFAULT, 1),
+      WALLET_ENTRY_LIST_LIMIT.MAX,
+    );
+    const and: Prisma.TransactionWhereInput[] = [
+      // 계좌·카드 양쪽에 잡힌 같은 결제는 한 번만(4-1-3)
+      { userId, sameUserDuplicateOfId: null },
+    ];
+    if (options.cursor !== undefined) {
+      const cursor = decodeCursor(options.cursor);
+      if (!cursor) {
+        throw fieldError('cursor', 'invalid', '목록 위치가 올바르지 않아요');
+      }
+      and.push({
+        OR: [
+          { occurredAt: { lt: cursor.occurredAt } },
+          { occurredAt: cursor.occurredAt, id: { lt: cursor.id } },
+        ],
+      });
+    }
+    const records = await this.prisma.transaction.findMany({
+      where: { AND: and },
+      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      select: ENTRY_SELECT,
+    });
+    const page = records.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      items: page.map((r) => this.toEntry(r)),
+      nextCursor:
+        records.length > limit && last
+          ? encodeCursor({ occurredAt: last.occurredAt, id: last.id })
+          : null,
+    };
+  }
+
+  private toEntry(record: EntryRecord): WalletEntry {
+    const manual = record.source === 'MANUAL';
+    const link = visibleLink(record);
+    const anyLink = record.expenses[0] ?? null;
+    const amount = formatOriginalAmount(
+      record.originalAmount,
+      record.originalCurrency,
+    );
+    const linkedTrip: WalletLinkedTrip | null = link
+      ? {
+          tripId: link.trip.id,
+          groupName: link.trip.group.name,
+          placeLabel: link.trip.placeLabel,
+          tripStatus: link.trip.status as TripStatus,
+          expenseId: link.id,
+          expenseStatus: effectiveStatus(
+            link.status,
+            link.trip.status as TripStatus,
+          ),
+          expenseVersion: link.version,
+        }
+      : null;
+    let editableFields: WalletEntryField[] = [];
+    if (manual) {
+      editableFields =
+        anyLink && record.expenses.every(ledgerLocked)
+          ? ['memo']
+          : [...WALLET_ENTRY_FIELD_VALUES];
+    }
+    // 연결 여정 바꾸기(Q-46): 연결 없음 또는 잠기지 않은 미확정
+    const canChangeTrip =
+      manual &&
+      (anyLink === null ||
+        (anyLink.status === 'PENDING' && !ledgerLocked(anyLink)));
+    return {
+      id: record.id,
+      source: record.source,
+      kind: record.kind,
+      occurredAt: toKstIso(record.occurredAt),
+      localDate: kstDate(record.occurredAt),
+      merchantName: record.merchantNameRaw,
+      memo: manual ? memoOf(record.merchantNameRaw) : null,
+      amount,
+      currency: record.originalCurrency,
+      krwAmount: this.krwOf(record, link ?? anyLink),
+      paymentMethodLabel: record.paymentMethod
+        ? `${record.paymentMethod.shortLabel} ${record.paymentMethod.last4}`
+        : null,
+      linkedTrip,
+      editableFields,
+      canChangeTrip,
+      canDelete: manual,
+      version: record.version,
+    };
+  }
+
+  /** 연결된 여정 결제의 원화 → KRW 금액 → 카드사·제공자 원화 → 매매기준율 추정 */
+  private krwOf(record: EntryRecord, link: LinkRecord | null): number | null {
+    if (link) return link.krwAmount;
+    if (record.originalCurrency === 'KRW') {
+      return krwAmountOf(record.originalAmount.toFixed(4));
+    }
+    return (
+      record.billedKrwAmount ??
+      record.providerKrwAmount ??
+      record.spotKrwAmount ??
+      null
+    );
+  }
+
+  private async loadEntry(userId: string, entryId: string) {
+    const record = await this.prisma.transaction.findFirst({
+      where: { id: entryId, userId },
+      select: ENTRY_SELECT,
+    });
+    if (!record) throw new NotFoundError();
+    return record;
+  }
+
+  private async respond(
+    userId: string,
+    entryId: string,
+  ): Promise<WalletEntryMutationResponse> {
+    const record = await this.loadEntry(userId, entryId);
+    const entry = this.toEntry(record);
+    let linkedExpense: ExpenseDetailResponse | null = null;
+    if (entry.linkedTrip) {
+      const membership = await this.prisma.membership.findFirst({
+        where: {
+          userId,
+          leftAt: null,
+          group: { trip: { id: entry.linkedTrip.tripId } },
+        },
+        select: { id: true },
+      });
+      if (membership) {
+        linkedExpense = await this.manual.detailFor(
+          entry.linkedTrip.tripId,
+          membership,
+          entry.linkedTrip.expenseId,
+        );
+      }
+    }
+    return { entry, linkedExpense };
+  }
+
+  // ─── 추가 ───
+
+  async create(
+    userId: string,
+    body: CreateWalletEntryRequest,
+    now: Date = new Date(),
+  ): Promise<WalletEntryMutationResponse> {
+    if (body.clientRequestId) {
+      const existing = await this.findByClientRequest(
+        userId,
+        body.clientRequestId,
+      );
+      if (existing) return this.respond(userId, existing.id);
+    }
+    const occurredAt = body.occurredAt ? new Date(body.occurredAt) : now;
+    checkInputs(occurredAt, body.memo, now);
+
+    const ranked = rankTripCandidates(
+      await this.tripOptions(userId),
+      occurredAt,
+    );
+    let target: TripOption | null;
+    if (body.tripId === null) {
+      target = null;
+    } else if (body.tripId !== undefined) {
+      target = ranked.find((r) => r.trip.tripId === body.tripId)?.trip ?? null;
+      if (!target) throw tripNotAvailable();
+    } else {
+      target = suggestedTripOf(ranked);
+    }
+    const currency = (
+      body.currency ?? defaultWalletCurrency(ranked)
+    ).toUpperCase();
+    const amount = body.amount.trim();
+    const amountError = manualAmountError(amount, currency);
+    if (amountError) throw new ValidationFailedError([amountError]);
+    const merchantName = merchantNameOf(body.memo);
+
+    const chosen = target;
+    let entryId: string;
+    try {
+      entryId = await this.prisma.$transaction(async (tx) => {
+        const values = { amount, currency, occurredAt, merchantName };
+        if (!chosen) {
+          await this.checkWalletOnlyKrw(tx, amount, currency);
+          return this.manual.insertWalletTransaction(tx, {
+            userId,
+            amounts: values,
+            merchantName,
+            clientRequestId: body.clientRequestId ?? null,
+          });
+        }
+        // 여정 잠금이 먼저(결제 변경과 같은 순서), 거래·결제는 그 뒤에 만든다
+        const link = await this.lockTargetTrip(tx, userId, chosen);
+        const amounts = await this.manual.convert(tx, link.trip, values);
+        const transactionId = await this.manual.insertWalletTransaction(tx, {
+          userId,
+          amounts,
+          merchantName,
+          clientRequestId: body.clientRequestId ?? null,
+        });
+        await this.insertPending(
+          tx,
+          link,
+          amounts,
+          merchantName,
+          transactionId,
+          now,
+        );
+        return transactionId;
+      });
+    } catch (error) {
+      if (body.clientRequestId && isUniqueViolation(error)) {
+        const existing = await this.findByClientRequest(
+          userId,
+          body.clientRequestId,
+        );
+        if (existing) return this.respond(userId, existing.id);
+      }
+      throw error;
+    }
+    return this.respond(userId, entryId);
+  }
+
+  private findByClientRequest(userId: string, clientRequestId: string) {
+    return this.prisma.transaction.findUnique({
+      where: { userId_clientRequestId: { userId, clientRequestId } },
+      select: { id: true },
+    });
+  }
+
+  /** 연결할 여정(예정·진행 중, 내가 활성 멤버)을 잠그고 다시 확인한다 */
+  private async lockTargetTrip(tx: Tx, userId: string, option: TripOption) {
+    const trip = await this.manual.lockTrip(tx, option.tripId);
+    if (!trip || trip.status === 'ENDED') throw tripNotAvailable();
+    await lockTripExpenses(tx, trip.id);
+    const members = await this.manual.lockMembers(tx, trip.groupId);
+    const mine = members.find(
+      (m) =>
+        m.id === option.membershipId &&
+        m.userId === userId &&
+        m.leftAt === null,
+    );
+    if (!mine) throw tripNotAvailable();
+    return { trip, members, mine };
+  }
+
+  /** 지갑 항목을 여정에 미확정으로 넣는다(가져온 결제와 같다: 결제자 = 작성자 = 나, 분류는 PUT classification) */
+  private insertPending(
+    tx: Tx,
+    link: Awaited<ReturnType<WalletService['lockTargetTrip']>>,
+    amounts: Awaited<ReturnType<ManualExpenseService['convert']>>,
+    merchantName: string,
+    transactionId: string,
+    now: Date,
+  ) {
+    return this.manual.insertExpense(tx, {
+      trip: link.trip,
+      members: link.members,
+      actorMembershipId: link.mine.id,
+      payerMembershipId: link.mine.id,
+      status: 'PENDING',
+      participantMembershipIds: [],
+      amounts,
+      merchantName,
+      transactionId,
+      clientRequestId: null,
+      now,
+    });
+  }
+
+  /** 여정에 연결하지 않는 항목도 원화 1억 상한을 지킨다(KRW는 금액, 외화는 최신 매매기준율 추정이 있을 때) */
+  private async checkWalletOnlyKrw(tx: Tx, amount: string, currency: string) {
+    const krw =
+      currency === 'KRW'
+        ? krwAmountOf(amount)
+        : (await this.manual.spotEstimate(tx, amount, currency)).spotKrwAmount;
+    const error = krw === null ? null : manualKrwError(krw);
+    if (error) throw new ValidationFailedError([error]);
+  }
+
+  // ─── 수정·삭제 ───
+
+  /** 잠금: (연결이 있으면) Trip FOR SHARE → advisory → 멤버 → Expense FOR UPDATE → 거래 FOR UPDATE */
+  private async lockEntry(tx: Tx, userId: string, entryId: string) {
+    const link = await tx.expense.findFirst({
+      where: { transactionId: entryId, refundOfExpenseId: null },
+      select: { id: true, tripId: true },
+    });
+    let trip: ManualTrip | null = null;
+    let members: ManualMember[] = [];
+    let expense: ManualEditRecord | null = null;
+    if (link) {
+      // 삭제된 여정이면 trip = null(장부는 잠긴 것으로 본다)
+      trip = await this.manual.lockTrip(tx, link.tripId);
+      if (trip) {
+        await lockTripExpenses(tx, trip.id);
+        members = await this.manual.lockMembers(tx, trip.groupId);
+      }
+      expense = await this.manual.lockManualRecord(tx, link.tripId, link.id);
+      if (expense && expense.transactionId !== entryId) expense = null;
+    }
+    await lockTransactions(tx, [entryId]);
+    const current = await tx.transaction.findFirst({
+      where: { id: entryId, userId },
+      select: {
+        id: true,
+        source: true,
+        version: true,
+        occurredAt: true,
+        merchantNameRaw: true,
+        originalAmount: true,
+        originalCurrency: true,
+      },
+    });
+    if (!current) throw new NotFoundError();
+    if (current.source !== 'MANUAL') throw AppException.of('NOT_MANUAL_ENTRY');
+    const locked =
+      expense !== null &&
+      (trip === null ||
+        trip.status === 'ENDED' ||
+        expense.payer.leftAt !== null ||
+        !members.some(
+          (m) =>
+            m.id === expense.payerMembershipId &&
+            m.userId === userId &&
+            m.leftAt === null,
+        ));
+    return { trip, members, expense, current, locked };
+  }
+
+  async update(
+    userId: string,
+    entryId: string,
+    body: UpdateWalletEntryRequest,
+    now: Date = new Date(),
+  ): Promise<WalletEntryMutationResponse> {
+    if (!isUuid(entryId)) throw new NotFoundError();
+    const occurredAt =
+      body.occurredAt !== undefined ? new Date(body.occurredAt) : undefined;
+    checkInputs(occurredAt, body.memo, now);
+    // 연결 여정 바꾸기(Q-46) 후보는 잠금 전에 읽고, 잠근 뒤 다시 확인한다
+    const options =
+      typeof body.tripId === 'string' ? await this.tripOptions(userId) : [];
+
+    const conflict = await this.prisma.$transaction(async (tx) => {
+      const { trip, members, expense, current, locked } = await this.lockEntry(
+        tx,
+        userId,
+        entryId,
+      );
+      if (body.version !== current.version) return true;
+
+      const amount = body.amount?.trim() ?? current.originalAmount.toFixed();
+      const currency = (
+        body.currency ?? current.originalCurrency
+      ).toUpperCase();
+      const at = occurredAt ?? current.occurredAt;
+      const amountsChanged =
+        !current.originalAmount.equals(amount) ||
+        currency !== current.originalCurrency ||
+        at.getTime() !== current.occurredAt.getTime();
+      if (amountsChanged && locked) {
+        throw AppException.of('EXPENSE_LOCKED', {
+          message: '종료된 여정에 연결된 결제는 내용만 바꿀 수 있어요',
+          details: { lockedFields: ['amount', 'currency', 'occurredAt'] },
+        });
+      }
+      if (amountsChanged) {
+        const amountError = manualAmountError(amount, currency);
+        if (amountError) throw new ValidationFailedError([amountError]);
+      }
+      const merchantName =
+        body.memo !== undefined
+          ? merchantNameOf(body.memo)
+          : current.merchantNameRaw;
+
+      const currentTripId = expense?.tripId ?? null;
+      const relink = body.tripId !== undefined && body.tripId !== currentTripId;
+      let target: TripOption | null = null;
+      if (relink) {
+        // 연결된 결제가 없거나 미확정일 때만(Q-46). 확정(개인·공동) 뒤나 잠긴 결제는 409
+        if (expense && (expense.status !== 'PENDING' || locked)) {
+          throw AppException.of('EXPENSE_LOCKED', {
+            message: '확정된 결제는 여정을 바꿀 수 없어요',
+            details: { lockedFields: ['tripId'] },
+          });
+        }
+        if (typeof body.tripId === 'string') {
+          target = options.find((o) => o.tripId === body.tripId) ?? null;
+          if (!target) throw tripNotAvailable();
+        }
+      }
+      if (
+        !relink &&
+        !amountsChanged &&
+        merchantName === current.merchantNameRaw
+      ) {
+        return false;
+      }
+
+      const values = { amount, currency, occurredAt: at };
+      if (relink) {
+        if (expense) await this.manual.deleteExpense(tx, expense, userId);
+        if (target) {
+          const link = await this.lockTargetTrip(tx, userId, target);
+          const amounts = await this.manual.convert(tx, link.trip, values);
+          await this.insertPending(
+            tx,
+            link,
+            amounts,
+            merchantName,
+            entryId,
+            now,
+          );
+        } else if (amountsChanged) {
+          await this.checkWalletOnlyKrw(tx, amount, currency);
+        }
+      } else if (expense && trip && !locked) {
+        // 여정 장부에 반영(공동이면 부담 재계산·"변경됨"·version 증가·중복 의심 재판정)
+        const amounts = amountsChanged
+          ? await this.manual.convert(tx, trip, values)
+          : null;
+        await this.manual.applyLedgerEdit(tx, {
+          expense,
+          members,
+          actorMembershipId: expense.payerMembershipId,
+          payerMembershipId: expense.payerMembershipId,
+          nextStatus: expense.status,
+          participantMembershipIds:
+            expense.status === 'SHARED'
+              ? expense.shares.map((s) => s.membershipId)
+              : [],
+          amounts,
+          merchantName,
+          now,
+        });
+      } else if (amountsChanged) {
+        await this.checkWalletOnlyKrw(tx, amount, currency);
+      }
+      // 종료된 여정에 연결된 항목의 내용 수정은 지갑에만 반영한다(Q-44, 종료 후 장부는 그대로 — I-6)
+      await this.manual.updateWalletTransaction(tx, entryId, {
+        amounts: amountsChanged ? values : null,
+        merchantName,
+      });
+      return false;
+    });
+    const response = await this.respond(userId, entryId);
+    if (conflict) {
+      throw AppException.of('VERSION_CONFLICT', {
+        details: { current: response },
+      });
+    }
+    return response;
+  }
+
+  /**
+   * 지갑 항목 삭제(명세 v0.6.0):
+   * - 연결된 미확정·개인 결제는 같이 지운다.
+   * - 연결된 공동 결제: 예정·진행 중 여정이면 includeShared=true일 때만 같이 지운다(아니면 409 SHARED_DELETE_CONFIRM_REQUIRED).
+   *   종료된(또는 내가 나간·삭제된) 여정의 공동 결제는 지우지 않고 남긴다 — 지갑 항목만 지우고 Expense.transactionId가 NULL이 된다(FK SET NULL).
+   */
+  async remove(
+    userId: string,
+    entryId: string,
+    includeShared: boolean,
+  ): Promise<void> {
+    if (!isUuid(entryId)) throw new NotFoundError();
+    await this.prisma.$transaction(async (tx) => {
+      const { expense, locked } = await this.lockEntry(tx, userId, entryId);
+      if (expense) {
+        if (expense.status !== 'SHARED') {
+          await this.manual.deleteExpense(tx, expense, userId);
+        } else if (!locked) {
+          if (!includeShared) {
+            throw AppException.of('SHARED_DELETE_CONFIRM_REQUIRED', {
+              details: { tripId: expense.tripId, expenseId: expense.id },
+            });
+          }
+          await this.manual.deleteExpense(tx, expense, userId);
+        }
+      }
+      await tx.transaction.delete({ where: { id: entryId } });
+    });
+  }
+}

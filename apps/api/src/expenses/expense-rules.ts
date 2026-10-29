@@ -74,16 +74,41 @@ export interface PermissionInput {
   tripStatus: TripStatus;
   isPayer: boolean;
   payerLeft: boolean;
+  /** 직접 입력한 결제(origin MANUAL): 권한은 작성자에게 있고, 예정 여정에서도 바꿀 수 있다(S7) */
+  manual?: boolean;
+  /** 보는 사람이 작성자인지(manual일 때만 본다) */
+  isAuthor?: boolean;
+  /** 작성자가 나갔거나 탈퇴했다(manual일 때만 본다) → 잠금 */
+  authorLeft?: boolean;
 }
 
-/** 우선순위: 종료(LOCKED) > 시작 전 > 결제자 나감(READ_ONLY) > 결제자 아님(READ_ONLY) */
+/**
+ * 우선순위: 종료(LOCKED) > 시작 전(가져온 결제만) > 결제자 나감(READ_ONLY) > 권한자 아님(READ_ONLY).
+ * 권한자 = 가져온 결제는 결제자(NOT_PAYER), 직접 입력한 결제는 작성자(NOT_AUTHOR).
+ */
 export function computePermissions(input: PermissionInput): ExpensePermissions {
+  const manual = input.manual === true;
+  const isAuthor = manual ? input.isAuthor === true : input.isPayer;
   let reason: EditBlockReason | null = null;
   if (input.tripStatus === 'ENDED') reason = 'TRIP_ENDED';
-  else if (input.tripStatus === 'UPCOMING') reason = 'TRIP_NOT_STARTED';
-  else if (input.payerLeft) reason = 'PAYER_LEFT';
-  else if (!input.isPayer) reason = 'NOT_PAYER';
-  return { canEdit: reason === null, reason, isPayer: input.isPayer };
+  else if (input.tripStatus === 'UPCOMING' && !manual) {
+    reason = 'TRIP_NOT_STARTED';
+  } else if (input.payerLeft || (manual && input.authorLeft === true)) {
+    reason = 'PAYER_LEFT';
+  } else if (!isAuthor) reason = manual ? 'NOT_AUTHOR' : 'NOT_PAYER';
+  return { canEdit: reason === null, reason, isPayer: input.isPayer, isAuthor };
+}
+
+/**
+ * 직접 입력한 결제의 분담 인원으로 상태를 정한다(S7): 결제자 말고 한 명이라도 있으면 공동, 결제자 혼자면 개인.
+ */
+export function manualStatusOf(
+  shareMembershipIds: readonly string[],
+  payerMembershipId: string,
+): 'SHARED' | 'PERSONAL' {
+  return shareMembershipIds.some((id) => id !== payerMembershipId)
+    ? 'SHARED'
+    : 'PERSONAL';
 }
 
 // ─── 상태 전이(3-2) ───

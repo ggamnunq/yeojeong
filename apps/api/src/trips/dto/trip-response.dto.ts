@@ -346,6 +346,12 @@ export class SupportedCurrencyDto implements SupportedCurrency {
 
   @ApiProperty({ example: 100, description: '고시 단위(JPY·VND·IDR = 100)' })
   displayUnit: number;
+
+  @ApiProperty({
+    example: 0,
+    description: '금액 입력 소수 자리(KRW·JPY·VND·IDR = 0, 그 밖 2)',
+  })
+  fractionDigits: number;
 }
 
 export class AutoEndJobResponseDto implements AutoEndJobResponse {

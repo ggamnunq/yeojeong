@@ -196,13 +196,17 @@ describe('display rule (4-5 표시, 화면명세 0-5)', () => {
       code: 'JPY',
       nameKo: '엔',
       displayUnit: 100,
+      fractionDigits: 0,
     });
+    expect(currencyMeta('USD').fractionDigits).toBe(2);
+    expect(currencyMeta('VND').fractionDigits).toBe(0);
     expect(currencyMeta('IDR').displayUnit).toBe(100);
     expect(currencyMeta('USD').displayUnit).toBe(1);
     expect(currencyMeta('ABC')).toEqual({
       code: 'ABC',
       nameKo: 'ABC',
       displayUnit: 1,
+      fractionDigits: 2,
     });
   });
 

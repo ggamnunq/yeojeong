@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import {
   EXPENSE_LIST_LIMIT,
   type ExpenseDetailResponse,
@@ -13,6 +13,7 @@ import {
   ValidationFailedError,
 } from '../common/errors/index.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import { FeatureFlags } from '../common/features.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { afterCursor, decodeCursor, encodeCursor } from './cursor.js';
 import { ExpenseLifecycleService } from './expense-lifecycle.service.js';
@@ -72,6 +73,7 @@ export class ExpenseQueryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly lifecycle: ExpenseLifecycleService,
+    @Optional() private readonly features?: FeatureFlags,
   ) {}
 
   async loadContext(
@@ -182,7 +184,9 @@ export class ExpenseQueryService {
           ? encodeCursor({ occurredAt: last.occurredAt, id: last.id })
           : null,
       pendingCount,
-      showOutOfPeriodEntry: trip.status === 'ONGOING',
+      // 기간 외 결제 추가는 연동 전용(FR-006)
+      showOutOfPeriodEntry:
+        trip.status === 'ONGOING' && (this.features?.accountLink ?? true),
       period: {
         tripStatus: ctx.tripStatus,
         startDate: ctx.period.startDate,

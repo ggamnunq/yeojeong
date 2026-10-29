@@ -85,6 +85,11 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       env {
+        name  = "FEATURE_ACCOUNT_LINK"
+        value = var.feature_account_link
+      }
+
+      env {
         name  = "INTERNAL_JOB_OIDC_AUDIENCE"
         value = var.internal_job_oidc_audience
       }

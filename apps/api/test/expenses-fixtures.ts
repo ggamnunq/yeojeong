@@ -18,6 +18,7 @@ import {
   SessionResolver,
 } from './../src/common/auth/index.js';
 import { PrismaMembershipLookup } from './../src/common/auth/membership-lookup.js';
+import { FeatureFlags } from './../src/common/features.js';
 import { merchantKeyOf } from './../src/expenses/duplicates.js';
 import { Prisma, PrismaClient } from './../src/generated/prisma/client.js';
 import type { PrismaService } from './../src/prisma/prisma.service.js';
@@ -67,6 +68,7 @@ const inviteCode = () =>
 export interface SeedMember {
   userId: string;
   membershipId: string;
+  /** withPaymentMethod: false로 만든 사용자는 '' */
   paymentMethodId: string;
   nickname: string;
 }
@@ -77,16 +79,29 @@ export interface SeedTrip {
   members: Record<string, SeedMember>;
 }
 
-/** 실제 DB + 전역 가드 체인. 멤버십 조회는 실제 구현(PrismaMembershipLookup)을 쓴다 */
-export async function createDbTestApp(prisma: PrismaClient) {
+/**
+ * 실제 DB + 전역 가드 체인. 멤버십 조회는 실제 구현(PrismaMembershipLookup)을 쓴다.
+ * features를 주면 기능 플래그(FeatureFlags)를 그 값으로 바꿔 끼운다(기본은 env)
+ */
+export async function createDbTestApp(
+  prisma: PrismaClient,
+  options: { features?: { accountLink: boolean } } = {},
+) {
   const memberships: MembershipLookup = new PrismaMembershipLookup(
     prisma as unknown as PrismaService,
   );
   const auth = { ...createTestAuth(), memberships };
-  const moduleFixture = await Test.createTestingModule({
+  let builder = Test.createTestingModule({
     // EventEmitterModule.forRoot()는 AppModule에 있다(중복 등록하지 않는다)
     imports: [AppModule],
-  })
+  });
+  if (options.features) {
+    const flags = options.features;
+    builder = builder
+      .overrideProvider(FeatureFlags)
+      .useValue({ accountLink: flags.accountLink, view: () => ({ ...flags }) });
+  }
+  const moduleFixture = await builder
     .overrideProvider(SessionResolver)
     .useValue(auth.sessions)
     .overrideProvider(ConsentChecker)
@@ -108,11 +123,22 @@ export class ExpenseFixtures {
 
   constructor(readonly prisma: PrismaClient) {}
 
-  /** 오사카 3박 4일(11.12~11.15, JPY). 닉네임 순서 = 가입 순, 첫 사람이 그룹장 */
+  /**
+   * 오사카 3박 4일(11.12~11.15, JPY). 닉네임 순서 = 가입 순, 첫 사람이 그룹장.
+   * period(KST 날짜)·currency로 기간·통화를, withPaymentMethod: false로 결제수단 없는 사용자를 만든다(S7 직접 입력)
+   */
   async seedTrip(
     nicknames: string[] = ['준용', '민지', '태현', '수빈'],
-    options: { status?: TripStatus; users?: Record<string, string> } = {},
+    options: {
+      status?: TripStatus;
+      users?: Record<string, string>;
+      period?: { start: string; end: string };
+      currency?: string;
+      withPaymentMethod?: boolean;
+    } = {},
   ): Promise<SeedTrip> {
+    const start = options.period?.start ?? '2026-11-12';
+    const end = options.period?.end ?? '2026-11-15';
     const group = await this.prisma.group.create({
       data: { name: '오사카 먹방', inviteCode: inviteCode() },
     });
@@ -122,14 +148,14 @@ export class ExpenseFixtures {
         groupId: group.id,
         placeLabel: '일본 오사카',
         countryCode: 'JP',
-        currency: 'JPY',
-        startDate: new Date('2026-11-12T00:00:00Z'),
-        endDate: new Date('2026-11-15T00:00:00Z'),
-        startAt: kst('2026-11-12 00:00'),
-        autoEndAt: new Date('2026-11-15T14:59:59Z'),
+        currency: options.currency ?? 'JPY',
+        startDate: new Date(`${start}T00:00:00Z`),
+        endDate: new Date(`${end}T00:00:00Z`),
+        startAt: kst(`${start} 00:00`),
+        autoEndAt: new Date(`${end}T23:59:59+09:00`),
         budgetKrw: 1_200_000,
         status: options.status ?? 'ONGOING',
-        startedAt: new Date(),
+        startedAt: options.status === 'UPCOMING' ? null : new Date(),
       },
     });
     this.tripIds.push(trip.id);
@@ -138,7 +164,14 @@ export class ExpenseFixtures {
     for (const [index, nickname] of nicknames.entries()) {
       let userId = options.users?.[nickname];
       let paymentMethodId: string;
-      if (!userId) {
+      if (!userId && options.withPaymentMethod === false) {
+        const user = await this.prisma.user.create({
+          data: { kakaoId: `test-${randomUUID()}`, nickname },
+        });
+        userId = user.id;
+        this.userIds.push(userId);
+        paymentMethodId = '';
+      } else if (!userId) {
         const user = await this.prisma.user.create({
           data: { kakaoId: `test-${randomUUID()}`, nickname },
         });
@@ -168,10 +201,10 @@ export class ExpenseFixtures {
         });
         paymentMethodId = method.id;
       } else {
-        const method = await this.prisma.paymentMethod.findFirstOrThrow({
+        const method = await this.prisma.paymentMethod.findFirst({
           where: { userId },
         });
-        paymentMethodId = method.id;
+        paymentMethodId = method?.id ?? '';
       }
       const membership = await this.prisma.membership.create({
         data: {

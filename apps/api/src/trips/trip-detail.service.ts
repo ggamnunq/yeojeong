@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import type { TripDetailResponse, TripEventView } from '@yeojeong/shared';
 import { NotFoundError } from '../common/errors/index.js';
+import { FeatureFlags } from '../common/features.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { dateOnly, kstDate, toKstIso } from './kst.js';
 import { tripCalendar, tripPermissions, tripShell } from './trip-rules.js';
@@ -12,7 +13,10 @@ const UNSEEN_EVENT_LIMIT = 20;
 /** GET /api/trips/:tripId 응답(TripDetailResponse)을 만든다. 수정·시작·종료 응답과 VERSION_CONFLICT의 current도 이것을 쓴다 */
 @Injectable()
 export class TripDetailService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly features?: FeatureFlags,
+  ) {}
 
   async build(
     tripId: string,
@@ -107,7 +111,9 @@ export class TripDetailService {
         membershipId: me.id,
         role: me.role,
         pendingCount,
-        connectionExpired: expiredConnections > 0,
+        // 계좌·카드 연결을 숨긴 동안(FR-006)은 false
+        connectionExpired:
+          expiredConnections > 0 && (this.features?.accountLink ?? true),
       },
       members,
       fx:

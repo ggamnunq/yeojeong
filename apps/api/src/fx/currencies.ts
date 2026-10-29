@@ -9,11 +9,17 @@ export interface CurrencyMeta {
   nameKo: string;
   /** 고시 단위 */
   displayUnit: number;
+  /** 금액 입력 소수 자리(직접 입력 검증). 실제로 잔돈 단위를 쓰지 않는 통화는 0 */
+  fractionDigits: number;
 }
 
-const CURRENCIES: Record<string, Omit<CurrencyMeta, 'code'>> = {
-  KRW: { nameKo: '원', displayUnit: 1 },
-  JPY: { nameKo: '엔', displayUnit: 100 },
+type CurrencyRow = Omit<CurrencyMeta, 'code' | 'fractionDigits'> & {
+  fractionDigits?: number;
+};
+
+const CURRENCIES: Record<string, CurrencyRow> = {
+  KRW: { nameKo: '원', displayUnit: 1, fractionDigits: 0 },
+  JPY: { nameKo: '엔', displayUnit: 100, fractionDigits: 0 },
   USD: { nameKo: '달러', displayUnit: 1 },
   EUR: { nameKo: '유로', displayUnit: 1 },
   GBP: { nameKo: '파운드', displayUnit: 1 },
@@ -26,8 +32,8 @@ const CURRENCIES: Record<string, Omit<CurrencyMeta, 'code'>> = {
   CAD: { nameKo: '캐나다 달러', displayUnit: 1 },
   CHF: { nameKo: '스위스 프랑', displayUnit: 1 },
   THB: { nameKo: '바트', displayUnit: 1 },
-  VND: { nameKo: '동', displayUnit: 100 },
-  IDR: { nameKo: '루피아', displayUnit: 100 },
+  VND: { nameKo: '동', displayUnit: 100, fractionDigits: 0 },
+  IDR: { nameKo: '루피아', displayUnit: 100, fractionDigits: 0 },
   PHP: { nameKo: '페소', displayUnit: 1 },
   MYR: { nameKo: '링깃', displayUnit: 1 },
 };
@@ -41,11 +47,11 @@ export const DEFAULT_FX_CURRENCIES: readonly string[] = Object.keys(
   CURRENCIES,
 ).filter((code) => code !== KRW);
 
-/** 모르는 통화는 코드 그대로, 고시 단위 1 */
+/** 모르는 통화는 코드 그대로, 고시 단위 1, 소수 2자리 */
 export function currencyMeta(code: string): CurrencyMeta {
   const upper = code.toUpperCase();
   const known = CURRENCIES[upper];
   return known
-    ? { code: upper, ...known }
-    : { code: upper, nameKo: upper, displayUnit: 1 };
+    ? { code: upper, ...known, fractionDigits: known.fractionDigits ?? 2 }
+    : { code: upper, nameKo: upper, displayUnit: 1, fractionDigits: 2 };
 }

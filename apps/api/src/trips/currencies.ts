@@ -43,5 +43,6 @@ export const SUPPORTED_CURRENCIES: readonly SupportedCurrency[] =
       name: CURRENCY_NAMES[code] ?? code,
       unitName: meta.nameKo,
       displayUnit: meta.displayUnit,
+      fractionDigits: meta.fractionDigits,
     };
   });

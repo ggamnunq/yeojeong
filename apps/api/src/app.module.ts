@@ -32,6 +32,7 @@ import { RetentionModule } from './retention/retention.module.js';
 import { SettlementsModule } from './settlements/settlements.module.js';
 import { TripsModule } from './trips/trips.module.js';
 import { UsersModule } from './users/users.module.js';
+import { WalletModule } from './wallet/wallet.module.js';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { UsersModule } from './users/users.module.js';
     UsersModule,
     ConsentsModule,
     PaymentMethodsModule,
+    WalletModule,
   ],
   providers: [
     { provide: APP_PIPE, useValue: createValidationPipe() },

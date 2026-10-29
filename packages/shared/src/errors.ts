@@ -103,6 +103,18 @@ export const EXPENSE_ERRORS = {
     status: 409,
     message: '개인 결제로 바꿀지 확인해 주세요',
   },
+  /** 직접 입력한 결제는 작성자만 바꾸거나 지울 수 있다 */
+  NOT_AUTHOR: { status: 403, message: '기록한 사람만 바꿀 수 있어요' },
+  /** 가져온 결제(계좌·카드)·가져온 여정 결제는 이 API로 바꾸거나 지울 수 없다 */
+  NOT_MANUAL_ENTRY: {
+    status: 409,
+    message: '직접 입력한 결제만 바꿀 수 있어요',
+  },
+  /** 지갑 항목에 (예정·진행 중 여정의) 공동 결제가 연결돼 있다. 확인 다이얼로그 뒤 includeShared=true로 다시 보낸다. details: { tripId, expenseId } */
+  SHARED_DELETE_CONFIRM_REQUIRED: {
+    status: 409,
+    message: '공동 결제도 함께 지울지 확인해 주세요',
+  },
 } as const satisfies Record<string, ErrorDefinition>;
 
 export const FX_ERRORS = {

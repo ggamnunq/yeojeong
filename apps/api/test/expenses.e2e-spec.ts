@@ -335,13 +335,18 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
       expect(bad.body.code).toBe('VALIDATION_FAILED');
     });
 
-    it('locks the expense tab before the trip starts', async () => {
+    // 명세 v0.6.0(S7): 예정 여정에도 결제를 직접 추가할 수 있어 목록을 연다(가져온 결제는 시작 뒤에만 들어온다)
+    it('opens the expense list before the trip starts (only manual expenses live there)', async () => {
       const seed = await fx.seedTrip(['준용'], { status: 'UPCOMING' });
       const res = await request(server())
         .get(`/api/trips/${seed.tripId}/expenses`)
         .set(as(seed, '준용'))
-        .expect(409);
-      expect(res.body.code).toBe('TRIP_PHASE_INVALID');
+        .expect(200);
+      expect(res.body).toMatchObject({
+        items: [],
+        pendingCount: 0,
+        showOutOfPeriodEntry: false,
+      });
     });
   });
 
@@ -662,6 +667,7 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
         canEdit: false,
         reason: 'PAYER_LEFT',
         isPayer: false,
+        isAuthor: false,
       });
       expect(castle.payer).toMatchObject({ nickname: '수빈', isLeft: true });
 
@@ -712,6 +718,7 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
         canEdit: false,
         reason: 'TRIP_ENDED',
         isPayer: true,
+        isAuthor: true,
       });
       expect(locked.participantCandidates).toBeNull();
       const page = await list(seed, '준용');

@@ -118,9 +118,10 @@ describe('수정 요청 본문', () => {
       budgetKrw: 1_500_000,
       version: 3,
     })
-    // 진행 중 기본 항목에는 장소·통화·시작일이 없다
+    // 진행 중에는 통화·시작일을 보내지 않는다(장소는 고칠 수 있다, 명세 v0.5.8)
+    expect(tripUpdateBody(initial, { ...initial, currency: 'USD', startDate: '2026-11-11' }, editable, 3)).toBeNull()
     const moved = { ...initial, place: '교토', currency: 'USD', startDate: '2026-11-11' }
-    expect(tripUpdateBody(initial, moved, editable, 3)).toBeNull()
+    expect(tripUpdateBody(initial, moved, editable, 3)).toEqual({ place: { label: '교토' }, version: 3 })
   })
 
   it('장소는 { label }만(앞뒤 공백 제거), 통화는 editableFields에 있을 때만 보낸다', () => {
@@ -145,10 +146,10 @@ describe('수정 요청 본문', () => {
 })
 
 describe('권한·단계(spec README §5 · 기능명세 4-8)', () => {
-  it('진행 중 그룹장: 수정(그룹명·예산·종료일)·종료·초대, 시작·삭제 없음', () => {
+  it('진행 중 그룹장: 수정(그룹명·장소·예산·종료일)·종료·초대, 시작·삭제 없음', () => {
     expect(tripPermissions(detail(TRIP.osaka), TODAY)).toMatchObject({
       canEdit: true,
-      editableFields: ['groupName', 'budgetKrw', 'endDate'],
+      editableFields: ['groupName', 'place', 'budgetKrw', 'endDate'],
       canStart: false,
       canEnd: true,
       canDeleteGroup: false,

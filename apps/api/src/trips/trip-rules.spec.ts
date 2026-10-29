@@ -198,7 +198,7 @@ describe('planTripUpdate (단계별 수정 가능 항목, FR-302·Q-14)', () => 
     ).toEqual(['currency']);
   });
 
-  it('allows only groupName·budget·endDate while ongoing', () => {
+  it('allows only groupName·place·budget·endDate while ongoing (currency·startDate locked)', () => {
     const plan = planTripUpdate(
       base('ONGOING'),
       {
@@ -210,8 +210,13 @@ describe('planTripUpdate (단계별 수정 가능 항목, FR-302·Q-14)', () => 
       },
       '2026-11-13',
     );
-    expect(plan.changed).toEqual(['groupName', 'endDate', 'budgetKrw']);
-    expect(plan.lockedFields).toEqual(['place', 'startDate']);
+    expect(plan.changed).toEqual([
+      'groupName',
+      'place',
+      'endDate',
+      'budgetKrw',
+    ]);
+    expect(plan.lockedFields).toEqual(['startDate']);
   });
 
   it('accepts locked fields that did not change (forms may send everything)', () => {
@@ -354,7 +359,7 @@ describe('tripShell / tripPermissions (FR-001, 권한표 5-1)', () => {
     expect(
       tripPermissions({ status: 'ONGOING', role: 'LEADER', autoEndAt, now }),
     ).toMatchObject({
-      editableFields: ['groupName', 'budgetKrw', 'endDate'],
+      editableFields: ['groupName', 'place', 'budgetKrw', 'endDate'],
       canStart: false,
       startBlockReason: 'NOT_UPCOMING',
       canEnd: true,

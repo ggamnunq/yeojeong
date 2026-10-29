@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { type SyncJobResult, type SyncTrigger } from '@yeojeong/shared';
 import { Prisma, type SyncRun } from '../generated/prisma/client.js';
 import {
@@ -8,6 +8,7 @@ import {
   type ProviderTransaction,
 } from '../payment-methods/providers/payment-provider.adapter.js';
 import { CipherPurpose, TokenCipher } from '../payment-methods/token-cipher.js';
+import { FeatureFlags } from '../common/features.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ImportService, type TripMembership } from './import.service.js';
 import { SYNC_OVERLAP_MS, computeSyncWindow } from './sync-window.js';
@@ -76,6 +77,7 @@ export class SyncService {
     private readonly adapter: PaymentProviderAdapter,
     private readonly cipher: TokenCipher,
     private readonly importer: ImportService,
+    @Optional() private readonly features?: FeatureFlags,
   ) {}
 
   /** 동기화를 시작한다. 대상 여정이 없거나 다른 동기화가 돌고 있으면 syncRunId = null(건너뜀) */
@@ -497,6 +499,7 @@ export class SyncService {
 
   /** FR-303 → FR-404: 여정 시작 시 전 멤버의 ACTIVE 연결을 [startAt, now]로 소급. 실패한 연결이 있으면 마지막에 던진다 */
   async backfillTripStart(tripId: string): Promise<SyncOutcome[]> {
+    if (!this.accountLinkOn()) return [];
     const trip = await this.prisma.trip.findFirst({
       where: { id: tripId, deletedAt: null, status: 'ONGOING' },
       select: {
@@ -520,6 +523,7 @@ export class SyncService {
 
   /** FR-204 → FR-404: 진행 중 여정에 참여한 멤버의 ACTIVE 연결을 [startAt, now]로 소급 */
   async backfillJoin(membershipId: string): Promise<SyncOutcome[]> {
+    if (!this.accountLinkOn()) return [];
     const membership = await this.prisma.membership.findFirst({
       where: {
         id: membershipId,
@@ -548,6 +552,7 @@ export class SyncService {
    * 종료 후 인입 금지라 이 동기화가 마지막 인입이다. 실패해도 종료는 막지 않는다(결과는 SyncRun에 남는다).
    */
   async finalSync(tripId: string): Promise<SyncOutcome[]> {
+    if (!this.accountLinkOn()) return [];
     const trip = await this.prisma.trip.findFirst({
       where: { id: tripId, deletedAt: null, status: 'ONGOING' },
       select: {
@@ -611,8 +616,26 @@ export class SyncService {
    * 10분 주기 잡(FR-401): 10분 지난 연결 시도 정리 → 진행 중 여정이 있는 사용자의 ACTIVE 연결마다 동기화.
    * 소급 리스너가 실패했어도 조회 창 계산(자가 복구)이 덮이지 않은 구간부터 다시 가져온다.
    */
+  /** 계좌·카드 연결 기능이 켜져 있는지(FR-006). 꺼져 있으면 소급·FINAL·주기 동기화는 대상 0건이다 */
+  private accountLinkOn(): boolean {
+    return this.features?.accountLink ?? true;
+  }
+
   async runScheduled(now: Date = new Date()): Promise<SyncJobResult> {
     const expiredAttempts = await this.sweepAttempts(now);
+    // 계좌·카드 연결을 숨긴 동안(FR-006)은 제공자를 부르지 않는다(대상 0건)
+    if (!this.accountLinkOn()) {
+      return {
+        connections: 0,
+        ok: 0,
+        failed: 0,
+        expired: 0,
+        skipped: 0,
+        fetched: 0,
+        imported: 0,
+        expiredAttempts,
+      };
+    }
     const connections = await this.prisma.paymentConnection.findMany({
       where: {
         status: 'ACTIVE',

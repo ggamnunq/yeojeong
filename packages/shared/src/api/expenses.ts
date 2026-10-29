@@ -24,6 +24,25 @@ export const OUT_OF_PERIOD_ADD_MAX = 50;
 /** 기간 외 "여정 전" 후보 범위: [startAt − 60일, startAt) (4-1-6, 미결 Q-27) */
 export const OUT_OF_PERIOD_LOOKBACK_DAYS = 60;
 
+/** 직접 입력 결제: 메모가 비었을 때 저장·표시하는 이름 */
+export const MANUAL_DEFAULT_MERCHANT_NAME = "결제";
+
+/** 직접 입력 결제: 메모(내용) 최대 길이. 앞뒤 공백·줄바꿈·제어문자는 서버가 지운다(FR-427) */
+export const MANUAL_MEMO_MAX_LENGTH = 40;
+
+/** 직접 입력 결제: 원화 환산 금액 상한 ₩100,000,000(FR-427) */
+export const MANUAL_KRW_AMOUNT_MAX = 100_000_000;
+
+/** 직접 입력 결제: 결제 시각 허용 범위 — 미래는 지금 + 5분까지, 과거는 365일까지(FR-427) */
+export const MANUAL_OCCURRED_AT_FUTURE_SECONDS = 300;
+export const MANUAL_OCCURRED_AT_PAST_DAYS = 365;
+
+/** 직접 입력 결제의 중복 의심(Q-42): 같은 여정·같은 원화 금액·시각 차이 ±30분이면 결제자와 상관없이 묶는다 */
+export const MANUAL_DUPLICATE_WINDOW_SECONDS = 1800;
+
+/** 직접 입력 결제: 원통화 금액 정수부 최대 자리 */
+export const MANUAL_AMOUNT_MAX_INTEGER_DIGITS = 12;
+
 /** 중복 의심 판정 시각 차이(초) (4-1-5) */
 export const DUPLICATE_WINDOW_SECONDS = 120;
 
@@ -99,6 +118,11 @@ export interface ExpensePermissions {
   reason: EditBlockReason | null;
   /** 내가 결제자인지(payer.isMe와 같다) */
   isPayer: boolean;
+  /**
+   * 내가 이 결제를 바꿀 수 있는 사람인지: 직접 입력한 결제(origin MANUAL)는 작성자, 가져온 결제는 결제자.
+   * 서버는 항상 채운다
+   */
+  isAuthor?: boolean;
 }
 
 export interface ExpenseFxSnapshot {
@@ -126,6 +150,11 @@ export interface ExpenseDetailResponse extends ExpenseDetail {
    * 미확정 시트의 기본 세그먼트(개인/공동, 미결 Q-01)는 화면이 정한다 — 서버는 어느 쪽이든 받는다.
    */
   defaultParticipantMembershipIds: string[] | null;
+  /**
+   * 내 지갑에 같은 결제가 있으면 그 지갑 항목 ID(결제자 본인에게만). 없거나 남의 결제면 null.
+   * 서버는 항상 채운다
+   */
+  walletEntryId?: string | null;
 }
 
 /** PUT /api/trips/:tripId/expenses/:expenseId/classification (FR-504~508) */
@@ -173,4 +202,46 @@ export interface AddOutOfPeriodExpensesResponse {
   added: number;
   /** 추가된 결제(미확정). 날짜 오름차순 */
   items: ExpenseRow[];
+}
+
+/**
+ * POST /api/trips/:tripId/expenses — 여정에서 결제 직접 추가(예정·진행 중 여정만). 필수는 amount뿐.
+ * 분담에 결제자 말고 한 명이라도 있으면 공동(SHARED), 결제자 혼자면 개인(PERSONAL)으로 바로 확정된다.
+ */
+export interface CreateTripExpenseRequest {
+  /** 양수 decimal 문자열. 소수 자리는 통화 기준(KRW·JPY·VND·IDR 0, 그 밖 2) */
+  amount: string;
+  /** ISO 4217. 기본 = 여정 통화 */
+  currency?: string;
+  /** 내용. 비우면 "결제"(MANUAL_DEFAULT_MERCHANT_NAME)로 저장된다. 최대 40자 */
+  memo?: string;
+  /** ISO 8601. 기본 = 지금. 여정 기간 밖이면 여정 전/후 그룹(periodSide)으로 나온다 */
+  occurredAt?: string;
+  /** 결제자. 기본 = 나. 다른 활성 멤버를 골라 대신 기록할 수 있다(활성 멤버가 아니면 400 PARTICIPANT_NOT_MEMBER) */
+  payerMembershipId?: string;
+  /** 나누기(부담 인원, 활성 멤버, 1명 이상). 기본 = 활성 멤버 전원. 결제자가 내가 아니면 결제자 혼자로 둘 수 없다(400) */
+  participantMembershipIds?: string[];
+  /** 내 지갑에도 기록(결제자가 나일 때만, 아니면 400). 기본 false */
+  addToWallet?: boolean;
+  /** 중복 제출 방지 UUID. 같은 값으로 다시 보내면 처음 만든 결제를 그대로 돌려준다 */
+  clientRequestId?: string;
+}
+
+/**
+ * PATCH /api/trips/:tripId/expenses/:expenseId — 직접 입력한 결제 수정(작성자만, 예정·진행 중).
+ * 보낸 필드만 바꾼다. 지갑과 연결된 결제면 금액·통화·메모·시각이 지갑 항목에도 반영된다.
+ */
+export interface UpdateTripExpenseRequest {
+  version: number;
+  amount?: string;
+  currency?: string;
+  /** 빈 문자열이면 기본 이름("결제") */
+  memo?: string;
+  occurredAt?: string;
+  /** 지갑 기록이 있는 결제는 결제자가 나로 고정이라 바꿀 수 없다(400, Q-49) */
+  payerMembershipId?: string;
+  /** 나누기를 바꾸면 공동/개인이 다시 정해진다(결제자 말고 한 명이라도 있으면 공동) */
+  participantMembershipIds?: string[];
+  /** 공동 → 개인이 되는 변경은 확인 다이얼로그 뒤 true(없으면 409 SHARED_TO_PERSONAL_CONFIRM_REQUIRED) */
+  confirmSharedToPersonal?: boolean;
 }

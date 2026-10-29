@@ -92,6 +92,17 @@ variable "payment_provider" {
   }
 }
 
+variable "feature_account_link" {
+  description = "계좌·카드 자동 불러오기(토스 연결) 진입점을 화면에 보일지(GET /api/auth/session features.accountLink). 카드 내역 자동 수집은 마이데이터 허가 또는 허가받은 제휴사가 있어야 해 기본은 숨김(false). 연결 API는 그대로 동작한다"
+  type        = string
+  default     = "false"
+
+  validation {
+    condition     = contains(["true", "false"], var.feature_account_link)
+    error_message = "feature_account_link는 true 또는 false여야 합니다."
+  }
+}
+
 variable "support_forward_to" {
   description = "support_email로 온 메일을 전달받을 운영자 주소(terraform.tfvars 또는 TF_VAR_support_forward_to, 커밋 금지). Cloudflare가 보내는 확인 메일을 한 번 눌러야 전달이 시작된다"
   type        = string

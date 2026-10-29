@@ -39,6 +39,7 @@ import {
 } from '../consents/consents.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UsersService } from '../users/users.service.js';
+import { FeatureFlags } from '../common/features.js';
 import type { ReconsentDto, SignupDto } from './dto/auth.dto.js';
 import {
   KakaoClient,
@@ -100,6 +101,7 @@ export class AuthService {
     private readonly consents: ConsentsService,
     private readonly checker: ConsentChecker,
     private readonly users: UsersService,
+    private readonly features: FeatureFlags,
   ) {}
 
   /** 카카오 인가 페이지 주소. state·returnTo는 서명 쿠키에 담는다(10분) */
@@ -224,12 +226,13 @@ export class AuthService {
     state: SessionState,
     req: Request,
   ): Promise<AuthSessionResponse> {
+    const features = this.features.view();
     if (state.status === 'AUTHENTICATED') {
       const [user, reconsentRequired] = await Promise.all([
         this.users.me(state.user.id),
         this.checker.findMissing(state.user.id, SIGNUP_REQUIRED_CONSENTS),
       ]);
-      return { status: 'AUTHENTICATED', user, reconsentRequired };
+      return { status: 'AUTHENTICATED', user, reconsentRequired, features };
     }
     const ticket = await this.findTicket(req);
     if (ticket) {
@@ -240,9 +243,10 @@ export class AuthService {
           profileImageUrl: ticket.profileImageUrl,
           returnTo: ticket.returnTo,
         },
+        features,
       };
     }
-    return { status: 'ANONYMOUS' };
+    return { status: 'ANONYMOUS', features };
   }
 
   /**

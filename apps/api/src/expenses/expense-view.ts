@@ -42,6 +42,7 @@ export const EXPENSE_ROW_SELECT = {
   tripId: true,
   transactionId: true,
   payerMembershipId: true,
+  createdByMembershipId: true,
   status: true,
   origin: true,
   occurredAt: true,
@@ -85,6 +86,7 @@ export const EXPENSE_DETAIL_SELECT = {
   transaction: {
     select: { paymentMethod: { select: { shortLabel: true, last4: true } } },
   },
+  createdBy: { select: { leftAt: true } },
 } satisfies Prisma.ExpenseSelect;
 
 export type ExpenseDetailRecord = Prisma.ExpenseGetPayload<{
@@ -115,7 +117,8 @@ export function toMemberSummary(
     joinOrder: member.joinOrder,
     isMe: member.id === viewerMembershipId,
     isLeft: member.leftAt !== null,
-    isWithdrawn: member.userId === null && member.leaveReason === 'ACCOUNT_DELETED',
+    isWithdrawn:
+      member.userId === null && member.leaveReason === 'ACCOUNT_DELETED',
   };
 }
 
@@ -234,6 +237,7 @@ export function toExpenseRow(
     refunds,
     origin: record.origin,
     version: record.version,
+    createdByMembershipId: record.createdByMembershipId,
   };
 }
 
@@ -270,6 +274,10 @@ export function toExpenseDetail(
     tripStatus: ctx.tripStatus,
     isPayer,
     payerLeft: payer.leftAt !== null,
+    manual: record.origin === 'MANUAL',
+    isAuthor: record.createdByMembershipId === ctx.viewerMembershipId,
+    // 작성자 Membership이 나갔거나(작성자 행이 지워져) 없으면 잠금
+    authorLeft: record.createdBy === null || record.createdBy.leftAt !== null,
   });
   const shares = row.status === 'SHARED' ? record.shares : [];
   const split = splitFromShares(row.krwAmount, shares);
@@ -324,5 +332,7 @@ export function toExpenseDetail(
         : null,
     participantCandidates,
     defaultParticipantMembershipIds,
+    // 결제자의 거래가 곧 결제자 지갑의 항목이다(결제자 본인에게만)
+    walletEntryId: isPayer ? record.transactionId : null,
   };
 }

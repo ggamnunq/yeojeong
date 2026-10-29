@@ -122,7 +122,7 @@ export class ImportService {
     userId: string,
     paymentMethodId: string,
     item: ProviderTransaction,
-  ): Prisma.TransactionCreateManyInput | null {
+  ): (Prisma.TransactionCreateManyInput & { externalRef: string }) | null {
     let amount: bigint;
     try {
       amount = absScaled(toScaled(item.amount));
@@ -148,6 +148,7 @@ export class ImportService {
     const merchantNameRaw = (item.merchantName || '알 수 없음').slice(0, 100);
     return {
       userId,
+      source: 'PROVIDER',
       paymentMethodId,
       externalRef: ref,
       kind: item.kind,
@@ -197,6 +198,7 @@ export class ImportService {
     const rows = await this.prisma.transaction.findMany({
       where: {
         userId,
+        source: 'PROVIDER',
         kind: 'APPROVAL',
         occurredAt: {
           gte: new Date(range.fromAt.getTime() - NEAR_WINDOW_MS),
@@ -216,18 +218,23 @@ export class ImportService {
         },
       },
     });
-    const txs: DedupeTx[] = rows.map((r) => ({
-      id: r.id,
-      kind: r.kind,
-      occurredAt: r.occurredAt,
-      originalAmount: r.originalAmount.toFixed(4),
-      originalCurrency: r.originalCurrency,
-      providerKrwAmount: r.providerKrwAmount,
-      methodType: r.paymentMethod.type,
-      methodRef: r.paymentMethod.externalRef,
-      linkedAccountRef: r.paymentMethod.linkedAccountRef,
-      sameUserDuplicateOfId: r.sameUserDuplicateOfId,
-    }));
+    const txs: DedupeTx[] = rows.flatMap((r) => {
+      if (!r.paymentMethod) return [];
+      return [
+        {
+          id: r.id,
+          kind: r.kind,
+          occurredAt: r.occurredAt,
+          originalAmount: r.originalAmount.toFixed(4),
+          originalCurrency: r.originalCurrency,
+          providerKrwAmount: r.providerKrwAmount,
+          methodType: r.paymentMethod.type,
+          methodRef: r.paymentMethod.externalRef,
+          linkedAccountRef: r.paymentMethod.linkedAccountRef,
+          sameUserDuplicateOfId: r.sameUserDuplicateOfId,
+        },
+      ];
+    });
     const pairs = findSameUserDuplicates(txs);
     for (const { accountTxId, cardTxId } of pairs) {
       await this.prisma.$transaction(async (tx) => {
@@ -260,7 +267,12 @@ export class ImportService {
   /** 4-1-4 단계 1~3: 아직 원 결제를 못 찾은 취소 거래를 매칭한다 */
   async matchCancels(userId: string, db: Db = this.prisma): Promise<number> {
     const cancels = await db.transaction.findMany({
-      where: { userId, kind: 'CANCEL', cancelOfTransactionId: null },
+      where: {
+        userId,
+        source: 'PROVIDER',
+        kind: 'CANCEL',
+        cancelOfTransactionId: null,
+      },
       orderBy: { occurredAt: 'asc' },
     });
     if (cancels.length === 0) return 0;
@@ -270,12 +282,19 @@ export class ImportService {
     const approvals = await db.transaction.findMany({
       where: {
         userId,
+        source: 'PROVIDER',
         kind: 'APPROVAL',
         OR: [
           ...(refs.length > 0 ? [{ externalRef: { in: refs } }] : []),
           {
             paymentMethodId: {
-              in: [...new Set(cancels.map((c) => c.paymentMethodId))],
+              in: [
+                ...new Set(
+                  cancels.flatMap((c) =>
+                    c.paymentMethodId ? [c.paymentMethodId] : [],
+                  ),
+                ),
+              ],
             },
             merchantKey: {
               in: [...new Set(cancels.map((c) => c.merchantKey))],
@@ -296,8 +315,8 @@ export class ImportService {
     );
     const toMatch = (t: (typeof cancels)[number]): MatchTx => ({
       id: t.id,
-      paymentMethodId: t.paymentMethodId,
-      externalRef: t.externalRef,
+      paymentMethodId: t.paymentMethodId ?? '',
+      externalRef: t.externalRef ?? '',
       kind: t.kind,
       occurredAt: t.occurredAt,
       merchantKey: t.merchantKey,
@@ -375,6 +394,8 @@ export class ImportService {
     const candidates = await tx.transaction.findMany({
       where: {
         userId: input.userId,
+        // 직접 입력한 거래는 인입하지 않는다(지갑 → 여정 연결은 WalletService가 만들 때 한 번만)
+        source: 'PROVIDER',
         kind: 'APPROVAL',
         sameUserDuplicateOfId: null,
         occurredAt: { gte: trip.startAt, lte: until },
@@ -393,10 +414,12 @@ export class ImportService {
     const hashOf = new Map(
       candidates.map((t) => [
         t.id,
-        this.audit.sourceTxHash(
-          t.paymentMethod.connection.provider,
-          t.externalRef,
-        ),
+        t.paymentMethod && t.externalRef
+          ? this.audit.sourceTxHash(
+              t.paymentMethod.connection.provider,
+              t.externalRef,
+            )
+          : null,
       ]),
     );
     const hashes = [...hashOf.values()].filter((h): h is string => h !== null);
@@ -487,6 +510,7 @@ export class ImportService {
     const cancels = await tx.transaction.findMany({
       where: {
         userId,
+        source: 'PROVIDER',
         kind: 'CANCEL',
         cancelOfTransactionId: { not: null },
         expenses: { none: { tripId: trip.id } },

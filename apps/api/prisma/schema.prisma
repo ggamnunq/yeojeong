@@ -55,6 +55,8 @@ enum ExpenseStatus {
 enum ExpenseOrigin {
   AUTO
   OUT_OF_PERIOD
+  /// 사용자가 직접 입력(지갑 → 여정 자동 연결 또는 여정에서 추가, S7)
+  MANUAL
 
   @@map("expense_origin")
 }
@@ -122,6 +124,14 @@ enum TxKind {
   @@map("tx_kind")
 }
 
+/// 거래 출처. PROVIDER = 제공자에서 가져온 거래, MANUAL = 사용자가 지갑에 직접 입력(S7)
+enum TxSource {
+  PROVIDER
+  MANUAL
+
+  @@map("tx_source")
+}
+
 /// docs/legal/consents.md 1절
 enum ConsentId {
   TOS
@@ -168,6 +178,10 @@ enum ChangeAction {
   DUPLICATE_FLAGGED
   DUPLICATE_DISMISSED
   FX_RECALCULATED
+  /// 직접 입력한 결제를 여정에 추가(S7)
+  MANUAL_ADDED
+  /// 직접 입력한 결제의 금액·통화·내용·시각·결제자 변경(S7)
+  MANUAL_EDITED
 
   @@map("change_action")
 }
@@ -430,6 +444,7 @@ model Membership {
 
   kicked              Membership[]         @relation("MembershipKickedBy")
   paidExpenses        Expense[]            @relation("ExpensePayer")
+  createdExpenses     Expense[]            @relation("ExpenseCreatedBy")
   dismissedDuplicates Expense[]            @relation("ExpenseDuplicateDismissedBy")
   shares              ExpenseShare[]
   changeLogs          ExpenseChangeLog[]
@@ -566,15 +581,23 @@ model PaymentMethod {
   @@map("payment_methods")
 }
 
-/// 토스에서 가져온 거래 원본. 소유자 외 누구에게도 직접 노출하지 않는다(여정 장부는 Expense로만).
+/// 내 지갑의 거래. 토스에서 가져온 거래 원본(PROVIDER) 또는 직접 입력한 결제(MANUAL, S7).
+/// 소유자 외 누구에게도 직접 노출하지 않는다(여정 장부는 Expense로만).
+/// PROVIDER ⇔ paymentMethodId·externalRef NOT NULL, MANUAL ⇔ paymentMethodId·rawPayloadEnc NULL(CHECK transactions_source_check).
 model Transaction {
-  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId                String        @map("user_id") @db.Uuid
-  user                  User          @relation(fields: [userId], references: [id])
-  paymentMethodId       String        @map("payment_method_id") @db.Uuid
-  paymentMethod         PaymentMethod @relation(fields: [paymentMethodId], references: [id])
-  /// 제공자 거래 ID. 멱등 upsert 키
-  externalRef           String        @map("external_ref") @db.VarChar(128)
+  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String         @map("user_id") @db.Uuid
+  user                  User           @relation(fields: [userId], references: [id])
+  source                TxSource       @default(PROVIDER)
+  /// PROVIDER만. MANUAL은 NULL
+  paymentMethodId       String?        @map("payment_method_id") @db.Uuid
+  paymentMethod         PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
+  /// 제공자 거래 ID. 멱등 upsert 키. MANUAL은 NULL(유니크 (paymentMethodId, externalRef)는 NULL끼리 겹치지 않는다)
+  externalRef           String?        @map("external_ref") @db.VarChar(128)
+  /// MANUAL 중복 제출 방지 키(화면이 만든 UUID). 사용자마다 유일
+  clientRequestId       String?        @map("client_request_id") @db.Uuid
+  /// 낙관적 잠금(MANUAL 수정)
+  version               Int            @default(0)
   kind                  TxKind
   /// 승인(취소) 시각. 인입 범위·Day 계산 기준
   occurredAt            DateTime      @map("occurred_at") @db.Timestamptz
@@ -610,6 +633,7 @@ model Transaction {
   expenses Expense[]
 
   @@unique([paymentMethodId, externalRef])
+  @@unique([userId, clientRequestId])
   @@index([userId, occurredAt])
   @@map("transactions")
 }
@@ -630,6 +654,11 @@ model Expense {
   sourceTxHash                     String?       @map("source_tx_hash") @db.Char(64)
   payerMembershipId                String        @map("payer_membership_id") @db.Uuid
   payer                            Membership    @relation("ExpensePayer", fields: [payerMembershipId], references: [id])
+  /// 작성자(origin MANUAL만, 가져온 결제는 NULL). 직접 입력한 결제의 수정·삭제·분담 변경 권한은 작성자에게 있다(S7)
+  createdByMembershipId            String?       @map("created_by_membership_id") @db.Uuid
+  createdBy                        Membership?   @relation("ExpenseCreatedBy", fields: [createdByMembershipId], references: [id], onDelete: SetNull)
+  /// 여정에서 추가 중복 제출 방지 키(화면이 만든 UUID). 작성자마다 유일
+  clientRequestId                  String?       @map("client_request_id") @db.Uuid
   status                           ExpenseStatus @default(PENDING)
   origin                           ExpenseOrigin @default(AUTO)
   occurredAt                       DateTime      @map("occurred_at") @db.Timestamptz
@@ -672,6 +701,7 @@ model Expense {
   changeLogs ExpenseChangeLog[]
 
   @@unique([tripId, transactionId])
+  @@unique([createdByMembershipId, clientRequestId])
   @@index([tripId, occurredAt(sort: Desc), id])
   @@index([tripId, status])
   @@index([payerMembershipId])

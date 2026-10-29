@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   INVITE_CODE_ALPHABET,
   type DeletionRequestResponse,
@@ -7,6 +7,7 @@ import {
 } from '@yeojeong/shared';
 import { AuthConfig } from '../common/auth/auth-config.js';
 import { UnauthenticatedError } from '../common/errors/app-exception.js';
+import { FeatureFlags } from '../common/features.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const DELETION_CODE_TTL_MS = 24 * 60 * 60_000;
@@ -37,6 +38,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AuthConfig,
+    @Optional() private readonly features?: FeatureFlags,
   ) {}
 
   async me(userId: string): Promise<Me> {
@@ -60,7 +62,8 @@ export class UsersService {
       profileImageUrl: user.profileImageUrl,
       hasProfileImage: user.profileImageUrl !== null,
       paymentMethodCount,
-      hasExpiredConnection: expired > 0,
+      // 계좌·카드 연결을 숨긴 동안(FR-006)은 만료 표시를 하지 않는다
+      hasExpiredConnection: expired > 0 && (this.features?.accountLink ?? true),
     };
   }
 

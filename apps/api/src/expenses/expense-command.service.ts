@@ -43,6 +43,8 @@ const EDIT_SELECT = {
   tripId: true,
   transactionId: true,
   payerMembershipId: true,
+  createdByMembershipId: true,
+  origin: true,
   status: true,
   refundOfExpenseId: true,
   krwAmount: true,
@@ -55,17 +57,29 @@ const EDIT_SELECT = {
   version: true,
   shares: { select: { membershipId: true } },
   payer: { select: { leftAt: true } },
+  createdBy: { select: { leftAt: true } },
 } satisfies Prisma.ExpenseSelect;
 
 type EditRecord = Prisma.ExpenseGetPayload<{ select: typeof EDIT_SELECT }>;
 
 /** 공동인데 결제자 혼자(Q-08). 화면은 버튼을 막고, 서버는 400 VALIDATION_FAILED로 막는다 */
-function payerOnlyError() {
+export function payerOnlyError(path = 'participantMembershipIds') {
   return new ValidationFailedError([
     {
-      path: 'participantMembershipIds',
+      path,
       code: 'payerOnly',
       message: '나 말고 함께 낼 사람을 골라 주세요',
+    },
+  ]);
+}
+
+/** 남이 결제한 건을 개인 결제로 둘 수 없다(작성자 ≠ 결제자인 직접 입력 결제, S7) */
+export function othersPersonalError(path = 'participantMembershipIds') {
+  return new ValidationFailedError([
+    {
+      path,
+      code: 'othersPersonal',
+      message: '다른 사람이 낸 결제는 함께 낼 사람을 골라 주세요',
     },
   ]);
 }
@@ -105,13 +119,7 @@ export class ExpenseCommandService {
     ) {
       throw AppException.of('PARTICIPANTS_REQUIRED');
     }
-    if (
-      body.status === 'SHARED' &&
-      body.participantMembershipIds &&
-      isPayerOnly(body.participantMembershipIds, me.id)
-    ) {
-      throw payerOnlyError();
-    }
+    // 결제자 혼자 공동(payerOnly)은 결제를 잠근 뒤 실제 결제자로 판정한다(직접 입력한 결제는 결제자 ≠ 나일 수 있다)
     const outcome = await this.prisma.$transaction((tx) =>
       this.classifyInTx(tx, tripId, me, expenseId, body),
     );
@@ -185,8 +193,9 @@ export class ExpenseCommandService {
 
   /**
    * 잠금 순서: Trip FOR SHARE → 여정 advisory lock → 그룹 멤버 FOR SHARE → Expense FOR UPDATE.
-   * 확인 순서: 여정 진행 중(409 EXPENSE_LOCKED) → 내가 활성 멤버(404) → 볼 수 있는 결제(404)
-   * → 결제자 활성(409 EXPENSE_LOCKED) → 내가 결제자(403 NOT_PAYER).
+   * 확인 순서: 여정 종료 아님(409 EXPENSE_LOCKED) → 내가 활성 멤버(404) → 볼 수 있는 결제(404)
+   * → 예정 여정이면 직접 입력한 결제만(409 EXPENSE_LOCKED) → 결제자 활성(409 EXPENSE_LOCKED)
+   * → 권한자(가져온 결제 = 결제자 403 NOT_PAYER, 직접 입력한 결제 = 작성자 403 NOT_AUTHOR).
    */
   private async lockForEdit(
     tx: Tx,
@@ -196,7 +205,7 @@ export class ExpenseCommandService {
   ): Promise<{ expense: EditRecord; members: GroupMember[] }> {
     const trip = await lockTripForShare(tx, tripId);
     if (!trip) throw new NotFoundError();
-    if (trip.status !== 'ONGOING') throw AppException.of('EXPENSE_LOCKED');
+    if (trip.status === 'ENDED') throw AppException.of('EXPENSE_LOCKED');
     await lockTripExpenses(tx, tripId);
 
     await tx.$queryRaw`
@@ -215,8 +224,18 @@ export class ExpenseCommandService {
       select: EDIT_SELECT,
     });
     if (!expense || !isVisibleTo(expense, me.id)) throw new NotFoundError();
+    const manual = expense.origin === 'MANUAL';
+    if (trip.status !== 'ONGOING' && !manual) {
+      throw AppException.of('EXPENSE_LOCKED');
+    }
     if (expense.payer.leftAt !== null) throw AppException.of('EXPENSE_LOCKED');
-    if (expense.payerMembershipId !== me.id) throw AppException.of('NOT_PAYER');
+    if (manual) {
+      if (expense.createdByMembershipId !== me.id) {
+        throw AppException.of('NOT_AUTHOR');
+      }
+    } else if (expense.payerMembershipId !== me.id) {
+      throw AppException.of('NOT_PAYER');
+    }
     return { expense, members };
   }
 
@@ -233,6 +252,17 @@ export class ExpenseCommandService {
       me,
       expenseId,
     );
+    const payerId = expense.payerMembershipId;
+    if (
+      body.status === 'SHARED' &&
+      body.participantMembershipIds &&
+      isPayerOnly(body.participantMembershipIds, payerId)
+    ) {
+      throw payerOnlyError();
+    }
+    if (body.status === 'PERSONAL' && payerId !== me.id) {
+      throw othersPersonalError('status');
+    }
     const currentIds =
       expense.status === 'SHARED'
         ? expense.shares.map((s) => s.membershipId)
@@ -255,7 +285,7 @@ export class ExpenseCommandService {
         confirmSharedToPersonal: body.confirmSharedToPersonal,
       },
       activeIds,
-      me.id,
+      payerId,
     );
     // 같은 상태·같은 부담 인원이면 변경 없이 200(6-3). version이 낡아도 결과가 같으므로 통과시킨다
     if (plan.kind === 'NOOP') return { kind: 'DONE' };
@@ -283,10 +313,12 @@ export class ExpenseCommandService {
     // 결제자(= 나)의 활성 결제수단이 0개면(결제수단 전부 해제 → FIN_LINK·FIN_PRIVACY 철회) 공개를 넓히지 못하고,
     // 공동 → 개인은 개인 결제로 남기지 않고 지운다(제3자 제공 동의서 1절, 수집·이용 동의서 2절 — 기능명세 4-10 v0.5.7).
     // 다시 연결하면(연동 동의를 새로 받고 결제수단이 생기면) 풀린다.
+    // 이 규칙은 결제수단에서 가져온 결제에만 건다. 직접 입력한 결제(origin MANUAL)는 연동 동의와 무관하다(S7).
     const widening = expandsSharing(plan, currentIds);
     const sharedToPersonal =
       expense.status === 'SHARED' && plan.nextStatus === 'PERSONAL';
     if (
+      expense.origin !== 'MANUAL' &&
       (widening || sharedToPersonal) &&
       !(await this.hasActivePaymentMethod(tx, me.userId))
     ) {
@@ -319,7 +351,7 @@ export class ExpenseCommandService {
     await tx.expenseShare.deleteMany({ where: { expenseId } });
     let nextIds: string[] = [];
     if (plan.nextStatus === 'SHARED') {
-      const split = computeSplit(net, plan.participantIds, members, me.id);
+      const split = computeSplit(net, plan.participantIds, members, payerId);
       nextIds = split.shares.map((s) => s.membershipId);
       await tx.expenseShare.createMany({
         data: split.shares.map((s) => ({
@@ -389,7 +421,8 @@ export class ExpenseCommandService {
         },
       },
     });
-    return row
+    // 직접 입력한 거래(결제수단 없음)는 제공자에서 다시 들어올 일이 없어 해시를 남기지 않는다
+    return row?.paymentMethod && row.externalRef
       ? this.audit.sourceTxHash(
           row.paymentMethod.connection.provider,
           row.externalRef,

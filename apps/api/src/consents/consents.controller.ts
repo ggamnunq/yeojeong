@@ -19,7 +19,11 @@ import { ConsentChecker } from '../common/auth/consent-checker.js';
 import { CurrentUser, Public } from '../common/auth/decorators.js';
 import type { AuthUser } from '../common/auth/auth-context.js';
 import { ApiErrorResponse } from '../common/errors/api-error.dto.js';
-import { ValidationFailedError } from '../common/errors/app-exception.js';
+import {
+  NotFoundError,
+  ValidationFailedError,
+} from '../common/errors/app-exception.js';
+import { FeatureFlags } from '../common/features.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ConsentsService, consentEvidence } from './consents.service.js';
 import {
@@ -47,7 +51,15 @@ export class ConsentsController {
     private readonly consents: ConsentsService,
     private readonly checker: ConsentChecker,
     private readonly prisma: PrismaService,
+    private readonly features: FeatureFlags,
   ) {}
+
+  /** 연동 동의(FIN_LINK)는 계좌·카드 연결을 숨긴 동안 받지 않는다(FR-006 → 404) */
+  private assertAccountLink(stage: ConsentStage) {
+    if (stage === 'FIN_LINK' && !this.features.accountLink) {
+      throw new NotFoundError();
+    }
+  }
 
   @ApiOperation({
     summary: '동의 문서 현재 버전 (FR-104·809·903)',
@@ -60,7 +72,9 @@ export class ConsentsController {
   @Public()
   @Get('documents')
   documents(@Query('stage') stage: unknown): Promise<ConsentDocumentSummary[]> {
-    return this.consents.documents(parseStage(stage, CONSENT_STAGE_VALUES));
+    const parsed = parseStage(stage, CONSENT_STAGE_VALUES);
+    this.assertAccountLink(parsed);
+    return this.consents.documents(parsed);
   }
 
   @ApiOperation({
@@ -78,7 +92,7 @@ export class ConsentsController {
     @CurrentUser() user: AuthUser,
     @Query('stage') stage: unknown,
   ): Promise<ConsentStatusResponse> {
-    parseStage(stage, ['FIN_LINK']);
+    this.assertAccountLink(parseStage(stage, ['FIN_LINK']));
     const required = await this.checker.findMissing(
       user.id,
       FIN_LINK_REQUIRED_CONSENTS,
@@ -106,6 +120,7 @@ export class ConsentsController {
     @Body() dto: ConsentSubmitDto,
     @Req() req: Request,
   ): Promise<ConsentStatusResponse> {
+    this.assertAccountLink('FIN_LINK');
     const { documents } = await this.consents.check(
       'FIN_LINK',
       dto.agreements,
