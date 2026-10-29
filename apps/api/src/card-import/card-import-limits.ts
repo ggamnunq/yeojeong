@@ -163,17 +163,21 @@ export class CardImportLimits {
       orderBy: { at: 'asc' },
       select: { at: true },
     });
+    // 두 한도에 동시에 걸리면 더 늦게 풀리는 시각을 알려 준다(자정 직후 10분 창이 하루 한도를 가리지 않게)
+    let until: Date | null = null;
     if (recent.length >= CARD_IMPORT_FETCH_LIMIT.COUNT) {
       const oldest = recent[recent.length - CARD_IMPORT_FETCH_LIMIT.COUNT].at;
-      throw AppException.of('CARD_IMPORT_RATE_LIMITED', {
-        details: retryDetails(new Date(oldest.getTime() + windowMs), now),
-      });
+      until = new Date(oldest.getTime() + windowMs);
     }
     if (
       (await this.startedToday(userId, now)) >= CARD_IMPORT_FETCH_LIMIT.DAILY
     ) {
+      const midnight = nextKstMidnight(now);
+      if (!until || midnight > until) until = midnight;
+    }
+    if (until) {
       throw AppException.of('CARD_IMPORT_RATE_LIMITED', {
-        details: retryDetails(nextKstMidnight(now), now),
+        details: retryDetails(until, now),
       });
     }
   }
