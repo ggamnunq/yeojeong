@@ -1,13 +1,16 @@
+import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { paths } from '../../../app/paths'
 import { useTripDetail } from '../../../app/trip'
 import { Button, ShellSub } from '../../../ds'
+import { InviteQrButton } from '../components/InviteQrButton'
+import { InviteQrSheet } from '../components/InviteQrSheet'
 import { copyInviteCode, shareInvite } from '../invite'
 import { formatInviteCode } from '../rules'
 import type { NavState } from '../types'
 
 /**
- * HF-11 생성 완료 · 초대코드(FR-202). 초대코드가 화면의 영웅(Plex 40, 자간 4, 톤 카드) + 복사 · 공유.
+ * HF-11 생성 완료 · 초대코드(FR-202). 초대코드가 화면의 영웅(Plex 40, 자간 4, 톤 카드) + [QR 48](W8 → HF-61 시트) · 복사 · 공유.
  * ✕ · 「여정으로 가기」 · 뒤로 가기 → 시작 전 여정 정보(HF-16). 셸 = Shell/Sub + TopHeader Type=Close(v1.6), 버튼은 하단 CTA(토스트가 그 위에 뜬다).
  */
 export default function CreatedPage() {
@@ -15,6 +18,7 @@ export default function CreatedPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const code = trip.inviteCode
+  const [qrOpen, setQrOpen] = useState(false)
 
   // 생성 폼에서 왔으면 바로 아래 기록이 여정 정보다
   const goToTrip = () =>
@@ -37,6 +41,7 @@ export default function CreatedPage() {
             {formatInviteCode(code)}
           </p>
           <div className="mt-6 flex w-full gap-2">
+            <InviteQrButton size="m" onClick={() => setQrOpen(true)} />
             <Button
               type="secondary"
               size="m"
@@ -58,6 +63,7 @@ export default function CreatedPage() {
           </div>
         </section>
       )}
+      {code && <InviteQrSheet open={qrOpen} onClose={() => setQrOpen(false)} groupName={trip.groupName} code={code} />}
 
     </ShellSub>
   )

@@ -6,6 +6,7 @@ import { Avatar, CardHeroTone, Icon, LeaderCrown, orderMembers, RowTone, type Ro
 import { focusRing, touchTarget } from '../../ds/styles'
 import type { MemberSummary, TripStatus } from '../../api'
 import { paths } from '../../app/paths'
+import { InviteQrButton } from '../trips/components/InviteQrButton'
 import { formatInviteCode } from '../trips/rules'
 import { tripFxQuery } from '../wallet/api'
 import { formatFxLabel } from '../wallet/format'
@@ -117,12 +118,13 @@ export function MemberAvatars({ members, onAdd }: MemberAvatarsProps) {
   )
 }
 
-/** 초대코드 톤 행(DS Row/Tone): "초대코드" + K7M-2QX · 「복사」 */
-export function InviteCodeRow({ code, onCopy }: { code: string; onCopy: () => void }) {
+/** 초대코드 톤 행(DS Row/Tone): "초대코드" + K7M-2QX · [QR 36](W8 → HF-61 시트) · 「복사」 */
+export function InviteCodeRow({ code, onCopy, onQr }: { code: string; onCopy: () => void; onQr?: () => void }) {
   return (
     <RowTone
       label="초대코드"
       value={formatInviteCode(code)}
+      accessory={onQr ? <InviteQrButton size="s" onClick={onQr} /> : undefined}
       action={{ label: '복사', icon: 'copy', 'aria-label': '초대코드 복사', onClick: onCopy }}
     />
   )

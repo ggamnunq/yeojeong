@@ -45,6 +45,7 @@ export class InvitesService {
         throw AppException.of('INVITE_TRIP_ENDED');
     }
     const active = rows.filter((row) => row.leftAt === null);
+    const leader = active.find((row) => row.role === 'LEADER');
     return {
       groupName: group.name,
       placeLabel: group.trip.placeLabel,
@@ -55,6 +56,7 @@ export class InvitesService {
       membersPreview: active
         .slice(0, INVITE_PREVIEW_MEMBER_LIMIT)
         .map(toProfile),
+      leader: leader ? toProfile(leader) : null,
       alreadyMember,
       tripId: alreadyMember ? group.trip.id : null,
     };

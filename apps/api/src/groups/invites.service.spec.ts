@@ -126,3 +126,48 @@ describe('InvitesService.join (Q-09)', () => {
     expect(pickSuccessor(members, 'a')?.id).toBe('c');
   });
 });
+
+describe('InvitesService.preview', () => {
+  const row = (
+    userId: string,
+    nickname: string,
+    role: 'LEADER' | 'MEMBER',
+    joinOrder: number,
+    leftAt: Date | null = null,
+  ) => ({
+    id: `m-${userId}`,
+    role,
+    joinOrder,
+    leftAt,
+    userId,
+    leaveReason: leftAt ? 'LEFT' : null,
+    user: { nickname, profileImageUrl: null },
+  });
+
+  function previewSetup(rows: object[]) {
+    const { service } = setup(null);
+    const prisma = (service as unknown as { prisma: Record<string, unknown> })
+      .prisma;
+    prisma.membership = { findMany: vi.fn().mockResolvedValue(rows) };
+    return service;
+  }
+
+  it('returns the current leader even when succession moved it off the first row', async () => {
+    const service = previewSetup([
+      row('a', '가', 'MEMBER', 1, now),
+      row('c', '다', 'MEMBER', 2),
+      row('d', '라', 'LEADER', 3),
+    ]);
+    const preview = await service.preview('k7m-2qx', user);
+    expect(preview.leader).toEqual({ nickname: '라', profileImageUrl: null });
+    expect(preview.memberCount).toBe(2);
+    expect(preview.membersPreview.map((p) => p.nickname)).toEqual(['다', '라']);
+  });
+
+  it('rejects malformed codes before touching the database', async () => {
+    const service = previewSetup([]);
+    await expect(service.preview('K7M2Q0', user)).rejects.toMatchObject({
+      code: 'INVITE_CODE_INVALID',
+    });
+  });
+});

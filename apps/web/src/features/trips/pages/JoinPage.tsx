@@ -1,29 +1,22 @@
 import { useQuery } from '@tanstack/react-query'
 import { INVITE_CODE_LENGTH, normalizeInviteCode } from '@yeojeong/shared'
 import { useEffect, useState } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { handleApiError, isApiError } from '../../../api'
 import { paths } from '../../../app/paths'
 import { AvatarStack, Input, RouteProgress, ShellSub } from '../../../ds'
 import { toast } from '../../../notifications'
 import { invitePreviewQuery, useJoinTrip } from '../api'
 import { useDebouncedValue } from '../hooks'
+import { inviteErrorText } from '../invite'
+import { inviteCodeFromLink, rememberPendingInvite } from '../pendingInvite'
 import { COPY, daysBetween, formatInviteCode, formatRouteDate, inviteInputChars, todayKst } from '../rules'
 import type { InvitePreview } from '../types'
 
-// HF-12 초대코드로 참여(FR-203·204). 6자가 차면 300ms 뒤 미리보기(?code= 진입은 바로), 미리보기가 있을 때만 「참여하기」.
+// HF-12 초대코드로 참여(FR-203·204). 코드 없이 들어온 /join에서만(C-42). 6자가 차면 300ms 뒤 미리보기, 미리보기가 있을 때만 「참여하기」.
 // 참여하면 단계별 기본 탭(시작 전 → 여정 정보, 진행 중 → 결제내역). 이미 멤버면 그 여정으로 + "이미 참여한 여정이에요".
-
-const INVALID_CODES = new Set(['INVITE_CODE_INVALID', 'NOT_FOUND'])
-const UNAVAILABLE_CODES = new Set(['INVITE_TRIP_ENDED', 'MEMBER_KICKED', 'MEMBER_LIMIT_EXCEEDED'])
-
-/** 초대코드 오류 → 입력란 문구. 입력란에서 안내하지 않는 오류(429·연결 실패 등)면 null */
-function inviteErrorText(error: unknown): string | null {
-  if (!isApiError(error)) return null
-  if (INVALID_CODES.has(error.code)) return COPY.inviteInvalid
-  if (UNAVAILABLE_CODES.has(error.code)) return COPY.inviteUnavailable
-  return null
-}
+// ?code=가 있으면(QR·공유 링크, 예전 returnTo) 코드를 이 탭에 보관하고 진입 라우팅 첫 화면으로 replace — 첫 화면 위 응답 시트(HF-62).
+// 앱 밖에서 연 링크는 앱 시작 때 같은 일을 먼저 한다(pendingInvite.captureInviteLink).
 
 /** 붙여 넣은 참여 링크(…/join?code=K7M2QX)면 코드만 꺼낸다 */
 function codeFromInput(value: string): string {
@@ -32,14 +25,24 @@ function codeFromInput(value: string): string {
 }
 
 export default function JoinPage() {
+  const [params] = useSearchParams()
+  if (params.has('code')) return <InviteLinkRedirect code={params.get('code')} />
+  return <JoinForm />
+}
+
+/** /join?code=…: 코드를 보관하고(같은 코드면 다시 써도 같다) 주소에서 지우며 첫 화면으로. 글자가 없으면 코드 없는 /join */
+function InviteLinkRedirect({ code }: { code: string | null }) {
+  const [kept] = useState(() => (inviteCodeFromLink(code) ? rememberPendingInvite(code ?? '') : false))
+  return <Navigate replace to={kept ? paths.splash() : paths.join()} />
+}
+
+function JoinForm() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [params] = useSearchParams()
-  const [fromLink] = useState(() => codeFromInput(params.get('code') ?? ''))
-  const [chars, setChars] = useState(fromLink)
+  const [chars, setChars] = useState('')
   const code = normalizeInviteCode(chars)
-  // 공유 링크로 들어온 코드는 바로, 손으로 친 코드는 멈춘 뒤 300ms
-  const lookup = useDebouncedValue(code, code !== null && code === fromLink ? 0 : 300)
+  // 멈춘 뒤 300ms
+  const lookup = useDebouncedValue(code, 300)
   const preview = useQuery({ ...invitePreviewQuery(lookup ?? ''), enabled: lookup !== null && lookup === code })
   const join = useJoinTrip()
 
@@ -94,7 +97,7 @@ export default function JoinPage() {
         className="[&_input]:tracking-[2px] [&>label]:sr-only"
         value={formatInviteCode(chars)}
         maxLength={INVITE_CODE_LENGTH + 1}
-        autoFocus={!fromLink}
+        autoFocus
         autoCapitalize="characters"
         autoComplete="off"
         autoCorrect="off"

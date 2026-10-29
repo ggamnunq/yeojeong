@@ -400,9 +400,8 @@ describe('returnTo 보존 — 신규 회원 가입 단계를 거쳐도 공유 �
     await finishTerms(router)
     expect(signup).toHaveLength(1)
     fireEvent.click(await screen.findByRole('button', { name: '나중에' }))
-    await waitFor(() => expect(where(router)).toBe(JOIN))
-    // 참여 화면이 코드를 들고 미리보기를 연다
-    expect(await screen.findByRole('region', { name: '여정 미리보기' })).toBeTruthy()
+    // W8 C-42: /join?code=로 돌아오면 코드를 보관하고 첫 화면 위 초대 응답 시트(WF-62)
+    expect(await screen.findByRole('dialog', { name: '도쿄 먹방 여행에 참여할까요?' })).toBeTruthy()
   })
 
   it('토스 연결까지 마치면 WF-08 「여정으로 가기」가 /join?code=로', async () => {
@@ -412,7 +411,8 @@ describe('returnTo 보존 — 신규 회원 가입 단계를 거쳐도 공유 �
     writeAttemptContext('attempt-signup', { purpose: 'SIGNUP', result: { accounts: 1, cards: 2 } as never })
     await router.navigate('/wallet/connect/done?attempt=attempt-signup', { replace: true })
     fireEvent.click(await screen.findByRole('button', { name: '여정으로 가기' }))
-    await waitFor(() => expect(where(router)).toBe(JOIN))
+    // W8 C-42: /join?code=로 돌아오면 코드를 보관하고 첫 화면 위 초대 응답 시트(WF-62)
+    expect(await screen.findByRole('dialog', { name: '도쿄 먹방 여행에 참여할까요?' })).toBeTruthy()
   })
 
   it('WF-08에서 브라우저 뒤로 가기 = 버튼과 같다(토스 안내로 돌아가지 않음, HF-08)', async () => {
@@ -426,7 +426,8 @@ describe('returnTo 보존 — 신규 회원 가입 단계를 거쳐도 공유 �
     // 뒤로 가기 차단은 화면이 그려진 다음 효과에서 걸린다(사람이 누르기 전에 끝난다)
     await act(async () => {})
     await router.navigate(-1)
-    await waitFor(() => expect(where(router)).toBe(JOIN))
+    // W8 C-42: /join?code=로 돌아오면 코드를 보관하고 첫 화면 위 초대 응답 시트(WF-62)
+    expect(await screen.findByRole('dialog', { name: '도쿄 먹방 여행에 참여할까요?' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: '토스 지갑을 연결해 주세요' })).toBeNull()
   })
 

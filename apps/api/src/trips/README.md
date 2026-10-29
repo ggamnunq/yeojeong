@@ -24,8 +24,8 @@
 | DELETE | `/api/groups/:groupId/members/:membershipId` | 그룹장 · 시작 전·진행 중 | 204 | 400 `CANNOT_KICK_SELF`, 403, 404, 409 | 207 |
 | POST | `/api/groups/:groupId/leave` | 멤버 · 전 단계 | `LeaveGroupResponse` | 404 | 208 |
 | DELETE | `/api/groups/:groupId` | 그룹장 · 시작 전 | 204 | 403, 409 | 209 |
-| GET | `/api/invites/:code` | 로그인 · StrictThrottle | `InvitePreview` | 404 `INVITE_CODE_INVALID`, 403 `MEMBER_KICKED`, 409 `INVITE_TRIP_ENDED` | 203 |
-| POST | `/api/invites/:code/join` | 로그인 · StrictThrottle | 201 `JoinTripResponse` | 위 + 409 `ALREADY_MEMBER`·`MEMBER_LIMIT_EXCEEDED` | 204 |
+| POST | `/api/invites/preview` 본문 `{ code }` | 로그인 · StrictThrottle · 사용자 10분 20회 | `InvitePreview`(`leader` 포함) | 404 `INVITE_CODE_INVALID`, 403 `MEMBER_KICKED`, 409 `INVITE_TRIP_ENDED` | 203 |
+| POST | `/api/invites/join` 본문 `{ code }` | 로그인 · StrictThrottle · 사용자 10분 20회 | 201 `JoinTripResponse` | 위 + 409 `ALREADY_MEMBER`·`MEMBER_LIMIT_EXCEEDED` | 204 |
 | POST | `/api/internal/jobs/auto-end` | 내부(Cloud Scheduler OIDC) | `AutoEndJobResponse` | 403 `FORBIDDEN` | 305 |
 
 시작·종료·나가기는 행동이라 200, 만들기·참여는 201이다. 날짜는 KST 달력 날짜 `"2026-11-12"`, 시각은 `"2026-11-15T23:59:59+09:00"`.

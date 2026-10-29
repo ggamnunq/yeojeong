@@ -8,6 +8,7 @@ import { useShellCta } from '../../../app/shellCta'
 import { readLastTripId, rememberTripId, tripQuery, useTripDetail } from '../../../app/trip'
 import { Dialog } from '../../../ds'
 import { endPreviewQuery, useDeleteGroup, useEndTrip, useStartTrip } from '../../trips/api'
+import { InviteQrSheet } from '../../trips/components/InviteQrSheet'
 import { copyInviteCode, shareInvite } from '../../trips/invite'
 import {
   formatRouteDate,
@@ -26,7 +27,7 @@ type OpenDialog = 'start' | 'end' | 'delete' | null
 
 /**
  * 여정 정보 탭(셸 안 본문). 단계로 화면이 바뀐다.
- * - 시작 전(HF-16): 출발까지 D-n · 경로 · 그룹원 · 초대코드 · (그룹장) 「여정 시작」 → HF-17 · 「그룹 삭제」(Danger)
+ * - 시작 전(HF-16): 출발까지 D-n · 경로 · 그룹원 · 초대코드([QR] → HF-61 시트 · 복사) · (그룹장) 「여정 시작」 → HF-17 · 「그룹 삭제」(Danger)
  *   종료일이 지난 시작 전 여정(Q-26, 서버 startBlockReason = PERIOD_OVER): 그룹장은 「기간 수정」, 멤버는 시작 버튼 없음
  * - 진행 중(HF-23): 여행 중 Day n / m · 그룹원 + 「추가」 · 초대코드 · (그룹장) 「여정 종료하기」 → HF-24
  * - 종료 후: 도착한 경로, 읽기 전용(초대코드·추가·버튼·연필 없음)
@@ -43,6 +44,7 @@ export default function TripInfoPage() {
   const tripId = trip.tripId
 
   const [dialog, setDialog] = useState<OpenDialog>(null)
+  const [qrOpen, setQrOpen] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const start = useStartTrip(tripId)
@@ -161,9 +163,10 @@ export default function TripInfoPage() {
 
       {code && (
         <div className="px-gutter pt-8">
-          <InviteCodeRow code={code} onCopy={() => void copyInviteCode(code)} />
+          <InviteCodeRow code={code} onCopy={() => void copyInviteCode(code)} onQr={() => setQrOpen(true)} />
         </div>
       )}
+      {code && <InviteQrSheet open={qrOpen} onClose={() => setQrOpen(false)} groupName={trip.groupName} code={code} />}
 
       {/* 외화 여정만 환율 행(HF-23) → 환율(HF-29). KRW 여정은 trip.fx = null */}
       {trip.fx && (

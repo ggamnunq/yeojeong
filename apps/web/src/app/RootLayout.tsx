@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import { Outlet, ScrollRestoration, useMatches } from 'react-router'
+import { InviteResponseHost } from '../features/trips/components/InviteResponseHost'
 import { FinConnectHost } from '../features/wallet/components/FinConnectHost'
 import { ToastHost } from '../notifications'
 import { SessionBridge } from './session'
@@ -21,6 +22,7 @@ export function RootLayout() {
         <Outlet />
       </Suspense>
       <FinConnectHost />
+      <InviteResponseHost />
       <ToastHost aboveNav={aboveNav} />
       <ScrollRestoration />
     </>

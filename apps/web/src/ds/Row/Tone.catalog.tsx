@@ -1,5 +1,6 @@
 import { defineCatalog } from '../../catalog/catalog'
 import { Row, Variant } from '../../catalog/ui'
+import { Button } from '../Button/Button'
 import { RowTone } from './Tone'
 
 export default defineCatalog({
@@ -20,6 +21,23 @@ export default defineCatalog({
               'aria-label': '초대코드 복사',
               onClick: () => {},
             }}
+          />
+        </Variant>
+        <Variant name="accessory(W8 · HF-16·23 [초대 QR 36] + 복사)" className="w-[350px]">
+          <RowTone
+            label="초대코드"
+            value="K7M-2QX"
+            accessory={
+              <Button
+                type="secondary"
+                size="s"
+                leadingIcon
+                icon="qr-code"
+                label={<span className="sr-only">초대 QR</span>}
+                className="w-9 px-0"
+              />
+            }
+            action={{ label: '복사', icon: 'copy', 'aria-label': '초대코드 복사', onClick: () => {} }}
           />
         </Variant>
         <Variant name="action 아이콘 없음(토스 연결 상태)" className="w-[350px]">
