@@ -11,7 +11,7 @@ export const COPY = {
   formatTitle: (provider: string) => `${provider} 거래 내역 파일이 아니에요`,
   archiveTitle: '압축을 풀고 올려 주세요',
   tooLargeTitle: '파일이 너무 커요',
-  tooLargeSub: '기간을 나눠 다시 받아 주세요',
+  tooLargeSub: '기간을 나눠서 다시 받아 주세요',
   otherFile: '다른 파일 선택',
   resultTitle: (provider: string, n: number) => `${provider} · ${n}건`,
   selectAll: '전체 선택',
@@ -26,4 +26,5 @@ export const COPY = {
   empty: '가져올 결제가 없어요',
   manual: '직접 추가',
   later: '잠시 후 다시 시도해 주세요',
+  dailyLimit: '오늘은 더 가져올 수 없어요',
 } as const

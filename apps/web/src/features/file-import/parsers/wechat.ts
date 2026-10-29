@@ -53,9 +53,12 @@ function findHeader(rows: SheetRows): { index: number; columns: Columns } {
   return { index, columns }
 }
 
-/** 칸 값: 앞뒤 공백·탭(위챗 CSV는 숫자를 글자로 두려고 끝에 탭을 붙인다)·"/" 빈 값 */
+/** 칸 하나에서 읽는 최대 글자 수. 더 긴 칸은 잘라 읽는다(정규식·메모리 방어 — 정상 칸은 수십 자) */
+export const MAX_CELL_CHARS = 1_000
+
+/** 칸 값: 1,000자까지, 앞뒤 공백·탭(위챗 CSV는 숫자를 글자로 두려고 끝에 탭을 붙인다)·BOM 제거, "/"는 빈 값 */
 const cell = (row: readonly string[], index: number) => {
-  const value = (row[index] ?? '').replace(/^[\s﻿]+|\s+$/g, '')
+  const value = (row[index] ?? '').slice(0, MAX_CELL_CHARS).replace(/\uFEFF/g, '').trim()
   return value === '/' ? '' : value
 }
 
@@ -110,7 +113,9 @@ const graphemes = new Intl.Segmenter('zh', { granularity: 'grapheme' })
 
 /** 가맹점 이름: 제어문자·연속 공백 정리, 40자(보이는 글자 기준)까지 */
 export function cleanMerchant(raw: string, max = 40): string {
+  // 보이지 않는 서식 문자(양방향 제어·폭 없는 공백 등 \p{Cf})는 지운다. ZWJ(U+200D)는 이모지 묶음용이라 남긴다(서버 cleanMemo와 같다)
   const text = raw
+    .replace(/(?!\u200d)\p{Cf}/gu, '')
     .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()

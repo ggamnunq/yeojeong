@@ -67,9 +67,14 @@ export function manualKrwError(
     : null;
 }
 
-/** 줄바꿈·제어문자 → 공백, 연속 공백 하나로, 앞뒤 공백 제거(FR-427) */
+/**
+ * 줄바꿈·제어문자 → 공백, 연속 공백 하나로, 앞뒤 공백 제거(FR-427).
+ * 보이지 않는 서식 문자(\p{Cf}: 양방향 제어 U+202A~202E·2066~2069, 폭 없는 공백 U+200B, BOM 등)는 지운다 — 화면에서 글자 순서를 뒤집는 등 속임수 방지.
+ * 단 ZWJ(U+200D)는 이모지 묶음(👨‍👩‍👧)에 필요해 남긴다
+ */
 export function cleanMemo(memo: string | null | undefined): string {
   return (memo ?? '')
+    .replace(/(?!\u200d)\p{Cf}/gu, '')
     .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();

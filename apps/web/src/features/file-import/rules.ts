@@ -1,4 +1,10 @@
-import { MANUAL_OCCURRED_AT_FUTURE_SECONDS, MANUAL_OCCURRED_AT_PAST_DAYS, type FileImportCheckResponse, type FileImportItem } from '@yeojeong/shared'
+import {
+  MANUAL_OCCURRED_AT_FUTURE_SECONDS,
+  MANUAL_OCCURRED_AT_PAST_DAYS,
+  type FileImportItem,
+  type FxSpotSeriesResponse,
+  type TripListItem,
+} from '@yeojeong/shared'
 import { formatKrw, MINUS } from '../../ds'
 import { previewKrw } from '../manual/rules'
 import { formatDateLabel, formatOriginal, kst } from '../payments/rules'
@@ -7,11 +13,68 @@ import type { StatementItem } from './parsers/types'
 
 // 결과 화면(HF-68) 규칙. 화면 없이 테스트한다.
 
-/** 결과 행 = 파일에서 읽은 후보 + 서버 확인(추가됨 · 자동 연결될 여정) */
-export type ResultRow = StatementItem & { imported: boolean; inTripId: string | null }
+/**
+ * 결과 행 = 파일에서 읽은 후보 + 서버 대조(추가됨) + 화면이 정한 자동 연결 여정·추정 원화.
+ * 서버에는 대조값만 보내므로(명세 4-13-7) 여정·환율은 화면이 내 여정 목록·고시 표로 정한다
+ */
+export type ResultRow = StatementItem & { imported: boolean; inTripId: string | null; estimatedKrw: number | null }
 
-export function mergeCheck(items: readonly StatementItem[], check: FileImportCheckResponse['items']): ResultRow[] {
-  return items.map((item, index) => ({ ...item, imported: check[index]?.imported ?? false, inTripId: check[index]?.inTripId ?? null }))
+const KST_OFFSET_MS = 9 * 3_600_000
+const DAY_MS = 86_400_000
+const kstStart = (date: string) => Date.parse(`${date}T00:00:00Z`) - KST_OFFSET_MS
+
+/**
+ * 저장하면 자동 연결될 여정(서버 rankTripCandidates · suggestedTripOf와 같은 규칙): 내가 멤버인 예정·진행 중 여정 중
+ * 결제 시각이 기간(KST 시작일 00:00 ~ 종료일 23:59:59.999) 안인 것 → 진행 중 먼저 → 시작이 가까운 순 → tripId. 없으면 null
+ */
+export function suggestTripId(trips: readonly Pick<TripListItem, 'tripId' | 'status' | 'startDate' | 'endDate'>[], occurredAt: string): string | null {
+  const time = Date.parse(occurredAt)
+  const inPeriod = trips.filter(
+    (t) => (t.status === 'UPCOMING' || t.status === 'ONGOING') && kstStart(t.startDate) <= time && time < kstStart(t.endDate) + DAY_MS,
+  )
+  inPeriod.sort(
+    (a, b) =>
+      Number(b.status === 'ONGOING') - Number(a.status === 'ONGOING') ||
+      Math.abs(kstStart(a.startDate) - time) - Math.abs(kstStart(b.startDate) - time) ||
+      a.tripId.localeCompare(b.tripId),
+  )
+  return inPeriod[0]?.tripId ?? null
+}
+
+/** 결제 시각 기준 시장 환율(S7c spot): 결제 시각 이전 가장 최근 고시. 이전 고시가 없으면 null(카드 estimatedKrwAmount와 같은 규칙) */
+export function spotRateAt(rates: FxSpotSeriesResponse['rates'], occurredAt: string): string | null {
+  const time = Date.parse(occurredAt)
+  let found: string | null = null
+  for (const r of rates) {
+    if (Date.parse(r.effectiveAt) <= time) found = r.rate
+    else break
+  }
+  return found
+}
+
+export function buildRows(
+  items: readonly StatementItem[],
+  imported: readonly boolean[],
+  trips: readonly Pick<TripListItem, 'tripId' | 'status' | 'startDate' | 'endDate'>[],
+  rates: FxSpotSeriesResponse['rates'] | null,
+): ResultRow[] {
+  return items.map((item, index) => {
+    const rate = rates ? spotRateAt(rates, item.occurredAt) : null
+    const estimate = rate ? previewKrw(item.amount, item.currency, rate) : null
+    return {
+      ...item,
+      imported: imported[index] ?? false,
+      inTripId: suggestTripId(trips, item.occurredAt),
+      estimatedKrw: estimate !== null && estimate > 0 ? estimate : null,
+    }
+  })
+}
+
+/** 환율 조회 기간: 결과 행들의 KST 날짜 [가장 이른 날, 가장 늦은 날] */
+export function kstDateRange(items: readonly Pick<StatementItem, 'occurredAt'>[]): { from: string; to: string } | null {
+  if (items.length === 0) return null
+  const dates = items.map((i) => kst(i.occurredAt).date).sort()
+  return { from: dates[0], to: dates[dates.length - 1] }
 }
 
 /** 고를 수 있는가: 추가됨·전액 환불은 못 고른다 */
@@ -57,14 +120,13 @@ export function groupRows(rows: readonly ResultRow[]) {
 /** 원통화 표기는 앱 공용 규칙(payments/rules formatOriginal: JPY "¥", CNY "CN¥" …) */
 const original = (amount: string, currency: string) => formatOriginal(amount, currency) ?? amount
 
-/** 행 금액: 주 = 원통화 순액("CN¥128.00"), 보조 = 부분 환불 "부분 환불 −CN¥30.00"(환불액을 모르면 "부분 환불") 또는 "약 ₩"(최신 고시) */
-export function rowAmounts(row: Pick<ResultRow, 'amount' | 'currency' | 'refund' | 'refundAmount'>, rate: string | null): { amount: string; subAmount?: string } {
+/** 행 금액: 주 = 원통화 순액("CN¥128.00"), 보조 = 부분 환불 "부분 환불 −CN¥30.00"(환불액을 모르면 "부분 환불") 또는 "약 ₩"(결제 시각 기준 시장 환율) */
+export function rowAmounts(row: Pick<ResultRow, 'amount' | 'currency' | 'refund' | 'refundAmount' | 'estimatedKrw'>): { amount: string; subAmount?: string } {
   const amount = original(row.amount, row.currency)
   if (row.refund === 'PARTIAL') {
     return { amount, subAmount: row.refundAmount ? `${COPY.partialRefund} ${MINUS}${original(row.refundAmount, row.currency)}` : COPY.partialRefund }
   }
-  const estimate = rate ? previewKrw(row.amount, row.currency, rate) : null
-  return { amount, subAmount: estimate !== null && estimate > 0 ? `약 ${formatKrw(estimate)}` : undefined }
+  return { amount, subAmount: row.estimatedKrw !== null ? `약 ${formatKrw(row.estimatedKrw)}` : undefined }
 }
 
 /** 행 메타 "HH:mm · {여정 이름}"(KST 시각) */

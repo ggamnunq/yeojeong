@@ -6,16 +6,19 @@ import { StatementFileError, type SheetRows } from './types'
 // 방어: 압축 해제 전 선언 크기로 상한(zip bomb), DOCTYPE·ENTITY가 있는 XML 거절(엔티티 확장), 항목 수 상한.
 
 /** 압축을 푼 한 항목의 상한(바이트)과 필요한 항목 합계 상한 */
-const MAX_ENTRY_BYTES = 40 * 1024 * 1024
-const MAX_TOTAL_BYTES = 80 * 1024 * 1024
+export const MAX_ENTRY_BYTES = 20 * 1024 * 1024
+const MAX_TOTAL_BYTES = 40 * 1024 * 1024
 const MAX_ENTRIES = 2_000
+/** 압축 비율 상한(풀린 크기 ÷ 압축 크기). 정상 xlsx 시트 XML은 10~20배 안팎이다. 1MB 넘게 풀리는 항목에만 본다(작은 항목은 비율이 커도 무해) */
+export const MAX_COMPRESSION_RATIO = 100
+const RATIO_CHECK_FROM = 1024 * 1024
 
 /** 압축 파일 머리(PK\x03\x04) */
 export const isZip = (bytes: Uint8Array) => bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04
 /** OLE 복합 문서(D0 CF 11 E0): 암호 걸린 Excel·옛 xls */
 export const isOle = (bytes: Uint8Array) => bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0
 
-type Entry = { name: string; originalSize: number }
+type Entry = { name: string; size: number; originalSize: number }
 
 function listEntries(bytes: Uint8Array): Entry[] {
   const entries: Entry[] = []
@@ -23,7 +26,7 @@ function listEntries(bytes: Uint8Array): Entry[] {
     // filter가 false를 돌려주면 압축을 풀지 않는다 — 이름·선언 크기만 본다
     unzipSync(bytes, {
       filter: (file) => {
-        entries.push({ name: file.name, originalSize: file.originalSize })
+        entries.push({ name: file.name, size: file.size, originalSize: file.originalSize })
         if (entries.length > MAX_ENTRIES) throw new StatementFileError('format')
         return false
       },
@@ -39,6 +42,10 @@ function extract(bytes: Uint8Array, wanted: readonly string[], entries: readonly
   const present = entries.filter((e) => wanted.includes(e.name))
   const total = present.reduce((sum, e) => sum + e.originalSize, 0)
   if (present.some((e) => e.originalSize > MAX_ENTRY_BYTES) || total > MAX_TOTAL_BYTES) throw new StatementFileError('tooLarge')
+  // zip bomb: 선언 크기 대비 압축 비율이 비정상이면 풀지 않는다
+  if (present.some((e) => e.originalSize > RATIO_CHECK_FROM && e.originalSize > Math.max(e.size, 1) * MAX_COMPRESSION_RATIO)) {
+    throw new StatementFileError('format')
+  }
   let files: Record<string, Uint8Array>
   try {
     files = unzipSync(bytes, { filter: (file) => wanted.includes(file.name) })

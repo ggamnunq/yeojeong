@@ -2,6 +2,13 @@
 -- 파일은 브라우저에서만 읽는다. 사용자가 고른 결제만 transactions(source = FILE_IMPORT)로 들어온다.
 -- FILE_IMPORT 행: 결제수단·원문 없음, external_ref = importKey(HMAC-SHA256 hex, 거래 번호 원문·다이제스트 아님).
 
+-- 파일 공급자(위챗페이; 알리페이는 값을 더한다). FILE_IMPORT 행에만 있고 그 밖은 NULL(명세 4-13-7)
+CREATE TYPE "file_import_provider" AS ENUM ('WECHAT');
+ALTER TABLE "transactions" ADD COLUMN "import_provider" "file_import_provider";
+ALTER TABLE "transactions" ADD CONSTRAINT "transactions_import_provider_check" CHECK (
+  ("source" = 'FILE_IMPORT') = ("import_provider" IS NOT NULL)
+);
+
 -- 출처별 필수 값(20261029160001_card_import_constraints의 검사에 FILE_IMPORT를 더한다)
 ALTER TABLE "transactions" DROP CONSTRAINT "transactions_source_check";
 ALTER TABLE "transactions" ADD CONSTRAINT "transactions_source_check" CHECK (

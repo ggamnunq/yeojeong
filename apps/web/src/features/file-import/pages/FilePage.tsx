@@ -1,18 +1,18 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router'
 import { isApiError } from '../../../api'
 import { paths } from '../../../app/paths'
-import { useMyTrips } from '../../../app/trip'
+import { myTripsQuery, useMyTrips } from '../../../app/trip'
 import { toast } from '../../../notifications'
-import { latestFxQuery } from '../../manual/api'
 import { clock } from '../../payments/clock'
+import { fetchSpotSeries } from '../api'
 import { COPY } from '../copy'
 import { checkAll, useFileImportEnabled, useSaveFileImport } from '../hooks'
 import { StatementFileError, type ExcludedCounts, type StatementErrorKind } from '../parsers/types'
 import { providerBySlug, type ProviderInfo } from '../providers'
-import { inAcceptedRange, initialSelection, mergeCheck, toggleAll, toggleOne, toImportItems, type ResultRow } from '../rules'
+import { buildRows, inAcceptedRange, initialSelection, kstDateRange, toggleAll, toggleOne, toImportItems, type ResultRow } from '../rules'
 import { EmptyStep, FileErrorStep, FileInput, GuideStep, ReadingStep, ResultStep } from '../steps'
 
 // HF-66 내보내는 방법 → (파일 선택) → HF-67 읽는 중 → HF-68 결과 / 68b 0건 / 66b·66c 오류. 모두 /wallet/file-import/:provider의 단계 상태다.
@@ -36,6 +36,8 @@ function FileFlow({ info }: { info: ProviderInfo }) {
   const navigate = useNavigate()
   const location = useLocation()
   const fromWallet = (location.state as { fromWallet?: boolean } | null)?.fromWallet === true
+  const queryClient = useQueryClient()
+  // 결과 행 여정 이름·자동 연결 여정은 내 여정 목록(클라이언트)으로 정한다(명세 4-13-7)
   const trips = useMyTrips()
   const saver = useSaveFileImport()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -50,11 +52,12 @@ function FileFlow({ info }: { info: ProviderInfo }) {
   const generation = useRef(0)
   const abort = useRef<AbortController | null>(null)
 
-  const fx = useQuery({ ...latestFxQuery('CNY'), enabled: step === 'result' })
-
   /** 결과를 버리고 처음(HF-66)으로 */
+  const resetSaver = saver.reset
   const reset = useCallback(() => {
     generation.current += 1
+    // 저장 뮤테이션이 들고 있는 보낸 항목(가맹점·금액)도 버린다
+    resetSaver()
     abort.current?.abort()
     abort.current = null
     setRows([])
@@ -62,7 +65,7 @@ function FileFlow({ info }: { info: ProviderInfo }) {
     setExcluded({ transfer: 0, other: 0 })
     setFileName('')
     setStep('guide')
-  }, [])
+  }, [resetSaver])
 
   // 떠나면 진행 중 확인 요청을 끊는다(결과 state는 컴포넌트와 함께 사라진다)
   useEffect(() => () => abort.current?.abort(), [])
@@ -110,9 +113,15 @@ function FileFlow({ info }: { info: ProviderInfo }) {
         setExcluded(counts)
         return setStep('empty')
       }
-      const check = await checkAll(info.provider, items, controller.signal)
+      const range = kstDateRange(items)
+      const [imported, myTrips, series] = await Promise.all([
+        checkAll(info.provider, items, controller.signal),
+        queryClient.ensureQueryData(myTripsQuery()),
+        // 환율을 못 받으면 "약 ₩" 줄만 숨긴다
+        range ? fetchSpotSeries(items[0].currency, range.from, range.to, controller.signal).catch(() => null) : null,
+      ])
       if (gen !== generation.current) return
-      const merged = mergeCheck(items, check)
+      const merged = buildRows(items, imported, myTrips.items, series?.rates ?? null)
       setRows(merged)
       setExcluded(counts)
       setSelected(initialSelection(merged))
@@ -141,7 +150,7 @@ function FileFlow({ info }: { info: ProviderInfo }) {
         },
         onError: (error) => {
           if (isApiError(error) && error.code === 'NOT_FOUND') return void navigate(paths.wallet(), { replace: true })
-          toast.error(COPY.later)
+          toast.error(isApiError(error) && error.code === 'FILE_IMPORT_DAILY_LIMIT' ? COPY.dailyLimit : COPY.later)
         },
       },
     )
@@ -161,7 +170,6 @@ function FileFlow({ info }: { info: ProviderInfo }) {
             rows={rows}
             excluded={excluded}
             selected={selected}
-            rate={fx.data?.rate ?? null}
             tripName={tripName}
             saving={saver.isPending}
             onToggle={(key) => setSelected((prev) => toggleOne(prev, key))}

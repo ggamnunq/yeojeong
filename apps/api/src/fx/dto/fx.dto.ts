@@ -5,6 +5,7 @@ import {
   type FxJobResult,
   type FxPolicy,
   type FxRateView,
+  type FxSpotSeriesResponse,
   type RateType,
   type TripFxView,
   type UpdateFxPolicyRequest,
@@ -148,4 +149,42 @@ export class FxJobResultDto implements FxJobResult {
   rejected: number;
   @ApiProperty()
   recalculatedTrips: number;
+}
+
+export class FxSpotSeriesQueryDto {
+  @ApiProperty({ example: 'CNY', description: '통화(ISO 4217, KRW 제외)' })
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @Matches(/^(?!KRW)[A-Z]{3}$/, { message: '통화 코드를 확인해 주세요' })
+  base: string;
+
+  @ApiProperty({ example: '2026-11-01', description: '시작일(KST, 포함)' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: '날짜는 YYYY-MM-DD로 보내 주세요',
+  })
+  from: string;
+
+  @ApiProperty({
+    example: '2026-11-13',
+    description: '종료일(KST, 포함). 시작일부터 400일까지',
+  })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: '날짜는 YYYY-MM-DD로 보내 주세요',
+  })
+  to: string;
+}
+
+class FxSpotPointDto {
+  @ApiProperty({ example: '190.080000' })
+  rate: string;
+  @ApiProperty({ example: '2026-11-13T09:00:00+09:00' })
+  effectiveAt: string;
+}
+
+export class FxSpotSeriesResponseDto implements FxSpotSeriesResponse {
+  @ApiProperty({ example: 'CNY' })
+  currency: string;
+  @ApiProperty({ type: [FxSpotPointDto] })
+  rates: FxSpotPointDto[];
 }

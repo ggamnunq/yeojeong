@@ -62,6 +62,9 @@ test.describe('위챗페이 파일 가져오기(W10)', () => {
     await expect(page.getByRole('heading', { name: '내 지갑' })).toBeVisible()
     await expect(page.getByRole('button', { name: /滴滴出行/ })).toBeVisible()
 
+    // check 본문은 공급자 + 대조값 배열뿐
+    const check = JSON.parse(bodies[0]) as Record<string, unknown>
+    expect(Object.keys(check).sort()).toEqual(['provider', 'txnDigests'])
     const sent = bodies.join('\n')
     expect(sent).toContain('txnDigest')
     for (const secret of ['E2E-TXN', 'M-1', '零钱', '快车', '晚餐', '微信支付账单明细']) expect(sent).not.toContain(secret)

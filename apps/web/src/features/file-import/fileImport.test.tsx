@@ -126,8 +126,9 @@ describe('HF-68 결과', () => {
     expect((within(row('瑞幸咖啡')).getByRole('checkbox') as HTMLInputElement).disabled).toBe(true)
     expect(within(row('上海迪士尼度假区')).getByText('환불됨')).toBeTruthy()
     expect((within(row('上海迪士尼度假区')).getByRole('checkbox') as HTMLInputElement).disabled).toBe(true)
-    // 가맹점 이름은 중국어 원문(lang zh-CN — 시스템 간체 서체)
-    expect(screen.getByText('滴滴出行').closest('[lang]')?.getAttribute('lang')).toBe('zh-CN')
+    // 가맹점 이름은 중국어 원문(lang zh-CN — 시스템 간체 서체), <bdi>로 양방향 격리
+    expect(screen.getByText('滴滴出行').tagName).toBe('BDI')
+    expect(screen.getByText('滴滴出行').getAttribute('lang')).toBe('zh-CN')
     // 시각은 KST(12:30 CST → 13:30)
     expect(within(row('滴滴出行')).getByText(/^13:30/)).toBeTruthy()
 
@@ -143,8 +144,16 @@ describe('HF-68 결과', () => {
     await waitFor(() => expect(sent.some((s) => s.url.endsWith('/file-import'))).toBe(true))
     const all = sent.map((s) => s.body).join('\n')
     for (const secret of ['TXN-000', 'M-1', '零钱', '示例银行卡', '快车', '晚餐', '微信支付账单明细', '示例-张三']) expect(all).not.toContain(secret)
-    const check = JSON.parse(sent.find((s) => s.url.endsWith('/check'))?.body ?? '{}') as { items: Record<string, unknown>[] }
-    expect(Object.keys(check.items[0]).sort()).toEqual(['occurredAt', 'txnDigest'])
+    // 확인(check) 본문 = 공급자 + 대조값(SHA-256) 배열뿐(일시·금액·가맹점 없음 — 명세 4-13-7, 처리방침 0.3)
+    const check = JSON.parse(sent.find((s) => s.url.endsWith('/check'))?.body ?? '{}') as { provider: string; txnDigests: string[] }
+    expect(Object.keys(check).sort()).toEqual(['provider', 'txnDigests'])
+    expect(check.txnDigests.every((d) => /^[0-9a-f]{64}$/.test(d))).toBe(true)
+    // 결과에 보이는 결제 행(5건)의 대조값만. 송금·홍바오·충전(필터로 뺀 행)의 대조값은 보내지 않는다
+    const shown = await Promise.all(['TXN-0001', 'TXN-0002', 'TXN-0003', 'TXN-0004', 'TXN-0005'].map((n) => txnDigest('WECHAT', n)))
+    expect([...check.txnDigests].sort()).toEqual([...shown].sort())
+    for (const excludedRow of ['TXN-0006', 'TXN-0007', 'TXN-0008']) {
+      expect(check.txnDigests).not.toContain(await txnDigest('WECHAT', excludedRow))
+    }
     const saved = JSON.parse(sent.find((s) => s.url.endsWith('/file-import'))?.body ?? '{}') as { provider: string; items: Record<string, unknown>[] }
     expect(saved.provider).toBe('WECHAT')
     expect(Object.keys(saved.items[0]).sort()).toEqual(['amount', 'currency', 'merchantName', 'occurredAt', 'txnDigest'])
@@ -176,13 +185,19 @@ describe('HF-68 결과', () => {
     expect(await screen.findByText('이미 추가한 결제예요')).toBeTruthy()
   })
 
-  it('wipes the result on pagehide (back to HF-66)', async () => {
-    await toGuide()
-    upload(csvFile())
+  it('wipes the result and the save mutation state on pagehide (back to HF-66)', async () => {
+    const { queryClient } = await toGuide()
+    upload(csvFile(['2026-11-13 12:30:15,商户消费,DAILY-LIMIT,x,支出,¥10.00,零钱,支付成功,TXN-9001,/,/', ROWS[0]]))
     await screen.findByText('滴滴出行')
+    // 실패한 저장의 보낸 항목(가맹점)이 뮤테이션 캐시에 남아 있다가
+    fireEvent.click(button('2건 추가'))
+    await screen.findByText('오늘은 더 가져올 수 없어요')
+    expect(JSON.stringify(queryClient.getMutationCache().getAll().map((m) => m.state))).toContain('滴滴出行')
     window.dispatchEvent(new Event('pagehide'))
     expect(await screen.findByRole('heading', { name: '위챗페이 파일 가져오기' })).toBeTruthy()
     expect(screen.queryByText('滴滴出行')).toBeNull()
+    // pagehide에서 같이 지운다
+    await waitFor(() => expect(JSON.stringify(queryClient.getMutationCache().getAll().map((m) => m.state))).not.toContain('滴滴出行'))
   })
 
   it('‹ on the result discards it and returns to HF-66', async () => {
@@ -222,9 +237,21 @@ describe('HF-68b · 66b · 66c', () => {
     expect(screen.getByText('비밀번호는 위챗페이(微信支付) 공식 계정 메시지에 있어요')).toBeTruthy()
   })
 
-  it('too large → "파일이 너무 커요" without reading it', async () => {
+  it('too large → HF-66b layout "파일이 너무 커요" · "기간을 나눠서 다시 받아 주세요" without reading it', async () => {
     await toGuide()
     upload(new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'big.xlsx'))
     expect(await screen.findByText('파일이 너무 커요')).toBeTruthy()
+    expect(screen.getByText('기간을 나눠서 다시 받아 주세요')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '위챗페이' })).toBeTruthy()
+    expect(button('다른 파일 선택')).toBeTruthy()
+  })
+
+  it('daily cap (429 FILE_IMPORT_DAILY_LIMIT) → "오늘은 더 가져올 수 없어요", stays on the result', async () => {
+    await toGuide()
+    upload(csvFile(['2026-11-13 12:30:15,商户消费,DAILY-LIMIT,x,支出,¥10.00,零钱,支付成功,TXN-9001,/,/']))
+    await screen.findByText('1건 중 1건')
+    fireEvent.click(button('1건 추가'))
+    expect(await screen.findByText('오늘은 더 가져올 수 없어요')).toBeTruthy()
+    expect(screen.getByText('DAILY-LIMIT')).toBeTruthy()
   })
 })

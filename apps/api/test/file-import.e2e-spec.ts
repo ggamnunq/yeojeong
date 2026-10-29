@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
-import type {
-  FileImportCheckResponse,
-  FileImportItem,
-  FileImportResponse,
-  WalletEntryListResponse,
+import {
+  FILE_IMPORT_DAILY_MAX,
+  type FileImportCheckResponse,
+  type FileImportItem,
+  type FileImportResponse,
+  type WalletEntryListResponse,
 } from '@yeojeong/shared';
 import request from 'supertest';
 import { AppModule } from './../src/app.module.js';
@@ -32,7 +33,8 @@ import {
 
 // 거래 내역 파일 가져오기(W10, 위챗페이) 실제 DB e2e.
 // 증명: 플래그 off면 404 · 고른 결제 저장 + 여정 자동 연결 · 다시 보내면 건너뜀(행 1개) · DB에 거래 다이제스트가 없다(importKey = HMAC) ·
-//       응답·로그에 다이제스트·가맹점·금액이 없다 · 계약 밖 필드 400 · S7 입력 규칙 400(값을 되돌리지 않음) · 확인 API(추가됨·여정) · 호출 제한.
+//       응답·로그에 다이제스트·가맹점·금액이 없다 · 계약 밖 필드 400 · S7 입력 규칙 400(값을 되돌리지 않음) · 확인 API(추가됨·여정) ·
+//       사용자당 호출 제한(1분 5회) · 사용자당 하루 2,000건 · 한 요청은 전부 저장되거나 하나도 저장되지 않는다.
 // 날짜는 오늘(KST) 기준 상대값(여정 ±3일, 결제 −1일)이라 어느 날 돌려도 같다.
 const databaseUrl = await reachableDatabaseUrl();
 
@@ -168,7 +170,7 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
     }).expect(404);
     await checkAs(seed, '준용', {
       provider: 'WECHAT',
-      items: [{ txnDigest: digestOf(TXN_A), occurredAt: cst(kstDay(-1)) }],
+      txnDigests: [digestOf(TXN_A)],
     }).expect(404);
     expect(await fileRows(seed.members['준용'].userId)).toHaveLength(0);
     const session = await request(server())
@@ -191,16 +193,10 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
 
     const before = await checkAs(seed, '준용', {
       provider: 'WECHAT',
-      items: [
-        { txnDigest: digestOf(TXN_A), occurredAt: cst(kstDay(-1)) },
-        { txnDigest: digestOf(TXN_B), occurredAt: cst(kstDay(-30)) },
-      ],
+      txnDigests: [digestOf(TXN_A), digestOf(TXN_B)],
     }).expect(200);
     expect(before.body as FileImportCheckResponse).toEqual({
-      items: [
-        { imported: false, inTripId: seed.tripId },
-        { imported: false, inTripId: null },
-      ],
+      imported: [false, false],
     });
 
     const body = {
@@ -240,6 +236,7 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
     });
     expect(first).toMatchObject({
       source: 'FILE_IMPORT',
+      importProvider: 'WECHAT',
       kind: 'APPROVAL',
       paymentMethodId: null,
       rawPayloadEnc: null,
@@ -298,28 +295,55 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
     expect(await fileRows(userId)).toHaveLength(2);
 
     // 확인: 저장한 것은 "추가됨"
+    const accessBefore = await prisma.accessLog.count({ where: { userId } });
     const after = await checkAs(seed, '준용', {
       provider: 'WECHAT',
-      items: [
-        { txnDigest: digestOf(TXN_A), occurredAt: cst(kstDay(-1)) },
-        {
-          txnDigest: digestOf('4200009988202610290000000003'),
-          occurredAt: cst(kstDay(-1)),
-        },
-      ],
+      txnDigests: [digestOf(TXN_A), digestOf('4200009988202610290000000003')],
     }).expect(200);
+    // 확인은 대조만 한다: 접근 기록·행이 늘지 않는다
+    expect(await prisma.accessLog.count({ where: { userId } })).toBe(
+      accessBefore,
+    );
     expect(after.body).toEqual({
-      items: [
-        { imported: true, inTripId: seed.tripId },
-        { imported: false, inTripId: seed.tripId },
-      ],
+      imported: [true, false],
     });
     // 같은 거래도 다른 사용자에게는 새 거래(사용자 범위 importKey)
+    // 대조는 요청한 회원 본인의 FILE_IMPORT 항목과만(importKey에 사용자 ID가 들어간다 — 처리방침 0.3):
+    // 민지에게 준용이 저장한 거래는 "추가됨"이 아니고, 민지가 같은 거래를 저장해도 준용의 답은 바뀌지 않는다
     const other = await checkAs(seed, '민지', {
       provider: 'WECHAT',
-      items: [{ txnDigest: digestOf(TXN_A), occurredAt: cst(kstDay(-1)) }],
+      txnDigests: [digestOf(TXN_A)],
     }).expect(200);
-    expect(other.body.items[0].imported).toBe(false);
+    expect(other.body.imported).toEqual([false]);
+    const TXN_C = '4200009988202610290000000003';
+    await importAs(seed, '민지', {
+      provider: 'WECHAT',
+      items: [item({ txnDigest: digestOf(TXN_C) })],
+    }).expect(201);
+    const minji = await checkAs(seed, '민지', {
+      provider: 'WECHAT',
+      txnDigests: [digestOf(TXN_A), digestOf(TXN_C)],
+    }).expect(200);
+    expect(minji.body.imported).toEqual([false, true]);
+    const mine = await checkAs(seed, '준용', {
+      provider: 'WECHAT',
+      txnDigests: [digestOf(TXN_A), digestOf(TXN_C)],
+    }).expect(200);
+    expect(mine.body.imported).toEqual([true, false]);
+    // 같은 거래라도 사용자마다 저장값(importKey)이 다르다
+    const [mineRow] = await prisma.transaction.findMany({
+      where: { userId, source: 'FILE_IMPORT', externalRef: { not: null } },
+      select: { externalRef: true },
+      orderBy: { createdAt: 'asc' },
+      take: 1,
+    });
+    const minjiRows = await prisma.transaction.findMany({
+      where: { userId: seed.members['민지'].userId, source: 'FILE_IMPORT' },
+      select: { externalRef: true },
+    });
+    expect(minjiRows.map((r) => r.externalRef)).not.toContain(
+      mineRow.externalRef,
+    );
 
     // 접근 기록: 공급자·건수만
     const logs = await prisma.accessLog.findMany({
@@ -328,8 +352,20 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
       orderBy: { createdAt: 'asc' },
     });
     expect(logs.map((l) => l.details)).toEqual([
-      { provider: 'WECHAT', requested: 2, created: 2, linked: 1 },
-      { provider: 'WECHAT', requested: 2, created: 0, linked: 0 },
+      {
+        provider: 'WECHAT',
+        requested: 2,
+        created: 2,
+        linked: 1,
+        outcome: 'OK',
+      },
+      {
+        provider: 'WECHAT',
+        requested: 2,
+        created: 0,
+        linked: 0,
+        outcome: 'OK',
+      },
     ]);
 
     // 로그: 요청은 남지만 다이제스트·거래 번호·가맹점·금액은 없다
@@ -363,20 +399,28 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
       expect(res.body.code).toBe('VALIDATION_FAILED');
       expect(JSON.stringify(res.body)).not.toContain(TXN_A);
     }
-    await importAs(seed, '준용', {
+    // 사용자당 1분 5회라 여섯 번째 요청은 다른 멤버로 보낸다
+    await importAs(seed, '민지', {
       provider: 'WECHAT',
       items: [item()],
       clientRequestId: '0b8a6b4e-5d7c-4f2e-9a3b-111111111111',
     }).expect(400);
+    // 확인은 대조값 배열만: 일시·금액·가맹점(예전 items 모양)을 실으면 400
+    for (const extra of [
+      { items: [{ txnDigest: digestOf(TXN_A), occurredAt: cst(kstDay(-1)) }] },
+      { occurredAt: [cst(kstDay(-1))] },
+      { merchantNames: [MERCHANT] },
+    ]) {
+      const res = await checkAs(seed, '준용', {
+        provider: 'WECHAT',
+        txnDigests: [digestOf(TXN_A)],
+        ...extra,
+      }).expect(400);
+      expect(JSON.stringify(res.body)).not.toContain(MERCHANT);
+    }
     await checkAs(seed, '준용', {
       provider: 'WECHAT',
-      items: [
-        {
-          txnDigest: digestOf(TXN_A),
-          occurredAt: cst(kstDay(-1)),
-          amount: '1',
-        },
-      ],
+      txnDigests: [TXN_A],
     }).expect(400);
     expect(await fileRows(userId)).toHaveLength(0);
   });
@@ -451,32 +495,128 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
     expect(tooMany.body.details.fields).toEqual([
       expect.objectContaining({ path: 'items', code: 'arrayMaxSize' }),
     ]);
-    const checkMany = Array.from({ length: 501 }, (_, i) => ({
-      txnDigest: digestOf(`c${i}`),
-      occurredAt: cst(kstDay(-1)),
-    }));
+    const checkMany = Array.from({ length: 501 }, (_, i) => digestOf(`c${i}`));
     await checkAs(seed, '준용', {
       provider: 'WECHAT',
-      items: checkMany,
+      txnDigests: checkMany,
     }).expect(400);
     expect(await fileRows(userId)).toHaveLength(0);
   });
 
-  it('rate-limits saving (20 per minute)', async () => {
-    const seed = await seedOngoing(['하늘']);
-    let limited = false;
-    for (let i = 0; i < 25 && !limited; i++) {
-      const res = await importAs(seed, '하늘', {
-        provider: 'WECHAT',
-        items: [],
-      });
-      if (res.status === 429) {
-        limited = true;
-        expect(res.body.code).toBe('RATE_LIMITED');
-      } else {
-        expect(res.status).toBe(400);
-      }
+  it('rate-limits saving per user: 5 per minute → 429 FILE_IMPORT_RATE_LIMITED + Retry-After, other users unaffected', async () => {
+    const seed = await seedOngoing(['하늘', '바다']);
+    for (let i = 0; i < 5; i++) {
+      // 검증에 걸리는 요청도 센다(가드가 본문 검사보다 먼저)
+      await importAs(seed, '하늘', { provider: 'WECHAT', items: [] }).expect(
+        400,
+      );
     }
-    expect(limited).toBe(true);
+    const limited = await importAs(seed, '하늘', {
+      provider: 'WECHAT',
+      items: [item()],
+    }).expect(429);
+    expect(limited.body.code).toBe('FILE_IMPORT_RATE_LIMITED');
+    expect(limited.body.details.retryAfterSec).toBeGreaterThan(0);
+    expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+    expect(await fileRows(seed.members['하늘'].userId)).toHaveLength(0);
+    // 다른 사용자(같은 IP)는 그대로
+    await importAs(seed, '바다', {
+      provider: 'WECHAT',
+      items: [item({ occurredAt: cst(kstDay(-30)) })],
+    }).expect(201);
+  });
+
+  it('caps new FILE_IMPORT rows per user per KST day (2,000): whole request refused with retryAfter, resends of saved ones still pass', async () => {
+    const seed = await seedOngoing(['구름']);
+    const userId = seed.members['구름'].userId;
+    await prisma.transaction.createMany({
+      data: Array.from({ length: FILE_IMPORT_DAILY_MAX - 1 }, (_, i) => ({
+        userId,
+        source: 'FILE_IMPORT' as const,
+        importProvider: 'WECHAT' as const,
+        externalRef: `seed-${String(i).padStart(6, '0')}`,
+        kind: 'APPROVAL' as const,
+        occurredAt: new Date(Date.now() - 40 * DAY_MS),
+        merchantNameRaw: 'seed',
+        merchantKey: 'SEED',
+        originalAmount: new Prisma.Decimal('1'),
+        originalCurrency: 'CNY',
+      })),
+    });
+    const old = cst(kstDay(-30));
+    const two = await importAs(seed, '구름', {
+      provider: 'WECHAT',
+      items: [
+        item({ occurredAt: old }),
+        item({ txnDigest: digestOf(TXN_B), occurredAt: old }),
+      ],
+    }).expect(429);
+    expect(two.body.code).toBe('FILE_IMPORT_DAILY_LIMIT');
+    // 다음 KST 자정
+    const midnight = Date.parse(`${kstDay(1)}T00:00:00+09:00`);
+    expect(Date.parse(two.body.details.retryAfter)).toBe(midnight);
+    expect(Number(two.headers['retry-after'])).toBeGreaterThan(0);
+    expect(await fileRows(userId)).toHaveLength(FILE_IMPORT_DAILY_MAX - 1);
+    // 한 건은 들어가고(2,000건째), 같은 건을 다시 보내면 새로 만들지 않아 상한에 걸리지 않는다
+    await importAs(seed, '구름', {
+      provider: 'WECHAT',
+      items: [item({ occurredAt: old })],
+    }).expect(201);
+    const again = await importAs(seed, '구름', {
+      provider: 'WECHAT',
+      items: [item({ occurredAt: old })],
+    }).expect(201);
+    expect(again.body).toMatchObject({ created: 0, skipped: 1 });
+    expect(await fileRows(userId)).toHaveLength(FILE_IMPORT_DAILY_MAX);
+  });
+
+  it('saves all-or-nothing: a later item over the ₩100,000,000 cap (spot estimate) rolls back the earlier ones; trip and wallet-only items keep request order', async () => {
+    const seed = await seedOngoing();
+    const userId = seed.members['준용'].userId;
+    const old = cst(kstDay(-30));
+    // 600,000위안 × 190.5 = ₩114,300,000 > 1억(지갑에만 들어가는 건 — 매매기준율 추정)
+    const res = await importAs(seed, '준용', {
+      provider: 'WECHAT',
+      items: [
+        item({ occurredAt: old }),
+        item({
+          txnDigest: digestOf(TXN_B),
+          occurredAt: old,
+          amount: '600000.00',
+        }),
+      ],
+    }).expect(400);
+    expect(res.body.details.fields).toEqual([
+      expect.objectContaining({ path: 'items.1.amount', code: 'max' }),
+    ]);
+    expect(await fileRows(userId)).toHaveLength(0);
+
+    // 여정 건·지갑 건이 섞여도 응답은 요청 순서
+    const mixed = await importAs(seed, '준용', {
+      provider: 'WECHAT',
+      items: [
+        item({ occurredAt: old }),
+        item({ txnDigest: digestOf(TXN_B) }),
+        item({ txnDigest: digestOf('c1'), occurredAt: cst(kstDay(-2)) }),
+      ],
+    }).expect(201);
+    expect(mixed.body).toMatchObject({ created: 3, linked: 2 });
+    const rows = await prisma.transaction.findMany({
+      where: {
+        id: { in: mixed.body.items.map((i: { entryId: string }) => i.entryId) },
+      },
+      select: {
+        id: true,
+        occurredAt: true,
+        expenses: { select: { tripId: true } },
+      },
+    });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const ordered = mixed.body.items.map((i: { entryId: string }) =>
+      byId.get(i.entryId),
+    );
+    expect(
+      ordered.map((r: (typeof rows)[number] | undefined) => r?.expenses.length),
+    ).toEqual([0, 1, 1]);
   });
 });

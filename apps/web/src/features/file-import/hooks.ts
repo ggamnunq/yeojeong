@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FILE_IMPORT_CHECK_MAX,
   FILE_IMPORT_ITEMS_MAX,
-  type FileImportCheckResponse,
   type FileImportItem,
   type FileImportProvider,
   type FileImportResponse,
@@ -25,12 +24,12 @@ export function useFileImportEnabled(): boolean {
   return fileImportOf(data)
 }
 
-/** 확인(추가됨 · 자동 연결 여정)을 상한씩 나눠 묻고 순서대로 잇는다. 다이제스트·시각만 보낸다 */
-export async function checkAll(provider: FileImportProvider, items: readonly StatementItem[], signal?: AbortSignal): Promise<FileImportCheckResponse['items']> {
-  const out: FileImportCheckResponse['items'] = []
+/** "추가됨" 대조를 상한씩 나눠 묻고 순서대로 잇는다. **대조값(txnDigest)만** 보낸다(일시·금액·가맹점 없음 — 명세 4-13-7) */
+export async function checkAll(provider: FileImportProvider, items: readonly StatementItem[], signal?: AbortSignal): Promise<boolean[]> {
+  const out: boolean[] = []
   for (const part of chunk(items, FILE_IMPORT_CHECK_MAX)) {
-    const res = await checkFileImport({ provider, items: part.map((i) => ({ txnDigest: i.txnDigest, occurredAt: i.occurredAt })) }, signal)
-    out.push(...res.items)
+    const res = await checkFileImport({ provider, txnDigests: part.map((i) => i.txnDigest) }, signal)
+    out.push(...res.imported)
   }
   return out
 }

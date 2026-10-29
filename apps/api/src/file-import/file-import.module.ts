@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ImportKeyHasher } from '../card-import/import-key.js';
 import { WalletModule } from '../wallet/wallet.module.js';
 import { FileImportController } from './file-import.controller.js';
+import { FileImportRateGuard } from './file-import-rate.guard.js';
 import { FileImportService } from './file-import.service.js';
 
 /**
@@ -11,6 +12,6 @@ import { FileImportService } from './file-import.service.js';
 @Module({
   imports: [WalletModule],
   controllers: [FileImportController],
-  providers: [FileImportService, ImportKeyHasher],
+  providers: [FileImportService, ImportKeyHasher, FileImportRateGuard],
 })
 export class FileImportModule {}

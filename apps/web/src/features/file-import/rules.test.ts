@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chunk, groupRows, inAcceptedRange, initialSelection, rowAmounts, rowChip, selectAllState, toggleAll, toImportItems, type ResultRow } from './rules'
+import { buildRows, chunk, groupRows, kstDateRange, spotRateAt, suggestTripId, inAcceptedRange, initialSelection, rowAmounts, rowChip, selectAllState, toggleAll, toImportItems, type ResultRow } from './rules'
 
 const row = (over: Partial<ResultRow> = {}): ResultRow => ({
   txnDigest: 'd1',
@@ -12,6 +12,7 @@ const row = (over: Partial<ResultRow> = {}): ResultRow => ({
   refundAmount: null,
   imported: false,
   inTripId: 'trip-1',
+  estimatedKrw: 24330,
   ...over,
 })
 
@@ -35,12 +36,47 @@ describe('결과 규칙(HF-68)', () => {
     expect(rows.map(rowChip)).toEqual([undefined, undefined, '추가됨', '환불됨', undefined])
   })
 
-  it('금액: ¥ 주 금액 + "약 ₩" / 부분 환불 줄', () => {
-    expect(rowAmounts(row(), '190.080000')).toEqual({ amount: 'CN¥128.00', subAmount: '약 ₩24,330' })
-    expect(rowAmounts(row(), null)).toEqual({ amount: 'CN¥128.00', subAmount: undefined })
-    expect(rowAmounts(rows[4], '190.08')).toEqual({ amount: 'CN¥98.00', subAmount: '부분 환불 −CN¥30.00' })
-    expect(rowAmounts(row({ refund: 'PARTIAL', refundAmount: null }), '190.08')).toEqual({ amount: 'CN¥128.00', subAmount: '부분 환불' })
-    expect(rowAmounts(row({ amount: '1234567.50' }), null).amount).toBe('CN¥1,234,567.50')
+  it('금액: 원통화(CN¥) 주 금액 + "약 ₩"(결제 시각 기준) / 부분 환불 줄', () => {
+    expect(rowAmounts(row())).toEqual({ amount: 'CN¥128.00', subAmount: '약 ₩24,330' })
+    expect(rowAmounts(row({ estimatedKrw: null }))).toEqual({ amount: 'CN¥128.00', subAmount: undefined })
+    expect(rowAmounts(rows[4])).toEqual({ amount: 'CN¥98.00', subAmount: '부분 환불 −CN¥30.00' })
+    expect(rowAmounts(row({ refund: 'PARTIAL', refundAmount: null }))).toEqual({ amount: 'CN¥128.00', subAmount: '부분 환불' })
+    expect(rowAmounts(row({ amount: '1234567.50' })).amount).toBe('CN¥1,234,567.50')
+  })
+
+  it('자동 연결 여정은 내 여정 목록으로(서버 규칙과 같다): 기간 안 → 진행 중 먼저 → 시작이 가까운 순', () => {
+    const trips = [
+      { tripId: 'b-upcoming', status: 'UPCOMING' as const, startDate: '2026-11-12', endDate: '2026-11-20' },
+      { tripId: 'a-ongoing', status: 'ONGOING' as const, startDate: '2026-11-01', endDate: '2026-11-15' },
+      { tripId: 'c-ended', status: 'ENDED' as const, startDate: '2026-11-01', endDate: '2026-11-30' },
+    ]
+    expect(suggestTripId(trips, '2026-11-13T12:00:00+08:00')).toBe('a-ongoing')
+    expect(suggestTripId(trips, '2026-11-18T12:00:00+08:00')).toBe('b-upcoming')
+    // 종료일 23:59(KST)까지 안, 다음 날 00:00(KST) = 전날 23:00(CST)부터 밖
+    expect(suggestTripId(trips.slice(1, 2), '2026-11-15T22:59:59+08:00')).toBe('a-ongoing')
+    expect(suggestTripId(trips.slice(1, 2), '2026-11-15T23:00:00+08:00')).toBeNull()
+    expect(suggestTripId(trips, '2026-10-01T12:00:00+08:00')).toBeNull()
+  })
+
+  it('"약 ₩"은 결제 시각 이전 가장 최근 고시로, 이전 고시가 없으면 없다', () => {
+    const rates = [
+      { rate: '190.000000', effectiveAt: '2026-11-12T09:00:00+09:00' },
+      { rate: '200.000000', effectiveAt: '2026-11-13T09:00:00+09:00' },
+    ]
+    expect(spotRateAt(rates, '2026-11-13T07:59:59+08:00')).toBe('190.000000')
+    expect(spotRateAt(rates, '2026-11-13T08:00:00+08:00')).toBe('200.000000')
+    expect(spotRateAt(rates, '2026-11-12T07:00:00+08:00')).toBeNull()
+    const built = buildRows(
+      [row({ txnDigest: 'x', occurredAt: '2026-11-13T12:00:00+08:00', amount: '10.00' }), row({ txnDigest: 'y', occurredAt: '2026-11-01T12:00:00+08:00' })],
+      [true],
+      [],
+      rates,
+    )
+    expect(built.map((r) => [r.imported, r.inTripId, r.estimatedKrw])).toEqual([
+      [true, null, 2000],
+      [false, null, null],
+    ])
+    expect(kstDateRange(built)).toEqual({ from: '2026-11-01', to: '2026-11-13' })
   })
 
   it('KST 날짜로 묶는다(23:30 CST = 다음 날 00:30 KST)', () => {

@@ -4,6 +4,8 @@ import {
   WALLET_ENTRY_LIST_LIMIT,
   type CreateWalletEntryRequest,
   type ExpenseDetailResponse,
+  type FieldError,
+  type FileImportProvider,
   type ImportWalletEntriesResponse,
   type ImportWalletEntryItem,
   type TripStatus,
@@ -184,20 +186,6 @@ export class WalletService {
       suggestedTripId: suggestedTripOf(ranked)?.tripId ?? null,
       defaultCurrency: defaultWalletCurrency(ranked),
     };
-  }
-
-  /**
-   * 결제 시각마다 자동 연결될 여정(직접 입력과 같은 규칙: 기간 안 예정·진행 중 여정, 없으면 null).
-   * 저장 전 미리 보기용(거래 내역 파일 가져오기 W10 확인). 여정 후보는 한 번만 읽는다
-   */
-  async suggestedTripIds(
-    userId: string,
-    times: readonly Date[],
-  ): Promise<(string | null)[]> {
-    const options = await this.tripOptions(userId);
-    return times.map(
-      (at) => suggestedTripOf(rankTripCandidates(options, at))?.tripId ?? null,
-    );
   }
 
   private async tripOptions(userId: string): Promise<TripOption[]> {
@@ -647,52 +635,151 @@ export class WalletService {
   // ─── 거래 내역 파일에서 고른 것 저장(W10) ───
 
   /**
-   * 파일 가져오기(W10) 한 건: (사용자, FILE_IMPORT, importKey)가 이미 있으면 그 항목(created=false), 없으면 직접 입력과 같은 규칙으로
-   * 만들고 자동 연결한다. 입력 검사(시각·내용·금액)는 호출자가 먼저 한다. 동시에 같은 건을 저장하면 먼저 들어간 항목을 돌려준다
+   * 파일 가져오기(W10) 한 요청을 **한 트랜잭션**으로 저장한다 — 하나라도 실패하면(원화 1억 상한·환율 없음·일일 상한 등) 아무것도 남지 않는다.
+   * - 사용자 단위 advisory lock으로 같은 사용자의 가져오기를 한 줄로 세운다(이미 있는 거래 확인·일일 상한 판정이 경합 없이 맞다).
+   * - (사용자, FILE_IMPORT, importKey)가 이미 있으면 그 항목(created=false). 같은 요청 안의 같은 키는 호출자가 막는다.
+   * - 자동 연결 대상 여정은 트랜잭션 전에 한 번 정하고, 여정 id 순서로 여정마다 **한 번만** 잠근 뒤 그 여정 건을 몰아서 넣는다
+   *   (잠금 순서가 일정해 교착이 없고, 같은 여정을 항목마다 다시 잠그지 않는다).
+   * - dailyLimit: KST 오늘 새로 만든 FILE_IMPORT 수 + 이번에 새로 만들 수가 상한을 넘으면 onDailyLimit()가 던지는 오류로 끝낸다.
+   * 입력 검사(시각·내용·금액·통화)는 호출자가 먼저 한다. 반환은 요청 순서
    */
-  async saveFileImported(
+  async saveFileImportBatch(
     userId: string,
-    input: {
+    provider: FileImportProvider,
+    items: readonly {
       importKey: string;
       amount: string;
       currency: string;
       occurredAt: Date;
       merchantName: string;
-    },
+    }[],
+    limit: { dailyLimit: number; dayStart: Date; onDailyLimit: () => Error },
     now: Date,
-  ): Promise<{ entryId: string; created: boolean; linked: boolean }> {
-    const find = () =>
-      this.prisma.transaction.findFirst({
-        where: { userId, source: 'FILE_IMPORT', externalRef: input.importKey },
-        select: { id: true },
-      });
-    const existing = await find();
-    if (existing)
-      return { entryId: existing.id, created: false, linked: false };
-    try {
-      const entryId = await this.insertEntry(
-        userId,
-        {
-          amount: input.amount,
-          currency: input.currency,
-          occurredAt: input.occurredAt,
-          merchantName: merchantNameOf(input.merchantName),
-          clientRequestId: null,
-        },
-        { source: 'FILE_IMPORT', externalRef: input.importKey },
-        now,
-      );
-      const link = await this.prisma.expense.findFirst({
-        where: { transactionId: entryId, refundOfExpenseId: null },
-        select: { id: true },
-      });
-      return { entryId, created: true, linked: link !== null };
-    } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
-      const raced = await find();
-      if (!raced) throw error;
-      return { entryId: raced.id, created: false, linked: false };
-    }
+  ): Promise<{ entryId: string; created: boolean; linked: boolean }[]> {
+    const options = await this.tripOptions(userId);
+    const targets = items.map((item) =>
+      suggestedTripOf(rankTripCandidates(options, item.occurredAt)),
+    );
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`
+          SELECT 1 AS ok FROM pg_advisory_xact_lock(hashtext(${`file-import:${userId}`}))`;
+        const existing = await tx.transaction.findMany({
+          where: {
+            userId,
+            source: 'FILE_IMPORT',
+            externalRef: { in: items.map((i) => i.importKey) },
+          },
+          select: { id: true, externalRef: true },
+        });
+        const existingId = new Map(existing.map((e) => [e.externalRef, e.id]));
+        const fresh = items
+          .map((item, index) => ({ item, index, target: targets[index] }))
+          .filter(({ item }) => !existingId.has(item.importKey));
+
+        if (fresh.length > 0) {
+          const today = await tx.transaction.count({
+            where: {
+              userId,
+              source: 'FILE_IMPORT',
+              createdAt: { gte: limit.dayStart },
+            },
+          });
+          if (today + fresh.length > limit.dailyLimit)
+            throw limit.onDailyLimit();
+        }
+
+        // 여정 id 순(지갑에만 넣는 건은 맨 뒤) → 시각 순
+        fresh.sort(
+          (a, b) =>
+            (a.target?.tripId ?? '\uffff').localeCompare(
+              b.target?.tripId ?? '\uffff',
+            ) || a.item.occurredAt.getTime() - b.item.occurredAt.getTime(),
+        );
+        const locked = new Map<
+          string,
+          Awaited<ReturnType<WalletService['lockTargetTrip']>>
+        >();
+        const results: {
+          entryId: string;
+          created: boolean;
+          linked: boolean;
+        }[] = items.map((item) => ({
+          entryId: existingId.get(item.importKey) ?? '',
+          created: false,
+          linked: false,
+        }));
+        for (const { item, index, target } of fresh) {
+          const origin: WalletEntryOrigin = {
+            source: 'FILE_IMPORT',
+            externalRef: item.importKey,
+            provider,
+          };
+          const merchantName = merchantNameOf(item.merchantName);
+          const values = {
+            amount: item.amount.trim(),
+            currency: item.currency.toUpperCase(),
+            occurredAt: item.occurredAt,
+            merchantName,
+          };
+          try {
+            let entryId: string;
+            if (!target) {
+              await this.checkWalletOnlyKrw(tx, values.amount, values.currency);
+              entryId = await this.manual.insertWalletTransaction(tx, {
+                userId,
+                amounts: values,
+                merchantName,
+                clientRequestId: null,
+                origin,
+              });
+            } else {
+              let link = locked.get(target.tripId);
+              if (!link) {
+                link = await this.lockTargetTrip(tx, userId, target);
+                locked.set(target.tripId, link);
+              }
+              const amounts = await this.manual.convert(tx, link.trip, {
+                ...values,
+                providerKrwAmount: null,
+              });
+              entryId = await this.manual.insertWalletTransaction(tx, {
+                userId,
+                amounts,
+                merchantName,
+                clientRequestId: null,
+                origin,
+              });
+              await this.insertPending(
+                tx,
+                link,
+                amounts,
+                merchantName,
+                entryId,
+                now,
+              );
+            }
+            results[index] = {
+              entryId,
+              created: true,
+              linked: target !== null,
+            };
+          } catch (error) {
+            // 항목별 검사 오류(원화 상한 등)는 그 항목 경로로 알린다
+            if (error instanceof ValidationFailedError) {
+              const fields = (error.details?.fields ?? []) as FieldError[];
+              throw new ValidationFailedError(
+                fields.map((f) => ({ ...f, path: `items.${index}.${f.path}` })),
+              );
+            }
+            throw error;
+          }
+        }
+        return results;
+      },
+      // 200건까지 한 번에 넣는다(여정 잠금은 여정마다 한 번)
+      { maxWait: 10_000, timeout: 60_000 },
+    );
   }
 
   private findImported(userId: string, importKey: string) {

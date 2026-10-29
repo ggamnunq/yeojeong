@@ -3,6 +3,7 @@ import type {
   CreateTripExpenseRequest,
   ExpenseDetailResponse,
   ExpenseStatus,
+  FileImportProvider,
   FxPolicy,
   TripStatus,
   UpdateTripExpenseRequest,
@@ -82,6 +83,8 @@ export type WalletEntryOrigin =
       source: 'FILE_IMPORT';
       /** importKey(HMAC hex). (userId, externalRef) 부분 유니크 transactions_file_import_ref_key로 중복 저장을 막는다(W10) */
       externalRef: string;
+      /** 파일 공급자(import_provider) */
+      provider: FileImportProvider;
     };
 
 /** 거래(지갑 항목)에 넣는 매매기준율 추정. 고시가 없으면 NULL */
@@ -590,6 +593,7 @@ export class ManualExpenseService {
         }),
         ...(origin.source === 'FILE_IMPORT' && {
           externalRef: origin.externalRef,
+          importProvider: origin.provider,
         }),
         kind: 'APPROVAL',
         occurredAt,

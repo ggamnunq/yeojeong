@@ -107,7 +107,6 @@ export function ResultStep({
   rows,
   excluded,
   selected,
-  rate,
   tripName,
   saving,
   onToggle,
@@ -119,8 +118,6 @@ export function ResultStep({
   rows: readonly ResultRow[]
   excluded: ExcludedCounts
   selected: ReadonlySet<string>
-  /** CNY 최신 매매기준율("약 ₩"). 없으면 원화 줄 없음 */
-  rate: string | null
   tripName: (tripId: string) => string | undefined
   saving: boolean
   onToggle: (key: string) => void
@@ -149,10 +146,11 @@ export function ResultStep({
               return (
                 <RowPick
                   key={row.txnDigest}
-                  title={<span lang="zh-CN">{row.merchantName}</span>}
+                  // bdi: 이름 안 양방향 문자가 메타·금액 줄 배치를 바꾸지 못하게(서버도 서식 문자를 지운다)
+                  title={<bdi lang="zh-CN">{row.merchantName}</bdi>}
                   meta={rowMeta(row, tripName)}
                   chip={rowChip(row)}
-                  {...rowAmounts(row, rate)}
+                  {...rowAmounts(row)}
                   checked={!disabled && selected.has(row.txnDigest)}
                   disabled={disabled}
                   onChange={() => onToggle(row.txnDigest)}

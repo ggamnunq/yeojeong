@@ -6,6 +6,7 @@ import { parseCsv, decodeText } from './csv'
 import { txnDigest } from './digest'
 import { parseStatementFile, readSheet } from './index'
 import { MAX_FILE_BYTES, StatementFileError, type StatementItem } from './types'
+import { MAX_ENTRY_BYTES } from './xlsx'
 import { cleanMerchant, normalizeAmount, normalizeWechatTime, parseWechatRows } from './wechat'
 
 // 위챗 거래 내역 파서. fixture는 모두 합성 데이터(실제 개인정보 없음):
@@ -170,6 +171,25 @@ describe('xlsx', () => {
     expect(result.items).toHaveLength(1)
   })
 
+  it('압축 비율이 비정상(1MB 넘게 풀리고 100배 초과)이면 거절, 항목이 20MB 넘게 풀리면 tooLarge', async () => {
+    // 같은 글자 2MB → 압축하면 수 KB(수백 배)
+    const bomb = zipSync({
+      '[Content_Types].xml': strToU8('<Types/>'),
+      'xl/workbook.xml': strToU8('<workbook/>'),
+      'xl/worksheets/sheet1.xml': new Uint8Array(2 * 1024 * 1024).fill(0x20),
+    })
+    await expectKind(parseBytes(bomb), 'format')
+    const huge = zipSync(
+      {
+        '[Content_Types].xml': strToU8('<Types/>'),
+        'xl/workbook.xml': strToU8('<workbook/>'),
+        'xl/worksheets/sheet1.xml': new Uint8Array(MAX_ENTRY_BYTES + 1),
+      },
+      { level: 0 },
+    )
+    await expectKind(parseBytes(huge), 'tooLarge')
+  })
+
   it('DOCTYPE·ENTITY가 있는 XML은 거절(엔티티 확장 방어)', async () => {
     const bytes = zipSync({
       '[Content_Types].xml': strToU8('<Types/>'),
@@ -255,6 +275,21 @@ describe('위챗 규칙', () => {
       row({ 交易单号: '2', 交易时间: '2026-09-03 10:00:00', 交易对方: '/', 商品: '示例-自动售货机' }),
     ])
     expect(result.items.map((i) => i.merchantName)).toEqual(['示例-自动售货机', '示例-面馆'])
+  })
+
+  it('칸: BOM·앞뒤 공백·탭 제거, 1,000자 넘는 칸은 잘라 읽는다(긴 공백 칸도 빠르게)', async () => {
+    const started = performance.now()
+    const result = await parse([
+      row({ 交易单号: '\uFEFF 77 \t', 交易对方: `\uFEFF示例-面馆${' '.repeat(50_000)}x`, '金额(元)': `¥5.00${'\t'.repeat(10_000)}` }),
+    ])
+    expect(performance.now() - started).toBeLessThan(1_000)
+    expect(result.items[0]).toMatchObject({ merchantName: '示例-面馆', amount: '5.00' })
+    expect(result.items[0].txnDigest).toBe(await txnDigest('WECHAT', '77'))
+  })
+
+  it('가맹점: 양방향 제어·폭 없는 공백은 지우고 ZWJ 이모지는 남긴다', async () => {
+    const result = await parse([row({ 交易对方: '\u202e示例\u200b面馆\u202c 👨\u200d🍳' })])
+    expect(result.items[0].merchantName).toBe('示例面馆 👨\u200d🍳')
   })
 
   it('헤더가 없으면 format', async () => {

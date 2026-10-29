@@ -8,6 +8,18 @@ export type FileImportProvider = (typeof FILE_IMPORT_PROVIDER_VALUES)[number];
 
 /** 한 번에 저장할 수 있는 최대 건수(POST /api/wallet/entries/file-import). 더 많으면 화면이 나눠 보낸다(요청 본문 100kb 안) */
 export const FILE_IMPORT_ITEMS_MAX = 200;
+/** 사용자당 저장 요청 제한: WINDOW_SECONDS초에 COUNT회(넘으면 429 FILE_IMPORT_RATE_LIMITED) */
+export const FILE_IMPORT_SAVE_LIMIT = { COUNT: 5, WINDOW_SECONDS: 60 } as const;
+/** 사용자당 KST 하루 새로 저장할 수 있는 건수(이미 있던 거래는 세지 않는다). 넘으면 429 FILE_IMPORT_DAILY_LIMIT, 요청 전체를 저장하지 않는다 */
+export const FILE_IMPORT_DAILY_MAX = 2000;
+
+/** 429 FILE_IMPORT_RATE_LIMITED · FILE_IMPORT_DAILY_LIMIT details */
+export interface FileImportRetryDetails {
+  /** 다시 할 수 있는 시각(ISO 8601 UTC) */
+  retryAfter: string;
+  retryAfterSec: number;
+}
+
 /** 한 번에 확인할 수 있는 최대 건수(POST /api/wallet/entries/file-import/check). 더 많으면 화면이 나눠 보낸다 */
 export const FILE_IMPORT_CHECK_MAX = 500;
 /**
@@ -53,21 +65,17 @@ export interface FileImportResponse {
 }
 
 /**
- * POST /api/wallet/entries/file-import/check — 결과 화면(HF-68)의 "추가됨"·기본 선택 근거.
- * 거래 번호는 다이제스트(txnDigest)로만 보내고 서버는 HMAC으로만 비교한다(저장·로그 없음). 금액·가맹점은 보내지 않는다
+ * POST /api/wallet/entries/file-import/check — 결과 화면(HF-68)의 "추가됨" 근거(명세 4-13-7).
+ * **대조값(txnDigest) 배열만** 보낸다 — 일시·금액·가맹점은 보내지 않는다(고르지 않은 행의 정보가 서버로 가지 않게).
+ * 서버는 HMAC으로 대조만 하고 저장·로그하지 않는다. 자동 연결될 여정(기본 선택)은 화면이 내 여정 목록으로 정한다
  */
 export interface FileImportCheckRequest {
   provider: FileImportProvider;
-  /** 1~FILE_IMPORT_CHECK_MAX건 */
-  items: { txnDigest: string; occurredAt: string }[];
+  /** 1~FILE_IMPORT_CHECK_MAX개, FILE_IMPORT_TXN_DIGEST_PATTERN */
+  txnDigests: string[];
 }
 
 export interface FileImportCheckResponse {
-  /** 요청 순서대로 */
-  items: {
-    /** 이미 지갑에 저장한 거래 → "추가됨"(비활성) */
-    imported: boolean;
-    /** 저장하면 자동 연결될 여정(직접 입력과 같은 규칙 — 기간 안 예정·진행 중 여정). 없으면 null */
-    inTripId: string | null;
-  }[];
+  /** 요청 순서대로: 이미 지갑에 저장한 거래면 true → "추가됨"(비활성) */
+  imported: boolean[];
 }

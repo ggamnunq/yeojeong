@@ -1,5 +1,9 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import type { TripFxView, UpdateFxPolicyResponse } from '@yeojeong/shared';
+import type {
+  FxSpotSeriesResponse,
+  TripFxView,
+  UpdateFxPolicyResponse,
+} from '@yeojeong/shared';
 import request from 'supertest';
 import { FxPolicyService } from './../src/fx/fx-policy.service.js';
 import {
@@ -234,6 +238,41 @@ describe.skipIf(!withDb)('FX (e2e, real DB)', () => {
         .code,
     ).toBe('FX_RATE_UNAVAILABLE');
     await get('?base=QQQ').expect(503);
+  });
+
+  it('GET /api/fx/spot-series returns the notices in [from, to] plus the one before, oldest first (W10 "약 ₩" by payment time)', async () => {
+    const me = auth.addUser();
+    const get = (query: string) =>
+      request(server())
+        .get(`/api/fx/spot-series${query}`)
+        .set(auth.headers(me));
+    // 01.02만 기간 안, 01.01은 직전 고시
+    const res = (
+      await get(`?base=${TEST_CURRENCY}&from=2031-01-02&to=2031-01-03`).expect(
+        200,
+      )
+    ).body as FxSpotSeriesResponse;
+    expect(res.currency).toBe(TEST_CURRENCY);
+    expect(res.rates.map((r) => [r.rate, r.effectiveAt])).toEqual([
+      ['10.000000', '2031-01-01T09:00:00+09:00'],
+      ['12.000000', '2031-01-02T09:00:00+09:00'],
+    ]);
+    // 시작 전 고시가 없으면 기간 안 것만
+    const early = (
+      await get(`?base=${TEST_CURRENCY}&from=2030-12-01&to=2031-01-01`).expect(
+        200,
+      )
+    ).body as FxSpotSeriesResponse;
+    expect(early.rates.map((r) => r.rate)).toEqual(['10.000000']);
+    // 400일 넘는 기간 · 거꾸로 · 형식 오류는 400
+    await get(`?base=${TEST_CURRENCY}&from=2030-01-01&to=2031-02-05`).expect(
+      400,
+    );
+    await get(`?base=${TEST_CURRENCY}&from=2031-01-03&to=2031-01-02`).expect(
+      400,
+    );
+    await get(`?base=KRW&from=2031-01-01&to=2031-01-02`).expect(400);
+    await get(`?base=${TEST_CURRENCY}&from=2031-1-1&to=2031-01-02`).expect(400);
   });
 
   it('switches to a fixed rate, recalculates shares, logs and notifies (FR-807·808 #2)', async () => {

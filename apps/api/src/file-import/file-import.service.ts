@@ -1,15 +1,18 @@
-import { Injectable } from '@nestjs/common';
-import type {
-  FieldError,
-  FileImportCheckRequest,
-  FileImportCheckResponse,
-  FileImportProvider,
-  FileImportRequest,
-  FileImportResponse,
+import { Injectable, Logger } from '@nestjs/common';
+import {
+  FILE_IMPORT_DAILY_MAX,
+  type FieldError,
+  type FileImportCheckRequest,
+  type FileImportCheckResponse,
+  type FileImportProvider,
+  type FileImportRequest,
+  type FileImportResponse,
 } from '@yeojeong/shared';
 import { AuditService } from '../audit/index.js';
 import { ImportKeyHasher } from '../card-import/import-key.js';
-import { ValidationFailedError } from '../common/errors/index.js';
+import { retryDetails } from '../card-import/card-import-limits.js';
+import { AppException, ValidationFailedError } from '../common/errors/index.js';
+import { kstDate, kstDayRange } from '../expenses/kst.js';
 import {
   manualAmountError,
   memoError,
@@ -36,6 +39,8 @@ export const fileImportKeyMaterial = (
  */
 @Injectable()
 export class FileImportService {
+  private readonly logger = new Logger(FileImportService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly wallet: WalletService,
@@ -86,68 +91,81 @@ export class FileImportService {
     });
     if (errors.length > 0) throw new ValidationFailedError(errors);
 
-    const items: FileImportResponse['items'] = [];
+    // 한 트랜잭션으로 저장한다(하나라도 실패하면 아무것도 남지 않는다). 접근 기록은 결과와 무관하게 실제 만든 건수로 남긴다
+    const day = kstDayRange(kstDate(now));
+    let items: FileImportResponse['items'] = [];
     let linked = 0;
-    for (const item of body.items) {
-      const saved = await this.wallet.saveFileImported(
+    let outcome = 'FAILED';
+    try {
+      const saved = await this.wallet.saveFileImportBatch(
         userId,
-        {
+        body.provider,
+        body.items.map((item) => ({
           importKey: this.importKeyOf(body.provider, userId, item.txnDigest),
           amount: item.amount,
           currency: item.currency,
           occurredAt: new Date(item.occurredAt),
           merchantName: item.merchantName,
+        })),
+        {
+          dailyLimit: FILE_IMPORT_DAILY_MAX,
+          dayStart: day.gte,
+          onDailyLimit: () =>
+            AppException.of('FILE_IMPORT_DAILY_LIMIT', {
+              details: { ...retryDetails(day.lt, now) },
+            }),
         },
         now,
       );
-      if (saved.linked) linked += 1;
-      items.push({ created: saved.created, entryId: saved.entryId });
+      items = saved.map((s) => ({ created: s.created, entryId: s.entryId }));
+      linked = saved.filter((s) => s.created && s.linked).length;
+      outcome = 'OK';
+    } finally {
+      // 접근 기록: 공급자·건수·결과만(금액·가맹점·거래 번호 없음). 실패 경로에서는 기록 실패가 원래 오류를 가리지 않게 한다
+      await this.audit
+        .record({
+          userId,
+          action: 'IMPORT_FILE_ENTRIES',
+          resourceType: 'USER',
+          resourceId: userId,
+          details: {
+            provider: body.provider,
+            requested: body.items.length,
+            created: items.filter((i) => i.created).length,
+            linked,
+            outcome,
+          },
+        })
+        .catch((error: unknown) => {
+          if (outcome === 'OK') throw error;
+          this.logger.error('파일 가져오기 실패 접근 기록을 남기지 못했습니다');
+        });
     }
     const created = items.filter((i) => i.created).length;
-    // 접근 기록: 공급자·건수만(금액·가맹점·거래 번호 없음)
-    await this.audit.record({
-      userId,
-      action: 'IMPORT_FILE_ENTRIES',
-      resourceType: 'USER',
-      resourceId: userId,
-      details: {
-        provider: body.provider,
-        requested: body.items.length,
-        created,
-        linked,
-      },
-    });
     return { items, created, skipped: items.length - created, linked };
   }
 
-  /** 결과 화면(HF-68)용: 이미 저장한 거래인지(importKey 비교) · 저장하면 자동 연결될 여정. DB는 두 번만 읽는다 */
+  /**
+   * 결과 화면(HF-68)용: 이미 저장한 거래인지(importKey 비교)만 답한다. 받는 것은 대조값(txnDigest)뿐이고
+   * 저장·로그하지 않는다(접근 기록도 남기지 않는다 — 요청 로그에는 경로·상태만). DB는 한 번 읽는다
+   */
   async check(
     userId: string,
     body: FileImportCheckRequest,
   ): Promise<FileImportCheckResponse> {
-    const keys = body.items.map((item) =>
-      this.importKeyOf(body.provider, userId, item.txnDigest),
+    const keys = body.txnDigests.map((digest) =>
+      this.importKeyOf(body.provider, userId, digest),
     );
-    const [rows, trips] = await Promise.all([
-      this.prisma.transaction.findMany({
-        where: {
-          userId,
-          source: 'FILE_IMPORT',
-          externalRef: { in: [...new Set(keys)] },
-        },
-        select: { externalRef: true },
-      }),
-      this.wallet.suggestedTripIds(
+    const rows = await this.prisma.transaction.findMany({
+      where: {
         userId,
-        body.items.map((item) => new Date(item.occurredAt)),
-      ),
-    ]);
+        source: 'FILE_IMPORT',
+        importProvider: body.provider,
+        externalRef: { in: [...new Set(keys)] },
+      },
+      select: { externalRef: true },
+    });
     const imported = new Set(rows.map((r) => r.externalRef));
-    return {
-      items: keys.map((key, index) => ({
-        imported: imported.has(key),
-        inTripId: trips[index] ?? null,
-      })),
-    };
+    return { imported: keys.map((key) => imported.has(key)) };
   }
 }

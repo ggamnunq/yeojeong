@@ -93,36 +93,25 @@ export class FileImportDto implements FileImportRequest {
   items: FileImportItemDto[];
 }
 
-export class FileImportCheckItemDto {
-  @ApiProperty({ description: 'FileImportItem.txnDigest와 같다' })
-  @IsString({ message: INVALID_ITEM })
-  @Matches(TXN_DIGEST, { message: INVALID_ITEM })
-  txnDigest: string;
-
-  @ApiProperty({ example: '2026-10-01T12:34:56+08:00' })
-  @IsString({ message: '결제 시각을 다시 확인해 주세요' })
-  @IsISO8601({ strict: true }, { message: '결제 시각을 다시 확인해 주세요' })
-  @Matches(WITH_OFFSET, { message: '결제 시각을 다시 확인해 주세요' })
-  occurredAt: string;
-}
-
 export class FileImportCheckDto implements FileImportCheckRequest {
   @ApiProperty({ enum: FILE_IMPORT_PROVIDER_VALUES, example: 'WECHAT' })
   @IsIn(FILE_IMPORT_PROVIDER_VALUES, { message: '지원하지 않는 파일이에요' })
   provider: FileImportProvider;
 
   @ApiProperty({
-    type: [FileImportCheckItemDto],
+    type: [String],
     maxItems: FILE_IMPORT_CHECK_MAX,
+    description:
+      'FileImportItem.txnDigest(SHA-256 hex) 배열만. 일시·금액·가맹점은 받지 않는다(명세 4-13-7)',
   })
   @IsArray({ message: '확인할 결제가 없어요' })
   @ArrayMinSize(1, { message: '확인할 결제가 없어요' })
   @ArrayMaxSize(FILE_IMPORT_CHECK_MAX, {
     message: `한 번에 ${FILE_IMPORT_CHECK_MAX}건까지 확인할 수 있어요`,
   })
-  @ValidateNested({ each: true })
-  @Type(() => FileImportCheckItemDto)
-  items: FileImportCheckItemDto[];
+  @IsString({ each: true, message: INVALID_ITEM })
+  @Matches(TXN_DIGEST, { each: true, message: INVALID_ITEM })
+  txnDigests: string[];
 }
 
 // ─── 응답 ───
@@ -149,23 +138,10 @@ export class FileImportResponseDto implements FileImportResponse {
   linked: number;
 }
 
-export class FileImportCheckResultDto {
-  @ApiProperty({ description: '이미 지갑에 저장한 거래("추가됨")' })
-  imported: boolean;
-
-  @ApiProperty({
-    type: String,
-    format: 'uuid',
-    nullable: true,
-    description: '저장하면 자동 연결될 여정(없으면 null)',
-  })
-  inTripId: string | null;
-}
-
 export class FileImportCheckResponseDto implements FileImportCheckResponse {
   @ApiProperty({
-    type: [FileImportCheckResultDto],
-    description: '요청 순서대로',
+    type: [Boolean],
+    description: '요청 순서대로. true = 이미 지갑에 저장한 거래("추가됨")',
   })
-  items: FileImportCheckResultDto[];
+  imported: boolean[];
 }

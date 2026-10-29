@@ -1,8 +1,12 @@
 import type { ConfigService } from '@nestjs/config';
-import type { FileImportItem, FieldError } from '@yeojeong/shared';
+import {
+  FILE_IMPORT_DAILY_MAX,
+  type FileImportItem,
+  type FieldError,
+} from '@yeojeong/shared';
 import type { AuditService } from '../audit/index.js';
 import { ImportKeyHasher } from '../card-import/import-key.js';
-import { ValidationFailedError } from '../common/errors/index.js';
+import { AppException, ValidationFailedError } from '../common/errors/index.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { WalletService } from '../wallet/wallet.service.js';
 import {
@@ -36,26 +40,32 @@ const item = (over: Partial<FileImportItem> = {}): FileImportItem => ({
 function setup(existing: Set<string> = new Set()) {
   const saved: { importKey: string; occurredAt: Date; merchantName: string }[] =
     [];
+  let dailyCount = 0;
   const wallet = {
-    saveFileImported: vi.fn(
+    saveFileImportBatch: vi.fn(
       (
         _userId: string,
-        input: { importKey: string; occurredAt: Date; merchantName: string },
+        _provider: string,
+        inputs: { importKey: string; occurredAt: Date; merchantName: string }[],
+        limit: { dailyLimit: number; onDailyLimit: () => Error },
       ) => {
-        saved.push(input);
-        const created = !existing.has(input.importKey);
-        existing.add(input.importKey);
-        return Promise.resolve({
-          entryId: `entry-${saved.length}`,
-          created,
-          linked: created,
-        });
+        const fresh = inputs.filter((i) => !existing.has(i.importKey));
+        if (fresh.length > 0 && dailyCount + fresh.length > limit.dailyLimit)
+          return Promise.reject(limit.onDailyLimit());
+        dailyCount += fresh.length;
+        return Promise.resolve(
+          inputs.map((input) => {
+            saved.push(input);
+            const created = !existing.has(input.importKey);
+            existing.add(input.importKey);
+            return {
+              entryId: `entry-${saved.length}`,
+              created,
+              linked: created,
+            };
+          }),
+        );
       },
-    ),
-    suggestedTripIds: vi.fn((_userId: string, times: readonly Date[]) =>
-      Promise.resolve(
-        times.map((t) => (t.getUTCDate() === 28 ? 'trip-1' : null)),
-      ),
     ),
   };
   const prisma = {
@@ -77,7 +87,16 @@ function setup(existing: Set<string> = new Set()) {
     hasher,
     audit as unknown as AuditService,
   );
-  return { service, wallet, prisma, audit, saved };
+  return {
+    service,
+    wallet,
+    prisma,
+    audit,
+    saved,
+    setDaily: (n: number) => {
+      dailyCount = n;
+    },
+  };
 }
 
 const fieldErrors = async (
@@ -140,7 +159,13 @@ describe('FileImportService (W10)', () => {
     );
     expect(details[0]).toMatchObject({
       action: 'IMPORT_FILE_ENTRIES',
-      details: { provider: 'WECHAT', requested: 2, created: 2, linked: 2 },
+      details: {
+        provider: 'WECHAT',
+        requested: 2,
+        created: 2,
+        linked: 2,
+        outcome: 'OK',
+      },
     });
     expect(JSON.stringify(details)).not.toMatch(/128|瑞幸|aaaa/);
   });
@@ -186,35 +211,77 @@ describe('FileImportService (W10)', () => {
     // 오류에 값(다이제스트·가맹점)을 되돌려 주지 않는다
     expect(JSON.stringify(errors)).not.toContain(DIGEST_A);
     expect(JSON.stringify(errors)).not.toContain('가'.repeat(41));
-    expect(wallet.saveFileImported).not.toHaveBeenCalled();
+    expect(wallet.saveFileImportBatch).not.toHaveBeenCalled();
   });
 
-  it('check: marks already-saved digests and previews the auto-linked trip in request order', async () => {
-    const { service, prisma } = setup(
+  it('daily cap: 429 FILE_IMPORT_DAILY_LIMIT with retryAfter = next KST midnight, nothing saved, audit records the failure', async () => {
+    const { service, audit, saved, setDaily } = setup();
+    setDaily(FILE_IMPORT_DAILY_MAX - 1);
+    const error = await service
+      .import(
+        ME,
+        { provider: 'WECHAT', items: [item(), item({ txnDigest: DIGEST_B })] },
+        NOW,
+      )
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AppException);
+    const body = (error as AppException).getResponse() as {
+      code: string;
+      details: { retryAfter: string; retryAfterSec: number };
+    };
+    expect(body.code).toBe('FILE_IMPORT_DAILY_LIMIT');
+    // NOW = 10.30 12:00 KST → 다음 KST 자정 = 10.30 15:00Z
+    expect(body.details.retryAfter).toBe('2026-10-30T15:00:00.000Z');
+    expect(body.details.retryAfterSec).toBe(12 * 3600);
+    expect(saved).toHaveLength(0);
+    const recorded = audit.record.mock.calls.map(
+      (c) => (c as unknown as [{ details: object }])[0].details,
+    );
+    expect(recorded).toEqual([
+      {
+        provider: 'WECHAT',
+        requested: 2,
+        created: 0,
+        linked: 0,
+        outcome: 'FAILED',
+      },
+    ]);
+    // 한 건은 아직 들어간다
+    await expect(
+      service.import(ME, { provider: 'WECHAT', items: [item()] }, NOW),
+    ).resolves.toMatchObject({ created: 1 });
+  });
+
+  it('a failing audit write never hides the original error', async () => {
+    const { service, audit, setDaily } = setup();
+    setDaily(FILE_IMPORT_DAILY_MAX);
+    audit.record.mockImplementation(() => Promise.reject(new Error('db down')));
+    const error = await service
+      .import(ME, { provider: 'WECHAT', items: [item()] }, NOW)
+      .catch((e: unknown) => e);
+    expect((error as AppException).code).toBe('FILE_IMPORT_DAILY_LIMIT');
+  });
+
+  it('check: takes digests only, answers imported in request order, scoped to the user (HMAC only)', async () => {
+    const { service, prisma, audit } = setup(
       new Set([hasher.hash(fileImportKeyMaterial('WECHAT', ME, DIGEST_B))]),
     );
     const res = await service.check(ME, {
       provider: 'WECHAT',
-      items: [
-        { txnDigest: DIGEST_A, occurredAt: '2026-10-28T12:00:00+08:00' },
-        { txnDigest: DIGEST_B, occurredAt: '2026-10-20T12:00:00+08:00' },
-      ],
+      txnDigests: [DIGEST_A, DIGEST_B],
     });
-    expect(res).toEqual({
-      items: [
-        { imported: false, inTripId: 'trip-1' },
-        { imported: true, inTripId: null },
-      ],
-    });
-    // DB에는 HMAC만 묻는다(다이제스트 원문 아님)
-    expect(
-      JSON.stringify(prisma.transaction.findMany.mock.calls),
-    ).not.toContain(DIGEST_A);
+    expect(res).toEqual({ imported: [false, true] });
+    // DB에는 HMAC만 묻는다(다이제스트 원문 아님), 공급자 컬럼으로 거른다
+    const calls = JSON.stringify(prisma.transaction.findMany.mock.calls);
+    expect(calls).not.toContain(DIGEST_A);
+    expect(calls).toContain('"importProvider":"WECHAT"');
+    // 확인은 저장·접근 기록을 남기지 않는다
+    expect(audit.record).not.toHaveBeenCalled();
     // 다른 사용자에게는 "추가됨"이 아니다
     const other = await service.check(OTHER, {
       provider: 'WECHAT',
-      items: [{ txnDigest: DIGEST_B, occurredAt: '2026-10-20T12:00:00+08:00' }],
+      txnDigests: [DIGEST_B],
     });
-    expect(other.items[0].imported).toBe(false);
+    expect(other.imported).toEqual([false]);
   });
 });

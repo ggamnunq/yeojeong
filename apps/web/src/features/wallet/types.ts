@@ -39,4 +39,4 @@ export type {
 
 // ── 환율 ─────────────────────────────────────────────────────────
 
-export type { FxRateView, TripFxView, UpdateFxPolicyRequest, UpdateFxPolicyResponse } from '@yeojeong/shared'
+export type { FxRateView, FxSpotSeriesResponse, TripFxView, UpdateFxPolicyRequest, UpdateFxPolicyResponse } from '@yeojeong/shared'
