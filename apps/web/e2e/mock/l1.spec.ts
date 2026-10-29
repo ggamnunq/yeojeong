@@ -44,7 +44,7 @@ test.describe('공지 배너(HF-60·60b)', () => {
     await page.getByRole('button', { name: '공지 닫기' }).click()
     await expect(banner).toBeHidden()
     await page.reload()
-    await expect(page.getByRole('button', { name: '결제 추가' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '결제 내역 추가' })).toBeVisible()
     await expect(page.getByRole('button', { name: NOTICE })).toBeHidden()
     await page.goto('/me')
     await expect(page.getByRole('heading', { name: '준용' })).toBeVisible()

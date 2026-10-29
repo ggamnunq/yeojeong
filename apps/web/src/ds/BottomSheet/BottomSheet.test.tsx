@@ -128,7 +128,7 @@ describe('BottomSheet', () => {
           <BottomSheet
             open={open}
             onClose={() => setOpen(false)}
-            title="결제 추가"
+            title="결제 내역 추가"
             initialFocus={initialFocus === 'ref' ? amount : initialFocus === 'selector' ? 'input[name="amount"]' : undefined}
           >
             <input aria-label="메모" />
@@ -233,7 +233,7 @@ describe('BottomSheet', () => {
         <BottomSheet
           open
           onClose={() => {}}
-          title={step === 'form' ? '결제 추가' : '나누기'}
+          title={step === 'form' ? '결제 내역 추가' : '나누기'}
           leading={step === 'split' ? 'back' : 'none'}
           onBack={() => setStep('form')}
         >

@@ -175,7 +175,7 @@ export default function PaymentsPage() {
       {/* 결제 직접 추가(WF-46): 리스트·타임라인 맨 위 한 행. 진행 중만(시작 전은 탭 잠금, 종료 후 숨김) */}
       {ongoing && (
         <RowAdd
-          label="결제 추가"
+          label="결제 내역 추가"
           className="mt-2"
           onClick={() => navigate({ pathname: paths.paymentNew(trip.tripId), search: location.search }, { state: { fromList: true } })}
         />

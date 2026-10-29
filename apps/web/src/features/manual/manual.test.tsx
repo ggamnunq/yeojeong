@@ -23,10 +23,10 @@ const button = (scope: HTMLElement, name: string | RegExp) => within(scope).getB
 const manualExpenses = () => db.expenses.filter((e) => e.origin === 'MANUAL')
 
 describe('여정 결제 추가(WF-46 · 47)', () => {
-  it('리스트 맨 위 "결제 추가" → 금액만 넣고 추가하면 전원 공동으로 바로 확정된다', async () => {
+  it('리스트 맨 위 "결제 내역 추가" → 금액만 넣고 추가하면 전원 공동으로 바로 확정된다', async () => {
     renderApp(PAYMENTS)
-    fireEvent.click(await screen.findByRole('button', { name: '결제 추가' }))
-    const form = await sheet('결제 추가')
+    fireEvent.click(await screen.findByRole('button', { name: '결제 내역 추가' }))
+    const form = await sheet('결제 내역 추가')
     const add = button(form, '추가')
     expect(add.hasAttribute('disabled') || add.getAttribute('aria-disabled') === 'true').toBe(true)
     typeAmount(form, '1200')
@@ -56,8 +56,8 @@ describe('여정 결제 추가(WF-46 · 47)', () => {
     }
     try {
       renderApp(PAYMENTS)
-      fireEvent.click(await screen.findByRole('button', { name: '결제 추가' }))
-      const form = await sheet('결제 추가')
+      fireEvent.click(await screen.findByRole('button', { name: '결제 내역 추가' }))
+      const form = await sheet('결제 내역 추가')
       const amount = within(form).getByRole('textbox', { name: '금액' }) as HTMLInputElement
       await waitFor(() => expect(document.activeElement).toBe(amount))
       expect(amount.inputMode).toBe('numeric')
@@ -69,7 +69,7 @@ describe('여정 결제 추가(WF-46 · 47)', () => {
 
   it('나누기에서 나만 남기면 🔒 개인 — 요약 "1인 ₩3,676 · 결제자 +2원"', async () => {
     renderApp(`${PAYMENTS}/new`)
-    const form = await sheet('결제 추가')
+    const form = await sheet('결제 내역 추가')
     typeAmount(form, '1200')
     fireEvent.click(button(form, /^나누기/))
     const split = await sheet('나누기')
@@ -80,7 +80,7 @@ describe('여정 결제 추가(WF-46 · 47)', () => {
     fireEvent.click(button(split, /태현/))
     expect(within(split).getByText('개인')).toBeTruthy()
     fireEvent.click(button(split, '완료'))
-    const back = await sheet('결제 추가')
+    const back = await sheet('결제 내역 추가')
     expect(within(back).getByText('개인')).toBeTruthy()
     fireEvent.click(button(back, '추가'))
     await waitFor(() => expect(manualExpenses()[0]?.status).toBe('PERSONAL'))
@@ -88,21 +88,21 @@ describe('여정 결제 추가(WF-46 · 47)', () => {
 
   it('결제자를 민지로 바꾸면 지갑 토글이 사라지고, 나누기를 민지 혼자로 두면 "완료"가 막힌다', async () => {
     renderApp(`${PAYMENTS}/new`)
-    const form = await sheet('결제 추가')
+    const form = await sheet('결제 내역 추가')
     fireEvent.click(button(form, /^결제자/))
     const payer = await sheet('결제자')
     fireEvent.click(within(payer).getByRole('radio', { name: /민지/ }))
-    const back = await sheet('결제 추가')
+    const back = await sheet('결제 내역 추가')
     expect(within(back).queryByRole('switch', { name: '내 지갑에도 기록' })).toBeNull()
     expect(button(back, /^결제자/).textContent).toContain('민지')
     // 다시 나로 돌리면 토글이 기본(켜짐)으로 돌아온다
     fireEvent.click(button(back, /^결제자/))
     fireEvent.click(within(await sheet('결제자')).getByRole('radio', { name: /^나/ }))
-    const mine = await sheet('결제 추가')
+    const mine = await sheet('결제 내역 추가')
     expect(within(mine).getByRole('switch', { name: '내 지갑에도 기록' }).getAttribute('aria-checked')).toBe('true')
     fireEvent.click(button(mine, /^결제자/))
     fireEvent.click(within(await sheet('결제자')).getByRole('radio', { name: /민지/ }))
-    const back2 = await sheet('결제 추가')
+    const back2 = await sheet('결제 내역 추가')
     expect(button(back2, /^결제자/).textContent).toContain('민지')
     fireEvent.click(button(back2, /^나누기/))
     const split = await sheet('나누기')
@@ -113,7 +113,7 @@ describe('여정 결제 추가(WF-46 · 47)', () => {
 
   it('통화 칩: JPY ↔ KRW만, JPY는 소수점이 입력되지 않는다 · 원화 1억 초과면 막고 한 줄 안내', async () => {
     renderApp(`${PAYMENTS}/new`)
-    const form = await sheet('결제 추가')
+    const form = await sheet('결제 내역 추가')
     typeAmount(form, '12.5')
     // 소수점부터는 입력되지 않는다(DS InputAmount 규칙)
     expect((within(form).getByRole('textbox', { name: '금액' }) as HTMLInputElement).value).toBe('12')
@@ -126,10 +126,10 @@ describe('여정 결제 추가(WF-46 · 47)', () => {
     expect(add.hasAttribute('disabled') || add.getAttribute('aria-disabled') === 'true').toBe(true)
   })
 
-  it('종료된 여정에는 "결제 추가" 행이 없다', async () => {
+  it('종료된 여정에는 "결제 내역 추가" 행이 없다', async () => {
     renderApp(`/trips/${TRIP.jeju}/payments`)
     await screen.findAllByRole('region')
-    expect(screen.queryByRole('button', { name: '결제 추가' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '결제 내역 추가' })).toBeNull()
   })
 })
 
@@ -228,19 +228,19 @@ describe('내 지갑(WF-49 · 48 · 50)', () => {
     await waitFor(() => expect(row.textContent).toContain('약 ₩17,260'))
   })
 
-  it('빈 상태: "결제 기록이 없어요" + 하단 "+ 결제 추가"', async () => {
+  it('빈 상태: "결제 기록이 없어요" + 하단 "+ 결제 내역 추가"', async () => {
     db.walletEntries = []
     renderApp('/wallet')
     expect(await screen.findByText('결제 기록이 없어요')).toBeTruthy()
-    // HF-49b: "+ 결제 추가"(+ 아이콘)
-    expect(screen.getByRole('button', { name: '결제 추가' }).querySelector('svg')).not.toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '결제 추가' }))
-    expect(await sheet('결제 추가')).toBeTruthy()
+    // HF-49b: "+ 결제 내역 추가"(+ 아이콘)
+    expect(screen.getByRole('button', { name: '결제 내역 추가' }).querySelector('svg')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '결제 내역 추가' }))
+    expect(await sheet('결제 내역 추가')).toBeTruthy()
   })
 
   it('추가: 여정 행이 추천 여정(오사카), 칩 JPY · 부산을 고르면 KRW 고정 · "추가 안 함"이면 JPY로 돌아온다', async () => {
     renderApp('/wallet/new')
-    const form = await sheet('결제 추가')
+    const form = await sheet('결제 내역 추가')
     await waitFor(() => expect(button(form, /^여정/).textContent).toContain('오사카 3박 4일'))
     expect(button(form, /통화 바꾸기, 지금 JPY/)).toBeTruthy()
     typeAmount(form, '1280')
@@ -248,36 +248,36 @@ describe('내 지갑(WF-49 · 48 · 50)', () => {
     const pick = await sheet('여정')
     expect(within(pick).getByText('진행 중 · 11.12 – 11.15')).toBeTruthy()
     fireEvent.click(within(pick).getByRole('radio', { name: /부산 연말 모임/ }))
-    const back = await sheet('결제 추가')
+    const back = await sheet('결제 내역 추가')
     expect(within(back).getByText('KRW')).toBeTruthy()
     expect(within(back).queryByRole('button', { name: /통화 바꾸기/ })).toBeNull()
     fireEvent.click(button(back, /^여정/))
     fireEvent.click(within(await sheet('여정')).getByRole('radio', { name: '추가 안 함' }))
-    const again = await sheet('결제 추가')
+    const again = await sheet('결제 내역 추가')
     expect(button(again, /^여정/).textContent).toContain('추가 안 함')
     expect(button(again, /통화 바꾸기, 지금 JPY/)).toBeTruthy()
   })
 
   it('이미 고른 여정·"추가 안 함"을 다시 눌러도 폼으로 돌아간다(HF-48b)', async () => {
     renderApp('/wallet/new')
-    const form = await sheet('결제 추가')
+    const form = await sheet('결제 내역 추가')
     await waitFor(() => expect(button(form, /^여정/).textContent).toContain('오사카 3박 4일'))
     fireEvent.click(button(form, /^여정/))
     fireEvent.click(within(await sheet('여정')).getByRole('radio', { name: /오사카 3박 4일/ }))
-    const back = await sheet('결제 추가')
+    const back = await sheet('결제 내역 추가')
     expect(button(back, /^여정/).textContent).toContain('오사카 3박 4일')
     fireEvent.click(button(back, /^여정/))
     fireEvent.click(within(await sheet('여정')).getByRole('radio', { name: '추가 안 함' }))
-    const none = await sheet('결제 추가')
+    const none = await sheet('결제 내역 추가')
     fireEvent.click(button(none, /^여정/))
     fireEvent.click(within(await sheet('여정')).getByRole('radio', { name: '추가 안 함' }))
-    const again = await sheet('결제 추가')
+    const again = await sheet('결제 내역 추가')
     expect(button(again, /^여정/).textContent).toContain('추가 안 함')
   })
 
   it('추가하면 오사카에 미확정으로 들어간다', async () => {
     renderApp('/wallet/new')
-    const form = await sheet('결제 추가')
+    const form = await sheet('결제 내역 추가')
     await waitFor(() => expect(button(form, /^여정/).textContent).toContain('오사카 3박 4일'))
     typeAmount(form, '1280')
     fireEvent.click(button(form, '추가'))

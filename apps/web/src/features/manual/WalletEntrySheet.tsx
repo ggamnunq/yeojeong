@@ -258,7 +258,7 @@ function WalletEntryForm({ entry, onClose }: { entry?: WalletEntry; onClose: () 
       }
     : { label: '추가', onClick: () => valid && !busy && !tripLoading && create.mutate(), state: create.isPending ? 'loading' : valid && !tripLoading ? 'default' : 'disabled' }
 
-  const titles: Record<Step, string> = { form: editing ? '결제 수정' : '결제 추가', trip: '여정', date: '날짜' }
+  const titles: Record<Step, string> = { form: editing ? '결제 수정' : '결제 내역 추가', trip: '여정', date: '날짜' }
   // 날짜 단계는 시트 CTA를 끄고 SheetContentDateTime의 "확인"을 쓴다(HF-46d)
   const cta = step === 'form' ? formCta : undefined
 

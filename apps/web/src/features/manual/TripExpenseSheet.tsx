@@ -311,7 +311,7 @@ function TripExpenseForm({ trip, detail, onClose, onDeleted }: FormProps) {
     disabled: member.isLeft && !draft.includes(member.membershipId),
   }))
 
-  const titles: Record<Step, string> = { form: editing ? '결제 수정' : '결제 추가', split: '나누기', payer: '결제자', date: '날짜' }
+  const titles: Record<Step, string> = { form: editing ? '결제 수정' : '결제 내역 추가', split: '나누기', payer: '결제자', date: '날짜' }
   const cta: BottomSheetCtaValue | undefined =
     step === 'form'
       ? formCta

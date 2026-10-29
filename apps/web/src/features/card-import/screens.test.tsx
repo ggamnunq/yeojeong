@@ -499,7 +499,7 @@ describe('WF-51 재동의(약관 MAJOR 버전 상승)', () => {
 describe('수동 결제 날짜 단계(HF-46d · SheetContent/DateTime)', () => {
   it('typing the hour one key at a time keeps "15" (not "01") — HF-48', async () => {
     renderApp('/wallet/new')
-    const sheet = await screen.findByRole('dialog', { name: '결제 추가' })
+    const sheet = await screen.findByRole('dialog', { name: '결제 내역 추가' })
     fireEvent.click(within(sheet).getByRole('button', { name: /^날짜/ }))
     const step = await screen.findByRole('dialog', { name: '날짜' })
     fireEvent.click(within(step).getByRole('button', { name: /11월 12일/ }))
@@ -509,13 +509,13 @@ describe('수동 결제 날짜 단계(HF-46d · SheetContent/DateTime)', () => {
     expect(hour.value).toBe('15')
     expect(minute.value).toBe('20')
     fireEvent.click(within(step).getByRole('button', { name: '확인' }))
-    const form = await screen.findByRole('dialog', { name: '결제 추가' })
+    const form = await screen.findByRole('dialog', { name: '결제 내역 추가' })
     expect(within(form).getByRole('button', { name: /^날짜/ }).textContent).toContain('11.12 15:20')
   })
 
   it('picks a date and time with the DS19 sheet', async () => {
     renderApp('/wallet/new')
-    const sheet = await screen.findByRole('dialog', { name: '결제 추가' })
+    const sheet = await screen.findByRole('dialog', { name: '결제 내역 추가' })
     fireEvent.click(within(sheet).getByRole('button', { name: /^날짜/ }))
     const step = await screen.findByRole('dialog', { name: '날짜' })
     // 미래(내일)는 고를 수 없다
@@ -524,7 +524,7 @@ describe('수동 결제 날짜 단계(HF-46d · SheetContent/DateTime)', () => {
     fireEvent.change(within(step).getByRole('textbox', { name: '시' }), { target: { value: '09' } })
     fireEvent.change(within(step).getByRole('textbox', { name: '분' }), { target: { value: '05' } })
     fireEvent.click(within(step).getByRole('button', { name: '확인' }))
-    const form = await screen.findByRole('dialog', { name: '결제 추가' })
+    const form = await screen.findByRole('dialog', { name: '결제 내역 추가' })
     expect(within(form).getByRole('button', { name: /^날짜/ }).textContent).toContain('11.12 09:05')
   })
 })

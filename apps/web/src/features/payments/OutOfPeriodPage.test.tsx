@@ -26,7 +26,7 @@ const rows = () => within(screen.getByRole('list', { name: '기간 외 결제' }
 describe('기간 외 결제 추가(HF-43)', () => {
   it('여정 전 후보 날짜순 → 0건 추가 비활성 → 2건 추가 → 결제내역에 미확정 · 여정 전', async () => {
     const { router } = renderApp(PAGE)
-    expect(await screen.findByRole('heading', { name: '기간 외 결제 추가' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '기간 외 결제 내역 추가' })).toBeTruthy()
     const list = await screen.findByRole('list', { name: '기간 외 결제' })
     expect(within(list).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
       '아고다 · 오리엔탈 익스프레스 난바10.20₩486,000',
@@ -54,7 +54,7 @@ describe('기간 외 결제 추가(HF-43)', () => {
     fireEvent.click(rows()[3])
     fireEvent.click(screen.getByRole('button', { name: '1건 추가' }))
     await screen.findByText('1건 추가했어요')
-    fireEvent.click(await screen.findByRole('button', { name: '기간 외 결제 추가' }))
+    fireEvent.click(await screen.findByRole('button', { name: '기간 외 결제 내역 추가' }))
     await screen.findByRole('list', { name: '기간 외 결제' })
     await waitFor(() => expect(rows()).toHaveLength(3))
     expect(screen.queryByText('인천공항 장기주차')).toBeNull()
