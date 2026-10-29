@@ -1,6 +1,13 @@
 import type { CardCancelState } from '@yeojeong/shared';
-import { MANUAL_MEMO_MAX_LENGTH } from '@yeojeong/shared';
-import { cleanMemo, merchantNameOf } from '../expenses/manual-input.js';
+import {
+  MANUAL_DEFAULT_MERCHANT_NAME,
+  MANUAL_MEMO_MAX_LENGTH,
+} from '@yeojeong/shared';
+import {
+  cleanMemo,
+  cleanMemoForImportKeyV1,
+  merchantNameOf,
+} from '../expenses/manual-input.js';
 import { formatScaled, krwAmountOf, parseScaled } from '../fx/convert.js';
 
 // CODEF 개인 카드 승인내역(KR_CD_P_002) 응답 → 화면에 보낼 최소 필드. DB·시계·네트워크 없는 순수 함수(단위 테스트 대상).
@@ -73,6 +80,8 @@ interface ParsedRow {
   cardLast4: string | null;
   approvalNo: string;
   merchantName: string;
+  /** importKey 재료(승인번호 없는 줄만) — 옛 정리 규칙. 응답에 넣지 않는다 */
+  merchantKeyMaterial: string;
 }
 
 const text = (value: unknown) =>
@@ -117,7 +126,23 @@ function parseKst(date: string, time: string): Date | null {
 
 /** 정리 → 40자 자르기(지갑 메모 규칙). 비면 "결제" */
 export function merchantNameFor(raw: unknown): string {
-  const cleaned = cleanMemo(text(raw));
+  return merchantNameOf(first40(cleanMemo(text(raw))));
+}
+
+/**
+ * importKey 재료용 가맹점(승인번호 없는 줄만): **옛 정리 규칙 고정**(cleanMemoForImportKeyV1 — 서식 문자를 지우지 않는다).
+ * 표시 이름(merchantNameFor)과 정리 규칙이 달라도 키는 예전과 같다
+ */
+export function merchantKeyMaterialV1(raw: unknown): string {
+  // 옛 merchantNameOf와 같다: 정리 → 40자 → 다시 정리, 비면 "결제"
+  const value = cleanMemoForImportKeyV1(
+    first40(cleanMemoForImportKeyV1(text(raw))),
+  );
+  return value.length > 0 ? value : MANUAL_DEFAULT_MERCHANT_NAME;
+}
+
+/** 보이는 글자(grapheme) 40개까지 */
+function first40(cleaned: string): string {
   let out = '';
   let count = 0;
   for (const { segment } of graphemes.segment(cleaned)) {
@@ -125,7 +150,7 @@ export function merchantNameFor(raw: unknown): string {
     out += segment;
     count += 1;
   }
-  return merchantNameOf(out);
+  return out;
 }
 
 function parseRow(row: CodefApprovalRow, index: number): ParsedRow | null {
@@ -160,6 +185,7 @@ function parseRow(row: CodefApprovalRow, index: number): ParsedRow | null {
     cardLast4: last4,
     approvalNo: text(row.resApprovalNo),
     merchantName: merchantNameFor(row.resMemberStoreName),
+    merchantKeyMaterial: merchantKeyMaterialV1(row.resMemberStoreName),
   };
 }
 
@@ -200,7 +226,8 @@ export function normalizeApprovals(
       formatAmount(row.amount),
       row.currency,
     ];
-    if (!row.approvalNo) parts.push(row.cardLast4 ?? '', row.merchantName);
+    if (!row.approvalNo)
+      parts.push(row.cardLast4 ?? '', row.merchantKeyMaterial);
     if (kind !== 'APPROVAL') parts.push(kind);
     return context.keyFn(parts.join('|'));
   };

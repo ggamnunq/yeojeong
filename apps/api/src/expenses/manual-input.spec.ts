@@ -51,6 +51,18 @@ describe('메모(S7)', () => {
     expect(memoError('🍜'.repeat(40))).toBeNull();
   });
 
+  it('strips invisible format characters (bidi overrides, zero-width space, BOM) but keeps ZWJ emoji sequences', () => {
+    // 오른쪽→왼쪽 덮어쓰기(U+202E)로 "滴滴出行"을 뒤집어 보이게 하는 이름
+    expect(merchantNameOf('\u202e滴滴\u202c出行')).toBe('滴滴出行');
+    expect(merchantNameOf('\u2066라멘\u2069 \u200b이치란\ufeff')).toBe('라멘 이치란');
+    // 보이지 않는 문자만 있으면 빈 메모("결제")
+    expect(merchantNameOf('\u200b\u202e')).toBe('결제');
+    const family = '👨\u200d👩\u200d👧';
+    expect(merchantNameOf(family)).toBe(family);
+    // 서식 문자를 지운 뒤 40자를 센다
+    expect(memoError(`${'가'.repeat(40)}${'\u200b'.repeat(10)}`)).toBeNull();
+  });
+
   it('stores "결제" for an empty memo and reads it back as no memo', () => {
     expect(merchantNameOf(undefined)).toBe('결제');
     expect(merchantNameOf('   ')).toBe('결제');

@@ -4,6 +4,8 @@ import {
   WALLET_ENTRY_LIST_LIMIT,
   type CreateWalletEntryRequest,
   type ExpenseDetailResponse,
+  type FieldError,
+  type FileImportProvider,
   type ImportWalletEntriesResponse,
   type ImportWalletEntryItem,
   type TripStatus,
@@ -28,7 +30,12 @@ import { effectiveStatus } from '../expenses/expense-rules.js';
 import { formatOriginalAmount } from '../expenses/expense-view.js';
 import { isUuid } from '../expenses/expense-query.service.js';
 import { dateOnly, kstDate, toKstIso } from '../expenses/kst.js';
-import { lockTransactions, lockTripExpenses } from '../expenses/locks.js';
+import {
+  isDeadlock,
+  lockTransactions,
+  lockTripExpenses,
+  lockTripsInOrder,
+} from '../expenses/locks.js';
 import {
   checkInputs,
   ManualExpenseService,
@@ -129,11 +136,13 @@ function visibleLink(record: EntryRecord): LinkRecord | null {
 }
 
 /**
- * 사용자가 직접 만든 지갑 항목: 직접 입력(MANUAL)과 카드 승인내역에서 고른 것(CARD_IMPORT, S8).
+ * 사용자가 직접 만든 지갑 항목: 직접 입력(MANUAL)과 카드 승인내역에서 고른 것(CARD_IMPORT, S8), 거래 내역 파일에서 고른 것(FILE_IMPORT, W10).
  * 둘 다 결제수단·제공자 동기화가 없어 수정·삭제·여정 바꾸기를 같은 규칙으로 한다(여정 결제는 origin MANUAL, 작성자 = 나)
  */
 export function isUserEntrySource(source: TxSource): boolean {
-  return source === 'MANUAL' || source === 'CARD_IMPORT';
+  return (
+    source === 'MANUAL' || source === 'CARD_IMPORT' || source === 'FILE_IMPORT'
+  );
 }
 
 const fieldError = (path: string, code: string, message: string) =>
@@ -141,6 +150,12 @@ const fieldError = (path: string, code: string, message: string) =>
 
 const tripNotAvailable = () =>
   fieldError('tripId', 'tripNotAvailable', '추가할 수 없는 여정이에요');
+
+/** 교착(40P01)으로 끊긴 트랜잭션은 409 CONFLICT(다시 시도하면 된다). 그 밖은 그대로 */
+function rethrowDeadlockAsConflict(error: unknown): never {
+  if (isDeadlock(error)) throw AppException.of('CONFLICT', { cause: error });
+  throw error;
+}
 
 const isUniqueViolation = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -628,6 +643,167 @@ export class WalletService {
     };
   }
 
+  // ─── 거래 내역 파일에서 고른 것 저장(W10) ───
+
+  /**
+   * 파일 가져오기(W10) 한 요청을 **한 트랜잭션**으로 저장한다 — 하나라도 실패하면(원화 1억 상한·환율 없음·일일 상한 등) 아무것도 남지 않는다.
+   * - 사용자 단위 advisory lock으로 같은 사용자의 가져오기를 한 줄로 세운다(이미 있는 거래 확인·일일 상한 판정이 경합 없이 맞다).
+   * - (사용자, FILE_IMPORT, importKey)가 이미 있으면 그 항목(created=false). 같은 요청 안의 같은 키는 호출자가 막는다.
+   * - 자동 연결 대상 여정은 트랜잭션 전에 한 번 정하고, 여정 id 순서로 여정마다 **한 번만** 잠근 뒤 그 여정 건을 몰아서 넣는다
+   *   (잠금 순서가 일정해 교착이 없고, 같은 여정을 항목마다 다시 잠그지 않는다).
+   * - dailyLimit: KST 오늘 새로 만든 FILE_IMPORT 수 + 이번에 새로 만들 수가 상한을 넘으면 onDailyLimit()가 던지는 오류로 끝낸다.
+   * 입력 검사(시각·내용·금액·통화)는 호출자가 먼저 한다. 반환은 요청 순서
+   */
+  async saveFileImportBatch(
+    userId: string,
+    provider: FileImportProvider,
+    items: readonly {
+      importKey: string;
+      amount: string;
+      currency: string;
+      occurredAt: Date;
+      merchantName: string;
+    }[],
+    limit: { dailyLimit: number; dayStart: Date; onDailyLimit: () => Error },
+    now: Date,
+  ): Promise<{ entryId: string; created: boolean; linked: boolean }[]> {
+    const options = await this.tripOptions(userId);
+    const targets = items.map((item) =>
+      suggestedTripOf(rankTripCandidates(options, item.occurredAt)),
+    );
+    return this.prisma
+      .$transaction(
+        async (tx) => {
+          await tx.$queryRaw`
+          SELECT 1 AS ok FROM pg_advisory_xact_lock(hashtext(${`file-import:${userId}`}))`;
+          const existing = await tx.transaction.findMany({
+            where: {
+              userId,
+              source: 'FILE_IMPORT',
+              externalRef: { in: items.map((i) => i.importKey) },
+            },
+            select: { id: true, externalRef: true },
+          });
+          const existingId = new Map(
+            existing.map((e) => [e.externalRef, e.id]),
+          );
+          const fresh = items
+            .map((item, index) => ({ item, index, target: targets[index] }))
+            .filter(({ item }) => !existingId.has(item.importKey));
+
+          if (fresh.length > 0) {
+            const today = await tx.transaction.count({
+              where: {
+                userId,
+                source: 'FILE_IMPORT',
+                createdAt: { gte: limit.dayStart },
+              },
+            });
+            if (today + fresh.length > limit.dailyLimit)
+              throw limit.onDailyLimit();
+          }
+
+          // 여정 id 순(지갑에만 넣는 건은 맨 뒤) → 시각 순
+          fresh.sort(
+            (a, b) =>
+              (a.target?.tripId ?? '\uffff').localeCompare(
+                b.target?.tripId ?? '\uffff',
+              ) || a.item.occurredAt.getTime() - b.item.occurredAt.getTime(),
+          );
+          const locked = new Map<
+            string,
+            Awaited<ReturnType<WalletService['lockTargetTrip']>>
+          >();
+          const results: {
+            entryId: string;
+            created: boolean;
+            linked: boolean;
+          }[] = items.map((item) => ({
+            entryId: existingId.get(item.importKey) ?? '',
+            created: false,
+            linked: false,
+          }));
+          for (const { item, index, target } of fresh) {
+            const origin: WalletEntryOrigin = {
+              source: 'FILE_IMPORT',
+              externalRef: item.importKey,
+              provider,
+            };
+            const merchantName = merchantNameOf(item.merchantName);
+            const values = {
+              amount: item.amount.trim(),
+              currency: item.currency.toUpperCase(),
+              occurredAt: item.occurredAt,
+              merchantName,
+            };
+            try {
+              let entryId: string;
+              if (!target) {
+                await this.checkWalletOnlyKrw(
+                  tx,
+                  values.amount,
+                  values.currency,
+                );
+                entryId = await this.manual.insertWalletTransaction(tx, {
+                  userId,
+                  amounts: values,
+                  merchantName,
+                  clientRequestId: null,
+                  origin,
+                });
+              } else {
+                let link = locked.get(target.tripId);
+                if (!link) {
+                  link = await this.lockTargetTrip(tx, userId, target);
+                  locked.set(target.tripId, link);
+                }
+                const amounts = await this.manual.convert(tx, link.trip, {
+                  ...values,
+                  providerKrwAmount: null,
+                });
+                entryId = await this.manual.insertWalletTransaction(tx, {
+                  userId,
+                  amounts,
+                  merchantName,
+                  clientRequestId: null,
+                  origin,
+                });
+                await this.insertPending(
+                  tx,
+                  link,
+                  amounts,
+                  merchantName,
+                  entryId,
+                  now,
+                );
+              }
+              results[index] = {
+                entryId,
+                created: true,
+                linked: target !== null,
+              };
+            } catch (error) {
+              // 항목별 검사 오류(원화 상한 등)는 그 항목 경로로 알린다
+              if (error instanceof ValidationFailedError) {
+                const fields = (error.details?.fields ?? []) as FieldError[];
+                throw new ValidationFailedError(
+                  fields.map((f) => ({
+                    ...f,
+                    path: `items.${index}.${f.path}`,
+                  })),
+                );
+              }
+              throw error;
+            }
+          }
+          return results;
+        },
+        // 200건까지 한 번에 넣는다(여정 잠금은 여정마다 한 번)
+        { maxWait: 10_000, timeout: 60_000 },
+      )
+      .catch(rethrowDeadlockAsConflict);
+  }
+
   private findImported(userId: string, importKey: string) {
     return this.prisma.transaction.findFirst({
       where: { userId, source: 'CARD_IMPORT', externalRef: importKey },
@@ -764,108 +940,116 @@ export class WalletService {
     const options =
       typeof body.tripId === 'string' ? await this.tripOptions(userId) : [];
 
-    const conflict = await this.prisma.$transaction(async (tx) => {
-      const { trip, members, expense, current, locked } = await this.lockEntry(
-        tx,
-        userId,
-        entryId,
-      );
-      if (body.version !== current.version) return true;
+    const conflict = await this.prisma
+      .$transaction(async (tx) => {
+        // 여정 바꾸기는 현재·대상 두 여정을 잠근다 — 일괄 저장(saveFileImportBatch)과 같은 순서(여정 id 오름차순)로 먼저 잡아 교착을 피한다
+        if (typeof body.tripId === 'string' && isUuid(body.tripId)) {
+          const currentLink = await tx.expense.findFirst({
+            where: { transactionId: entryId, refundOfExpenseId: null },
+            select: { tripId: true },
+          });
+          await lockTripsInOrder(tx, [currentLink?.tripId, body.tripId]);
+        }
+        const { trip, members, expense, current, locked } =
+          await this.lockEntry(tx, userId, entryId);
+        if (body.version !== current.version) return true;
 
-      const amount = body.amount?.trim() ?? current.originalAmount.toFixed();
-      const currency = (
-        body.currency ?? current.originalCurrency
-      ).toUpperCase();
-      const at = occurredAt ?? current.occurredAt;
-      const amountsChanged =
-        !current.originalAmount.equals(amount) ||
-        currency !== current.originalCurrency ||
-        at.getTime() !== current.occurredAt.getTime();
-      if (amountsChanged && locked) {
-        throw AppException.of('EXPENSE_LOCKED', {
-          message: '종료된 여정에 연결된 결제는 내용만 바꿀 수 있어요',
-          details: { lockedFields: ['amount', 'currency', 'occurredAt'] },
-        });
-      }
-      if (amountsChanged) {
-        const amountError = manualAmountError(amount, currency);
-        if (amountError) throw new ValidationFailedError([amountError]);
-      }
-      const merchantName =
-        body.memo !== undefined
-          ? merchantNameOf(body.memo)
-          : current.merchantNameRaw;
-
-      const currentTripId = expense?.tripId ?? null;
-      const relink = body.tripId !== undefined && body.tripId !== currentTripId;
-      let target: TripOption | null = null;
-      if (relink) {
-        // 연결된 결제가 없거나 미확정일 때만(Q-46). 확정(개인·공동) 뒤나 잠긴 결제는 409
-        if (expense && (expense.status !== 'PENDING' || locked)) {
+        const amount = body.amount?.trim() ?? current.originalAmount.toFixed();
+        const currency = (
+          body.currency ?? current.originalCurrency
+        ).toUpperCase();
+        const at = occurredAt ?? current.occurredAt;
+        const amountsChanged =
+          !current.originalAmount.equals(amount) ||
+          currency !== current.originalCurrency ||
+          at.getTime() !== current.occurredAt.getTime();
+        if (amountsChanged && locked) {
           throw AppException.of('EXPENSE_LOCKED', {
-            message: '확정된 결제는 여정을 바꿀 수 없어요',
-            details: { lockedFields: ['tripId'] },
+            message: '종료된 여정에 연결된 결제는 내용만 바꿀 수 있어요',
+            details: { lockedFields: ['amount', 'currency', 'occurredAt'] },
           });
         }
-        if (typeof body.tripId === 'string') {
-          target = options.find((o) => o.tripId === body.tripId) ?? null;
-          if (!target) throw tripNotAvailable();
+        if (amountsChanged) {
+          const amountError = manualAmountError(amount, currency);
+          if (amountError) throw new ValidationFailedError([amountError]);
         }
-      }
-      if (
-        !relink &&
-        !amountsChanged &&
-        merchantName === current.merchantNameRaw
-      ) {
-        return false;
-      }
+        const merchantName =
+          body.memo !== undefined
+            ? merchantNameOf(body.memo)
+            : current.merchantNameRaw;
 
-      const values = { amount, currency, occurredAt: at };
-      if (relink) {
-        if (expense) await this.manual.deleteExpense(tx, expense, userId);
-        if (target) {
-          const link = await this.lockTargetTrip(tx, userId, target);
-          const amounts = await this.manual.convert(tx, link.trip, values);
-          await this.insertPending(
-            tx,
-            link,
+        const currentTripId = expense?.tripId ?? null;
+        const relink =
+          body.tripId !== undefined && body.tripId !== currentTripId;
+        let target: TripOption | null = null;
+        if (relink) {
+          // 연결된 결제가 없거나 미확정일 때만(Q-46). 확정(개인·공동) 뒤나 잠긴 결제는 409
+          if (expense && (expense.status !== 'PENDING' || locked)) {
+            throw AppException.of('EXPENSE_LOCKED', {
+              message: '확정된 결제는 여정을 바꿀 수 없어요',
+              details: { lockedFields: ['tripId'] },
+            });
+          }
+          if (typeof body.tripId === 'string') {
+            target = options.find((o) => o.tripId === body.tripId) ?? null;
+            if (!target) throw tripNotAvailable();
+          }
+        }
+        if (
+          !relink &&
+          !amountsChanged &&
+          merchantName === current.merchantNameRaw
+        ) {
+          return false;
+        }
+
+        const values = { amount, currency, occurredAt: at };
+        if (relink) {
+          if (expense) await this.manual.deleteExpense(tx, expense, userId);
+          if (target) {
+            const link = await this.lockTargetTrip(tx, userId, target);
+            const amounts = await this.manual.convert(tx, link.trip, values);
+            await this.insertPending(
+              tx,
+              link,
+              amounts,
+              merchantName,
+              entryId,
+              now,
+            );
+          } else if (amountsChanged) {
+            await this.checkWalletOnlyKrw(tx, amount, currency);
+          }
+        } else if (expense && trip && !locked) {
+          // 여정 장부에 반영(공동이면 부담 재계산·"변경됨"·version 증가·중복 의심 재판정)
+          const amounts = amountsChanged
+            ? await this.manual.convert(tx, trip, values)
+            : null;
+          await this.manual.applyLedgerEdit(tx, {
+            expense,
+            members,
+            actorMembershipId: expense.payerMembershipId,
+            payerMembershipId: expense.payerMembershipId,
+            nextStatus: expense.status,
+            participantMembershipIds:
+              expense.status === 'SHARED'
+                ? expense.shares.map((s) => s.membershipId)
+                : [],
             amounts,
             merchantName,
-            entryId,
             now,
-          );
+          });
         } else if (amountsChanged) {
           await this.checkWalletOnlyKrw(tx, amount, currency);
         }
-      } else if (expense && trip && !locked) {
-        // 여정 장부에 반영(공동이면 부담 재계산·"변경됨"·version 증가·중복 의심 재판정)
-        const amounts = amountsChanged
-          ? await this.manual.convert(tx, trip, values)
-          : null;
-        await this.manual.applyLedgerEdit(tx, {
-          expense,
-          members,
-          actorMembershipId: expense.payerMembershipId,
-          payerMembershipId: expense.payerMembershipId,
-          nextStatus: expense.status,
-          participantMembershipIds:
-            expense.status === 'SHARED'
-              ? expense.shares.map((s) => s.membershipId)
-              : [],
-          amounts,
+        // 종료된 여정에 연결된 항목의 내용 수정은 지갑에만 반영한다(Q-44, 종료 후 장부는 그대로 — I-6)
+        await this.manual.updateWalletTransaction(tx, entryId, {
+          amounts: amountsChanged ? values : null,
           merchantName,
-          now,
         });
-      } else if (amountsChanged) {
-        await this.checkWalletOnlyKrw(tx, amount, currency);
-      }
-      // 종료된 여정에 연결된 항목의 내용 수정은 지갑에만 반영한다(Q-44, 종료 후 장부는 그대로 — I-6)
-      await this.manual.updateWalletTransaction(tx, entryId, {
-        amounts: amountsChanged ? values : null,
-        merchantName,
-      });
-      return false;
-    });
+        return false;
+      })
+      .catch(rethrowDeadlockAsConflict);
     const response = await this.respond(userId, entryId);
     if (conflict) {
       throw AppException.of('VERSION_CONFLICT', {

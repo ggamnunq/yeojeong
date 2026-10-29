@@ -12,6 +12,7 @@ import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type {
   FxJobResult,
   FxRateView,
+  FxSpotSeriesResponse,
   TripFxView,
   UpdateFxPolicyResponse,
 } from '@yeojeong/shared';
@@ -29,6 +30,8 @@ import {
   FxJobResultDto,
   FxRateQueryDto,
   FxRateViewDto,
+  FxSpotSeriesQueryDto,
+  FxSpotSeriesResponseDto,
   TripFxViewDto,
   UpdateFxPolicyDto,
   UpdateFxPolicyResponseDto,
@@ -37,7 +40,10 @@ import { FxJobService } from './fx-job.service.js';
 import { FxPolicyService } from './fx-policy.service.js';
 import { FxRatesService } from './fx-rates.service.js';
 import { InternalJob } from '../common/internal-job/index.js';
-import { asOfFromQuery } from './kst.js';
+import { asOfFromQuery, daysBetween, toKstIso } from './kst.js';
+
+/** spot-series 최대 기간(일). 위챗 내역은 최대 1년 */
+const SPOT_SERIES_MAX_DAYS = 400;
 
 @ApiTags('fx')
 @Controller()
@@ -60,6 +66,37 @@ export class FxController {
       ]);
     }
     return this.rates.getRate(query.base, at);
+  }
+
+  @ApiOperation({
+    summary: '기간의 매매기준율 고시(결제 시각 기준 추정용)',
+    description:
+      '[from, to](KST 날짜) 안의 고시와 그 직전 고시 1건, 시각 오름차순. 화면이 여러 결제의 "약 ₩"을 결제 시각 기준으로 한 번에 계산한다(W10 — 결제 시각은 보내지 않는다). 최대 400일.',
+  })
+  @ApiOkResponse({ type: FxSpotSeriesResponseDto })
+  @ApiErrorResponse(400, 'VALIDATION_FAILED')
+  @Get('fx/spot-series')
+  async spotSeries(
+    @Query() query: FxSpotSeriesQueryDto,
+  ): Promise<FxSpotSeriesResponse> {
+    const from = asOfFromQuery(query.from);
+    const to = asOfFromQuery(query.to);
+    const days = daysBetween(query.from, query.to);
+    if (!from || !to || days < 0 || days >= SPOT_SERIES_MAX_DAYS) {
+      throw new ValidationFailedError([
+        { path: 'to', code: 'range', message: '기간을 확인해 주세요' },
+      ]);
+    }
+    // from은 그날 00:00 KST부터(asOfFromQuery는 그날 끝을 준다)
+    const start = new Date(Date.parse(`${query.from}T00:00:00+09:00`));
+    const table = await this.rates.loadSpotSeries(query.base, start, to);
+    return {
+      currency: query.base,
+      rates: table.map((r) => ({
+        rate: r.rate,
+        effectiveAt: toKstIso(r.effectiveAt),
+      })),
+    };
   }
 
   @ApiOperation({ summary: '여정 환율·적용 기준 조회(FR-806, WF-29)' })

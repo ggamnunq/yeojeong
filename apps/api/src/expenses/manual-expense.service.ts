@@ -3,6 +3,7 @@ import type {
   CreateTripExpenseRequest,
   ExpenseDetailResponse,
   ExpenseStatus,
+  FileImportProvider,
   FxPolicy,
   TripStatus,
   UpdateTripExpenseRequest,
@@ -77,6 +78,13 @@ export type WalletEntryOrigin =
       externalRef: string;
       /** 카드사가 준 원화(있으면). 지갑 원화 표시·CARD_BILLED 정책 환산에 쓴다 */
       providerKrwAmount: number | null;
+    }
+  | {
+      source: 'FILE_IMPORT';
+      /** importKey(HMAC hex). (userId, externalRef) 부분 유니크 transactions_file_import_ref_key로 중복 저장을 막는다(W10) */
+      externalRef: string;
+      /** 파일 공급자(import_provider) */
+      provider: FileImportProvider;
     };
 
 /** 거래(지갑 항목)에 넣는 매매기준율 추정. 고시가 없으면 NULL */
@@ -559,7 +567,8 @@ export class ManualExpenseService {
 
   /**
    * 지갑 거래 한 건. 기본은 직접 입력(MANUAL).
-   * 카드 승인내역 불러오기(S8)는 source CARD_IMPORT + externalRef(importKey) + 카드사가 준 원화(providerKrwAmount)를 넘긴다
+   * 카드 승인내역 불러오기(S8)는 source CARD_IMPORT + externalRef(importKey) + 카드사가 준 원화(providerKrwAmount)를 넘긴다.
+   * 거래 내역 파일 가져오기(W10)는 source FILE_IMPORT + externalRef(importKey)
    */
   async insertWalletTransaction(
     tx: Tx,
@@ -581,6 +590,10 @@ export class ManualExpenseService {
         ...(origin.source === 'CARD_IMPORT' && {
           externalRef: origin.externalRef,
           providerKrwAmount: origin.providerKrwAmount,
+        }),
+        ...(origin.source === 'FILE_IMPORT' && {
+          externalRef: origin.externalRef,
+          importProvider: origin.provider,
         }),
         kind: 'APPROVAL',
         occurredAt,

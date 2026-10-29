@@ -86,10 +86,11 @@ export const TX_KIND_VALUES = ['APPROVAL', 'CANCEL'] as const;
 export type TxKind = (typeof TX_KIND_VALUES)[number];
 export const TxKind = enumObject(TX_KIND_VALUES);
 
-export const TX_SOURCE_VALUES = ['PROVIDER', 'MANUAL', 'CARD_IMPORT'] as const;
+export const TX_SOURCE_VALUES = ['PROVIDER', 'MANUAL', 'CARD_IMPORT', 'FILE_IMPORT'] as const;
 /**
  * 지갑 거래의 출처. PROVIDER = 계좌·카드 연결(토스)에서 가져옴, MANUAL = 직접 입력,
- * CARD_IMPORT = 카드 승인내역 불러오기(S8, 일회성)에서 사용자가 고른 것. CARD_IMPORT는 지갑에서 직접 입력과 같게 다룬다(수정·삭제·여정 바꾸기)
+ * CARD_IMPORT = 카드 승인내역 불러오기(S8, 일회성)에서 사용자가 고른 것, FILE_IMPORT = 거래 내역 파일 가져오기(W10, 위챗페이)에서 고른 것.
+ * CARD_IMPORT·FILE_IMPORT는 지갑에서 직접 입력과 같게 다룬다(수정·삭제·여정 바꾸기)
  */
 export type TxSource = (typeof TX_SOURCE_VALUES)[number];
 export const TxSource = enumObject(TX_SOURCE_VALUES);

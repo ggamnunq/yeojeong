@@ -12,6 +12,8 @@
 | PATCH  | `/api/wallet/entries/:entryId`                | `WalletEntryMutationResponse`  | 400, 404, 409 `NOT_MANUAL_ENTRY`·`EXPENSE_LOCKED`·`VERSION_CONFLICT`, 503 |
 | DELETE | `/api/wallet/entries/:entryId?includeShared=` | 204                            | 404, 409 `NOT_MANUAL_ENTRY`·`SHARED_DELETE_CONFIRM_REQUIRED`              |
 
+카드 승인내역 저장(`POST /api/wallet/entries/import`, S8)은 `src/card-import`, 거래 내역 파일 가져오기(`POST /api/wallet/entries/file-import`·`/check`, W10)는 `src/file-import`. 둘 다 저장은 이 모듈의 직접 입력 규칙·여정 자동 연결을 쓰고, 저장한 항목(`CARD_IMPORT`·`FILE_IMPORT`)은 직접 입력처럼 고치고 지운다(`isUserEntrySource`).
+
 모두 로그인 필요, 본인 항목만(`userId` 조건). 남의 항목·없는 항목은 404.
 
 ## 여정 연결 결제의 원화

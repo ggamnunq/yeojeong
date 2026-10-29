@@ -17,6 +17,7 @@ import {
   Ellipsis,
   Eye,
   EyeOff,
+  FileText,
   Funnel,
   House,
   Info,
@@ -101,6 +102,8 @@ export const ICONS = {
   'eye-off': EyeOff,
   // W8: 초대 QR 시트를 여는 버튼(HF-11·16·23 초대코드 「복사」 옆). Figma 아이콘 세트에 추가 예정
   'qr-code': QrCode,
+  // W10: 위챗페이 파일 가져오기(HF-65 행 아이콘, Figma 로컬 부품 Icon/file 164:17079)
+  file: FileText,
 } as const satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof ICONS
@@ -167,6 +170,8 @@ export const ICON_VIEWBOX: Record<IconName, readonly [x: number, y: number, size
   'eye-off': [-1.16, -0.63, 25.26],
   // lucide qr-code 그림 18×18(3~21) → copy와 같은 Icons8 긴 변 19(획 포함)에 맞춤: s = 17.5/18, 중심 (12, 12)
   'qr-code': [-0.34, -0.34, 24.69],
+  // lucide file-text 그림은 receipt-text와 같은 bbox(4~20 × 2~22)라 같은 값
+  file: [-1.72, -1.15, 27.44],
 }
 
 /**

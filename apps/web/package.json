@@ -22,6 +22,7 @@
     "@tanstack/react-query": "^5.105.0",
     "@yeojeong/shared": "workspace:*",
     "clsx": "^2.1.1",
+    "fflate": "0.8.3",
     "lucide-react": "^1.62.0",
     "micro-rsa-dsa-dh": "0.4.0",
     "qr": "0.7.2",

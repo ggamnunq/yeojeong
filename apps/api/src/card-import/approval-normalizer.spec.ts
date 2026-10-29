@@ -162,6 +162,34 @@ describe('normalizeApprovals (KR_CD_P_002 → 화면 줄)', () => {
     expect(dropped).toBe(3);
   });
 
+  it('keeps the importKey of approval-number-less rows unchanged (legacy merchant cleaning), while the shown name drops invisible format characters', () => {
+    // 승인번호가 없는 줄: 키 재료에 카드 끝 4자리 + 가맹점이 들어간다. 가맹점에 폭 없는 공백·양방향 제어가 섞여 있어도
+    // 키는 서식 문자를 지우기 전(card-import:v1) 규칙 그대로여야 이미 저장한 건이 "추가됨"으로 남는다
+    const raw = '\u200b카페\u202e 서울';
+    const row = {
+      ...DOC_SAMPLE_ROW,
+      resApprovalNo: '',
+      resMemberStoreName: raw,
+    };
+    const [item] = normalizeApprovals([row], ctx).items;
+    expect(item.merchantName).toBe('카페 서울');
+    expect(item.importKey).toBe(
+      keyFn(
+        [
+          'card-import:v1',
+          'user-1',
+          '0306',
+          '',
+          '20190620120117',
+          '22000',
+          'KRW',
+          '0000',
+          raw,
+        ].join('|'),
+      ),
+    );
+  });
+
   it('cleans merchant names to the 40-character wallet rule', () => {
     expect(merchantNameFor('')).toBe('결제');
     expect(merchantNameFor(' a\tb\n c ')).toBe('a b c');

@@ -28,7 +28,10 @@ const comment = (text) => `/* ${String(text).replaceAll('*/', '* /')} */`
 
 // tokens.json의 typography는 Figma 서체 이름만 갖는다. CSS 변수 이름과 폴백 스택은 코드 쪽 결정이라 여기 둔다.
 // 순서 = --font-* 출력 순서. Noto Sans KR은 가변 폰트(@fontsource-variable)를 먼저 찾는다.
-const SYSTEM_FALLBACK = ['system-ui', '-apple-system', 'Apple SD Gothic Neo', 'Malgun Gothic', 'sans-serif']
+// 중국어 간체(위챗페이 가맹점 이름 등 — W10): Noto Sans KR에 없는 간체 글자(个·啡 등)가 빈칸이 되지 않게 시스템 중국어 서체를 system-ui보다 먼저 둔다.
+// CSP font-src 'self'라 외부 웹폰트는 쓰지 않는다(한글·라틴은 Noto Sans KR이 모두 갖고 있어 이 서체들로 넘어가지 않는다).
+export const CJK_SC_FALLBACK = ['PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', 'Noto Sans CJK SC', 'Microsoft YaHei']
+const SYSTEM_FALLBACK = [...CJK_SC_FALLBACK, 'system-ui', '-apple-system', 'Apple SD Gothic Neo', 'Malgun Gothic', 'sans-serif']
 export const FONT_FAMILIES = {
   'Noto Sans KR': { name: 'sans', stack: ['Noto Sans KR Variable', 'Noto Sans KR', ...SYSTEM_FALLBACK] },
   // 금액(Amount/*). tabular-nums는 index.css의 font-amount 유틸이 켠다.

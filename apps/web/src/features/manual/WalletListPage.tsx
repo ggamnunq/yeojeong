@@ -9,14 +9,16 @@ import { formatDateLabel } from '../payments/rules'
 import { useLoadMore } from '../payments/useLoadMore'
 import { useBack } from '../wallet/useBack'
 import { QuietButton } from '../card-import/components'
-import { startFlowState } from '../card-import/flow'
-import { useCardImportConfig, useCardImportEnabled } from '../card-import/hooks'
+import { useCardImportConfig } from '../card-import/hooks'
+import { COPY as IMPORT_COPY } from '../file-import/copy'
+import { useImportEntry } from '../file-import/ImportMenu'
 import { latestFxQuery, walletEntriesQuery } from './api'
 import { monthTotalLabel, walletMeta, walletRowAmounts } from './rules'
 import type { WalletEntry } from './types'
 
 // WF-49 내 지갑(수동, accountLink=false) · WF-49b 빈 상태. 행 탭 → WF-50(지갑 폼), "결제 추가" → WF-48.
-// (v0.7.0, features.cardImport) 헤더 "불러오기"(내역이 있을 때)·빈 상태 "카드 내역 불러오기"(이때 헤더 액션 없음) → WF-51(남은 횟수 0이면 그 화면이 WF-57d를 그린다).
+// (v0.7.0) 헤더 "불러오기"(내역이 있을 때)·빈 상태 "내역 불러오기"(이때 헤더 액션 없음) → HF-65 시트(카드 내역 불러오기 · 위챗페이 파일 가져오기).
+// 켜진 기능(features.cardImport · fileImport)이 하나뿐이면 시트 없이 바로 그 흐름(카드 WF-51 — 남은 횟수 0이면 WF-57d · 위챗 HF-66)으로.
 // "이번 달" 합계는 서버 S7b 필드(monthTotalKrw · 추정이 섞이면 monthTotalEstimated → "약 ₩…")를 그대로 쓴다.
 
 export default function WalletListPage() {
@@ -33,10 +35,9 @@ export default function WalletListPage() {
   const rateOf = (currency: string) => fx[unknownCurrencies.indexOf(currency)]?.data?.rate ?? null
   const sentinel = useLoadMore<HTMLDivElement>(Boolean(hasNextPage) && !isFetchingNextPage, () => void fetchNextPage())
 
-  // 카드 내역 불러오기 진입점. 설정(remainingToday)은 미리 받아 둔다(꺼져 있으면 부르지 않는다)
-  const cardImport = useCardImportEnabled()
+  // 내역 불러오기 진입점(HF-65). 카드 설정(remainingToday)은 미리 받아 둔다(꺼져 있으면 부르지 않는다)
+  const importEntry = useImportEntry()
   useCardImportConfig()
-  const openImport = () => navigate(paths.walletImport(), { state: startFlowState() })
 
   const add = () => navigate(paths.walletNew(), { state: { fromList: true } })
   const open = (entry: WalletEntry) => navigate(paths.walletEntryEdit(entry.id), { state: { fromList: true } })
@@ -44,8 +45,12 @@ export default function WalletListPage() {
 
   return (
     <ShellSub
-      // HF-49b: 빈 지갑에서는 진입점을 텍스트 버튼 "카드 내역 불러오기" 하나로 둔다(헤더 "불러오기"는 내역이 있을 때만)
-      header={{ title: '내 지갑', onBack: back, textAction: cardImport && items.length > 0 ? { label: '불러오기', onClick: openImport } : undefined }}
+      // HF-49b: 빈 지갑에서는 진입점을 텍스트 버튼 "내역 불러오기" 하나로 둔다(헤더 "불러오기"는 내역이 있을 때만)
+      header={{
+        title: '내 지갑',
+        onBack: back,
+        textAction: importEntry.available && items.length > 0 ? { label: IMPORT_COPY.entry, onClick: importEntry.start } : undefined,
+      }}
       gutter={false} cta={empty ? { label: '결제 내역 추가', leadingIcon: true, icon: 'plus', onClick: add } : undefined}>
       {query.isPending ? (
         <LoadingScreen inset gutter />
@@ -56,7 +61,7 @@ export default function WalletListPage() {
         <>
           <EmptyState type="illust" illust={<IllustEmptyTrip size={144} />} title="결제 기록이 없어요" className="flex-1 justify-center" />
           {/* HF-49b: 버튼 바로 위 조용한 텍스트 버튼(2버튼이 아니다) */}
-          {cardImport && <QuietButton onClick={openImport}>카드 내역 불러오기</QuietButton>}
+          {importEntry.available && <QuietButton onClick={importEntry.start}>{IMPORT_COPY.emptyEntry}</QuietButton>}
         </>
       ) : (
         <>
@@ -88,6 +93,7 @@ export default function WalletListPage() {
           <div className="h-6" />
         </>
       )}
+      {importEntry.sheet}
       <Suspense fallback={null}>
         <Outlet />
       </Suspense>

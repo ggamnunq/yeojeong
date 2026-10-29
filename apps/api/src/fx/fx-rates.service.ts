@@ -114,6 +114,26 @@ export class FxRatesService {
     return after ? toSpot(after) : null;
   }
 
+  /** 한 통화의 [from, to] 고시와 그 직전 고시 1건(시각 오름차순). GET /api/fx/spot-series */
+  async loadSpotSeries(
+    currency: string,
+    from: Date,
+    to: Date,
+  ): Promise<FxSpotRate[]> {
+    const quoteCurrency = currency.toUpperCase();
+    const before = await this.prisma.exchangeRate.findFirst({
+      where: { quoteCurrency, effectiveAt: { lte: from } },
+      orderBy: [{ effectiveAt: 'desc' }, { fetchedAt: 'desc' }],
+      select: RATE_SELECT,
+    });
+    const inRange = await this.prisma.exchangeRate.findMany({
+      where: { quoteCurrency, effectiveAt: { gt: from, lte: to } },
+      orderBy: [{ effectiveAt: 'asc' }, { fetchedAt: 'asc' }],
+      select: RATE_SELECT,
+    });
+    return [...(before ? [before] : []), ...inRange].map(toSpot);
+  }
+
   /** 여러 결제를 한 번에 환산할 때 쓰는 고시 표. [from, to] 구간과 그 직전 고시 1건을 읽는다 */
   async loadSpotTable(
     currencies: readonly string[],

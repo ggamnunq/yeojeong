@@ -56,6 +56,20 @@ export function parseAllowedUserIds(
   return new Set(ids);
 }
 
+export const FILE_IMPORT_MODE_VALUES = ['off', 'on'] as const;
+/** 거래 내역 파일 가져오기(W10, 위챗페이) 공개 단계 */
+export type FileImportMode = (typeof FILE_IMPORT_MODE_VALUES)[number];
+
+/** env FEATURE_FILE_IMPORT: 비면 off. off·on(대소문자 무시)만 받고 그 밖이면 부팅을 멈춘다 */
+export function parseFileImportMode(raw: string | undefined): FileImportMode {
+  const value = raw?.trim().toLowerCase();
+  if (!value) return 'off';
+  if ((FILE_IMPORT_MODE_VALUES as readonly string[]).includes(value)) {
+    return value as FileImportMode;
+  }
+  throw new Error(`FEATURE_FILE_IMPORT는 off·on 중 하나여야 합니다: ${value}`);
+}
+
 /**
  * 기능 플래그(FR-006, GET /api/auth/session → features). AuthCoreModule(전역)이 제공한다.
  * - FEATURE_ACCOUNT_LINK(기본 false): 계좌·카드 자동 불러오기(토스 연결).
@@ -68,6 +82,8 @@ export function parseAllowedUserIds(
  *   CODEF 키(CODEF_CLIENT_ID·CODEF_CLIENT_SECRET·CODEF_PUBLIC_KEY)가 하나라도 없으면 단계와 무관하게 off다.
  *   운영에서는 importKey 전용 키(IMPORT_KEY_HMAC_KEY)도 있어야 한다.
  *   꺼진 사용자에게는 /api/card-import/*·POST /api/wallet/entries/import가 404(CardImportGuard), 세션 features.cardImport = false
+ * - FEATURE_FILE_IMPORT(기본 off): 거래 내역 파일 가져오기(W10, 위챗페이). off | on.
+ *   운영에서는 importKey 전용 키(IMPORT_KEY_HMAC_KEY)가 없으면 off다. 꺼져 있으면 /api/wallet/entries/file-import*가 404(FileImportGuard)
  */
 @Injectable()
 export class FeatureFlags {
@@ -76,8 +92,11 @@ export class FeatureFlags {
   readonly cardImportMode: CardImportMode;
   /** env CARD_IMPORT_ALLOWED_USER_IDS(소문자). 관리자 페이지에서 회수할 수 없다 */
   readonly cardImportEnvAllowlist: ReadonlySet<string>;
+  /** 거래 내역 파일 가져오기(W10). 운영에서 IMPORT_KEY_HMAC_KEY가 없으면 false */
+  readonly fileImport: boolean;
 
   constructor(config: ConfigService) {
+    this.fileImport = fileImportEnabled(config);
     this.accountLink = parseBooleanEnv(
       'FEATURE_ACCOUNT_LINK',
       config.get<string>('FEATURE_ACCOUNT_LINK'),
@@ -113,6 +132,7 @@ export class FeatureFlags {
     return {
       accountLink: this.accountLink,
       cardImport: this.cardImportFor(userId),
+      fileImport: this.fileImport,
     };
   }
 }
@@ -212,6 +232,27 @@ export class CardImportGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest<Request>();
     if (!(await this.access.enabledFor(req.auth?.user.id, req)))
       throw new NotFoundError();
+    return true;
+  }
+}
+
+/** FEATURE_FILE_IMPORT = on이고, 운영이면 importKey 전용 키(IMPORT_KEY_HMAC_KEY)도 있을 때만 켠다 */
+function fileImportEnabled(config: ConfigService): boolean {
+  const mode = parseFileImportMode(config.get<string>('FEATURE_FILE_IMPORT'));
+  if (mode !== 'on') return false;
+  if (config.get<string>('NODE_ENV') !== 'production') return true;
+  return (config.get<string>('IMPORT_KEY_HMAC_KEY') ?? '').trim() !== '';
+}
+
+/**
+ * 거래 내역 파일 가져오기(W10) 라우트를 꺼져 있으면 404로 숨긴다(CardImportGuard와 같은 이유). @example @UseGuards(FileImportGuard)
+ */
+@Injectable()
+export class FileImportGuard implements CanActivate {
+  constructor(private readonly features: FeatureFlags) {}
+
+  canActivate(_ctx: ExecutionContext): boolean {
+    if (!this.features.fileImport) throw new NotFoundError();
     return true;
   }
 }

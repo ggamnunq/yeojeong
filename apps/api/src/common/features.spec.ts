@@ -6,7 +6,9 @@ import {
   CardImportAccess,
   CardImportGuard,
   FeatureFlags,
+  FileImportGuard,
   parseBooleanEnv,
+  parseFileImportMode,
 } from './features.js';
 
 // ConfigService는 process.env(테스트 env는 플래그를 켠다)를 먼저 읽으므로 값만 돌려주는 가짜를 쓴다
@@ -21,6 +23,7 @@ describe('기능 플래그(FR-006)', () => {
     expect(flagsWith(undefined).view()).toEqual({
       accountLink: false,
       cardImport: false,
+      fileImport: false,
     });
     expect(flagsWith('').accountLink).toBe(false);
     expect(flagsWith('TRUE').accountLink).toBe(true);
@@ -69,10 +72,15 @@ describe('기능 플래그(FR-006)', () => {
     expect(allow.cardImportFor(me)).toBe(true);
     expect(allow.cardImportFor(other)).toBe(false);
     expect(allow.cardImportFor(null)).toBe(false);
-    expect(allow.view(me)).toEqual({ accountLink: false, cardImport: true });
+    expect(allow.view(me)).toEqual({
+      accountLink: false,
+      cardImport: true,
+      fileImport: false,
+    });
     expect(allow.view(other)).toEqual({
       accountLink: false,
       cardImport: false,
+      fileImport: false,
     });
     expect(() => flags({ FEATURE_CARD_IMPORT: 'true', ...keys })).toThrow(
       /off·allowlist·on/,
@@ -155,10 +163,12 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
     expect(await access.view(granted)).toEqual({
       accountLink: false,
       cardImport: true,
+      fileImport: false,
     });
     expect(await access.view(nobody)).toEqual({
       accountLink: false,
       cardImport: false,
+      fileImport: false,
     });
     expect(access.enabledWithGrant(nobody, true)).toBe(true);
     expect(access.enabledWithGrant(nobody, false)).toBe(false);
@@ -207,5 +217,44 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
     await expect(
       new CardImportGuard(off.access).canActivate(ctx(granted)),
     ).rejects.toThrow(NotFoundError);
+  });
+
+  it('turns fileImport on only with FEATURE_FILE_IMPORT=on, and in production only with IMPORT_KEY_HMAC_KEY (W10)', () => {
+    const flags = (env: Record<string, string>) =>
+      new FeatureFlags({
+        get: (name: string) => env[name],
+      } as unknown as ConfigService);
+    expect(flags({}).fileImport).toBe(false);
+    expect(flags({ FEATURE_FILE_IMPORT: 'off' }).fileImport).toBe(false);
+    expect(flags({ FEATURE_FILE_IMPORT: ' ON ' }).fileImport).toBe(true);
+    expect(flags({ FEATURE_FILE_IMPORT: 'on' }).view()).toEqual({
+      accountLink: false,
+      cardImport: false,
+      fileImport: true,
+    });
+    expect(parseFileImportMode(undefined)).toBe('off');
+    expect(() => flags({ FEATURE_FILE_IMPORT: 'true' })).toThrow(/off·on/);
+    expect(() => parseFileImportMode('allowlist')).toThrow(/off·on/);
+    // 운영: importKey 전용 키가 없으면 꺼진다
+    expect(
+      flags({ NODE_ENV: 'production', FEATURE_FILE_IMPORT: 'on' }).fileImport,
+    ).toBe(false);
+    expect(
+      flags({
+        NODE_ENV: 'production',
+        FEATURE_FILE_IMPORT: 'on',
+        IMPORT_KEY_HMAC_KEY: 'k'.repeat(64),
+      }).fileImport,
+    ).toBe(true);
+
+    const ctx = {} as never;
+    expect(() => new FileImportGuard(flags({})).canActivate(ctx)).toThrow(
+      NotFoundError,
+    );
+    expect(
+      new FileImportGuard(flags({ FEATURE_FILE_IMPORT: 'on' })).canActivate(
+        ctx,
+      ),
+    ).toBe(true);
   });
 });

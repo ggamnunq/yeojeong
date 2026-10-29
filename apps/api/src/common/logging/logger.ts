@@ -67,6 +67,10 @@ export const SENSITIVE_BODY_KEYS = [
   'access_token',
   'accessToken',
   'client_secret',
+  // 거래 내역 파일 가져오기(W10)
+  'txnNo',
+  'txnNos',
+  'txnDigest',
 ] as const;
 
 const BODY_REDACT_PATHS = [

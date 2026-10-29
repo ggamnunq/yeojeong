@@ -67,8 +67,27 @@ export function manualKrwError(
     : null;
 }
 
-/** 줄바꿈·제어문자 → 공백, 연속 공백 하나로, 앞뒤 공백 제거(FR-427) */
+/**
+ * 줄바꿈·제어문자 → 공백, 연속 공백 하나로, 앞뒤 공백 제거(FR-427).
+ * 보이지 않는 서식 문자(\p{Cf}: 양방향 제어 U+202A~202E·2066~2069, 폭 없는 공백 U+200B, BOM 등)는 지운다 — 화면에서 글자 순서를 뒤집는 등 속임수 방지.
+ * 단 ZWJ(U+200D)는 이모지 묶음(👨‍👩‍👧)에 필요해 남긴다
+ */
 export function cleanMemo(memo: string | null | undefined): string {
+  return (memo ?? '')
+    .replace(/(?!\u200d)\p{Cf}/gu, '')
+    .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * cleanMemo의 **옛 규칙(\p{Cf}를 지우기 전)** — 카드 불러오기 importKey 재료(승인번호 없는 줄의 가맹점)에만 쓴다.
+ * 표시·저장 이름은 cleanMemo(서식 문자 제거)를 쓰지만, 키 재료가 바뀌면 이미 저장한 CARD_IMPORT의 "추가됨" 판정이 끊기고
+ * 같은 승인 건을 다시 저장할 수 있어 **이 함수는 바꾸지 않는다**(card-import:v1 키 형식의 일부)
+ */
+export function cleanMemoForImportKeyV1(
+  memo: string | null | undefined,
+): string {
   return (memo ?? '')
     .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
     .replace(/\s+/g, ' ')

@@ -99,6 +99,11 @@ export interface FeatureFlags {
    * env FEATURE_CARD_IMPORT(기본 false) + CODEF 키가 모두 있을 때만 true. 서버는 항상 채운다(옛 웹 목 호환을 위해 선택 필드)
    */
   cardImport?: boolean;
+  /**
+   * 거래 내역 파일 가져오기(W10, 위챗페이). false면 화면이 지갑의 "위챗페이 파일 가져오기" 진입점을 숨긴다.
+   * env FEATURE_FILE_IMPORT(기본 off). 서버는 항상 채운다(옛 웹 목 호환을 위해 선택 필드)
+   */
+  fileImport?: boolean;
 }
 
 /** GET /api/consents/documents */

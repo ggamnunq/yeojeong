@@ -59,3 +59,35 @@ export async function lockTransactions(
     ORDER BY id
     FOR UPDATE`;
 }
+
+/**
+ * 여러 여정을 한 트랜잭션에서 잠글 때: 여정 id 오름차순으로 Trip FOR SHARE → advisory를 먼저 잡는다.
+ * 지갑 항목 여정 바꾸기(현재 → 대상)와 파일 가져오기 일괄 저장(여정 id 순)이 같은 순서라 서로 교착하지 않는다.
+ * 같은 트랜잭션에서 다시 잡는 잠금은 바로 지나간다
+ */
+export async function lockTripsInOrder(
+  tx: Tx,
+  tripIds: readonly (string | null | undefined)[],
+): Promise<void> {
+  const ids = [...new Set(tripIds.filter((id): id is string => !!id))].sort();
+  for (const id of ids) {
+    await lockTripForShare(tx, id);
+    await lockTripExpenses(tx, id);
+  }
+}
+
+/** PostgreSQL 교착(40P01) · Prisma 트랜잭션 충돌(P2034) */
+export function isDeadlock(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as {
+    code?: unknown;
+    meta?: { code?: unknown };
+    message?: unknown;
+  };
+  return (
+    e.code === 'P2034' ||
+    e.code === '40P01' ||
+    e.meta?.code === '40P01' ||
+    (typeof e.message === 'string' && e.message.includes('40P01'))
+  );
+}

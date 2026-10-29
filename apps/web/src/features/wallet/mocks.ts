@@ -12,6 +12,7 @@ import type {
   ConsentStatusResponse,
   FinConsentId,
   FxRateView,
+  FxSpotSeriesResponse,
   ManualSyncResponse,
   PaymentMethodsResponse,
   PaymentMethodType,
@@ -91,6 +92,8 @@ const RATES: Record<string, Pick<FxRateView, 'currencyNameKo' | 'displayUnit' | 
   JPY: { currencyNameKo: '엔', displayUnit: 100, rate: '9.192000' },
   USD: { currencyNameKo: '달러', displayUnit: 1, rate: '1380.500000' },
   EUR: { currencyNameKo: '유로', displayUnit: 1, rate: '1495.300000' },
+  // W10 위챗페이 파일 가져오기 "약 ₩"(Figma HF-68: ¥128.00 → 약 ₩24,330)
+  CNY: { currencyNameKo: '위안', displayUnit: 1, rate: '190.080000' },
   // 한국수출입은행이 고시하지 않는 통화는 ExchangeRate-API 값(출처 링크 필수)
   TWD: {
     currencyNameKo: '대만 달러',
@@ -496,6 +499,22 @@ export const handlers: HttpHandler[] = [
       fetchedAt: todayKstAt(18, 1),
     }
     return HttpResponse.json(body)
+  }),
+
+  // 기간 고시(W10 "약 ₩" 결제 시각 기준): 목은 매일 09:00 KST 고시가 같은 값이다(직전 고시 1건 포함). 조회 시작일 전날부터 준다
+  api.get<FxSpotSeriesResponse>('/api/fx/spot-series', ({ request }) => {
+    const params = new URL(request.url).searchParams
+    const base = params.get('base')?.toUpperCase() ?? ''
+    const from = params.get('from') ?? ''
+    const to = params.get('to') ?? ''
+    const rate = RATES[base]
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return mockError('VALIDATION_FAILED', 400)
+    if (!rate) return HttpResponse.json({ currency: base, rates: [] })
+    const rates: FxSpotSeriesResponse['rates'] = []
+    for (let t = Date.parse(`${from}T00:00:00Z`) - 86_400_000; t <= Date.parse(`${to}T00:00:00Z`); t += 86_400_000) {
+      rates.push({ rate: rate.rate, effectiveAt: `${new Date(t).toISOString().slice(0, 10)}T09:00:00+09:00` })
+    }
+    return HttpResponse.json({ currency: base, rates })
   }),
 
   api.get<TripFxView>('/api/trips/:tripId/fx-policy', ({ params }) => {

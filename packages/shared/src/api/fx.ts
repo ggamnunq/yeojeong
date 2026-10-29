@@ -74,3 +74,13 @@ export interface FxJobResult {
   /** 새 고시·청구 확정으로 원화를 다시 계산한 여정 수 */
   recalculatedTrips: number;
 }
+
+/**
+ * GET /api/fx/spot-series?base=&from=&to= — 기간(KST 날짜, 최대 400일)의 매매기준율 고시와 그 직전 고시 1건(시각 오름차순).
+ * 화면이 여러 결제의 "결제 시각 기준" 추정 원화를 한 번에 계산할 때 쓴다(거래 내역 파일 가져오기 W10 — 결제 시각은 서버로 보내지 않는다).
+ * 결제 시각 이전 고시가 없으면 추정하지 않는다(카드 불러오기 estimatedKrwAmount와 같은 규칙)
+ */
+export interface FxSpotSeriesResponse {
+  currency: string;
+  rates: { rate: string; effectiveAt: string }[];
+}

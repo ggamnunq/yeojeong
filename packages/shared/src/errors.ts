@@ -142,6 +142,20 @@ export const WALLET_ERRORS = {
   },
 } as const satisfies Record<string, ErrorDefinition>;
 
+/** 거래 내역 파일 가져오기(W10). details: FileImportRetryDetails { retryAfter(ISO UTC), retryAfterSec } + HTTP Retry-After */
+export const FILE_IMPORT_ERRORS = {
+  /** 사용자당 저장 요청 제한(FILE_IMPORT_SAVE_LIMIT — 1분 5회) */
+  FILE_IMPORT_RATE_LIMITED: {
+    status: 429,
+    message: '잠시 후 다시 시도해 주세요',
+  },
+  /** 사용자당 KST 하루 새 저장 건수 상한(FILE_IMPORT_DAILY_MAX) */
+  FILE_IMPORT_DAILY_LIMIT: {
+    status: 429,
+    message: '오늘은 더 가져올 수 없어요',
+  },
+} as const satisfies Record<string, ErrorDefinition>;
+
 /** 카드 승인내역 불러오기(S8, CODEF). CODEF 결과 코드 → 이 코드(apps/api/src/card-import/README.md 에러 매핑) */
 export const CARD_IMPORT_ERRORS = {
   /** 카드사 아이디·비밀번호가 맞지 않다. details: CardLoginFailedDetails { failedAttempts } */
@@ -336,6 +350,7 @@ export const ERRORS = {
   ...FX_ERRORS,
   ...WALLET_ERRORS,
   ...CARD_IMPORT_ERRORS,
+  ...FILE_IMPORT_ERRORS,
   ...ADMIN_ERRORS,
 } as const satisfies Record<string, ErrorDefinition>;
 

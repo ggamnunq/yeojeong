@@ -25,6 +25,7 @@ import { DEFAULT_THROTTLE } from './common/throttle.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CardImportModule } from './card-import/card-import.module.js';
 import { ClientErrorsModule } from './client-errors/client-errors.module.js';
+import { FileImportModule } from './file-import/file-import.module.js';
 import { ConsentsModule } from './consents/consents.module.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
 import { FxModule } from './fx/fx.module.js';
@@ -64,6 +65,7 @@ import { WalletModule } from './wallet/wallet.module.js';
     PaymentMethodsModule,
     WalletModule,
     CardImportModule,
+    FileImportModule,
     AdminModule,
   ],
   providers: [
