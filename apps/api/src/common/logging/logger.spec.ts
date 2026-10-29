@@ -74,4 +74,61 @@ describe('createLogger', () => {
       err: { message: 'CODEF 호출 실패', request: { loginId: '[REDACTED]' } },
     });
   });
+
+  it('masks by key at any depth: CODEF bodies, arrays, error causes and err.body (S8 review L1)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    const cause = Object.assign(new Error('inner'), {
+      request: { body: { loginId: 'leak-cause-login' } },
+    });
+    const outer = Object.assign(new Error('outer', { cause }), {
+      body: '{"id":"leak-err-body"}',
+    });
+
+    logger.error(
+      { codefBody: { id: 'leak-codef-id', organization: '0306' } },
+      'a',
+    );
+    logger.error({ x: { accountList: [{ id: 'leak-account-id' }] } }, 'b');
+    logger.error({ err: outer }, 'c');
+    logger.error(
+      {
+        deep: {
+          a: { b: { c: { d: { e: { loginCardNo: 'leak-deep-card' } } } } },
+        },
+      },
+      'd',
+    );
+    logger.error(
+      { list: [{ nested: [{ encryptedPassword: 'leak-array-cipher' }] }] },
+      'e',
+    );
+    logger.error(
+      { step: { organization: '0306', id: 'leak-sibling-id' } },
+      'f',
+    );
+    logger.info(
+      { accessLogId: 'keep-this-id', req: { id: 'keep-req-id' } },
+      'g',
+    );
+
+    expect(output).not.toContain('leak-');
+    expect(output).toContain('keep-this-id');
+    const lines = output
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(lines[0]).toMatchObject({
+      codefBody: { id: '[REDACTED]', organization: '0306' },
+    });
+    expect(lines[1]).toMatchObject({
+      x: { accountList: [{ id: '[REDACTED]' }] },
+    });
+    expect(lines[2]).toMatchObject({
+      err: { message: expect.stringContaining('outer'), body: '[REDACTED]' },
+    });
+  });
 });

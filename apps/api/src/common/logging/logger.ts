@@ -6,6 +6,7 @@ import {
   type Logger,
   type LoggerOptions,
 } from 'pino';
+import { maskLogObject } from './mask.js';
 
 // Cloud Logging이 인식하는 severity 값
 const SEVERITY: Record<string, string> = {
@@ -93,13 +94,16 @@ export function createLogger(
     serializers: {
       req: (req: IncomingMessage) => ({ method: req.method, id: req.id }),
       res: (res: ServerResponse) => ({ statusCode: res.statusCode }),
-      err: pino.stdSerializers.err,
+      err: (err: Error) => maskLogObject(pino.stdSerializers.errWithCause(err)),
     },
+    // 경로 목록(redact)이 놓치는 깊이·배열·에러 원인까지 키 이름으로 한 번 더 가린다(common/logging/mask.ts)
+    formatters: { log: (obj) => maskLogObject(obj) },
   };
 
   if (production) {
     // 운영은 JSON 한 줄. Cloud Logging이 level 대신 severity를 읽는다.
     options.formatters = {
+      ...options.formatters,
       level: (label) => ({ severity: SEVERITY[label] ?? 'DEFAULT' }),
     };
   } else if (!destination && env !== 'test') {
