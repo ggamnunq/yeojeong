@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AdminLoginRequest, AdminUserSort, AdminWithdrawUserRequest } from '@yeojeong/shared'
+import type { AdminCreateCardImportGrantRequest, AdminLoginRequest, AdminUserSort, AdminWithdrawUserRequest } from '@yeojeong/shared'
 import { adminApi, adminKeys } from './api'
 
 // 관리자 화면 훅. AdminLayout의 전용 QueryClient 안에서만 쓴다.
@@ -25,8 +25,9 @@ export function useAdminLogout() {
   return useMutation({ mutationFn: () => adminApi.logout() })
 }
 
-export function useAdminUsers(q: string, sort: AdminUserSort) {
+export function useAdminUsers(q: string, sort: AdminUserSort, { enabled = true }: { enabled?: boolean } = {}) {
   return useInfiniteQuery({
+    enabled,
     queryKey: adminKeys.users(q, sort),
     queryFn: ({ pageParam, signal }) => adminApi.users({ q: q || undefined, sort, cursor: pageParam }, signal),
     initialPageParam: undefined as string | undefined,
@@ -47,6 +48,36 @@ export function useAdminWithdraw(userId: string) {
       void client.invalidateQueries({ queryKey: adminKeys.usersAll })
       void client.invalidateQueries({ queryKey: adminKeys.codef })
     },
+  })
+}
+
+export function useAdminCardImportGrants() {
+  return useQuery({ queryKey: adminKeys.cardImportGrants, queryFn: ({ signal }) => adminApi.cardImportGrants(signal) })
+}
+
+/** 권한이 바뀌면 권한 목록·회원 목록·그 회원 상세를 다시 읽는다 */
+function useCardImportGrantRefresh() {
+  const client = useQueryClient()
+  return (userId: string) => {
+    void client.invalidateQueries({ queryKey: adminKeys.cardImportGrants })
+    void client.invalidateQueries({ queryKey: adminKeys.usersAll })
+    void client.invalidateQueries({ queryKey: adminKeys.user(userId) })
+  }
+}
+
+export function useAdminGrantCardImport() {
+  const refresh = useCardImportGrantRefresh()
+  return useMutation({
+    mutationFn: (body: AdminCreateCardImportGrantRequest) => adminApi.grantCardImport(body),
+    onSettled: (_data, _error, body) => refresh(body.userId),
+  })
+}
+
+export function useAdminRevokeCardImport() {
+  const refresh = useCardImportGrantRefresh()
+  return useMutation({
+    mutationFn: (userId: string) => adminApi.revokeCardImport(userId),
+    onSettled: (_data, _error, userId) => refresh(userId),
   })
 }
 

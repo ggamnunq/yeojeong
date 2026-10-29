@@ -39,7 +39,7 @@ import {
   NotFoundError,
   ValidationFailedError,
 } from '../common/errors/app-exception.js';
-import { FeatureFlags } from '../common/features.js';
+import { CardImportAccess, FeatureFlags } from '../common/features.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ConsentsService, consentEvidence } from './consents.service.js';
 import {
@@ -77,22 +77,23 @@ export class ConsentsController {
     private readonly checker: ConsentChecker,
     private readonly prisma: PrismaService,
     private readonly features: FeatureFlags,
+    private readonly cardImport: CardImportAccess,
   ) {}
 
   /**
    * 연동 동의(FIN_LINK)는 계좌·카드 연결을 숨긴 동안, 카드 승인내역 불러오기 동의(CARD_IMPORT)는 그 기능을 숨긴 동안 받지 않는다(FR-006 → 404).
    * 철회(HF-58)는 기능이 꺼져 있어도 늘 받는다
    */
-  private assertAccountLink(stage: ConsentStage, userId?: string) {
+  private async assertAccountLink(stage: ConsentStage, userId?: string) {
     if (stage === 'FIN_LINK' && !this.features.accountLink) {
       throw new NotFoundError();
     }
-    // 문서 목록(비로그인)은 단계가 off가 아니면 보여 준다. 상태·저장은 그 사용자에게 켜져 있을 때만(allowlist)
+    // 문서 목록(비로그인)은 단계가 off가 아니면 보여 준다. 상태·저장은 그 사용자에게 켜져 있을 때만(allowlist: env 목록 또는 관리자 권한)
     if (
       stage === 'CARD_IMPORT' &&
       (userId === undefined
         ? this.features.cardImportMode === 'off'
-        : !this.features.cardImportFor(userId))
+        : !(await this.cardImport.enabledFor(userId)))
     ) {
       throw new NotFoundError();
     }
@@ -108,9 +109,11 @@ export class ConsentsController {
   @ApiErrorResponse(400, 'VALIDATION_FAILED')
   @Public()
   @Get('documents')
-  documents(@Query('stage') stage: unknown): Promise<ConsentDocumentSummary[]> {
+  async documents(
+    @Query('stage') stage: unknown,
+  ): Promise<ConsentDocumentSummary[]> {
     const parsed = parseStage(stage, CONSENT_STAGE_VALUES);
-    this.assertAccountLink(parsed);
+    await this.assertAccountLink(parsed);
     return this.consents.documents(parsed);
   }
 
@@ -131,7 +134,7 @@ export class ConsentsController {
   ): Promise<ConsentStatusResponse> {
     const parsed = parseStage(stage, ['FIN_LINK', 'CARD_IMPORT']) as
       'FIN_LINK' | 'CARD_IMPORT';
-    this.assertAccountLink(parsed, user.id);
+    await this.assertAccountLink(parsed, user.id);
     const required = await this.checker.findMissing(
       user.id,
       STAGE_REQUIRED[parsed],
@@ -160,7 +163,7 @@ export class ConsentsController {
     @Body() dto: ConsentSubmitDto,
     @Req() req: Request,
   ): Promise<ConsentStatusResponse> {
-    this.assertAccountLink(dto.stage, user.id);
+    await this.assertAccountLink(dto.stage, user.id);
     if (
       !(SUBMIT_STAGE_SCREENS[dto.stage] as readonly string[]).includes(
         dto.screen,

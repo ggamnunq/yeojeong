@@ -30,7 +30,8 @@ type OpenDialog = 'start' | 'end' | 'delete' | null
  * - 시작 전(HF-16): 출발까지 D-n · 경로 · 그룹원 · 초대코드([QR] → HF-61 시트 · 복사) · (그룹장) 「여정 시작」 → HF-17 · 「그룹 삭제」(Danger)
  *   종료일이 지난 시작 전 여정(Q-26, 서버 startBlockReason = PERIOD_OVER): 그룹장은 「기간 수정」, 멤버는 시작 버튼 없음
  * - 진행 중(HF-23): 여행 중 Day n / m · 그룹원 + 「추가」 · 초대코드 · (그룹장) 「여정 종료하기」 → HF-24
- * - 종료 후: 도착한 경로, 읽기 전용(초대코드·추가·버튼·연필 없음)
+ * - 종료 후: 도착한 경로, 읽기 전용(초대코드·추가·버튼·「수정」 없음)
+ * 그룹장은 영웅 카드 오른쪽 위 「수정」(Ghost S, W9)으로 여정 정보 수정(WF-10 수정 모드)에 들어간다 — permissions.canEdit일 때만.
  * 버튼 노출은 서버 permissions로 정한다.
  */
 export default function TripInfoPage() {

@@ -107,13 +107,19 @@ pino `redact` 경로 목록에 더해 `common/logging/mask.ts`가 **키 이름�
 
 CODEF가 준 메시지는 화면에 넘기지 않는다. 로그는 경로·결과 코드·소요 시간만(`codef.client.ts`).
 
+## 공개 단계와 권한
+
+- `off`: 아무에게도 안 보인다(CODEF 키가 하나라도 없어도 off). `on`: 모두에게 보인다(법률 자문 L-25 뒤에만).
+- `allowlist`: env `CARD_IMPORT_ALLOWED_USER_IDS` **또는** 관리자 페이지에서 권한을 준 회원(`card_import_grants`, `src/admin/README.md` "카드 불러오기 권한")에게만 보인다. 판정은 `CardImportAccess`(`common/features.ts`)가 요청마다 DB를 읽어 하므로 부여·회수가 다음 요청부터 바로 반영된다(같은 요청 안에서는 한 번만 읽는다).
+- 꺼진 회원에게는 `/api/card-import/*`·`POST /api/wallet/entries/import`·`/api/consents?stage=CARD_IMPORT`(상태·저장)가 404, 세션 `features.cardImport = false`. 권한 행은 탈퇴하면 함께 지워진다.
+
 ## env
 
 | 이름 | 기본 | 설명 |
 |---|---|---|
 | `FEATURE_CARD_IMPORT` | `off` | `off` · `allowlist` · `on`. CODEF 키 세 개가 모두 있어야 켜진다 |
 | `CARD_NUMBER_LOGIN` | `false` | 현대·하나 카드번호 로그인(카드번호 원문 경유). FEATURE_CARD_IMPORT와 별개. Terraform `card_number_login`. 처리방침 0.1은 "카드번호를 수집하지 않는다"이므로 **약관 0.2 게시 전에는 켜지 않는다** |
-| `CARD_IMPORT_ALLOWED_USER_IDS` | 빈 값 | allowlist 사용자 UUID(쉼표). tfvars로만 |
+| `CARD_IMPORT_ALLOWED_USER_IDS` | 빈 값 | allowlist 사용자 UUID(쉼표). tfvars로만. 하위 호환·비상용 — 평소에는 관리자 페이지 "카드 불러오기 권한"(`card_import_grants`)으로 준다 |
 | `CODEF_ENV` | `sandbox` | `sandbox`(고정 샘플) · `development`(데모) · `production` |
 | `CODEF_LOGIN_MODE` | `direct` | `direct` · `account` |
 | `CODEF_ALLOW_ACCOUNT_MODE` | — | 운영에서 account 모드를 쓰려면 `true`(없으면 direct로 동작, error 로그) |

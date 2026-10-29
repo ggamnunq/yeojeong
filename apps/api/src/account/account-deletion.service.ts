@@ -33,6 +33,8 @@ export interface DeleteAccountCounts {
   leadersSucceeded: number;
   groupsSoftDeleted: number;
   consentsWithdrawn: number;
+  /** 관리자 페이지에서 준 카드 불러오기 권한(0 또는 1) */
+  cardImportGrants: number;
 }
 
 export type DeleteAccountResult =
@@ -55,7 +57,7 @@ const TX_OPTIONS = { timeout: 20_000, maxWait: 5_000 } as const;
  *
  * 1. account.deleting 이벤트(트랜잭션 전, 외부 정리: 제공기관 토큰 폐기·카카오 연결 끊기)
  * 2. 트랜잭션: User 행 잠금 → 활성 멤버십의 Trip 행 잠금(S2A와 같은 순서) → 멤버십 익명화·승계·빈 그룹 소프트 삭제 →
- *    PENDING·PERSONAL 결제 삭제 → 거래 원본·결제수단·연결 시도·연결(토큰 포함) 삭제 → 세션 삭제 →
+ *    PENDING·PERSONAL 결제 삭제 → 거래 원본·결제수단·연결 시도·연결(토큰 포함) 삭제 → 세션·카드 불러오기 권한 삭제 →
  *    동의 철회 기록 → AccountDeletion 완료 기록 → User 삭제
  * 3. membership.left(reason ACCOUNT_DELETED)·account.deleted 이벤트(커밋 후)
  */
@@ -170,6 +172,10 @@ export class AccountDeletionService {
     // ① 세션 전부(User CASCADE로도 지워지지만 순서를 드러내려고 먼저 지운다)
     const sessions = await tx.session.deleteMany({ where: { userId } });
     await tx.signupTicket.deleteMany({ where: { kakaoId } });
+    // 관리자 페이지에서 준 카드 불러오기 권한(User CASCADE로도 지워지지만 파기 대상임을 드러내려고 먼저 지운다)
+    const cardImportGrants = await tx.cardImportGrant.deleteMany({
+      where: { userId },
+    });
 
     // ⑦ 동의 철회 기록. 행은 3년 보존 후 파기 배치가 지운다(미동의 행도 철회 시각을 채워 기간 계산에 넣는다)
     const consents = await tx.userConsent.updateMany({
@@ -207,6 +213,7 @@ export class AccountDeletionService {
         leadersSucceeded,
         groupsSoftDeleted,
         consentsWithdrawn: consents.count,
+        cardImportGrants: cardImportGrants.count,
       },
     };
   }

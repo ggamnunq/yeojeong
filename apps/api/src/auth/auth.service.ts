@@ -2,7 +2,6 @@ import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import {
   SIGNUP_REQUIRED_CONSENTS,
-  normalizeNickname,
   type AuthSessionResponse,
   type SignupResponse,
 } from '@yeojeong/shared';
@@ -30,7 +29,6 @@ import { WebConfig } from '../common/auth/web-config.js';
 import {
   AppException,
   UnauthenticatedError,
-  ValidationFailedError,
 } from '../common/errors/app-exception.js';
 import { Prisma } from '../generated/prisma/client.js';
 import {
@@ -38,8 +36,9 @@ import {
   consentEvidence,
 } from '../consents/consents.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { assertNickname } from '../users/nickname.js';
 import { UsersService } from '../users/users.service.js';
-import { FeatureFlags } from '../common/features.js';
+import { CardImportAccess } from '../common/features.js';
 import type { ReconsentDto, SignupDto } from './dto/auth.dto.js';
 import {
   KakaoClient,
@@ -101,7 +100,7 @@ export class AuthService {
     private readonly consents: ConsentsService,
     private readonly checker: ConsentChecker,
     private readonly users: UsersService,
-    private readonly features: FeatureFlags,
+    private readonly features: CardImportAccess,
   ) {}
 
   /** 카카오 인가 페이지 주소. state·returnTo는 서명 쿠키에 담는다(10분) */
@@ -226,8 +225,10 @@ export class AuthService {
     state: SessionState,
     req: Request,
   ): Promise<AuthSessionResponse> {
-    const features = this.features.view(
+    // 관리자 페이지에서 준 카드 불러오기 권한까지 반영(allowlist). 같은 요청의 가드와 조회를 나눠 쓴다
+    const features = await this.features.view(
       state.status === 'AUTHENTICATED' ? state.user.id : null,
+      req,
     );
     if (state.status === 'AUTHENTICATED') {
       const [user, reconsentRequired] = await Promise.all([
@@ -266,21 +267,7 @@ export class AuthService {
         '가입 시간이 지났어요. 다시 로그인해 주세요',
       );
     }
-    const nickname = normalizeNickname(dto.nickname);
-    if (!nickname.ok) {
-      throw new ValidationFailedError([
-        {
-          path: 'nickname',
-          code: nickname.reason,
-          message:
-            nickname.reason === 'TOO_LONG'
-              ? '닉네임은 10자까지 쓸 수 있어요'
-              : nickname.reason === 'EMPTY'
-                ? '닉네임을 입력해 주세요'
-                : '닉네임에 쓸 수 없는 문자가 있어요',
-        },
-      ]);
-    }
+    const nickname = assertNickname(dto.nickname);
     const { documents } = await this.consents.check(
       'SIGNUP',
       dto.agreements,
@@ -300,7 +287,7 @@ export class AuthService {
         const user = await tx.user.create({
           data: {
             kakaoId: ticket.kakaoId,
-            nickname: nickname.value,
+            nickname,
             profileImageUrl: ticket.profileImageUrl,
             profileImageSyncedAt: now,
             lastLoginAt: now,

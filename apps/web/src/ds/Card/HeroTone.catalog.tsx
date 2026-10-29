@@ -25,12 +25,12 @@ export default defineCatalog({
               meta={META}
             />
           </Variant>
-          <Variant name="진행 중 · heroSuffix · route(ongoing)" className="w-[350px]">
+          <Variant name="진행 중 · heroSuffix · route(ongoing) · action text(W9 「수정」 Ghost S)" className="w-[350px]">
             <CardHeroTone
               label="여행 중"
               hero="Day 2"
               heroSuffix="/ 4"
-              action={{ label: '여정 정보 수정', onClick: () => {} }}
+              action={{ label: '여정 정보 수정', text: '수정', onClick: () => {} }}
               route={{ phase: 'ongoing', ...ROUTE, days: 4, current: 2 }}
               meta={META}
             />

@@ -33,6 +33,8 @@ export const paths = {
   /** 카드사 로그인(WF-53, 54~57은 같은 주소의 단계). issuer = CODEF 기관 코드 — 민감 값은 주소에 넣지 않는다 */
   walletImportLogin: (issuer: string) => `/wallet/import/${encodeURIComponent(issuer)}`,
   me: () => '/me',
+  /** 내 정보(HF-63): 닉네임 변경 · 프사는 카카오 안내만 */
+  meProfile: () => '/me/profile',
   /** 동의 관리(WF-58) */
   meConsents: () => '/me/consents',
   /** 탈퇴(HF-59) */

@@ -1,5 +1,8 @@
 import type {
+  AdminCardImportGrant,
+  AdminCardImportGrantList,
   AdminCodefUsage,
+  AdminCreateCardImportGrantRequest,
   AdminLoginRequest,
   AdminSessionView,
   AdminUserDetail,
@@ -33,6 +36,11 @@ export const adminApi = {
   withdraw: (userId: string, body: AdminWithdrawUserRequest) =>
     apiFetch<AdminWithdrawUserResponse>(`/admin/users/${encodeURIComponent(userId)}/withdraw`, { method: 'POST', body }),
   codefUsage: (signal?: AbortSignal) => apiFetch<AdminCodefUsage>('/admin/codef-usage', { signal }),
+  cardImportGrants: (signal?: AbortSignal) => apiFetch<AdminCardImportGrantList>('/admin/card-import-grants', { signal }),
+  grantCardImport: (body: AdminCreateCardImportGrantRequest) =>
+    apiFetch<AdminCardImportGrant>('/admin/card-import-grants', { method: 'POST', body }),
+  revokeCardImport: (userId: string) =>
+    apiFetch<undefined>(`/admin/card-import-grants/${encodeURIComponent(userId)}`, { method: 'DELETE' }),
 }
 
 /** 관리자 쿼리 키. 모두 ['admin']으로 시작한다(로그아웃 때 전용 클라이언트를 통째로 비운다) */
@@ -43,6 +51,7 @@ export const adminKeys = {
   usersAll: ['admin', 'users'] as const,
   user: (userId: string) => ['admin', 'user', userId] as const,
   codef: ['admin', 'codef'] as const,
+  cardImportGrants: ['admin', 'card-import-grants'] as const,
 }
 
 /** 관리자 세션이 없거나 만료됐다(서버 401 ADMIN_UNAUTHENTICATED) */

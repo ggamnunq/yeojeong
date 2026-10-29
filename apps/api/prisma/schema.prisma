@@ -225,6 +225,8 @@ model User {
   cardImportLock          CardImportLock?
   cardImportLoginFailures CardImportLoginFailure[]
   cardImportTwoWays       CardImportTwoWaySession[]
+  /// 카드 불러오기 권한(관리자 부여, FEATURE_CARD_IMPORT=allowlist). 탈퇴하면 같이 지운다
+  cardImportGrant         CardImportGrant?
 
   @@map("users")
 }
@@ -713,6 +715,23 @@ model CardImportTwoWaySession {
 
   @@index([expiresAt])
   @@map("card_import_two_way_sessions")
+}
+
+/// 카드 승인내역 불러오기(S8) 권한 — 관리자 페이지에서 준다(FEATURE_CARD_IMPORT=allowlist일 때만 쓴다. on은 모두, off는 아무도).
+/// env CARD_IMPORT_ALLOWED_USER_IDS(하위 호환·비상용)와 합집합이다. 회수하면 행을 지우고, 탈퇴하면 탈퇴 파이프라인이 지운다(FK CASCADE도 건다).
+/// 누가 언제 주고 회수했는지는 접근 기록(ADMIN_GRANT_CARD_IMPORT·ADMIN_REVOKE_CARD_IMPORT, 1년)에 남는다
+model CardImportGrant {
+  userId    String   @id @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grantedAt DateTime @default(now()) @map("granted_at") @db.Timestamptz
+  /// 준 관리자 행위자 ID(AdminConfig.actorId — 아이디에서 만든 UUID, users 행 없음)
+  grantedBy String   @map("granted_by") @db.Uuid
+  /// 운영 메모(선택, 100자). 개인정보를 적지 않는다
+  note      String?  @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("card_import_grants")
 }
 
 /// 서비스 전체 CODEF API 호출 수(KST 날짜별, S8). 일일 예산(CODEF_DAILY_CALL_BUDGET) 확인용. 사용자 정보 없음. 7일 지나면 파기 배치가 지운다

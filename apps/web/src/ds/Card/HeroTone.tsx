@@ -1,5 +1,6 @@
 import { clsx } from 'clsx'
 import { useId, type HTMLAttributes, type MouseEventHandler, type ReactNode } from 'react'
+import { Button } from '../Button/Button'
 import { Icon } from '../Icon/Icon'
 import type { IconName } from '../Icon/icons'
 import { RouteProgress, type RouteProgressProps } from '../Route/Progress'
@@ -9,13 +10,19 @@ import { focusRing, touchTarget } from '../styles'
 // bg/subtle · radius 20 · 패딩 24/20/20/20, 간격 4: 라벨(Body/S text/secondary) [+ ✎ 20] → 영웅 숫자(Amount/XL) → 보조(Body/S) → 20 → 경로(Route/Progress) → 12 → 메타(Caption text/tertiary).
 // 화면당 영웅 숫자는 하나. 정산(HF-25): label "총 공동 지출" · hero "₩826,910" · sub · route phase="ended" · meta 없음.
 
-/** Figma Action(Icon/edit). 객체를 주면 라벨 줄 오른쪽에 아이콘 버튼(20, 누르는 영역 44) */
+/**
+ * Figma Action. 객체를 주면 라벨 줄 오른쪽에 붙는다.
+ * - 기본: 아이콘 버튼(Icon/edit 20, 누르는 영역 44)
+ * - `text`를 주면 텍스트 버튼(Button Ghost S) — 여정 정보 HF-16·23 "수정"(W9, 발견성). 줄 높이는 그대로 두려고 위아래를 겹친다
+ */
 export type CardHeroToneAction = {
-  /** 접근성 이름: "여정 정보 수정" */
+  /** 접근성 이름: "여정 정보 수정". 텍스트 버튼이면 보이는 글자(text)를 포함해야 한다 */
   label: string
   onClick?: MouseEventHandler<HTMLButtonElement>
-  /** 기본 edit */
+  /** 아이콘 버튼의 아이콘. 기본 edit */
   icon?: IconName
+  /** 보이는 글자 "수정" — 주면 아이콘 대신 Button Ghost S */
+  text?: string
 }
 
 export type CardHeroToneProps = Omit<HTMLAttributes<HTMLElement>, 'children'> & {
@@ -69,7 +76,17 @@ export function CardHeroTone({
             <Label id={labelId} className="min-w-0 flex-1 text-body-s text-secondary">
               {label}
             </Label>
-            {action && (
+            {action?.text != null && (
+              <Button
+                type="ghost"
+                size="s"
+                label={action.text}
+                aria-label={action.label}
+                onClick={action.onClick}
+                className="-my-2 -mr-3 shrink-0"
+              />
+            )}
+            {action && action.text == null && (
               <button
                 type="button"
                 aria-label={action.label}
