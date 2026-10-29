@@ -26,7 +26,15 @@ export const paths = {
   walletNew: () => '/wallet/new',
   /** 지갑 결제 수정 시트(WF-50 지갑 폼) */
   walletEntryEdit: (entryId: string) => `/wallet/${entryId}/edit`,
+  /** 카드 내역 불러오기 시작 전 확인(WF-51) */
+  walletImport: () => '/wallet/import',
+  /** 카드사 선택(WF-52) */
+  walletImportIssuer: () => '/wallet/import/issuer',
+  /** 카드사 로그인(WF-53, 54~57은 같은 주소의 단계). issuer = CODEF 기관 코드 — 민감 값은 주소에 넣지 않는다 */
+  walletImportLogin: (issuer: string) => `/wallet/import/${encodeURIComponent(issuer)}`,
   me: () => '/me',
+  /** 동의 관리(WF-58) */
+  meConsents: () => '/me/consents',
 
   trips: () => '/trips',
   tripNew: () => '/trips/new',

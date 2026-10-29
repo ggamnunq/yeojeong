@@ -259,16 +259,8 @@ function WalletEntryForm({ entry, onClose }: { entry?: WalletEntry; onClose: () 
     : { label: '추가', onClick: () => valid && !busy && !tripLoading && create.mutate(), state: create.isPending ? 'loading' : valid && !tripLoading ? 'default' : 'disabled' }
 
   const titles: Record<Step, string> = { form: editing ? '결제 수정' : '결제 추가', trip: '여정', date: '날짜' }
-  const cta =
-    step === 'form'
-      ? formCta
-      : step === 'date'
-        ? dateStep.cta((iso) => {
-            setOccurredAt(iso)
-            setErrors((e) => ({ ...e, occurredAt: undefined }))
-            setStep('form')
-          })
-        : undefined
+  // 날짜 단계는 시트 CTA를 끄고 SheetContentDateTime의 "확인"을 쓴다(HF-46d)
+  const cta = step === 'form' ? formCta : undefined
 
   return (
     <>
@@ -349,7 +341,12 @@ function WalletEntryForm({ entry, onClose }: { entry?: WalletEntry; onClose: () 
             ]}
           />
         )}
-        {step === 'date' && dateStep.body}
+        {step === 'date' &&
+          dateStep.body((iso) => {
+            setOccurredAt(iso)
+            setErrors((e) => ({ ...e, occurredAt: undefined }))
+            setStep('form')
+          })}
       </BottomSheet>
       {/* WF-50b: 지갑 쪽 공동 결제 삭제 → includeShared=true */}
       <Dialog

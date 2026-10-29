@@ -46,10 +46,24 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     const ok = await fetchCardApprovals(body('me'))
     expect(ok.status).toBe('OK')
     if (ok.status !== 'OK') return
-    expect(ok.items.map((i) => i.status)).toEqual(['NEW', 'NEW', 'CANCELLED', 'CANCELLED', 'PARTIAL_CANCEL', 'SIMILAR', 'CANCELLED'])
-    expect(ok.items[0]).toMatchObject({ inTripId: expect.any(String), defaultSelected: true, itemToken: expect.any(String) })
-    expect(ok.items[1]).toMatchObject({ inTripId: null, defaultSelected: false })
+    // Figma HF-56 샘플: 전액 취소 2행 · 비슷한 기록 · 새 결제 · 추가됨 · 부분 취소 · … · 원 승인 없는 취소
+    expect(ok.items.map((i) => i.status)).toEqual([
+      'CANCELLED',
+      'CANCELLED',
+      'SIMILAR',
+      'NEW',
+      'ALREADY_IMPORTED',
+      'PARTIAL_CANCEL',
+      'NEW',
+      'NEW',
+      'NEW',
+      'NEW',
+      'CANCELLED',
+    ])
     expect(ok.items.find((i) => i.similarManualEntryId)).toMatchObject({ selectable: true, defaultSelected: false })
+    expect(ok.items.filter((i) => i.cancelState === 'ORPHAN_CANCEL')).toEqual([
+      expect.objectContaining({ selectable: false, itemToken: null, blockReason: 'ORPHAN_CANCEL' }),
+    ])
   })
 
   it('covers the 2-way and login failure scenarios', async () => {
@@ -78,7 +92,7 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     resetCardImportMock({ consented: true })
     const ok = await fetchCardApprovals(body('me'))
     if (ok.status !== 'OK') throw new Error('expected OK')
-    const [pick] = ok.items
+    const pick = ok.items.find((i) => i.selectable && i.currency === 'JPY' && i.krwAmount !== null)!
     const item = {
       importKey: pick.importKey,
       itemToken: pick.itemToken ?? '',
@@ -93,11 +107,15 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     )
     const saved = await importWalletEntries({ items: [item] })
     expect(saved).toMatchObject({ created: 1, skipped: 0 })
-    expect(saved.items[0]).toMatchObject({ created: true, entry: { source: 'CARD_IMPORT', amount: '2860', currency: 'JPY', krwAmount: 26290 } })
+    expect(saved.items[0]).toMatchObject({ created: true, entry: { source: 'CARD_IMPORT', amount: pick.amount, currency: 'JPY', krwAmount: pick.krwAmount } })
     expect((await importWalletEntries({ items: [item] })).items[0].created).toBe(false)
     const again = await fetchCardApprovals(body('me'))
     if (again.status !== 'OK') throw new Error('expected OK')
-    expect(again.items[0]).toMatchObject({ alreadyImported: true, selectable: false, blockReason: 'ALREADY_IMPORTED' })
+    expect(again.items.find((i) => i.importKey === pick.importKey)).toMatchObject({
+      alreadyImported: true,
+      selectable: false,
+      blockReason: 'ALREADY_IMPORTED',
+    })
   })
 
   it('lists and withdraws the revocable consent (HF-58)', async () => {

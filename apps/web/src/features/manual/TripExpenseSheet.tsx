@@ -325,13 +325,8 @@ function TripExpenseForm({ trip, detail, onClose, onDeleted }: FormProps) {
               setStep('form')
             },
           }
-        : step === 'date'
-          ? dateStep.cta((iso) => {
-              setOccurredAt(iso)
-              setErrors((e) => ({ ...e, occurredAt: undefined }))
-              setStep('form')
-            })
-          : undefined
+        : // 날짜 단계는 시트 CTA를 끄고 SheetContentDateTime의 "확인"을 쓴다(HF-46d)
+          undefined
 
   return (
     <>
@@ -429,7 +424,12 @@ function TripExpenseForm({ trip, detail, onClose, onDeleted }: FormProps) {
             }}
           />
         )}
-        {step === 'date' && dateStep.body}
+        {step === 'date' &&
+          dateStep.body((iso) => {
+            setOccurredAt(iso)
+            setErrors((e) => ({ ...e, occurredAt: undefined }))
+            setStep('form')
+          })}
       </BottomSheet>
       {/* WF-32: 공동 → 개인 */}
       <Dialog

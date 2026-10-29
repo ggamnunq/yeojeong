@@ -15,27 +15,31 @@ import {
   type RevocableConsent,
   type WalletEntry,
 } from '@yeojeong/shared'
-import { HttpResponse, type HttpHandler } from 'msw'
+import { delay, HttpResponse, type HttpHandler } from 'msw'
+import { db } from '../../mocks/data'
 import { api, denyUnlessAuthenticated, mockError, noContent, type NoContent } from '../../mocks/utils'
+import { clock } from '../payments/clock'
 
-// 카드 승인내역 불러오기(S8) 목. 시나리오는 아이디로 고른다(비밀번호는 암호문만 오고 목은 보지 않는다):
+// 카드 승인내역 불러오기(S8 · W7) 목. 시나리오는 아이디로 고른다(비밀번호는 암호문만 오고 목은 보지 않는다):
 //   아이디 "twoway"  → TWO_WAY_REQUIRED(문자 인증) → 인증번호 "123456"이면 OK, 그 밖은 400 CARD_TWO_WAY_INVALID
 //   아이디 "wrong"   → 400 CARD_LOGIN_FAILED { failedAttempts: 1·2 } → 3회째 429 CARD_IMPORT_LOGIN_COOLDOWN { retryAfter }
 //   아이디 "busy"    → 409 CARD_IMPORT_IN_PROGRESS
 //   아이디 "budget"  → 503 CARD_IMPORT_DAILY_LIMIT
+//   아이디 "limit"   → 429 CARD_IMPORT_RATE_LIMITED { retryAfter: 30분 뒤 }
 //   아이디 "locked"  → 409 CARD_ACCOUNT_ACTION_REQUIRED
 //   아이디 "down"    → 503 CARD_COMPANY_UNAVAILABLE
-//   그 밖            → OK(승인·전액 취소 2행·부분 취소·원 승인 없는 취소·외화·비슷한 기록 예시)
+//   아이디 "empty"   → OK, 결과 0건
+//   아이디 "slow"    → 3초 뒤 OK(WF-55 불러오는 중 · 취소 확인용)
+//   그 밖            → OK(Figma HF-56 샘플: 전액 취소 2행·비슷한 기록·추가됨·부분 취소·기간 밖·원 승인 없는 취소)
 //   하루 10회를 넘기면 429 CARD_IMPORT_RATE_LIMITED. 저장은 itemToken이 결과 그대로일 때만(아니면 410 CARD_IMPORT_RESULT_EXPIRED)
 // 동의: 처음에는 CARD_IMPORT 동의가 없다(config.consent.valid = false). POST /api/consents stage CARD_IMPORT로 동의한다.
-// 이 파일은 지갑 목(features/manual)의 데이터에 쓰지 않는다 — 저장 결과는 이 목 안에서만 기억한다(지갑 목록 연동은 화면 작업 때).
+// 상태는 db.cardImportState(테스트마다 resetMockDb로 처음으로). 저장한 항목은 지갑 목(db.walletEntries)에 들어가 HF-49에 보인다.
+// 날짜는 목 시계(clock — 11.13 18:34) 기준이고, 한도 시각(retryAfter)·인증 만료(expiresAt)는 기기 시각 기준이다.
 
 /** 목 전용 RSA 2048 공개키(개인키는 만들 때 버렸다 — 아무도 풀 수 없다). 화면 개발에서 암호화 경로를 그대로 돈다 */
 export const MOCK_CARD_IMPORT_PUBLIC_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuFPgSgkAEsbOoTX2kotcegNR/fM1MWrvLyPrwenmTnwNbNCAgComam+T1RE7mWXu6ghBMHTyw++46jTvJZrXkkXWIoKxHCyAlm4Q4dM4/4fiJ0QgSKJDtSlgA22CVy8IR8mBo4akYE01qGksUbOrXJ/7NhlOZziZjzTsd5qMzPw9k0cJmX1XOey12+4b6iqOUTMqRAp8jkr4/azrqeLCGh9PWOfb3ixxth4fTM+REKowR1PGVZ1gHV7uVvLQeA6aRTEaDzGSiwb/xiDMx9DnRxuytje2n7yP4fJgY2KqxzEVJg13QeAmXH5yi7jgWDUaARA5+MXAeA6pQVcmqwtpOQIDAQAB'
 export const MOCK_TWO_WAY_CODE = '123456'
-/** 목 결과의 자동 연결 여정 표시용 ID(목 여정 데이터와 연결하지 않는다) */
-export const MOCK_TRIP_ID = 'mock-card-import-trip'
 
 // 서버와 같다: 현대·하나(카드번호 전체 필요)는 1차에서 뺐다
 const ORGANIZATIONS: CardImportOrganization[] = [
@@ -48,40 +52,26 @@ const ORGANIZATIONS: CardImportOrganization[] = [
   { code: '0311', name: '롯데카드', maxRangeDays: 92, maxLookbackDays: 180, requiresCardNo: false },
 ]
 
-interface CardImportMockState {
-  consentAgreedAt: string | null
-  /** 오늘 시작한 조회 수(remainingToday) */
-  startedToday: number
-  /** 연속 로그인 실패 수(아이디 "wrong") */
-  loginFailures: number
-  /** 저장한 importKey → 지갑 항목 */
-  imported: Map<string, WalletEntry>
-  twoWayTokens: Set<string>
-}
-
-const state: CardImportMockState = {
-  consentAgreedAt: null,
-  startedToday: 0,
-  loginFailures: 0,
-  imported: new Map(),
-  twoWayTokens: new Set(),
-}
-
-/** 테스트에서 처음 상태로 */
+/** 테스트에서 처음 상태로(resetMockDb도 같은 값으로 되돌린다) */
 export function resetCardImportMock(options: { consented?: boolean } = {}) {
-  state.consentAgreedAt = options.consented ? new Date().toISOString() : null
-  state.startedToday = 0
-  state.loginFailures = 0
-  state.imported.clear()
-  state.twoWayTokens.clear()
+  db.cardImportState = {
+    consentAgreedAt: options.consented ? new Date().toISOString() : null,
+    startedToday: 0,
+    loginFailures: 0,
+    importedKeys: [],
+    twoWayTokens: [],
+    remaining: null,
+  }
 }
+
+const state = () => db.cardImportState
 
 const DAY_MS = 86_400_000
 const retryAfter = (seconds: number) => ({
   retryAfter: new Date(Date.now() + seconds * 1000).toISOString(),
   retryAfterSec: seconds,
 })
-const kstDay = (offset = 0) => new Date(Date.now() + 9 * 3_600_000 + offset * DAY_MS).toISOString().slice(0, 10)
+const kstDay = (offset = 0) => new Date(clock.now() + 9 * 3_600_000 + offset * DAY_MS).toISOString().slice(0, 10)
 const at = (day: string, time: string) => `${day}T${time}+09:00`
 const hex64 = (seed: string) => {
   let h = 0
@@ -90,9 +80,30 @@ const hex64 = (seed: string) => {
 }
 
 function consentStatus(): ConsentStatusResponse {
-  return state.consentAgreedAt
+  return state().consentAgreedAt
     ? { valid: true, missing: [], required: [] }
     : { valid: false, missing: ['CARD_IMPORT'], required: [{ id: 'CARD_IMPORT', version: '0.1-draft' }] }
+}
+
+/** 진행 중 여정(내가 활성 멤버) 중 오늘이 기간 안인 것. 기본 기간 · 자동 연결 여정 */
+function ongoingTrip(today: string) {
+  return db.trips.find(
+    (t) =>
+      t.startDate <= today &&
+      today <= t.endDate &&
+      db.memberships.some((m) => m.tripId === t.tripId && m.userId === db.meUserId && m.leftAt === null),
+  )
+}
+
+/** 승인 일시가 든 여정(자동 연결 규칙 흉내 — 날짜만 본다) */
+function tripOf(approvedAt: string) {
+  const day = approvedAt.slice(0, 10)
+  return db.trips.find(
+    (t) =>
+      t.startDate <= day &&
+      day <= t.endDate &&
+      db.memberships.some((m) => m.tripId === t.tripId && m.userId === db.meUserId && m.leftAt === null),
+  )
 }
 
 function item(
@@ -100,7 +111,7 @@ function item(
   partial: Partial<CardApprovalItem> & Pick<CardApprovalItem, 'approvedAt' | 'amount' | 'merchantName'>,
 ): CardApprovalItem {
   const importKey = hex64(`${org.code}|${partial.approvedAt}|${partial.amount}|${partial.merchantName}`)
-  const alreadyImported = state.imported.has(importKey)
+  const alreadyImported = partial.alreadyImported === true || state().importedKeys.includes(importKey)
   const base: CardApprovalItem = {
     importKey,
     currency: 'KRW',
@@ -116,7 +127,7 @@ function item(
     defaultSelected: true,
     blockReason: null,
     status: 'NEW',
-    inTripId: null,
+    inTripId: tripOf(partial.approvedAt)?.tripId ?? null,
     itemToken: null,
     ...partial,
   }
@@ -136,17 +147,23 @@ function item(
   }
 }
 
+/** Figma HF-56 · 56s 샘플(신한카드, 오사카 3박 4일). to = 조회 종료일, 그 전날·전전날까지 */
 function sampleItems(org: CardImportOrganization, to: string): CardApprovalItem[] {
-  const d0 = to
-  const d1 = new Date(Date.parse(`${to}T00:00:00Z`) - DAY_MS).toISOString().slice(0, 10)
+  const day = (offset: number) => new Date(Date.parse(`${to}T00:00:00Z`) + offset * DAY_MS).toISOString().slice(0, 10)
+  const [d0, d1, d2] = [day(0), day(-1), day(-2)]
+  const jpy = { currency: 'JPY', overseas: true } as const
   return [
-    item(org, { approvedAt: at(d0, '14:10:00'), amount: '2860', currency: 'JPY', krwAmount: 26290, overseas: true, merchantName: '이치란 라멘 도톤보리점', inTripId: MOCK_TRIP_ID }),
-    item(org, { approvedAt: at(d0, '12:30:00'), amount: '18', currency: 'USD', krwAmount: null, estimatedKrwAmount: 24850, overseas: true, merchantName: 'STARBUCKS' }),
-    item(org, { approvedAt: at(d0, '09:10:00'), amount: '-4500', krwAmount: -4500, merchantName: '편의점', cancelState: 'CANCELLED' }),
-    item(org, { approvedAt: at(d0, '09:05:00'), amount: '4500', merchantName: '편의점', cancelState: 'CANCELLED' }),
-    item(org, { approvedAt: at(d1, '19:40:00'), amount: '18000', merchantName: '면세점', cancelState: 'PARTIAL', partialCancelAmount: '12000' }),
-    item(org, { approvedAt: at(d1, '13:00:00'), amount: '12000', merchantName: '김밥천국', similarManualEntryId: 'we-similar-1' }),
-    item(org, { approvedAt: at(d1, '08:00:00'), amount: '-5000', krwAmount: -5000, merchantName: '카페', cancelState: 'ORPHAN_CANCEL' }),
+    item(org, { approvedAt: at(d0, '19:05:00'), amount: '-6400', krwAmount: -58830, ...jpy, merchantName: '유니클로 난바점', cancelState: 'CANCELLED' }),
+    item(org, { approvedAt: at(d0, '18:40:00'), amount: '6400', krwAmount: 58830, ...jpy, merchantName: '유니클로 난바점', cancelState: 'CANCELLED' }),
+    item(org, { approvedAt: at(d0, '18:22:00'), amount: '2800', krwAmount: null, estimatedKrwAmount: 25740, ...jpy, merchantName: '551 호라이 난바본점', similarManualEntryId: 'we-551' }),
+    item(org, { approvedAt: at(d0, '15:40:00'), amount: '12000', krwAmount: 110300, ...jpy, merchantName: '다카시마야 난바점' }),
+    item(org, { approvedAt: at(d0, '14:10:00'), amount: '2860', krwAmount: 26290, ...jpy, merchantName: 'MK택시', alreadyImported: true }),
+    item(org, { approvedAt: at(d0, '12:30:00'), amount: '134880', overseas: true, merchantName: '빅카메라 난바점', cancelState: 'PARTIAL', partialCancelAmount: '3000' }),
+    item(org, { approvedAt: at(d1, '20:30:00'), amount: '980', krwAmount: 9010, ...jpy, merchantName: '도톤보리 리버크루즈' }),
+    item(org, { approvedAt: at(d1, '13:05:00'), amount: '3960', krwAmount: 36400, ...jpy, merchantName: '이치란 라멘 도톤보리점' }),
+    item(org, { approvedAt: at(d1, '08:10:00'), amount: '83000', merchantName: '신라면세점 인천공항' }),
+    item(org, { approvedAt: at(d2, '21:10:00'), amount: '12000', merchantName: '다이소 강남역점' }),
+    item(org, { approvedAt: at(d2, '08:00:00'), amount: '-5000', krwAmount: -5000, merchantName: '카페', cancelState: 'ORPHAN_CANCEL' }),
   ]
 }
 
@@ -175,6 +192,8 @@ export const handlers: HttpHandler[] = [
   api.get<CardImportConfig>('/api/card-import/config', () => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
+    const today = kstDay(0)
+    const trip = ongoingTrip(today)
     return HttpResponse.json({
       enabled: true,
       publicKey: MOCK_CARD_IMPORT_PUBLIC_KEY,
@@ -182,10 +201,12 @@ export const handlers: HttpHandler[] = [
       organizations: ORGANIZATIONS,
       maxRangeDays: CARD_IMPORT_MAX_RANGE_DAYS,
       maxLookbackDays: CARD_IMPORT_MAX_LOOKBACK_DAYS,
-      defaultRange: { from: kstDay(-6), to: kstDay(0), basis: 'RECENT_DAYS', tripId: null },
+      defaultRange: trip
+        ? { from: trip.startDate, to: today, basis: 'ONGOING_TRIP', tripId: trip.tripId }
+        : { from: kstDay(-6), to: today, basis: 'RECENT_DAYS', tripId: null },
       consent: consentStatus(),
       twoWayTimeoutSeconds: 160,
-      remainingToday: Math.max(0, 10 - state.startedToday),
+      remainingToday: state().remaining ?? Math.max(0, 10 - state().startedToday),
     })
   }),
 
@@ -200,22 +221,24 @@ export const handlers: HttpHandler[] = [
       return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'organization', message: '불러올 수 없는 카드사예요' }] })
     }
     if (!body.twoWay) {
-      if (state.startedToday >= 10) return mockError('CARD_IMPORT_RATE_LIMITED', 429, retryAfter(3600))
-      state.startedToday += 1
+      if (state().startedToday >= 10) return mockError('CARD_IMPORT_RATE_LIMITED', 429, retryAfter(3600))
+      state().startedToday += 1
     }
+    if (body.loginId === 'slow') await delay(3000)
     if (body.loginId === 'busy') return mockError('CARD_IMPORT_IN_PROGRESS')
     if (body.loginId === 'budget') return mockError('CARD_IMPORT_DAILY_LIMIT')
+    if (body.loginId === 'limit') return mockError('CARD_IMPORT_RATE_LIMITED', 429, retryAfter(1800))
     if (body.loginId === 'wrong') {
-      state.loginFailures += 1
-      if (state.loginFailures >= 3) return mockError('CARD_IMPORT_LOGIN_COOLDOWN', 429, retryAfter(1800))
-      return mockError('CARD_LOGIN_FAILED', 400, { failedAttempts: state.loginFailures })
+      state().loginFailures += 1
+      if (state().loginFailures >= 3) return mockError('CARD_IMPORT_LOGIN_COOLDOWN', 429, retryAfter(1800))
+      return mockError('CARD_LOGIN_FAILED', 400, { failedAttempts: state().loginFailures })
     }
     if (body.loginId === 'locked') return mockError('CARD_ACCOUNT_ACTION_REQUIRED')
     if (body.loginId === 'down') return mockError('CARD_COMPANY_UNAVAILABLE')
     if (body.loginId === 'twoway') {
       if (!body.twoWay) {
         const token = `tw1.mock-${crypto.randomUUID()}`
-        state.twoWayTokens.add(token)
+        state().twoWayTokens.push(token)
         return HttpResponse.json({
           status: 'TWO_WAY_REQUIRED',
           twoWayToken: token,
@@ -223,16 +246,16 @@ export const handlers: HttpHandler[] = [
           expiresAt: new Date(Date.now() + 160_000).toISOString(),
         })
       }
-      if (!state.twoWayTokens.has(body.twoWay.token)) return mockError('CARD_TWO_WAY_EXPIRED')
+      if (!state().twoWayTokens.includes(body.twoWay.token)) return mockError('CARD_TWO_WAY_EXPIRED')
       if (body.twoWay.code !== MOCK_TWO_WAY_CODE) return mockError('CARD_TWO_WAY_INVALID')
-      state.twoWayTokens.delete(body.twoWay.token)
+      state().twoWayTokens = state().twoWayTokens.filter((t) => t !== body.twoWay?.token)
     }
     return HttpResponse.json({
       status: 'OK',
       organization: org.code,
       from: body.from,
       to: body.to,
-      items: sampleItems(org, body.to),
+      items: body.loginId === 'empty' ? [] : sampleItems(org, body.to),
     })
   }),
 
@@ -246,10 +269,21 @@ export const handlers: HttpHandler[] = [
     const forged = items.flatMap((i, index) => (i.itemToken === `mock.${i.importKey}` ? [] : [index]))
     if (forged.length > 0) return mockError('CARD_IMPORT_RESULT_EXPIRED', 410, { invalidIndexes: forged })
     const result = items.map((i, index) => {
-      const existing = state.imported.get(i.importKey)
-      if (existing) return { importKey: i.importKey, created: false, entry: existing }
       const entry = importedEntry(i, index)
-      state.imported.set(i.importKey, entry)
+      if (state().importedKeys.includes(i.importKey)) return { importKey: i.importKey, created: false, entry }
+      state().importedKeys.push(i.importKey)
+      // 지갑 목에도 넣는다(HF-49c — 새 행이 날짜 그룹에 들어간다). 여정 연결은 목에서 생략
+      db.walletEntries.push({
+        id: entry.id,
+        userId: db.meUserId,
+        occurredAt: i.occurredAt,
+        memo: entry.memo,
+        amount: i.amount,
+        currency: i.currency,
+        spotKrwAmount: entry.krwAmount,
+        expenseId: null,
+        version: 1,
+      })
       return { importKey: i.importKey, created: true, entry }
     })
     const created = result.filter((r) => r.created).length
@@ -265,7 +299,7 @@ export const handlers: HttpHandler[] = [
     if (denied) return denied
     const ok = body.agreements?.some((a) => a.consentId === 'CARD_IMPORT' && a.agreed && a.version)
     if (!ok) return mockError('TERMS_REQUIRED', 400, undefined, '필수 항목에 동의해 주세요')
-    state.consentAgreedAt = new Date().toISOString()
+    state().consentAgreedAt = new Date().toISOString()
     return HttpResponse.json({ valid: true, missing: [], required: [] }, { status: 201 })
   }),
 
@@ -273,13 +307,13 @@ export const handlers: HttpHandler[] = [
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     return HttpResponse.json(
-      state.consentAgreedAt
+      state().consentAgreedAt
         ? [
             {
               consentId: 'CARD_IMPORT' as const,
               title: '카드 승인내역 불러오기',
               version: '0.1-draft',
-              agreedAt: state.consentAgreedAt,
+              agreedAt: state().consentAgreedAt!,
               docUrl: '/consents/CARD_IMPORT',
             },
           ]
@@ -291,7 +325,7 @@ export const handlers: HttpHandler[] = [
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     if (params.consentId !== 'CARD_IMPORT') return mockError('NOT_FOUND', 404)
-    state.consentAgreedAt = null
+    state().consentAgreedAt = null
     return noContent()
   }),
 ]

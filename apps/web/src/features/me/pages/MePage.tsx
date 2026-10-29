@@ -10,6 +10,7 @@ import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { Avatar, Dialog, Icon, ShellSub, Tag } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { toast } from '../../../notifications'
+import { useCardImportEnabled } from '../../card-import/hooks'
 import { entryCountLabel } from '../../manual/rules'
 import { paymentMethodsQuery } from '../../wallet/api'
 import { formatMethodCounts } from '../../wallet/format'
@@ -77,6 +78,8 @@ function MeContent({
     [queryClient],
   )
   const askDeletion = useMutation({ mutationFn: requestDeletion, onSuccess: setDeletion })
+  // (v0.7.0) 카드 내역 불러오기를 쓰는 사용자만 "동의 관리 ›"(WF-58)
+  const cardImport = useCardImportEnabled()
 
   const counts = accountLink
     ? methods.data
@@ -130,6 +133,15 @@ function MeContent({
         >
           탈퇴·삭제 요청
         </button>
+        {cardImport && (
+          <Link
+            to={paths.meConsents()}
+            className={clsx('mt-2 flex items-center gap-0.5 rounded-sm px-3 py-1.5 text-body-s text-tertiary', focusRing)}
+          >
+            동의 관리
+            <Icon name="chevron-right" size={16} className="text-icon-subtle" />
+          </Link>
+        )}
         <p className="mt-5 text-caption text-tertiary">
           <Link to={paths.terms()} className={clsx('rounded-xs py-1', focusRing)}>
             이용약관

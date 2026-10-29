@@ -74,7 +74,8 @@ export function useFetchCardApprovals() {
   const last = useRef<FetchCardApprovalsRequest | null>(null)
   const mutation = useMutation<FetchCardApprovalsResponse, Error, FetchCardApprovalsRequest>({
     mutationFn: (request) => fetchCardApprovals(request),
-    meta: { silent: true },
+    // 403 CONSENT_REQUIRED도 화면이 처리한다(WF-51로) — 전역 재동의 화면으로 보내지 않는다
+    meta: { silent: true, consentHandled: true },
     // 요청 변수(암호문)가 뮤테이션 캐시에 오래 남지 않게 바로 치운다
     gcTime: 0,
   })
@@ -109,6 +110,9 @@ export function useImportWalletEntries() {
   const client = useQueryClient()
   return useMutation<ImportWalletEntriesResponse, Error, ImportWalletEntryItem[]>({
     mutationFn: (items) => importWalletEntries({ items }),
+    // 실패 안내(만료 다이얼로그·토스트)는 화면이 직접 한다. 결과(저장된 항목)는 캐시에 오래 두지 않는다
+    meta: { silent: true },
+    gcTime: 0,
     onSuccess: () => invalidateManual(client),
   })
 }
@@ -118,6 +122,7 @@ export function useCardImportConsent() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (version: string) => submitCardImportConsent(version),
+    meta: { silent: true },
     onSuccess: () =>
       Promise.all([
         client.invalidateQueries({ queryKey: cardImportKeys.config }),
@@ -136,6 +141,7 @@ export function useWithdrawConsent() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (consentId: RevocableConsentId) => withdrawConsent(consentId),
+    meta: { silent: true },
     onSuccess: () =>
       Promise.all([
         client.invalidateQueries({ queryKey: cardImportKeys.revocableConsents }),
