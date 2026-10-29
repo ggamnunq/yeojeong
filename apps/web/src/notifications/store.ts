@@ -28,6 +28,8 @@ export type ToastItem = {
   action?: ToastAction
   durationMs: number
   dedupeKey: string
+  /** 뜰 때까지 있었던 사용자 입력 수(noteUserInput). 이 뒤에 입력이 있었으면 사용자가 본 토스트다 */
+  inputSeq: number
 }
 
 type Timer = { handle?: ReturnType<typeof setTimeout>; remaining: number; startedAt: number }
@@ -40,6 +42,7 @@ export function createToastStore({ maxVisible = TOAST_MAX_VISIBLE, dedupeMs = TO
   const listeners = new Set<() => void>()
   const timers = new Map<number, Timer>()
   const lastShownAt = new Map<string, number>()
+  let inputSeq = 0
 
   const emit = () => {
     for (const listener of listeners) listener()
@@ -75,6 +78,7 @@ export function createToastStore({ maxVisible = TOAST_MAX_VISIBLE, dedupeMs = TO
       action: options.action,
       durationMs: options.durationMs ?? (type === 'error' ? TOAST_ERROR_DURATION_MS : TOAST_DURATION_MS),
       dedupeKey,
+      inputSeq,
     }
     const next = [...toasts, item]
     for (const evicted of next.splice(0, Math.max(0, next.length - maxVisible))) clearTimer(evicted.id)
@@ -122,6 +126,21 @@ export function createToastStore({ maxVisible = TOAST_MAX_VISIBLE, dedupeMs = TO
       if (toasts.length === 0) return
       for (const id of [...timers.keys()]) clearTimer(id)
       toasts = []
+      emit()
+    },
+    /** 사용자 입력(누름·키)이 있었다고 알린다. ToastHost가 문서에서 듣는다 */
+    noteUserInput() {
+      inputSeq += 1
+    },
+    /**
+     * 사용자가 새로 시트·다이얼로그를 열 때(화면명세 0-4): 뜬 뒤에 사용자 입력이 있었던 토스트만 닫는다.
+     * 마지막 입력 뒤에 뜬 토스트는 그 입력(저장·삭제 등)의 결과라서, 이어지는 시트 전환(수정 → 상세 다시 열림)에도 남긴다(HF-50·20b)
+     */
+    dismissSeen() {
+      const seen = toasts.filter((t) => t.inputSeq < inputSeq)
+      if (seen.length === 0) return
+      for (const t of seen) clearTimer(t.id)
+      toasts = toasts.filter((t) => t.inputSeq >= inputSeq)
       emit()
     },
     /** 모두 닫고 중복 방지 기록까지 지운다(로그아웃·테스트 초기화) */

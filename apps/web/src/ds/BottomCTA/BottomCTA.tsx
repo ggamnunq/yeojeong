@@ -12,7 +12,10 @@ export type BottomCTALayout = 'single' | 'horizontal'
 /** CTA 버튼이 받는 Figma State. Pressed는 CSS(:active)라 빠진다. disabled는 `disabled` 속성과 같다 */
 export type BottomCTAState = ButtonState | 'disabled'
 
-export type BottomCTAButton = Pick<ButtonProps, 'label' | 'onClick' | 'disabled' | 'htmlType' | 'form' | 'aria-label'> & {
+export type BottomCTAButton = Pick<
+  ButtonProps,
+  'label' | 'onClick' | 'disabled' | 'htmlType' | 'form' | 'aria-label' | 'leadingIcon' | 'icon'
+> & {
   /** Figma 노출 인스턴스의 Type. 기본 primary = Primary, secondary = Secondary */
   type?: ButtonType
   /** Figma State: loading = 스피너(누름 무시·포커스 유지), disabled = 비활성. 기본 default */

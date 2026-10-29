@@ -51,7 +51,21 @@ describe('토스트 큐', () => {
     expect(vi.getTimerCount()).toBe(1)
   })
 
-  it('dismissAll은 떠 있는 토스트만 닫고 중복 방지 기록은 남긴다(시트·다이얼로그를 열 때)', () => {
+  it('dismissSeen은 뜬 뒤에 사용자 입력이 있었던 토스트만 닫는다(HF-50·20b)', () => {
+    store.noteUserInput() // 저장 누름
+    store.show('success', '저장했어요')
+    // 저장 결과로 상세 시트가 다시 열림 — 입력이 없었으니 남는다
+    store.dismissSeen()
+    expect(messages()).toEqual(['저장했어요'])
+    expect(vi.getTimerCount()).toBe(1)
+    // 사용자가 다른 행을 눌러 시트를 새로 열면 닫는다
+    store.noteUserInput()
+    store.dismissSeen()
+    expect(messages()).toEqual([])
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('dismissAll은 떠 있는 토스트만 닫고 중복 방지 기록은 남긴다', () => {
     store.show('success', '저장했어요')
     store.dismissAll()
     expect(messages()).toEqual([])

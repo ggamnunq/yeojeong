@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, type MouseEventHandler, type ReactNode } from
 import { BottomCTA, type BottomCTASingle, type BottomCTAValue } from '../BottomCTA/BottomCTA'
 import { Button } from '../Button/Button'
 import { IconButton } from '../IconButton/IconButton'
-import { useModalDialog } from '../useModalDialog'
+import { useModalDialog, type ModalInitialFocus } from '../useModalDialog'
 
 // Figma BottomSheet(24:8647) · Title · Close · CTA · Content(슬롯 = children).
 // 손잡이 36×4 → 헤더(제목 H3 + 닫기 IconButton Ghost M) → 내용(hug) → CTA(Button Primary L FILL), 간격 20(v1.5).
@@ -118,11 +118,16 @@ export type BottomSheetProps = Omit<BottomSheetPanelProps, 'onClose' | 'titleId'
   /** ESC · 딤 탭 · 닫기 버튼 · 뒤로 가기(닫기 요청) */
   onClose: () => void
   'aria-describedby'?: string
+  /**
+   * 열 때 처음 포커스할 곳: ref 또는 시트 안 CSS 선택자(열 때 한 번). 기본은 제목(showModal) —
+   * 수동 결제 추가처럼 바로 입력해야 하는 시트는 금액 입력을 넘긴다(autoFocus는 showModal이 덮는다)
+   */
+  initialFocus?: ModalInitialFocus
 }
 
-export function BottomSheet({ open, onClose, 'aria-describedby': describedBy, ...panel }: BottomSheetProps) {
+export function BottomSheet({ open, onClose, initialFocus, 'aria-describedby': describedBy, ...panel }: BottomSheetProps) {
   const titleId = useId()
-  const { dialogProps, requestClose } = useModalDialog(open, onClose, 'sheet')
+  const { dialogProps, requestClose } = useModalDialog(open, onClose, 'sheet', initialFocus)
 
   return (
     <dialog

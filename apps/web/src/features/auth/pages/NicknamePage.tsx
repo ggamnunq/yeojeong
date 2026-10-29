@@ -69,7 +69,7 @@ export default function NicknamePage() {
 
   return (
     <ShellOnboarding
-      progress={signupProgress(1, accountLinkOf(session.data))}
+      {...signupProgress(1, accountLinkOf(session.data))}
       onBack={() => void back()}
       cta={{ label: COPY.next, htmlType: 'submit', form: formId, disabled: !isNicknameValid(value) || leaving }}
     >

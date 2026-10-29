@@ -12,7 +12,7 @@ const saveButton = () => screen.getByRole('button', { name: '저장' }) as HTMLB
 describe('여정 정보 수정 /trips/:tripId/edit', () => {
   it('진행 중 그룹장: 장소는 고칠 수 있고(v0.5.8) 통화는 잠금, 값이 바뀌어야 저장, 저장하면 여정 정보 + "저장했어요"', async () => {
     const { router } = renderApp('/trips/trip-osaka/edit')
-    expect(await screen.findByRole('heading', { name: '여정 수정' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { level: 1, name: '여정 수정' })).toBeTruthy()
     expect((screen.getByLabelText('그룹명') as HTMLInputElement).value).toBe('오사카 3박 4일')
     expect((screen.getByLabelText('여행 장소') as HTMLInputElement).value).toBe('오사카')
     expect((screen.getByLabelText('여행 장소') as HTMLInputElement).disabled).toBe(false)

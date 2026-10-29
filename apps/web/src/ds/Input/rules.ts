@@ -22,6 +22,36 @@ export function normalizeAmountInput(text: string, fractionDigits = 0, maxIntege
   return `${int}.${rawFrac.slice(0, fractionDigits)}`
 }
 
+const splitAmount = (text: string) => {
+  const cleaned = text.replace(/[^\d.]/g, '')
+  const dot = cleaned.indexOf('.')
+  return {
+    int: (dot === -1 ? cleaned : cleaned.slice(0, dot)).replace(/^0+(?=\d)/, ''),
+    frac: dot === -1 ? null : cleaned.slice(dot + 1).replace(/\./g, ''),
+  }
+}
+
+/**
+ * 이미 자리 한도(정수 maxIntegerDigits · 소수 fractionDigits)가 찬 칸에 더 친 입력인가. 그러면 무시한다(값·캐럿 그대로) —
+ * 잘라 넣으면 캐럿을 앞에 두고 칠 때 끝자리가 밀려 사라진다(W6 QA). 덜 찬 칸에 한꺼번에 넣으면(붙여넣기) 지금처럼 자른다
+ */
+export function amountInputOverflows(
+  text: string,
+  previous: string,
+  fractionDigits = 0,
+  maxIntegerDigits = AMOUNT_MAX_INTEGER_DIGITS,
+) {
+  const next = splitAmount(text)
+  const prev = splitAmount(previous)
+  if (next.int.length > maxIntegerDigits && prev.int.length >= maxIntegerDigits) return true
+  return (
+    fractionDigits > 0 &&
+    next.frac !== null &&
+    next.frac.length > fractionDigits &&
+    (prev.frac?.length ?? 0) >= fractionDigits
+  )
+}
+
 /** 원값 → 보이는 글자: "1200" → "1,200" · "1234.5" → "1,234.5" · "12." → "12." · "" → "" */
 export function formatAmountInput(raw: string) {
   if (raw === '') return ''
@@ -48,3 +78,14 @@ export function amountCaretPosition(formatted: string, count: number) {
 
 /** 글자 text의 position 앞에 있는 숫자·소수점 개수 */
 export const amountCharsBefore = (text: string, position: number) => text.slice(0, position).replace(/[^\d.]/g, '').length
+
+/**
+ * 긴 금액은 칸(통화 칩 왼쪽)을 넘치지 않게 글자를 줄인다(숫자 개수 기준, 소수 자리 포함):
+ * 9개까지 Amount/XL 40 · 13개까지 Amount/L 32 · 그 위(정수 12자리 + 소수) Amount/M 20
+ */
+export function amountInputSize(display: string) {
+  const length = display.replace(/\D/g, '').length
+  if (length <= 9) return 'text-amount-xl'
+  if (length <= 13) return 'text-amount-l'
+  return 'text-amount-m'
+}

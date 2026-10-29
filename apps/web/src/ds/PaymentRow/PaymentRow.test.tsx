@@ -50,5 +50,11 @@ describe('PaymentRow', () => {
     expect(text).toContain('₩25,740')
     expect(text).toContain('¥2,800')
   })
-})
 
+  it('amountLabel을 주면 원화 대신 그 글자를 주 금액으로 그린다(원화 모름 — ₩0 금지)', () => {
+    render(<PaymentRow leading="none" merchant="결제" meta="08:50" amount={0} amountLabel="$12.50" />)
+    const text = screen.getByRole('button').textContent ?? ''
+    expect(text).toContain('$12.50')
+    expect(text).not.toContain('₩0')
+  })
+})

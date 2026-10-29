@@ -126,6 +126,8 @@ function TripExpenseForm({ trip, detail, onClose, onDeleted }: FormProps) {
   const walletLinked = Boolean(detail?.walletEntryId)
   const [now] = useState(() => clock.now())
   const [clientRequestId] = useState(newClientRequestId)
+  // 추가는 열자마자 금액 입력(숫자 키패드). 수정은 시트 기본(제목)
+  const amountRef = useRef<HTMLInputElement>(null)
 
   // 후보: 새 결제는 활성 멤버, 수정은 + 이 결제에 있던 나간 멤버(해제만, Q-30). 나 먼저 → 가입 순
   const candidates: MemberSummary[] = useMemo(
@@ -157,7 +159,8 @@ function TripExpenseForm({ trip, detail, onClose, onDeleted }: FormProps) {
   const [participants, setParticipants] = useState<string[]>(initial.participants)
   const [draft, setDraft] = useState<string[]>(initial.participants)
   const [occurredAt, setOccurredAt] = useState<string | null>(initial.occurredAt)
-  const [addToWallet, setAddToWallet] = useState(false)
+  // 내 지갑에도 기록: 결제자 = 나면 기본 켜짐(W6 QA). 결제자를 바꾸면 그 기본으로 다시
+  const [addToWallet, setAddToWallet] = useState(true)
   const [errors, setErrors] = useState<ManualFieldErrors>({})
   const [confirm, setConfirm] = useState<'to-personal' | 'delete' | null>(null)
   const dateStep = useDateStep(now)
@@ -339,6 +342,7 @@ function TripExpenseForm({ trip, detail, onClose, onDeleted }: FormProps) {
         onBack={() => setStep('form')}
         onClose={() => !busy && onClose()}
         cta={cta}
+        initialFocus={editing ? undefined : amountRef}
       >
         {step === 'form' && (
           <fieldset disabled={busy} className="flex min-w-0 flex-col">
@@ -357,7 +361,7 @@ function TripExpenseForm({ trip, detail, onClose, onDeleted }: FormProps) {
               digits={digits}
               krw={krw}
               serverError={errors.amount}
-              autoFocus={!editing}
+              inputRef={amountRef}
             />
             <RowFieldInput
               label="내용"
@@ -419,8 +423,8 @@ function TripExpenseForm({ trip, detail, onClose, onDeleted }: FormProps) {
             members={members.filter((m) => activeIds.includes(m.id))}
             selected={payer}
             onChange={(id) => {
+              if (id !== payer) setAddToWallet(id === me)
               setPayer(id)
-              if (id !== me) setAddToWallet(false)
               setStep('form')
             }}
           />

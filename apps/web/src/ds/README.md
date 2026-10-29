@@ -148,7 +148,7 @@ W5 화면 통합에서는 아래 임시 조합을 지우고 오른쪽 DS 공개 
 | SettlementRow `Tappable=false` | 정적 `<div>`(버튼 역할 없음)에 aria-label·data-*·id 등 나머지 prop을 넘긴다(버튼 전용 속성은 버림) | — |
 | Toast 위치·수명(0-4) | `ToastViewport anchor`: `nav`(내비 위 16) · `cta`(내비 없음 + CTA 위 16) · `nav-cta`(둘 다 — CTA 위 16) · `safe-area`(안전영역 위 16) · `auto`(지금 그려진 Screen의 하단 구성, Screen이 등록). `onModalOpen(kind => …)`: 시트(`sheet`)·다이얼로그(`dialog`)·패널·메뉴가 열릴 때 알림 | `notifications/ToastHost`: `anchor="auto"` + `onModalOpen`으로 sheet·dialog면 큐 비우기(아래) |
 
-- **토스트 연결(앱 쪽)**: `ToastHost`가 `<ToastViewport anchor="auto" aboveNav={aboveNav}>`로 그리면 Screen이 알려 준 하단 구성(내비·CTA)을 따르고, Screen이 없을 때만 `aboveNav`(라우트 `handle.nav`)로 정한다. 시트·다이얼로그가 열리면 떠 있던 토스트를 닫는다: `useEffect(() => onModalOpen((kind) => { if (kind === 'sheet' || kind === 'dialog') store.clear() }), [store])` — 시트 안에서 새로 띄우는 토스트는 연 뒤라 영향 없음.
+- **토스트 연결(앱 쪽)**: `ToastHost`가 `<ToastViewport anchor="auto" aboveNav={aboveNav}>`로 그리면 Screen이 알려 준 하단 구성(내비·CTA)을 따르고, Screen이 없을 때만 `aboveNav`(라우트 `handle.nav`)로 정한다. 사용자가 시트·다이얼로그를 새로 열면 떠 있던 토스트를 닫는다: `onModalOpen((kind) => { if (kind === 'sheet' || kind === 'dialog') store.dismissSeen() })` — 문서의 누름·키 입력을 세어 두고, 마지막 입력 뒤에 뜬 토스트(그 입력의 결과)는 이어지는 시트 전환(수정 저장 → 상세 다시 열림)에도 남긴다(W6b). 시트 안에서 새로 띄우는 토스트는 연 뒤라 영향 없음.
 - Dialog는 바뀐 게 없다(왼쪽 취소 · 오른쪽 확인, 처리 중 `confirmState="loading"`은 v1.6).
 
 ## v1.6.3 추가분 (DS18 · spec §9-5 · 화면명세 v0.6.0 K절 수동 결제)
@@ -169,7 +169,7 @@ W5 화면 통합에서는 아래 임시 조합을 지우고 오른쪽 DS 공개 
 | (Form/ManualPayment 금액 줄) | `InputAmount`: `value`(원값 "1200") · `onChange(raw)` · `symbol` · `fractionDigits` · `currency={{ label, onClick? }}` · `converted`. 순수 로직 `normalizeAmountInput` · `formatAmountInput` · `amountInputNumber` | HF-46 · 48 · 50 맨 위 큰 금액 |
 
 - **Form/ManualPayment는 DS에 없다**(06 로컬 조합). 화면이 조립한다: `BottomSheet` → `InputAmount className="pb-4"` → `RowFieldInput "내용"`(placeholder "예) 저녁", `maxLength={40}`) → `RowField` 결제자(`avatar` + "나"/닉네임) · 나누기(`stack`, 나만이면 `personal`) · 날짜("지금") · (지갑) 여정(이름, 없으면 `placeholder="추가 안 함"`) → `RowFieldToggle "내 지갑에도 기록"`(결제자 = 나일 때만). CTA는 시트 `cta`: 추가 = Single(`state: 금액 > 0 ? 'default' : 'disabled'`), 수정 = Horizontal(삭제 Danger-weak | 저장). 카탈로그 `Pattern/ManualPayment`에 HF-46~50 · 20b · 49 조립 예시와 단계 전환 동작 예시가 있다.
-- **시트 안 단계**: 한 `BottomSheet`의 `title` · `leading` · children · `cta`만 바꾼다(겹 시트 금지). 나누기 단계는 임시 선택(draft)을 쥐고 "완료"에서 반영, ‹(`onBack`)은 버림. 결제자 단계는 `cta` 없이 `onChange`에서 바로 반영 + 폼으로. 단계가 바뀌어 누른 행이 사라지면 시트가 포커스를 새 제목으로 옮긴다. 처음 열 때 금액에 포커스를 주려면 `InputAmount autoFocus`.
+- **시트 안 단계**: 한 `BottomSheet`의 `title` · `leading` · children · `cta`만 바꾼다(겹 시트 금지). 나누기 단계는 임시 선택(draft)을 쥐고 "완료"에서 반영, ‹(`onBack`)은 버림. 결제자 단계는 `cta` 없이 `onChange`에서 바로 반영 + 폼으로. 단계가 바뀌어 누른 행이 사라지면 시트가 포커스를 새 제목으로 옮긴다. 처음 열 때 금액에 포커스를 주려면 `BottomSheet initialFocus={amountRef}`(ref 또는 시트 안 선택자) + `InputAmount ref={amountRef}` — `autoFocus`는 showModal이 제목으로 덮는다. 탭하면 바로 돌아가는 선택 단계(HF-48b)는 `SheetContentOption onSelect`(이미 고른 값을 다시 눌러도 온다). 원화를 모르는 지갑 행은 `PaymentRow amountLabel`(원통화)로 ₩0을 피한다.
 - **나누기 요약**: `splitPickSummary(amountKrw, n)` → `{ perPerson: "1인 ₩3,676", remainder: "결제자 +2원" | null }`(FR-509 내림 + 나머지 결제자, Figma 샘플 ₩3,677이 아니다). 나만(결제자 = 나) 선택이면 `personal`. 완료 비활성 조건(0명 · 결제자 ≠ 나인데 결제자 혼자)은 화면이 시트 `cta.state`로.
 - **수정(WF-50) 나간 멤버**: 기존 부담 인원 중 나간 멤버는 `left: true`로 흐리게, "해제만 가능"은 선택이 꺼졌을 때 `disabled: true`.
 - **통화 칩**: KRW ↔ 여정 통화는 화면 상태. 칩 글자는 코드("JPY"), 금액 앞 기호는 `symbol`. KRW 여정은 `currency={{ label: 'KRW' }}`(onClick 없음 = 정적 칩). 환산 줄은 외화이고 환율이 있을 때만.

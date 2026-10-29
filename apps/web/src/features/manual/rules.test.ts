@@ -24,6 +24,7 @@ import {
   tripRatePerUnit,
   walletMeta,
   walletOriginal,
+  walletRowAmounts,
 } from './rules'
 
 const member = (id: string, joinOrder: number, nickname: string, isMe = false): MemberSummary =>
@@ -153,6 +154,29 @@ describe('지갑(WF-49)', () => {
 
   it('"이번 달" 금액: 추정이 섞였으면 "약"', () => {
     expect(monthTotalLabel(412_350)).toBe('₩412,350')
+  })
+
+  it('지갑 행 금액: 원화가 없으면 ₩0 대신 원통화가 주 금액, 추정되면 "약 ₩X"(W6 QA)', () => {
+    expect(walletRowAmounts({ amount: '1280', currency: 'JPY', krwAmount: 11_760 })).toEqual({ amount: 11_760, originalAmount: '¥1,280' })
+    expect(walletRowAmounts({ amount: '6800', currency: 'KRW', krwAmount: 6800 })).toEqual({ amount: 6800, originalAmount: undefined })
+    // 고시 없음 + 추정 환율 없음 → 원화 줄 숨김
+    expect(walletRowAmounts({ amount: '12.50', currency: 'USD', krwAmount: null })).toEqual({
+      amount: 0,
+      amountLabel: '$12.50',
+      originalAmount: undefined,
+    })
+    // 최신 고시로 추정(10원 반올림)
+    expect(walletRowAmounts({ amount: '12.50', currency: 'USD', krwAmount: null }, '1380.5')).toEqual({
+      amount: 0,
+      amountLabel: '$12.50',
+      originalAmount: '약 ₩17,260',
+    })
+    // 취소는 − 부호
+    expect(walletRowAmounts({ amount: '-1000', currency: 'JPY', krwAmount: null }, '9.19')).toEqual({
+      amount: 0,
+      amountLabel: '−¥1,000',
+      originalAmount: '약 −₩9,190',
+    })
     expect(monthTotalLabel(412_350, true)).toBe('약 ₩412,350')
   })
 

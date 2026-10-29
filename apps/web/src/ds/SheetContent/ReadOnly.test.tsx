@@ -95,4 +95,27 @@ describe('SheetContentOption', () => {
     expect(manual.checked).toBe(true)
     expect(toss.checked).toBe(false)
   })
+
+  it('onSelect는 이미 선택된 옵션을 다시 눌러도 온다(HF-48b 탭하면 돌아가기), onChange는 안 온다', () => {
+    const onChange = vi.fn()
+    const onSelect = vi.fn()
+    render(
+      <SheetContentOption
+        aria-label="여정"
+        value="trip-a"
+        onChange={onChange}
+        onSelect={onSelect}
+        options={[
+          { value: 'trip-a', logo: false, title: '오사카' },
+          { value: 'none', logo: false, title: '추가 안 함' },
+        ]}
+      />,
+    )
+    fireEvent.click(screen.getByText('오사카'))
+    expect(onSelect).toHaveBeenCalledWith('trip-a')
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('추가 안 함'))
+    expect(onSelect).toHaveBeenLastCalledWith('none')
+    expect(onSelect).toHaveBeenCalledTimes(2)
+  })
 })

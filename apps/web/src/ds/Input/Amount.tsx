@@ -1,7 +1,7 @@
 import { clsx } from 'clsx'
-import { useLayoutEffect, useRef, type InputHTMLAttributes, type MouseEventHandler, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, type InputHTMLAttributes, type MouseEventHandler, type ReactNode, type Ref } from 'react'
 import { focusRing, touchTarget } from '../styles'
-import { amountCaretPosition, amountCharsBefore, formatAmountInput, normalizeAmountInput } from './rules'
+import { amountCaretPosition, amountCharsBefore, amountInputOverflows, amountInputSize, formatAmountInput, normalizeAmountInput } from './rules'
 
 // Input Type=Amount(DS18 · Figma Form/ManualPayment 77:10549의 amount 부분 · 화면명세 B-24).
 // 수동 결제 시트 맨 위 큰 금액: 기호 + 숫자(Amount/XL 40/48, IBM Plex Sans KR, 캐럿 bg/brand) … 오른쪽 통화 칩(Chip Tone 모양, h36)
@@ -38,6 +38,8 @@ export type InputAmountProps = Omit<
   label?: string
   /** 바깥 래퍼 className */
   className?: string
+  /** 입력 요소 ref(시트 initialFocus 등) */
+  ref?: Ref<HTMLInputElement>
   children?: never
 }
 
@@ -52,9 +54,15 @@ export function InputAmount({
   placeholder = '0',
   disabled,
   className,
+  ref,
   ...rest
 }: InputAmountProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const setRef = (el: HTMLInputElement | null) => {
+    inputRef.current = el
+    if (typeof ref === 'function') return ref(el)
+    if (ref) ref.current = el
+  }
   const caret = useRef<number | null>(null)
   const display = formatAmountInput(value)
   const empty = display === ''
@@ -78,7 +86,8 @@ export function InputAmount({
       <div className="flex items-center gap-2">
         <label
           className={clsx(
-            'flex min-w-0 flex-1 items-center overflow-hidden font-amount text-amount-xl',
+            'flex min-w-0 flex-1 items-center overflow-hidden font-amount',
+            amountInputSize(display),
             disabled ? 'cursor-not-allowed text-disabled' : 'cursor-text',
             !disabled && (empty ? 'text-disabled' : 'text-primary'),
           )}
@@ -92,7 +101,7 @@ export function InputAmount({
               {empty ? placeholder : display}
             </span>
             <input
-              ref={inputRef}
+              ref={setRef}
               type="text"
               inputMode={fractionDigits > 0 ? 'decimal' : 'numeric'}
               autoComplete="off"
@@ -102,6 +111,13 @@ export function InputAmount({
               disabled={disabled}
               onChange={(event) => {
                 const input = event.currentTarget
+                if (amountInputOverflows(input.value, value, fractionDigits)) {
+                  // 이미 찬 자리에 더 친 입력은 무시한다: 값을 되돌리고 캐럿은 친 글자 앞자리에 둔다
+                  const at = Math.max(0, (input.selectionStart ?? input.value.length) - (input.value.length - display.length))
+                  input.value = display
+                  input.setSelectionRange(at, at)
+                  return
+                }
                 caret.current = amountCharsBefore(input.value, input.selectionStart ?? input.value.length)
                 onChange?.(normalizeAmountInput(input.value, fractionDigits))
               }}

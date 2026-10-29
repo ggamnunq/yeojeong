@@ -1,3 +1,4 @@
+import type { Ref } from 'react'
 import { formatKrw, InputAmount } from '../../ds'
 import { FIELD_COPY } from './form'
 import { currencySymbol, isPositiveAmount, overKrwLimit, toggleCurrency } from './rules'
@@ -17,7 +18,8 @@ export type AmountFieldProps = {
   disabled?: boolean
   /** 서버 400 amount 문구 */
   serverError?: string | null
-  autoFocus?: boolean
+  /** 금액 입력 ref — 추가 시트가 initialFocus로 넘겨 열 때 숫자 키패드를 띄운다(autoFocus는 시트 showModal이 덮는다) */
+  inputRef?: Ref<HTMLInputElement>
 }
 
 /** 큰 금액 + 통화 칩 + "≈ ₩11,030" + 상한 초과 에러 한 줄(FR-427) */
@@ -31,7 +33,7 @@ export function AmountField({
   krw,
   disabled,
   serverError,
-  autoFocus,
+  inputRef,
 }: AmountFieldProps) {
   const over = overKrwLimit(krw)
   const error = over ? FIELD_COPY.overLimit : (serverError ?? null)
@@ -44,7 +46,7 @@ export function AmountField({
         symbol={currencySymbol(currency)}
         fractionDigits={digits}
         disabled={disabled}
-        autoFocus={autoFocus}
+        ref={inputRef}
         aria-invalid={error ? true : undefined}
         currency={{
           label: currency,

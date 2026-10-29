@@ -6,7 +6,9 @@ import { useTopModalDialog } from './topModalDialog'
 
 // 토스트 큐를 DS Toast + ToastViewport로 그린다. 앱에 하나만 둔다(RootLayout).
 // 자리(화면명세 0-4 v0.5.8): 하단 내비 위 16 · 내비 없으면 하단 CTA 위 16 · 둘 다 없으면 안전영역 위 16 — 지금 그려진 Screen이 알려 준 구성(anchor="auto").
-// 시트·다이얼로그가 열리면 떠 있던 토스트는 바로 닫는다(시트 안 동작의 결과 토스트는 연 뒤에 뜨니 영향 없음).
+// 사용자가 시트·다이얼로그를 새로 열면 떠 있던 토스트는 바로 닫는다(화면명세 0-4, 시트 안 동작의 결과 토스트는 연 뒤에 뜨니 영향 없음).
+// 액션 결과로 이어지는 시트 전환(수정 저장 → 상세 시트가 다시 열림, NOT_AUTHOR → 시트 닫고 상세)에서는 남긴다:
+// 문서의 누름·키 입력을 세어 두고, 마지막 입력 뒤에 뜬 토스트(= 그 입력의 결과)는 시트가 열려도 닫지 않는다(store.dismissSeen).
 //
 // 열린 BottomSheet·Dialog(네이티브 <dialog> 최상위 레이어) 위에도 보이고 눌리게 하려고 두 가지를 같이 쓴다.
 // 1. popover="manual" + showPopover()로 토스트 층을 최상위 레이어에 올린다(z-index로는 dialog 위에 못 올라간다).
@@ -23,13 +25,19 @@ export type ToastHostProps = {
 export function ToastHost({ aboveNav = true, store = toastStore }: ToastHostProps) {
   const toasts = useToasts(store)
   const active = toasts.length > 0
-  useEffect(
-    () =>
-      onModalOpen((kind) => {
-        if (kind === 'sheet' || kind === 'dialog') store.dismissAll()
-      }),
-    [store],
-  )
+  useEffect(() => {
+    const note = () => store.noteUserInput()
+    // 캡처 단계: 시트를 여는 클릭 처리보다 먼저 센다. click은 포인터 없이 오는 보조 기술의 활성화까지 잡는다
+    const events = ['pointerdown', 'keydown', 'click'] as const
+    for (const type of events) document.addEventListener(type, note, true)
+    const off = onModalOpen((kind) => {
+      if (kind === 'sheet' || kind === 'dialog') store.dismissSeen()
+    })
+    return () => {
+      for (const type of events) document.removeEventListener(type, note, true)
+      off()
+    }
+  }, [store])
   const modal = useTopModalDialog(active)
   if (!active) return null
 

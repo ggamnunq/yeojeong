@@ -114,6 +114,51 @@ describe('ToastHost', () => {
     expect(layer()).toBeNull()
   })
 
+  it('액션 결과로 이어지는 시트 전환에서는 토스트를 남긴다(HF-50·20b: 저장 → 상세 시트 다시 열림)', async () => {
+    function SaveThenReopen() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              // 서버 응답 뒤: 결과 토스트 → 시트 전환(수정 시트 닫힘 → 상세 시트 열림)
+              void Promise.resolve().then(() => {
+                store.show('success', '저장했어요')
+                setOpen(true)
+              })
+            }
+          >
+            저장
+          </button>
+          <BottomSheet open={open} onClose={() => setOpen(false)} title="결제 상세">
+            <p>내용</p>
+          </BottomSheet>
+          <ToastHost store={store} />
+        </>
+      )
+    }
+    render(<SaveThenReopen />)
+    fireEvent.pointerDown(screen.getByRole('button', { name: '저장' }))
+    fireEvent.click(screen.getByRole('button', { name: '저장' }))
+    await act(async () => {})
+    expect(document.querySelector('dialog')!.open).toBe(true)
+    expect((await screen.findByRole('status')).textContent).toBe('저장했어요')
+  })
+
+  it('토스트를 본 뒤 사용자가 시트를 열면 닫는다(키보드로 열어도)', async () => {
+    render(<SheetDemo />)
+    act(() => {
+      store.show('success', '저장했어요')
+    })
+    const opener = screen.getByRole('button', { name: '시트 열기' })
+    fireEvent.keyDown(opener, { key: 'Enter' })
+    fireEvent.click(opener)
+    await act(async () => {})
+    expect(document.querySelector('dialog')!.open).toBe(true)
+    expect(layer()).toBeNull()
+  })
+
   it('시트가 열린 뒤 뜬 토스트는 그 dialog 안에 그리고, 시트가 닫히면 body로 돌아온다', async () => {
     render(<SheetDemo />)
     fireEvent.click(screen.getByRole('button', { name: '시트 열기' }))

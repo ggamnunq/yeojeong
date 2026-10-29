@@ -8,7 +8,7 @@ import type {
   CreateWalletEntryRequest,
   UpdateTripExpenseRequest,
   UpdateWalletEntryRequest,
-  WalletEntriesPage,
+  WalletEntryListResponse,
   WalletEntryMutationResponse,
   WalletTripCandidatesResponse,
 } from './types'
@@ -22,12 +22,12 @@ export const walletKeys = {
   candidates: (at: string) => [...keys.wallet.all, 'trip-candidates', at] as const,
 }
 
-/** GET /wallet/entries — 최신순 커서 목록(HF-49) */
+/** GET /wallet/entries — 최신순 커서 목록(HF-49) + 이번 달 합계(S7b, 모든 페이지에 같은 값) */
 export const walletEntriesQuery = () =>
   infiniteQueryOptions({
     queryKey: walletKeys.entries,
     queryFn: ({ signal, pageParam }) =>
-      apiFetch<WalletEntriesPage>(
+      apiFetch<WalletEntryListResponse>(
         `/wallet/entries?limit=${WALLET_PAGE_SIZE}${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ''}`,
         { signal },
       ),

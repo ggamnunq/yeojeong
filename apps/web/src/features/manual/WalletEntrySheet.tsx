@@ -95,6 +95,8 @@ function WalletEntryForm({ entry, onClose }: { entry?: WalletEntry; onClose: () 
   const canChangeTrip = entry ? entry.canChangeTrip : true
   const [now] = useState(() => clock.now())
   const [clientRequestId] = useState(newClientRequestId)
+  // 추가는 열자마자 금액 입력(숫자 키패드). 수정은 시트 기본(제목)
+  const amountRef = useRef<HTMLInputElement>(null)
 
   const [step, setStep] = useState<Step>('form')
   const [amount, setAmount] = useState(() => (entry ? trimAmount(entry.amount.replace(/^-/, ''), fractionDigitsOf(entry.currency)) : ''))
@@ -277,6 +279,7 @@ function WalletEntryForm({ entry, onClose }: { entry?: WalletEntry; onClose: () 
         onBack={() => setStep('form')}
         onClose={() => !busy && onClose()}
         cta={cta}
+        initialFocus={editing ? undefined : amountRef}
       >
         {step === 'form' && (
           <fieldset disabled={busy} className="flex min-w-0 flex-col">
@@ -293,7 +296,7 @@ function WalletEntryForm({ entry, onClose }: { entry?: WalletEntry; onClose: () 
               krw={krw}
               disabled={moneyLocked}
               serverError={errors.amount}
-              autoFocus={!editing}
+              inputRef={amountRef}
             />
             <RowFieldInput
               label="내용"
@@ -335,8 +338,8 @@ function WalletEntryForm({ entry, onClose }: { entry?: WalletEntry; onClose: () 
           <SheetContentOption
             aria-label="여정"
             value={tripId ?? NONE}
-            onChange={(value: string) => {
-              // 탭하면 바로 돌아간다(완료 없음)
+            onSelect={(value: string) => {
+              // 탭하면 바로 돌아간다(완료 없음). 이미 고른 여정·"추가 안 함"을 다시 눌러도 돌아간다(onSelect — 라디오 onChange는 안 온다)
               setPick({ mode: 'picked', tripId: value === NONE ? null : value })
               setStep('form')
             }}
