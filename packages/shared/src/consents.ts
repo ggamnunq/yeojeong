@@ -33,7 +33,8 @@ export const CONSENT_SCREEN_VALUES = [
   'WF-30',
   'RECONSENT',
   'SUPPORT',
-  'CARD_IMPORT',
+  /** 카드 내역 불러오기 시작 전 확인(WF-51, consents.md 9-5 표기) */
+  'HF-51',
 ] as const;
 /** 동의를 받은 화면(UserConsent.screen) */
 export type ConsentScreen = (typeof CONSENT_SCREEN_VALUES)[number];

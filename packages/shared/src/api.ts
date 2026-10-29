@@ -129,13 +129,13 @@ export interface ReconsentRequest {
 
 /**
  * POST /api/consents — 결제수단 연결 전 동의 시트(FR-809, stage FIN_LINK) · 카드 승인내역 불러오기 전 동의(S8, stage CARD_IMPORT).
- * screen은 stage마다 정해져 있다: FIN_LINK = WF-05·WF-28·WF-42, CARD_IMPORT = CARD_IMPORT
+ * screen은 stage마다 정해져 있다: FIN_LINK = WF-05·WF-28·WF-42, CARD_IMPORT = HF-51
  */
 export interface ConsentSubmitRequest {
   stage: Extract<ConsentStage, 'FIN_LINK' | 'CARD_IMPORT'>;
   agreements: ConsentAgreementInput[];
   method: Extract<ConsentMethod, 'ALL' | 'INDIVIDUAL'>;
-  screen: Extract<ConsentScreen, 'WF-05' | 'WF-28' | 'WF-42' | 'CARD_IMPORT'>;
+  screen: Extract<ConsentScreen, 'WF-05' | 'WF-28' | 'WF-42' | 'HF-51'>;
 }
 
 /** GET /api/consents/status?stage=FIN_LINK|CARD_IMPORT, POST /api/consents */

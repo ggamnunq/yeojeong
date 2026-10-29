@@ -144,7 +144,7 @@ export const WALLET_ERRORS = {
 
 /** 카드 승인내역 불러오기(S8, CODEF). CODEF 결과 코드 → 이 코드(apps/api/src/card-import/README.md 에러 매핑) */
 export const CARD_IMPORT_ERRORS = {
-  /** 카드사 아이디·비밀번호가 맞지 않다 */
+  /** 카드사 아이디·비밀번호가 맞지 않다. details: CardLoginFailedDetails { failedAttempts } */
   CARD_LOGIN_FAILED: {
     status: 400,
     message: '카드사 아이디나 비밀번호를 다시 확인해 주세요',
@@ -179,10 +179,30 @@ export const CARD_IMPORT_ERRORS = {
     status: 400,
     message: '다시 시도해 주세요',
   },
-  /** 사용자당 조회 제한(10분 5회). details.retryAfterSec */
+  /** 사용자당 조회 제한(10분 3회·하루 10회). details: CardImportRetryDetails { retryAfter, retryAfterSec } */
   CARD_IMPORT_RATE_LIMITED: {
     status: 429,
     message: '잠시 후 다시 불러와 주세요',
+  },
+  /** 같은 카드사 로그인 3회 연속 실패 → 30분 쉬기. details: CardImportRetryDetails */
+  CARD_IMPORT_LOGIN_COOLDOWN: {
+    status: 429,
+    message: '로그인에 여러 번 실패해 잠시 쉬었다가 다시 시도해 주세요',
+  },
+  /** 이 사용자의 다른 조회가 아직 진행 중이다(동시 1건) */
+  CARD_IMPORT_IN_PROGRESS: {
+    status: 409,
+    message: '카드 내역을 불러오는 중이에요. 잠시만 기다려 주세요',
+  },
+  /** 서비스 전체 CODEF 일일 호출 예산 소진. 내일 다시 */
+  CARD_IMPORT_DAILY_LIMIT: {
+    status: 503,
+    message: '오늘은 카드 내역을 더 불러올 수 없어요. 내일 다시 시도해 주세요',
+  },
+  /** 저장(import) 항목의 itemToken이 없거나 맞지 않거나 지났다(결과를 고쳤거나 오래됨). details.invalidIndexes. 다시 불러온다 */
+  CARD_IMPORT_RESULT_EXPIRED: {
+    status: 410,
+    message: '불러온 지 오래됐어요. 다시 불러와 주세요',
   },
   /** 그 밖의 CODEF 오류·통신 실패 */
   CARD_IMPORT_FAILED: {
