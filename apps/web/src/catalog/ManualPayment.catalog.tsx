@@ -101,11 +101,11 @@ function LiveTripSheet() {
 
   return (
     <>
-      <Button type="secondary" size="m" label="결제 추가 시트 열기" onClick={() => setOpen(true)} />
+      <Button type="secondary" size="m" label="결제 내역 추가 시트 열기" onClick={() => setOpen(true)} />
       <BottomSheet
         open={open}
         onClose={close}
-        title={step === 'form' ? '결제 추가' : step === 'split' ? '나누기' : '결제자'}
+        title={step === 'form' ? '결제 내역 추가' : step === 'split' ? '나누기' : '결제자'}
         leading={step === 'form' ? 'none' : 'back'}
         onBack={() => setStep('form')}
         cta={
@@ -198,7 +198,7 @@ export default defineCatalog({
           <Row>
             <Variant name="HF-46 결제 추가">
               <Sheet>
-                <BottomSheetPanel title="결제 추가" cta={{ label: '추가' }}>
+                <BottomSheetPanel title="결제 내역 추가" cta={{ label: '추가' }}>
                   <TripForm />
                 </BottomSheetPanel>
               </Sheet>
@@ -238,7 +238,7 @@ export default defineCatalog({
           <Row>
             <Variant name="HF-48 지갑 결제 추가">
               <Sheet>
-                <BottomSheetPanel title="결제 추가" cta={{ label: '추가' }}>
+                <BottomSheetPanel title="결제 내역 추가" cta={{ label: '추가' }}>
                   <div className="flex flex-col">
                     <Amount />
                     <RowFieldInput label="내용" placeholder="예) 저녁" readOnly value="" />
@@ -279,7 +279,7 @@ export default defineCatalog({
                     <p className="text-body-s-strong text-secondary">이번 달</p>
                     <p className="font-amount text-amount-xl text-primary">{formatKrw(412350)}</p>
                   </div>
-                  <RowAdd label="결제 추가" className="mt-4" />
+                  <RowAdd label="결제 내역 추가" className="mt-4" />
                   <div className="h-1" />
                   <DateHeader style="plain" date="11.13 (금)" className="bg-surface" />
                   {[

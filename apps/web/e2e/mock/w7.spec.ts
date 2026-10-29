@@ -93,7 +93,7 @@ test.describe('카드 내역 불러오기(W7)', () => {
     await login(page, 'budget')
     await expect(page.getByText('오늘은 더 불러올 수 없어요')).toBeVisible()
     await page.getByRole('button', { name: '직접 추가' }).click()
-    await expect(page.getByRole('dialog', { name: '결제 추가' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: '결제 내역 추가' })).toBeVisible()
   })
 
   test('남은 횟수 0: 지갑 "불러오기" → 57d', async ({ page }) => {

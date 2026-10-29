@@ -46,7 +46,7 @@ export default function WalletListPage() {
     <ShellSub
       // HF-49b: 빈 지갑에서는 진입점을 텍스트 버튼 "카드 내역 불러오기" 하나로 둔다(헤더 "불러오기"는 내역이 있을 때만)
       header={{ title: '내 지갑', onBack: back, textAction: cardImport && items.length > 0 ? { label: '불러오기', onClick: openImport } : undefined }}
-      gutter={false} cta={empty ? { label: '결제 추가', leadingIcon: true, icon: 'plus', onClick: add } : undefined}>
+      gutter={false} cta={empty ? { label: '결제 내역 추가', leadingIcon: true, icon: 'plus', onClick: add } : undefined}>
       {query.isPending ? (
         <LoadingScreen inset gutter />
       ) : query.isError && !query.data ? (
@@ -66,7 +66,7 @@ export default function WalletListPage() {
               <p className="font-amount text-amount-xl text-primary">{monthTotalLabel(first.monthTotalKrw, first.monthTotalEstimated)}</p>
             </div>
           )}
-          <RowAdd label="결제 추가" className="mt-4" onClick={add} />
+          <RowAdd label="결제 내역 추가" className="mt-4" onClick={add} />
           <div className="h-1" />
           {groupEntries(items).map((group, index) => (
             <section key={group.localDate} aria-label={group.label} className={clsx(index > 0 && 'pt-4')}>

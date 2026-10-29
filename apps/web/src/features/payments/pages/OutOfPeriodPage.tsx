@@ -75,7 +75,7 @@ export default function OutOfPeriodPage() {
 
   return (
     <ShellSub
-      header={{ title: '기간 외 결제 추가', onBack: back }}
+      header={{ title: '기간 외 결제 내역 추가', onBack: back }}
       gutter={false}
       cta={{ label: `${chosen.length}건 추가`, disabled: chosen.length === 0 || loading, onClick: () => add.mutate(chosen), state: add.isPending ? 'loading' : 'default' }}
     >

@@ -15,9 +15,9 @@ describe('BottomCTA', () => {
     expect(button.className).toContain('w-full')
   })
 
-  it('leadingIcon · icon을 버튼에 넘긴다("+ 결제 추가", HF-49b)', () => {
-    render(<BottomCTA cta={{ label: '결제 추가', leadingIcon: true, icon: 'plus' }} />)
-    expect(screen.getByRole('button', { name: '결제 추가' }).querySelector('svg')).not.toBeNull()
+  it('leadingIcon · icon을 버튼에 넘긴다("+ 결제 내역 추가", HF-49b)', () => {
+    render(<BottomCTA cta={{ label: '결제 내역 추가', leadingIcon: true, icon: 'plus' }} />)
+    expect(screen.getByRole('button', { name: '결제 내역 추가' }).querySelector('svg')).not.toBeNull()
   })
 
   it('state="loading"이면 스피너 + 누름 무시, state="disabled"면 disabled', () => {

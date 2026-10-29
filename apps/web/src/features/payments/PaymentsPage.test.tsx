@@ -103,19 +103,19 @@ describe('결제내역 · 리스트(WF-18)', () => {
     expect(within(day2).getByRole('button', { name: /우메다/ }).textContent).toContain('16:40 · 내 결제')
   })
 
-  it('맨 아래 "기간 외 결제 추가"로 이동한다', async () => {
+  it('맨 아래 "기간 외 결제 내역 추가"로 이동한다', async () => {
     db.accountLink = true
     const { router } = renderApp(PAYMENTS)
-    fireEvent.click(await screen.findByRole('button', { name: '기간 외 결제 추가' }))
+    fireEvent.click(await screen.findByRole('button', { name: '기간 외 결제 내역 추가' }))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/trips/${TRIP.osaka}/payments/out-of-period`))
   })
 
-  it('결제가 없으면 빈 상태, 기간 외 결제 추가는 남는다', async () => {
+  it('결제가 없으면 빈 상태, 기간 외 결제 내역 추가는 남는다', async () => {
     db.accountLink = true
     db.expenses = db.expenses.filter((e) => e.tripId !== TRIP.osaka)
     renderApp(PAYMENTS)
     expect(await screen.findByRole('heading', { name: '아직 결제가 없어요' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: '기간 외 결제 추가' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '기간 외 결제 내역 추가' })).toBeTruthy()
     expect(screen.getByRole('radiogroup', { name: '보기' })).toBeTruthy()
   })
 
@@ -123,7 +123,7 @@ describe('결제내역 · 리스트(WF-18)', () => {
     renderApp(`/trips/${TRIP.jeju}/payments`)
     expect(await screen.findByRole('button', { name: /돈사돈 본점/ })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /확인 필요/ })).toBeNull()
-    expect(screen.queryByRole('button', { name: '기간 외 결제 추가' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '기간 외 결제 내역 추가' })).toBeNull()
     // KRW 결제는 원통화 줄이 없다
     expect(screen.getByRole('button', { name: /돈사돈/ }).textContent).not.toContain('36400')
     // 탈퇴한 멤버의 결제: 메타는 "탈퇴한 멤버", 나간 멤버 태그 없음

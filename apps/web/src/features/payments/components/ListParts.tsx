@@ -71,7 +71,7 @@ export function OutOfPeriodEntry({ onClick }: { onClick: () => void }) {
         )}
       >
         <Icon name="plus" size={20} className="shrink-0 text-icon-default" />
-        <span className="min-w-0 flex-1 text-body-m-strong text-primary">기간 외 결제 추가</span>
+        <span className="min-w-0 flex-1 text-body-m-strong text-primary">기간 외 결제 내역 추가</span>
         <Icon name="chevron-right" size={20} className="shrink-0 text-icon-subtle" />
       </button>
     </div>
