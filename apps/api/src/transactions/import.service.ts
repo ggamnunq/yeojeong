@@ -27,6 +27,8 @@ type Tx = Prisma.TransactionClient;
 
 /** 인입 대상 여정(행 잠금 후 다시 읽은 값) */
 export interface LockedTrip {
+  /** 여정 통화(C-32: 이 통화도 KRW도 아닌 거래는 시장 환율로 환산) */
+  currency: string;
   fxPolicy: FxPolicy;
   /** 고시 단위당 원(FIXED) */
   fxFixedRate: string | null;
@@ -351,11 +353,12 @@ export class ImportService {
         status: LockedTrip['status'];
         start_at: Date;
         auto_end_at: Date;
+        currency: string;
         fx_policy: LockedTrip['fxPolicy'];
         fx_fixed_rate: { toString(): string } | null;
         fx_policy_changed_at: Date | null;
       }[]
-    >`SELECT id, status, start_at, auto_end_at, fx_policy, fx_fixed_rate, fx_policy_changed_at
+    >`SELECT id, status, start_at, auto_end_at, currency, fx_policy, fx_fixed_rate, fx_policy_changed_at
       FROM trips WHERE id = ${tripId}::uuid AND deleted_at IS NULL FOR SHARE`;
     const row = rows[0];
     if (!row) return null;
@@ -364,6 +367,7 @@ export class ImportService {
       status: row.status,
       startAt: row.start_at,
       autoEndAt: row.auto_end_at,
+      currency: row.currency,
       fxPolicy: row.fx_policy,
       fxFixedRate:
         row.fx_fixed_rate === null ? null : row.fx_fixed_rate.toString(),
@@ -437,12 +441,14 @@ export class ImportService {
     for (const t of candidates) {
       const sourceTxHash = hashOf.get(t.id);
       if (sourceTxHash && known.has(sourceTxHash)) continue;
-      // 원화는 S2C fx(FxRatesService.convertForTrip)가 정한다. 고시가 아직 없으면 다음 동기화에서 다시 시도한다
+      // 원화는 S2C fx(FxRatesService.convertForTrip)가 정한다. 여정 통화도 KRW도 아닌 외화는 시장 환율(C-32).
+      // 고시가 아직 없으면 다음 동기화에서 다시 시도한다
       let krw;
       try {
         krw = await this.fx.convertForTrip(
           {
             policy: trip.fxPolicy,
+            currency: trip.currency,
             fixedRate: trip.fxFixedRate,
             fixedAt: trip.fxPolicyChangedAt,
           },

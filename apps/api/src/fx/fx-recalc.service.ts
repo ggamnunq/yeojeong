@@ -3,6 +3,7 @@ import { splitEvenly, type FxPolicy } from '@yeojeong/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import {
   convertToKrw,
+  effectiveFxPolicy,
   FxRateMissingError,
   type ConvertResult,
 } from './convert.js';
@@ -12,6 +13,8 @@ import { FxRatesService, type SpotRateTable } from './fx-rates.service.js';
 export interface RecalcTrip {
   id: string;
   groupId: string;
+  /** 여정 통화. 이 통화도 KRW도 아닌 결제는 정책과 무관하게 시장 환율(C-32) */
+  currency: string;
   fxPolicy: FxPolicy;
   fxFixedRate: Prisma.Decimal | null;
   fxPolicyChangedAt: Date | null;
@@ -107,7 +110,12 @@ export class FxRecalcService {
     const foreign = expenses.filter((e) => e.originalCurrency !== KRW);
     if (foreign.length === 0) return 0;
 
-    const table = await this.spotTable(tx, trip.fxPolicy, foreign);
+    const policyOf = (e: ExpenseRow) =>
+      effectiveFxPolicy(trip.fxPolicy, trip.currency, e.originalCurrency);
+    const table = await this.spotTable(
+      tx,
+      foreign.filter((e) => policyOf(e) !== 'FIXED'),
+    );
     const fixedRate = trip.fxFixedRate?.toFixed(6) ?? null;
 
     // 1) 건별 원화
@@ -120,7 +128,7 @@ export class FxRecalcService {
           convertToKrw({
             amount: expense.originalAmount.toFixed(4),
             currency: expense.originalCurrency,
-            policy: trip.fxPolicy,
+            policy: policyOf(expense),
             spot: table?.find(expense.originalCurrency, expense.occurredAt),
             fixedRate,
             fixedAt: trip.fxPolicyChangedAt,
@@ -251,15 +259,15 @@ export class FxRecalcService {
     return changedCount;
   }
 
+  /** 매매기준율이 필요할 수 있는 결제(FIXED가 아닌 것)의 고시 표. 없으면 null */
   private async spotTable(
     tx: Prisma.TransactionClient,
-    policy: FxPolicy,
-    foreign: readonly ExpenseRow[],
+    needsSpot: readonly ExpenseRow[],
   ): Promise<SpotRateTable | null> {
-    if (policy === 'FIXED') return null;
-    const times = foreign.map((e) => e.occurredAt.getTime());
+    if (needsSpot.length === 0) return null;
+    const times = needsSpot.map((e) => e.occurredAt.getTime());
     return this.rates.loadSpotTable(
-      foreign.map((e) => e.originalCurrency),
+      needsSpot.map((e) => e.originalCurrency),
       new Date(Math.min(...times)),
       new Date(Math.max(...times)),
       tx,

@@ -4,6 +4,7 @@ import {
   convertToKrw,
   displayRate,
   divRoundHalfUp,
+  effectiveFxPolicy,
   FIXED_RATE_SOURCE,
   foreignToKrw,
   formatScaled,
@@ -70,6 +71,23 @@ describe('foreign → KRW (4-5, FR-808)', () => {
     expect(krwAmountOf('13200.0000')).toBe(13_200);
     expect(krwAmountOf('-4500')).toBe(-4_500);
     expect(krwAmountOf('0.5')).toBe(1);
+  });
+});
+
+describe('effectiveFxPolicy (C-32)', () => {
+  it('keeps the trip policy for KRW and the trip currency', () => {
+    for (const policy of ['SPOT_AT_PAYMENT', 'CARD_BILLED', 'FIXED'] as const) {
+      expect(effectiveFxPolicy(policy, 'JPY', 'JPY')).toBe(policy);
+      expect(effectiveFxPolicy(policy, 'jpy', 'Jpy')).toBe(policy);
+      expect(effectiveFxPolicy(policy, 'JPY', 'KRW')).toBe(policy);
+    }
+  });
+
+  it('uses the market rate (SPOT_AT_PAYMENT) for any other foreign currency', () => {
+    for (const policy of ['SPOT_AT_PAYMENT', 'CARD_BILLED', 'FIXED'] as const) {
+      expect(effectiveFxPolicy(policy, 'JPY', 'USD')).toBe('SPOT_AT_PAYMENT');
+      expect(effectiveFxPolicy(policy, 'KRW', 'usd')).toBe('SPOT_AT_PAYMENT');
+    }
   });
 });
 

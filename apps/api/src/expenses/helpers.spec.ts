@@ -188,6 +188,45 @@ describe('KRW conversion for out-of-period expenses', () => {
     );
   });
 
+  it('uses the market rate for a currency that is neither KRW nor the trip currency (C-32)', () => {
+    const usd = source({
+      originalAmount: D('25.5'),
+      originalCurrency: 'USD',
+      billedKrwAmount: 36000,
+      providerKrwAmount: 35500,
+    });
+    const usdSpot = {
+      rate: D('1380.5'),
+      displayUnit: 1,
+      source: '한국수출입은행',
+      effectiveAt: new Date('2026-11-13T00:00:00Z'),
+    };
+    const expected = {
+      krwAmount: 35200, // 25.5 × 1380.5 = 35202.75 → 35200
+      fx: {
+        fxPolicyApplied: 'SPOT_AT_PAYMENT',
+        fxRateUnit: 1,
+        fxRateSource: '한국수출입은행',
+        fxRateAt: usdSpot.effectiveAt,
+      },
+    };
+    // 고정 환율 여정: 고정 환율(919.20/100엔)을 USD에 쓰지 않는다
+    const fixed = {
+      ...trip,
+      fxPolicy: 'FIXED' as const,
+      fxFixedRate: D('919.20'),
+    };
+    expect(resolveKrw(usd, fixed, usdSpot)).toMatchObject(expected);
+    // 카드사 청구 원화 여정: 제3통화는 청구 원화 대신 시장 환율
+    const billed = { ...trip, fxPolicy: 'CARD_BILLED' as const };
+    expect(resolveKrw(usd, billed, usdSpot)).toMatchObject(expected);
+    // 여정 통화는 그대로 여정 정책
+    expect(
+      resolveKrw(source({ billedKrwAmount: 55000 }), billed, spot)?.fx
+        ?.fxPolicyApplied,
+    ).toBe('CARD_BILLED');
+  });
+
   it('computes refund children at the parent rate', () => {
     const parent = {
       krwAmount: 121330,
