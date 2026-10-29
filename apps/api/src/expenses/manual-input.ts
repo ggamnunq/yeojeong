@@ -13,7 +13,7 @@ import { currencyMeta } from '../fx/currencies.js';
 // 직접 입력 결제(S7)의 입력 규칙. DB 없이 판단한다(단위 테스트 대상).
 
 const AMOUNT = new RegExp(
-  `^\\d{1,${MANUAL_AMOUNT_MAX_INTEGER_DIGITS}}(\\.\\d+)?$`,
+  `^\\d{1,${MANUAL_AMOUNT_MAX_INTEGER_DIGITS}}(\\.\\d{1,20})?$`,
 );
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -34,7 +34,10 @@ export function manualAmountError(
   }
   const [, fraction = ''] = value.split('.');
   const digits = currencyMeta(currency).fractionDigits;
-  if (fraction.replace(/0+$/, '').length > digits) {
+  // 끝자리 0은 자릿수에서 뺀다(정규식 /0+$/는 0이 길게 이어지면 느려서 직접 센다)
+  let significant = fraction.length;
+  while (significant > 0 && fraction[significant - 1] === '0') significant--;
+  if (significant > digits) {
     return {
       path,
       code: 'fractionDigits',
