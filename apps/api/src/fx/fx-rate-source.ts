@@ -1,9 +1,19 @@
 import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import { CompositeFxRateSource } from './composite-fx-rate-source.js';
+import {
+  ER_API_ATTRIBUTION_URL,
+  ER_API_SOURCE_LABEL,
+  ExchangeRateApiFxRateSource,
+} from './exchange-rate-api-fx-rate-source.js';
 import { KoreaEximFxRateSource } from './korea-exim-fx-rate-source.js';
 
 // 환율 소스 어댑터 경계(기능명세 7-3). 수집 잡(POST /api/internal/jobs/fx)만 부른다.
-// env FX_RATE_SOURCE로 고른다: demo(고정 샘플 값) | koreaexim(한국수출입은행 OpenAPI, korea-exim-fx-rate-source.ts).
+// env FX_RATE_SOURCE로 고른다:
+// - demo: 고정 샘플 값
+// - koreaexim: 한국수출입은행 OpenAPI만(korea-exim-fx-rate-source.ts)
+// - erapi: ExchangeRate-API 공개 엔드포인트만(exchange-rate-api-fx-rate-source.ts, 키 없음)
+// - koreaexim+erapi: 한국수출입은행이 주, 고시하지 않는 통화(TWD·VND·PHP 등)만 ExchangeRate-API로 채움(composite-fx-rate-source.ts)
 
 export interface FetchedRate {
   currency: string;
@@ -12,7 +22,14 @@ export interface FetchedRate {
   displayUnit: number;
   /** 고시 시각 */
   effectiveAt: Date;
+  /** 이 고시의 출처명(ExchangeRate.source). 없으면 소스의 sourceLabel. 여러 소스를 합칠 때 통화별로 붙인다 */
+  source?: string;
 }
+
+/** 약관상 출처 링크가 필요한 출처명 → 링크. 조회 응답 FxRateView.sourceUrl로 내려 화면이 링크를 단다 */
+export const FX_SOURCE_LINKS: Readonly<Record<string, string>> = {
+  [ER_API_SOURCE_LABEL]: ER_API_ATTRIBUTION_URL,
+};
 
 export interface FxRateSource {
   /** env 값과 같은 ID */
@@ -70,14 +87,15 @@ export class DemoFxRateSource implements FxRateSource {
 
 /**
  * env로 환율 소스를 고른다. 모르는 값이거나 필요한 키가 없으면 서버가 뜨지 않게 예외.
- * - FX_RATE_SOURCE=demo → 데모, FX_RATE_SOURCE=koreaexim → 한국수출입은행(EXIM_API_KEY 필수)
- * - FX_RATE_SOURCE가 비면 EXIM_API_KEY가 있을 때 한국수출입은행, 없으면 데모
+ * - FX_RATE_SOURCE=demo → 데모, koreaexim → 한국수출입은행만(EXIM_API_KEY 필수),
+ *   erapi → ExchangeRate-API만, koreaexim+erapi → 한국수출입은행 + 빠진 통화만 ExchangeRate-API(EXIM_API_KEY 필수)
+ * - FX_RATE_SOURCE가 비면 EXIM_API_KEY가 있을 때 koreaexim+erapi(운영 기본), 없으면 데모(개발·테스트)
  */
 export function createFxRateSource(config: ConfigService): FxRateSource {
   const apiKey = config.get<string>('EXIM_API_KEY')?.trim() || undefined;
   const id =
     config.get<string>('FX_RATE_SOURCE')?.trim().toLowerCase() ||
-    (apiKey ? 'koreaexim' : 'demo');
+    (apiKey ? 'koreaexim+erapi' : 'demo');
   const logger = new Logger('FxRateSource');
   switch (id) {
     case 'demo':
@@ -91,7 +109,25 @@ export function createFxRateSource(config: ConfigService): FxRateSource {
       }
       logger.log('환율 소스: koreaexim(한국수출입은행)');
       return new KoreaEximFxRateSource(apiKey);
+    case 'erapi':
+      logger.log('환율 소스: erapi(ExchangeRate-API)');
+      return new ExchangeRateApiFxRateSource();
+    case 'koreaexim+erapi':
+      if (!apiKey) {
+        throw new Error(
+          'FX_RATE_SOURCE=koreaexim+erapi에는 EXIM_API_KEY가 필요합니다',
+        );
+      }
+      logger.log(
+        '환율 소스: koreaexim+erapi(한국수출입은행, 미고시 통화는 ExchangeRate-API)',
+      );
+      return new CompositeFxRateSource(
+        new KoreaEximFxRateSource(apiKey),
+        new ExchangeRateApiFxRateSource(),
+      );
     default:
-      throw new Error(`알 수 없는 FX_RATE_SOURCE: ${id} (demo | koreaexim)`);
+      throw new Error(
+        `알 수 없는 FX_RATE_SOURCE: ${id} (demo | koreaexim | erapi | koreaexim+erapi)`,
+      );
   }
 }

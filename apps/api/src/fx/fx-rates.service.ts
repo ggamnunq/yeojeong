@@ -12,6 +12,7 @@ import {
   type FxSpotRate,
 } from './convert.js';
 import { currencyMeta, KRW } from './currencies.js';
+import { FX_SOURCE_LINKS } from './fx-rate-source.js';
 import { toKstIso } from './kst.js';
 
 type Db = PrismaService | Prisma.TransactionClient;
@@ -201,6 +202,7 @@ export class FxRatesService {
 export function toRateView(row: RateRow): FxRateView {
   const rate = row.rate.toFixed(6);
   const meta = currencyMeta(row.quoteCurrency);
+  const sourceUrl: string | undefined = FX_SOURCE_LINKS[row.source];
   return {
     baseCurrency: 'KRW',
     currency: meta.code,
@@ -211,6 +213,7 @@ export function toRateView(row: RateRow): FxRateView {
     label: fxRateLabel(meta.code, rate),
     rateType: row.rateType,
     source: row.source,
+    ...(sourceUrl ? { sourceUrl } : {}),
     effectiveAt: toKstIso(row.effectiveAt),
     fetchedAt: toKstIso(row.fetchedAt),
   };

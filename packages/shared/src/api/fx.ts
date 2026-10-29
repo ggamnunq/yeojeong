@@ -21,6 +21,8 @@ export interface FxRateView {
   rateType: RateType;
   /** 출처 "데모 매매기준율" 등. 화면 "{source} · HH:mm 갱신" */
   source: string;
+  /** 출처 표기에 링크가 필요한 출처(ExchangeRate-API 약관)일 때만 있다. 화면은 source를 이 링크로 감싼다 */
+  sourceUrl?: string;
   /** 고시 시각(ISO 8601 KST) */
   effectiveAt: string;
   fetchedAt: string;
@@ -67,6 +69,8 @@ export interface FxJobResult {
   currencies: string[];
   fetched: number;
   inserted: number;
+  /** 직전 고시와 차이가 너무 커서(이상값) 저장하지 않은 고시 수 */
+  rejected: number;
   /** 새 고시·청구 확정으로 원화를 다시 계산한 여정 수 */
   recalculatedTrips: number;
 }

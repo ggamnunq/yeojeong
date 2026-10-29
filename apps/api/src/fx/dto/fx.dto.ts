@@ -89,6 +89,12 @@ export class FxRateViewDto implements FxRateView {
   rateType: RateType;
   @ApiProperty({ example: '데모 매매기준율' })
   source: string;
+  @ApiPropertyOptional({
+    example: 'https://www.exchangerate-api.com',
+    description:
+      '출처 표기에 링크가 필요한 출처(약관상 표기 의무)일 때만 있다. 화면은 source를 이 링크로 감싼다',
+  })
+  sourceUrl?: string;
   @ApiProperty({ example: '2026-11-13T18:00:00+09:00' })
   effectiveAt: string;
   @ApiProperty({ example: '2026-11-13T18:00:05+09:00' })
@@ -136,6 +142,10 @@ export class FxJobResultDto implements FxJobResult {
   fetched: number;
   @ApiProperty()
   inserted: number;
+  @ApiProperty({
+    description: '직전 고시와 20% 넘게 차이 나 저장하지 않은 고시 수',
+  })
+  rejected: number;
   @ApiProperty()
   recalculatedTrips: number;
 }

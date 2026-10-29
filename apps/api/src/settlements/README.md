@@ -72,15 +72,22 @@
 
 - `@InternalJob()` 공통 가드: 운영은 Cloud Scheduler OIDC, 로컬·테스트는 `x-internal-job-secret` 대체 인증을 쓴다.
 - `@InternalJob()` 라우트는 전역 CSRF·Cloudflare origin lock 대신 내부 잡 인증으로 방어한다.
-- 환율 소스: env `FX_RATE_SOURCE` = `demo`(고정 샘플 값, 출처 "데모 매매기준율") | `koreaexim`(한국수출입은행 현재환율 OpenAPI, 출처 "한국수출입은행 매매기준율"). 비우면 `EXIM_API_KEY`가 있을 때 `koreaexim`, 없으면 `demo`. `koreaexim`인데 키가 없거나 모르는 값이면 서버가 뜨지 않는다. `EXIM_API_KEY`는 Secret Manager이고 로그·오류 메시지에 남기지 않는다.
+- 환율 소스: env `FX_RATE_SOURCE` = `demo`(고정 샘플 값, 출처 "데모 매매기준율") | `koreaexim`(한국수출입은행 현재환율 OpenAPI만, 출처 "한국수출입은행 매매기준율") | `erapi`(ExchangeRate-API만) | `koreaexim+erapi`(한국수출입은행 + 빠진 통화만 ExchangeRate-API). 비우면 `EXIM_API_KEY`가 있을 때 `koreaexim+erapi`(운영 기본), 없으면 `demo`(개발·테스트). `koreaexim`·`koreaexim+erapi`인데 키가 없거나 모르는 값이면 서버가 뜨지 않는다. `EXIM_API_KEY`는 Secret Manager이고 로그·오류 메시지에 남기지 않는다.
+- 출처는 고시마다 저장한다(`ExchangeRate.source`). 합친 소스는 통화별 실제 출처를 붙이고, 조회 응답 `source`가 그대로 화면 "{source} · HH:mm 갱신"이 된다.
 - 한국수출입은행(`src/fx/korea-exim-fx-rate-source.ts`):
   - KST 오늘 날짜(`searchdate`)로 부르고, 빈 배열(주말·공휴일·11시 고시 전)이면 하루씩 최대 7일 거슬러 첫 고시를 쓴다. 8일 모두 비면 아무것도 저장하지 않는다(직전 고시 유지).
   - `cur_unit` "JPY(100)"의 괄호 값이 고시 단위, `deal_bas_r`(쉼표 포함)을 단위로 나눠 1단위당 원(소수 6자리, half-up)으로 저장한다. 고시 시각은 고시일 11:00 KST로 둔다.
-  - 역외 위안 `CNH`를 `CNY`로 쓴다. 대만 달러(TWD)·베트남 동(VND)·필리핀 페소(PHP)는 고시하지 않아 그 통화 여정은 저장된 고시가 없으면 매매기준율 환산이 503(`FX_RATE_UNAVAILABLE`)이다.
+  - 역외 위안 `CNH`를 `CNY`로 쓴다. 대만 달러(TWD)·베트남 동(VND)·필리핀 페소(PHP)는 고시하지 않는다(→ 보조 소스).
   - 요청당 5초, 네트워크 오류·5xx·JSON 아님은 2번까지 다시 부른다(전체 20초 안, 스케줄러 제한 30초). 결과 코드 2(DATA 코드)·3(인증키)·4(일일 한도)는 바로 실패해 잡이 503을 돌려주고 저장된 고시는 그대로 둔다.
+- 보조 소스 ExchangeRate-API(`src/fx/exchange-rate-api-fx-rate-source.ts`, 키 없음):
+  - `GET https://open.er-api.com/v6/latest/USD` 한 번으로 전 통화를 받는다. 1단위당 원 = (KRW/USD) ÷ (통화/USD)를 bigint로 계산해 소수 6자리 half-up, 고시 단위는 `currencies.ts`(VND·IDR·JPY = 100). 고시 시각은 응답 `time_last_update_unix`(하루 1회, UTC 00시 무렵).
+  - 약관(https://www.exchangerate-api.com/docs/free): 환율을 쓰는 화면에 "Rates By Exchange Rate API" 링크 표기 필수, 재배포 금지. 그래서 출처명을 그 문구로 저장하고 조회 응답 `sourceUrl`(https://www.exchangerate-api.com)을 내려 환율 화면(HF-29)이 출처를 링크로 단다. 한 시간에 한 번 넘게 부르면 429(20분 제한)라 수집 잡(하루 두 번)으로 충분하다.
+  - 요청당 5초, 네트워크 오류·5xx·JSON 아님은 한 번만 다시 부른다(전체 8초). 429·`result: "error"`·형식 오류는 바로 실패.
+- 합친 소스(`src/fx/composite-fx-rate-source.ts`): 한국수출입은행과 ExchangeRate-API를 동시에 부르고, 통화별로 한국수출입은행 값이 있으면 그것을, 없을 때만 ExchangeRate-API 값을 쓴다(지금은 TWD·VND·PHP, 그날 한국수출입은행이 빠뜨린 통화도). 한국수출입은행 실패는 기존처럼 잡 503(저장된 고시 유지), ExchangeRate-API 실패는 경고만 남기고 한국수출입은행 값만 저장한다(빠진 통화는 직전 고시 유지).
+- 이상값 방어(`FxJobService`): 통화마다 새 고시 시각 이전의 가장 최근 저장 고시(출처 무관)와 비교해 20% 넘게 다르면 저장하지 않고 경고 로그를 남긴다(잡 결과 `rejected`). 직전 고시가 없거나 14일 넘게 오래됐으면 비교하지 않는다(실제로 크게 움직인 통화가 영영 막히지 않게).
 - 환율 잡은 같은 (통화, 출처, 고시 시각)을 한 번만 저장하고, 진행 중 외화 여정(SPOT·CARD_BILLED)을 다시 환산한다.
 
 ## 테스트
 
-- 단위: `compute.spec.ts`, `summary-math.spec.ts`, `views.spec.ts`, `../fx/convert.spec.ts`, `../fx/fx-sources.spec.ts`.
+- 단위: `compute.spec.ts`, `summary-math.spec.ts`, `views.spec.ts`, `../fx/convert.spec.ts`, `../fx/fx-sources.spec.ts`, `../fx/korea-exim-fx-rate-source.spec.ts`, `../fx/exchange-rate-api-fx-rate-source.spec.ts`, `../fx/composite-fx-rate-source.spec.ts`(지원 통화 커버리지 포함), `../fx/fx-job.service.spec.ts`(이상값 방어).
 - e2e: `test/settlements.e2e-spec.ts`, `test/fx.e2e-spec.ts`. 실제 DB 부분은 `apps/api/.env`의 DB에 붙고, DB가 없으면(CI) 건너뛴다. 공유 로컬 DB라 무작위 ID로 만들고 만든 행만 지운다.
