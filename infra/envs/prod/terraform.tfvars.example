@@ -8,3 +8,7 @@ cloudflare_account_id      = "0123456789abcdef0123456789abcdef"
 # 카카오디벨로퍼스 앱 「여정」 > 앱 > 플랫폼 키 > REST API 키 / 클라이언트 시크릿(카카오 로그인). 커밋하지 않는다.
 kakao_client_id     = "0123456789abcdef0123456789abcdef"
 kakao_client_secret = "..."
+# support@jinyeojeong.com 메일을 전달받을 운영자 주소. 커밋하지 않는다. 처음 적용하면 이 주소로 Cloudflare 확인 메일이 온다.
+support_forward_to = "<운영자 메일 주소>"
+# 감사 로그 버킷 보존 잠금(되돌릴 수 없음). 첫 적용 뒤 로그 유입을 확인하고 true로 바꾼다.
+# audit_log_bucket_locked = true

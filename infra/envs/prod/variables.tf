@@ -76,7 +76,24 @@ variable "kakao_client_secret" {
 }
 
 variable "support_email" {
-  description = "탈퇴·삭제 요청 메일 초안의 받는 주소. 임시값이라 아직 메일을 받지 못한다(출시 전 교체)"
+  description = "고객센터 주소. Cloud Run env SUPPORT_EMAIL(탈퇴·삭제 요청 메일 초안의 받는 주소)이자 Cloudflare Email Routing이 support_forward_to로 전달하는 주소(cloudflare.tf)"
   type        = string
   default     = "support@jinyeojeong.com"
+}
+
+variable "support_forward_to" {
+  description = "support_email로 온 메일을 전달받을 운영자 주소(terraform.tfvars 또는 TF_VAR_support_forward_to, 커밋 금지). Cloudflare가 보내는 확인 메일을 한 번 눌러야 전달이 시작된다"
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.support_forward_to))
+    error_message = "support_forward_to는 메일 주소 형식이어야 합니다."
+  }
+}
+
+variable "audit_log_bucket_locked" {
+  description = "감사 로그 버킷(yeojeong-audit-logs) 보존 잠금. true로 바꾸면 되돌릴 수 없다(보존 기간 축소·버킷 삭제 불가). 첫 적용 뒤 로그 유입을 확인하고 켠다"
+  type        = bool
+  default     = false
 }

@@ -65,8 +65,9 @@ https://jinyeojeong.com ─ Cloudflare Worker yeojeong-web
 
 infra/bootstrap   GCP 프로젝트, 결제 연결, Terraform state 버킷 (처음 한 번, state는 로컬)
 infra/envs/prod   Cloud Run, Artifact Registry, Secret Manager, Supabase 설정,
-                  GitHub Actions용 Workload Identity, 예산 알림,
-                  Cloudflare(jinyeojeong.com zone 설정·DNS·리다이렉트·rate limit, Worker 커스텀 도메인) (state는 GCS)
+                  GitHub Actions용 Workload Identity, 예산 알림, 로그 버킷·감사 로그,
+                  Cloudflare(jinyeojeong.com zone 설정·DNS·리다이렉트·rate limit, Worker 커스텀 도메인,
+                  Email Routing) (state는 GCS)
 ```
 
 같은 Cloudflare 계정에 다른 프로젝트가 있으므로 Terraform과 토큰은 `jinyeojeong.com` zone과 `yeojeong-web` Worker만 다룹니다.
@@ -79,10 +80,11 @@ infra/envs/prod   Cloud Run, Artifact Registry, Secret Manager, Supabase 설정,
   security add-generic-password -a "$USER" -s yeojeong-supabase-pat -w '<토큰>'
   ```
 - Cloudflare 토큰 `yeojeong-terraform`(2027-04-28 만료)은 키체인 `yeojeong-cloudflare-terraform`에 있습니다. 새로 만들 때 권한은 아래만 줍니다.
-  - zone `jinyeojeong.com`: Zone Read, Zone Settings Write, DNS Write, SSL and Certificates Write, Dynamic URL Redirects Write, Zone WAF Write, Workers Routes Write
-  - 계정: Workers Scripts Write
+  - zone `jinyeojeong.com`: Zone Read, Zone Settings Write, DNS Write, SSL and Certificates Write, Dynamic URL Redirects Write, Zone WAF Write, Workers Routes Write, Email Routing Rules Write
+  - 계정: Workers Scripts Write, Email Routing Addresses Write
 - 각 폴더의 `terraform.tfvars.example`을 `terraform.tfvars`로 복사해 값을 채웁니다. tfvars와 state는 커밋하지 않습니다.
   - `infra/envs/prod`의 `kakao_client_id`·`kakao_client_secret`은 카카오디벨로퍼스 앱 「여정」의 REST API 키와 카카오 로그인 클라이언트 시크릿입니다(로컬 `apps/api/.env`와 같은 값). 세션·토큰 암호화·user ref 키는 Terraform이 만듭니다. `user_ref_hmac_key`와 `token_encryption_key`는 바꾸지 않습니다(`prevent_destroy`).
+  - `support_forward_to`는 `support@jinyeojeong.com`으로 온 메일을 전달받을 운영자 주소입니다. 레포에 적지 않습니다.
 
 ### 적용
 
@@ -104,6 +106,31 @@ Supabase 프로젝트는 대시보드에서 만든 것을 `terraform import supa
 - 마이그레이션 작성법, 하위 호환 규칙, 롤백, 운영 수동 실행은 [apps/api/prisma/README.md](apps/api/prisma/README.md)를 참고하세요.
 - Supabase Data API는 꺼 두었고, SSL 연결만 받으며, Supabase Auth 가입도 막혀 있습니다.
 - Cloud Scheduler는 전용 서비스 계정의 OIDC 토큰으로 Cloud Run을 직접 호출합니다. 자동 종료 5분, 정산 복구 1시간, 환율 하루 2회, 파기 매일 04:00(KST)이며 결제 동기화는 코드 배포 전까지 일시 중지합니다. 환율 소스의 운영 구현은 아직 필요합니다.
+
+#### 로그 보존
+
+| 로그 | 위치 | 보존 |
+| --- | --- | --- |
+| 애플리케이션·요청 로그(`_Default` 싱크) | 서울 버킷 `yeojeong-app-logs` | 93일 |
+| 감사 로그(Admin Activity·Data Access) 사본(`yeojeong-audit-logs` 싱크) | 서울 버킷 `yeojeong-audit-logs` | 400일 |
+| 감사 로그 원본(Admin Activity 등) | `_Required`(global, GCP 기본) | 400일 |
+| 사용자의 금융정보 접근 기록 | DB `access_logs` | 1년(파기 배치) |
+
+- Data Access 감사 로그는 Secret Manager, Cloud Run, IAM Credentials, Cloud Storage(Terraform state), Cloud Logging(로그 조회)만 켭니다(`logging.tf`).
+- 감사 버킷은 로그 유입을 확인한 뒤 `audit_log_bucket_locked = true`로 잠급니다. 잠그면 보존 기간을 줄이거나 버킷을 지울 수 없습니다.
+
+#### 고객센터 메일 (Cloudflare Email Routing)
+
+`support@jinyeojeong.com`으로 온 메일만 `support_forward_to`로 전달하고, 다른 주소는 받지 않습니다(catch-all 꺼짐). 이 도메인은 메일을 보내지 않으므로 DMARC는 `p=reject` 그대로입니다. Email Routing의 MX·SPF·DKIM 레코드는 Cloudflare가 만들고 잠그므로 Terraform이 관리하지 않습니다.
+
+처음 켤 때는 예전 null MX와 SPF `-all`을 먼저 지워야 합니다(남아 있으면 `cloudflare_email_routing_dns`의 precondition이 막습니다).
+
+```bash
+terraform apply -target='cloudflare_dns_record.null_mx' -target='cloudflare_dns_record.email_lockdown["spf"]'
+terraform apply
+```
+
+적용하면 `support_forward_to`로 Cloudflare 확인 메일이 옵니다. 링크를 눌러야 전달이 시작됩니다.
 
 ### 배포
 
