@@ -300,6 +300,21 @@ export class WalletEntryListResponseDto implements WalletEntryListResponse {
 
   @ApiProperty({ type: String, nullable: true })
   nextCursor: string | null;
+
+  @ApiProperty({
+    example: 412350,
+    description:
+      '이번 달(KST 1일 00:00 ~ 다음 달 1일 00:00, occurredAt) 지갑 항목 원화 합. 취소는 음수로 상계. ' +
+      '커서와 무관하게 전체 기준이며 모든 페이지에 같은 값(요청마다 다시 계산)',
+  })
+  monthTotalKrw: number;
+
+  @ApiProperty({
+    description:
+      '합계에 추정이 섞였는지("약" 접두): 연결 없는 외화 항목의 매매기준율 추정 원화를 썼거나, ' +
+      '원화가 없어 결제 시점 매매기준율로 환산했거나, 고시가 없어 합계에서 뺀 항목이 있으면 true',
+  })
+  monthTotalEstimated: boolean;
 }
 
 export class WalletEntryMutationResponseDto implements WalletEntryMutationResponse {

@@ -44,6 +44,10 @@ import {
 import { krwAmountOf } from '../fx/convert.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  walletEntryWhere,
+  WalletSummaryService,
+} from './wallet-summary.service.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -136,6 +140,7 @@ export class WalletService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly manual: ManualExpenseService,
+    private readonly summary: WalletSummaryService,
   ) {}
 
   // ─── 연결 후보 ───
@@ -217,9 +222,11 @@ export class WalletService {
 
   // ─── 목록 ───
 
+  /** 이번 달 합계(monthTotalKrw·monthTotalEstimated)는 커서와 무관하게 전체 기준으로, 페이지마다 다시 계산한다(S7b) */
   async list(
     userId: string,
     options: { cursor?: string; limit?: number },
+    now: Date = new Date(),
   ): Promise<WalletEntryListResponse> {
     const limit = Math.min(
       Math.max(options.limit ?? WALLET_ENTRY_LIST_LIMIT.DEFAULT, 1),
@@ -227,7 +234,7 @@ export class WalletService {
     );
     const and: Prisma.TransactionWhereInput[] = [
       // 계좌·카드 양쪽에 잡힌 같은 결제는 한 번만(4-1-3)
-      { userId, sameUserDuplicateOfId: null },
+      walletEntryWhere(userId),
     ];
     if (options.cursor !== undefined) {
       const cursor = decodeCursor(options.cursor);
@@ -241,12 +248,15 @@ export class WalletService {
         ],
       });
     }
-    const records = await this.prisma.transaction.findMany({
-      where: { AND: and },
-      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-      select: ENTRY_SELECT,
-    });
+    const [records, month] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: { AND: and },
+        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        select: ENTRY_SELECT,
+      }),
+      this.summary.monthTotal(userId, now),
+    ]);
     const page = records.slice(0, limit);
     const last = page.at(-1);
     return {
@@ -255,6 +265,7 @@ export class WalletService {
         records.length > limit && last
           ? encodeCursor({ occurredAt: last.occurredAt, id: last.id })
           : null,
+      ...month,
     };
   }
 

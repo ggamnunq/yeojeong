@@ -41,6 +41,11 @@ export interface Me extends Profile {
   /** 연결 해제(REMOVED)되지 않은 결제수단 수 */
   paymentMethodCount: number;
   hasExpiredConnection: boolean;
+  /**
+   * 지갑 항목 수(S7b, Q-51) = GET /api/wallet/entries에 보이는 항목 전체(직접 입력 + 가져온 거래, 지운 항목·계좌·카드 중복 제외).
+   * 서버는 항상 채운다(전환 기간 웹 목 호환을 위해 선택 필드)
+   */
+  walletEntryCount?: number;
 }
 
 export type AuthStatus = 'ANONYMOUS' | 'SIGNUP_REQUIRED' | 'AUTHENTICATED';

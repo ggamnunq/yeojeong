@@ -47,7 +47,8 @@ export class WalletController {
   @ApiOperation({
     summary: '지갑 항목 목록',
     description:
-      '직접 입력 + 계좌·카드에서 가져온 거래, 최신순. 연결된 여정 결제 요약(linkedTrip)을 함께 준다.',
+      '직접 입력 + 계좌·카드에서 가져온 거래, 최신순. 연결된 여정 결제 요약(linkedTrip)을 함께 준다. ' +
+      '이번 달(KST) 합계 monthTotalKrw·monthTotalEstimated는 커서와 무관한 전체 기준으로 모든 페이지에 같은 값을 준다.',
   })
   @ApiOkResponse({ type: WalletEntryListResponseDto })
   @ApiErrorResponse(400, 'VALIDATION_FAILED')
