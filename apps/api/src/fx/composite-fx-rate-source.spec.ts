@@ -4,7 +4,11 @@ import {
   ER_API_UPDATED_UNIX,
 } from '../../test/fx-fixtures.js';
 import { CompositeFxRateSource } from './composite-fx-rate-source.js';
-import { DEFAULT_FX_CURRENCIES } from './currencies.js';
+import {
+  DEFAULT_FX_CURRENCIES,
+  KRW,
+  SUPPORTED_CURRENCY_CODES,
+} from './currencies.js';
 import {
   ER_API_SOURCE_LABEL,
   ExchangeRateApiFxRateSource,
@@ -16,6 +20,8 @@ import {
 } from './korea-exim-fx-rate-source.js';
 
 const NOW = new Date('2026-10-29T02:10:00Z');
+/** 여정 통화로 고를 수 있는 외화(GET /api/currencies) */
+const SUPPORTED_FOREIGN = SUPPORTED_CURRENCY_CODES.filter((c) => c !== KRW);
 const EXIM_LABEL = '한국수출입은행 매매기준율';
 const AT = new Date('2026-10-29T11:00:00+09:00');
 
@@ -177,8 +183,14 @@ describe('CompositeFxRateSource', () => {
 });
 
 describe('FX source coverage', () => {
+  it('the fx job always collects every supported currency', () => {
+    expect([...DEFAULT_FX_CURRENCIES].sort()).toEqual(
+      [...SUPPORTED_FOREIGN].sort(),
+    );
+  });
+
   it('Korea Exim does not publish exactly TWD, VND and PHP of the supported list', () => {
-    const notPublished = DEFAULT_FX_CURRENCIES.filter(
+    const notPublished = SUPPORTED_FOREIGN.filter(
       (c) => !KOREA_EXIM_PUBLISHED_CURRENCIES.includes(c),
     );
     expect(notPublished.sort()).toEqual(['PHP', 'TWD', 'VND']);
@@ -186,14 +198,12 @@ describe('FX source coverage', () => {
 
   it('every supported currency is covered by koreaexim or the ExchangeRate-API fallback', async () => {
     const composite = realComposite(EXIM_FULL_FIXTURE, ER_API_FIXTURE);
-    const rates = await composite.fetchLatest(DEFAULT_FX_CURRENCIES, NOW);
+    const rates = await composite.fetchLatest(SUPPORTED_FOREIGN, NOW);
     const bySource = Object.fromEntries(
       rates.map((r) => [r.currency, r.source]),
     );
-    expect(Object.keys(bySource).sort()).toEqual(
-      [...DEFAULT_FX_CURRENCIES].sort(),
-    );
-    for (const currency of DEFAULT_FX_CURRENCIES) {
+    expect(Object.keys(bySource).sort()).toEqual([...SUPPORTED_FOREIGN].sort());
+    for (const currency of SUPPORTED_FOREIGN) {
       expect([currency, bySource[currency]]).toEqual([
         currency,
         KOREA_EXIM_PUBLISHED_CURRENCIES.includes(currency)
@@ -202,7 +212,7 @@ describe('FX source coverage', () => {
       ]);
     }
     // 보조 소스 픽스처(실제 응답)도 지원 통화를 모두 가진다: 주 소스가 어느 통화를 빠뜨려도 채울 수 있다
-    for (const currency of DEFAULT_FX_CURRENCIES) {
+    for (const currency of SUPPORTED_FOREIGN) {
       expect(ER_API_FIXTURE.rates).toHaveProperty(currency);
     }
   });
@@ -212,9 +222,9 @@ describe('FX source coverage', () => {
       EXIM_FULL_FIXTURE,
       new TypeError('fetch failed'),
     );
-    const rates = await composite.fetchLatest(DEFAULT_FX_CURRENCIES, NOW);
+    const rates = await composite.fetchLatest(SUPPORTED_FOREIGN, NOW);
     expect(rates.map((r) => r.currency).sort()).toEqual(
-      DEFAULT_FX_CURRENCIES.filter((c) =>
+      SUPPORTED_FOREIGN.filter((c) =>
         KOREA_EXIM_PUBLISHED_CURRENCIES.includes(c),
       ).sort(),
     );
