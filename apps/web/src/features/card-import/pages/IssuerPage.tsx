@@ -9,11 +9,13 @@ import { toast } from '../../../notifications'
 import { COPY } from '../copy'
 import { useFlowNav } from '../flow'
 import { useCardImportConfig } from '../hooks'
-import { orgMark, visibleOrganizations } from '../rules'
+import { IssuerTile } from '../components'
+import { visibleOrganizations } from '../rules'
 
 /**
- * WF-52 카드사 선택: 세로 목록(서버 응답 순서, 9곳 — 카드번호 입력칸 전에는 현대·하나를 뺀 7곳, visibleOrganizations). 행 = 중성 마크 40(회색 원 + 이니셜) + 이름 + ›, 행 간격 8.
- * 공식 로고·브랜드색은 쓰지 않는다. 탭 즉시 WF-53. config를 못 받으면 Toast + WF-51
+ * WF-52 카드사 선택(Figma HF-52 99:13972, v0.7.6): 세로 목록 9행 — Figma 순서로 화면이 정렬(visibleOrganizations, 서버는 기관 코드 순).
+ * 행 = Tile/Issuer 40(흰 원 + 1px 테두리 + 로고 원색, 삼성·롯데·현대는 이니셜) + 이름 + ›, 높이 64 · 행 간격 8.
+ * 탭 즉시 WF-53(현대·하나는 WF-53h). config를 못 받으면 Toast + WF-51
  */
 export default function IssuerPage() {
   const flow = useFlowNav()
@@ -36,9 +38,7 @@ export default function IssuerPage() {
                 onClick={() => flow.go(paths.walletImportLogin(org.code))}
                 className={clsx('flex h-16 w-full items-center gap-3.5 px-gutter text-left active:bg-subtle', focusRing)}
               >
-                <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-full bg-subtle text-body-s text-secondary">
-                  {orgMark(org)}
-                </span>
+                <IssuerTile org={org} />
                 <span className="min-w-0 flex-1 truncate text-body-m text-primary">{org.name}</span>
                 <Icon name="chevron-right" size={20} className="shrink-0 text-icon-subtle" />
               </button>

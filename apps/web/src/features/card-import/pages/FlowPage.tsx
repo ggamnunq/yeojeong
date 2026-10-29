@@ -1,5 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query'
-import type { CardApprovalItem, FetchCardApprovalsResponse, ImportWalletEntryItem } from '@yeojeong/shared'
+import {
+  isValidCardNumber,
+  type CardApprovalItem,
+  type FetchCardApprovalsRequest,
+  type FetchCardApprovalsResponse,
+  type ImportWalletEntryItem,
+} from '@yeojeong/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useBlocker, useNavigate, useParams } from 'react-router'
 import { flushSync } from 'react-dom'
@@ -12,12 +18,14 @@ import { toast } from '../../../notifications'
 import { clock } from '../../payments/clock'
 import { kst } from '../../payments/rules'
 import { cardImportKeys } from '../api'
-import { ImportErrorScreen } from '../components'
+import { cardNumberDigits, useCardSecrets } from '../cardLogin'
+import { ImportErrorScreen, LockedScreen, TwoLines } from '../components'
 import { COPY } from '../copy'
 import { useFlowNav } from '../flow'
-import { buildFetchRequest, useCardImportConfig, useFetchCardApprovals, useImportWalletEntries } from '../hooks'
+import { buildFetchRequest, useAckCardLockout, useCardImportConfig, useFetchCardApprovals, useImportWalletEntries } from '../hooks'
 import {
   classifyFetchError,
+  classifyLockoutAckError,
   clipRange,
   initialSelection,
   kstClock,
@@ -36,8 +44,15 @@ import { useNow } from '../useNow'
 //   뮤테이션 변수에는 암호문만 들어간다. 추가 인증 동안만 hook이 암호문을 들고 있고 결과·실패·이탈에서 reset으로 버린다.
 // - 결과(가맹점·금액·itemToken)는 이 컴포넌트 state에만 둔다(쿼리 캐시·URL·history state·저장소에 넣지 않는다). 나가거나 저장하면 버린다.
 // - 오류 화면은 우리 문구만 쓴다(CODEF·카드사 원문 메시지를 보이지 않는다).
+// - 현대·하나(WF-53h, v0.7.6 보정): 카드번호는 useCardSecrets(메모리)에 두고 로그인·불러오는 중·HF-57h 단계 동안만 남긴다(실패 뒤 다시
+//   입력하지 않게). 카드 비밀번호는 제출 즉시 비운다. 그 밖 단계(결과·0건·오류)로 가거나 화면을 떠나면(unmount·pagehide) 둘 다 비운다.
+//   잠김 위험: 첫 실패 뒤 다시 조회하면 HF-53hd로 확인받고 acknowledgeLockRisk: true로 보낸다. 2회째 실패(429 CARD_IMPORT_LOGIN_LOCKED)는
+//   HF-57h — "확인했어요"(lockout/ack) 뒤 HF-53h로.
 
-type Step = 'login' | 'two-way' | 'loading' | 'result' | 'empty' | 'error'
+type Step = 'login' | 'two-way' | 'loading' | 'result' | 'empty' | 'error' | 'locked'
+type CardError = { field: 'number' | 'password'; text: string }
+/** 카드번호를 남기는 단계(WF-53h · 불러오는 중 · HF-57h). 그 밖으로 가면 비운다 */
+const CARD_NUMBER_STEPS: ReadonlySet<Step> = new Set<Step>(['login', 'loading', 'locked'])
 type Range = { from: string; to: string }
 
 export default function FlowPage() {
@@ -52,12 +67,24 @@ export default function FlowPage() {
   const config = useCardImportConfig()
   const fetcher = useFetchCardApprovals()
   const importer = useImportWalletEntries()
+  const lockoutAck = useAckCardLockout()
   const trips = useMyTrips()
 
-  // 카드번호 입력칸이 아직 없으면 현대·하나는 고를 수 없다(visibleOrganizations — 주소로 바로 와도 같다)
+  // config에 있는 카드사만(visibleOrganizations — 주소로 바로 와도 같다. 서버 CARD_NUMBER_LOGIN이 꺼져 있으면 현대·하나가 없다)
   const org = config.data ? visibleOrganizations(config.data.organizations).find((o) => o.code === issuer) : undefined
   const today = kst(clock.now()).date
   const limits = org ? rangeLimits(org, today) : null
+  const cardLogin = org?.requiresCardNo === true && (org.cardPasswordDigits ?? 0) > 0
+  const secrets = useCardSecrets(org?.code, org)
+  const cardNumberRef = useRef<HTMLInputElement>(null)
+  const focusCardNumber = useRef(false)
+  const [cardError, setCardError] = useState<CardError | null>(null)
+  // 잠김 위험(현대·하나): 이 화면에서 실패를 한 번 본 뒤면 다음 조회 전에 HF-53hd로 확인받는다
+  const [lockRisk, setLockRisk] = useState(false)
+  const [lockRiskOpen, setLockRiskOpen] = useState(false)
+  // 409 CARD_LOCK_RISK_CONFIRM_REQUIRED(서버만 실패를 알고 있었다 — CODEF는 부르지 않음): 방금 보낸 암호문 요청을 확인받는 동안만 둔다
+  const riskRequest = useRef<FetchCardApprovalsRequest | null>(null)
+  const [ackBlocked, setAckBlocked] = useState(false)
 
   const [step, setStep] = useState<Step>('login')
   const [loginId, setLoginId] = useState('')
@@ -83,6 +110,22 @@ export default function FlowPage() {
   // 취소·이탈 뒤 늦게 온 응답을 버리는 세대 번호
   const generation = useRef(0)
   const leaving = useRef(false)
+
+  // 카드번호는 WF-53h · 불러오는 중 · HF-57h 동안만 남긴다(조회 성공 → 결과·0건, 오류 화면으로 가면 비운다)
+  const clearSecrets = secrets.clear
+  useEffect(() => {
+    if (!CARD_NUMBER_STEPS.has(step)) {
+      clearSecrets()
+      riskRequest.current = null
+    }
+  }, [step, clearSecrets])
+  // CARD_NUMBER_INVALID로 돌아오면 카드번호 칸에 포커스(값은 유지 — 포커스하면 전체 번호가 보인다)
+  useEffect(() => {
+    if (step === 'login' && focusCardNumber.current) {
+      focusCardNumber.current = false
+      cardNumberRef.current?.focus()
+    }
+  }, [step, cardError])
 
   const now = useNow(step === 'two-way')
   // 쿨다운(53c)은 해제 시각까지 — 시각이 지나면 에러 줄을 지우고 버튼을 살린다(백그라운드 복귀 때도 다시 계산)
@@ -149,6 +192,9 @@ export default function FlowPage() {
       setLeaveOpen(false)
       setExpiredOpen(false)
       setExpiredDialog(false)
+      setLockRiskOpen(false)
+      setCardError(null)
+      riskRequest.current = null
       setStep('login')
     }
     const onShow = (event: PageTransitionEvent) => {
@@ -182,6 +228,9 @@ export default function FlowPage() {
     cancelRequest()
     fetcher.reset()
     setPassword('')
+    secrets.clearCardPassword()
+    riskRequest.current = null
+    setLockRiskOpen(false)
     setTwoWay(null)
     setCode('')
     setCodeError(false)
@@ -218,8 +267,14 @@ export default function FlowPage() {
     setStep('result')
   }
 
-  const onFailure = (error: unknown) => {
+  /** request = 방금 보낸 요청(현대·하나만 — 409 확인 필요면 확인받는 동안 둔다) */
+  const onFailure = (error: unknown, request?: FetchCardApprovalsRequest) => {
     const f = classifyFetchError(error, Date.now())
+    // 현대·하나: 카드 비밀번호는 실패하면 비운다(이미 제출 때 비웠다 — 혹시 남았으면). 서버가 센 실패(attempts ≥ 1)면 다음 조회 전에 확인받는다
+    if (cardLogin) {
+      secrets.clearCardPassword()
+      if ((f.to === 'login-failed' || f.to === 'card-number-invalid' || f.to === 'card-password-invalid') && f.attempts >= 1) setLockRisk(true)
+    }
     // 인증번호만 틀렸으면 같은 암호문으로 다시 보낸다. 그 밖에는 버린다(다시 하려면 비밀번호를 다시 받는다)
     if (f.to !== 'two-way-invalid') fetcher.reset()
     if (f.to !== 'two-way-invalid' && f.to !== 'two-way-expired') setTwoWay(null)
@@ -228,17 +283,26 @@ export default function FlowPage() {
         setLoginError(f.attempts >= 2 ? COPY.loginLockWarning : COPY.loginFailed)
         return setStep('login')
       case 'card-number-invalid':
-        setLoginError(COPY.cardNumberInvalid)
+        // 카드번호 칸 Error + 값 유지 + 그 칸 포커스(WF-53h 실패)
+        setCardError({ field: 'number', text: COPY.cardNumberInvalid })
+        focusCardNumber.current = true
         return setStep('login')
       case 'card-password-invalid':
-        setLoginError(f.attempts >= 1 ? COPY.cardPasswordLockWarning : COPY.cardPasswordInvalid)
+        // WF-53hb: 카드 비밀번호 칸 Error + 비움, 1회째는 잠김 경고
+        setCardError({ field: 'password', text: f.attempts === 1 ? COPY.cardPasswordLockWarning : COPY.cardPasswordInvalid })
         return setStep('login')
       case 'login-locked':
-        setLoginError(COPY.loginLocked)
-        return setStep('login')
+        // HF-57h: 카드사 홈페이지에서 확인 → "확인했어요"(lockout/ack). 카드번호는 흐름 메모리에 남긴다
+        setLoginError(null)
+        setCardError(null)
+        setLockRisk(false)
+        setAckBlocked(false)
+        return setStep('locked')
       case 'lock-risk-confirm':
-        // 확인 다이얼로그(acknowledgeLockRisk)는 카드번호 입력칸(HF-53 변형)과 함께 붙인다
-        setLoginError(COPY.cardPasswordLockWarning)
+        // 서버만 실패를 알고 있었다(CODEF는 부르지 않음) → HF-53hd. "다시 시도"면 같은 암호문 요청을 acknowledgeLockRisk로 다시 보낸다
+        riskRequest.current = request ?? null
+        setLockRisk(true)
+        setLockRiskOpen(true)
         return setStep('login')
       case 'login-cooldown':
         setCooldownUntil(f.until)
@@ -284,38 +348,99 @@ export default function FlowPage() {
     setStep('loading')
     return { gen: generation.current, signal: controller.signal }
   }
-  const settle = async (gen: number, request: Promise<FetchCardApprovalsResponse>) => {
+  const settle = async (gen: number, response: Promise<FetchCardApprovalsResponse>, request?: FetchCardApprovalsRequest) => {
     try {
-      const res = await request
+      const res = await response
       if (gen === generation.current) onResponse(res)
     } catch (error) {
-      if (gen === generation.current) onFailure(error)
+      if (gen === generation.current) onFailure(error, request)
     }
   }
 
-  const submit = () => {
+  /** acknowledgeLockRisk = HF-53hd "다시 시도"로 확인받았다(현대·하나만 요청에 넣는다) */
+  const submit = (acknowledgeLockRisk = false) => {
     if (!org || !range || !config.data || locked || step !== 'login') return
     // 동의가 없으면 자격 증명을 보내지 않고 WF-51로
     if (!config.data.consent.valid) return flow.go(paths.walletImport())
     const id = loginId.trim()
     if (!id || !password) return
-    // 원문은 입력 state에서 바로 비우고, 먼저 암호화한 뒤 암호문 요청만 보낸다(원문은 이 함수의 지역 변수로 암호화까지만 산다)
+    // 현대·하나: 첫 실패 뒤면 보내기 전에 HF-53hd로 확인받는다(입력값은 그대로 둔다)
+    if (cardLogin && lockRisk && !acknowledgeLockRisk) return setLockRiskOpen(true)
+    // 원문은 입력 state에서 바로 비우고, 먼저 암호화한 뒤 암호문 요청만 보낸다(원문은 이 함수의 지역 변수로 암호화까지만 산다).
+    // 카드 비밀번호도 바로 비우고, 카드번호는 복사만 한다(WF-53h에 머무는 동안 남긴다)
     const secret = password
+    const card = cardLogin ? secrets.takeForSubmit() : null
     setPassword('')
     setLoginError(null)
+    setCardError(null)
     setRangeError(null)
+    setLockRiskOpen(false)
+    riskRequest.current = null
     const { gen, signal } = beginRequest()
-    const input = { publicKey: config.data.publicKey, organization: org.code, loginId: id, password: secret, from: range.from, to: range.to }
+    const input = {
+      publicKey: config.data.publicKey,
+      organization: org.code,
+      loginId: id,
+      password: secret,
+      from: range.from,
+      to: range.to,
+      ...(card ? { rule: org, cardNumber: card.cardNumber, cardPassword: card.cardPassword, acknowledgeLockRisk } : {}),
+    }
     void buildFetchRequest(input).then(
       (request) => {
         // 암호화하는 사이에 취소·이탈했으면 요청도 기억도 남기지 않는다
         if (gen !== generation.current || signal.aborted) return
-        return settle(gen, fetcher.start(request, signal))
+        return settle(gen, fetcher.start(request, signal), card ? request : undefined)
       },
       (error: unknown) => {
         if (gen === generation.current) onFailure(error)
       },
     )
+  }
+
+  /** HF-53hd "다시 시도": 409로 돌아온 요청이 있으면 그 암호문 그대로 acknowledgeLockRisk로, 아니면 지금 입력으로 */
+  const confirmLockRisk = () => {
+    const request = riskRequest.current
+    riskRequest.current = null
+    setLockRiskOpen(false)
+    if (!request) return submit(true)
+    if (!org || locked || step !== 'login') return
+    const { gen, signal } = beginRequest()
+    const acknowledged = { ...request, acknowledgeLockRisk: true }
+    void settle(gen, fetcher.start(acknowledged, signal), acknowledged)
+  }
+  const cancelLockRisk = () => {
+    riskRequest.current = null
+    setLockRiskOpen(false)
+  }
+
+  /** HF-57h "확인했어요" → POST /card-import/lockout/ack(기관 코드만). 결과별 처리(디자인 10-30) */
+  const ackLockout = () => {
+    if (!org || lockoutAck.isPending || ackBlocked) return
+    lockoutAck.mutate(org.code, {
+      // 204 · 409 필요 없음 → HF-53h(아이디·카드번호 유지, 비밀번호·카드 비밀번호 비움)
+      onSuccess: () => backToLogin(),
+      onError: (error) => {
+        const f = classifyLockoutAckError(error, Date.now())
+        switch (f.to) {
+          case 'not-needed':
+            return backToLogin()
+          case 'too-early':
+            return void toast.info(COPY.ackTooEarly(kstClock(f.retryAfter)))
+          case 'daily-limit':
+            setAckBlocked(true)
+            return void toast.error(COPY.ackDaily)
+          case 'retry-toast':
+            return void toast.error(COPY.later)
+        }
+      },
+    })
+  }
+
+  /** 카드번호 칸을 떠날 때: 자리수(16)는 찼는데 형식(Luhn)이 틀리면 안내(서버 CARD_NUMBER_INVALID와 같은 문구) */
+  const checkCardNumber = () => {
+    const digits = cardNumberDigits(secrets.cardNumber)
+    if (digits.length >= 16 && !isValidCardNumber(digits)) setCardError({ field: 'number', text: COPY.cardNumberInvalid })
   }
 
   const submitCode = () => {
@@ -467,6 +592,17 @@ export default function FlowPage() {
       )
     case 'empty':
       return <EmptyStep orgName={org.name} onBack={() => backToLogin()} onManual={flow.manual} onChangeRange={() => backToLogin({ openRange: true })} />
+    case 'locked':
+      return (
+        <LockedScreen
+          org={org}
+          acking={lockoutAck.isPending}
+          ackDisabled={ackBlocked}
+          onBack={() => backToLogin()}
+          onManual={flow.manual}
+          onAck={ackLockout}
+        />
+      )
     case 'error':
       return (
         <ImportErrorScreen
@@ -481,33 +617,65 @@ export default function FlowPage() {
       )
     default:
       return (
-        <LoginStep
-          org={org}
-          loginId={loginId}
-          onLoginId={setLoginId}
-          password={password}
-          onPassword={(value) => {
-            setPassword(value)
-            // 다시 입력을 시작하면 로그인 실패 줄은 사라진다(쿨다운 줄은 해제 시각까지 남는다)
-            setLoginError(null)
-          }}
-          passwordRef={passwordRef}
-          range={range}
-          limits={limits}
-          today={today}
-          onRange={(next) => {
-            setRangePick(next)
-            setRangeError(null)
-          }}
-          rangeOpen={rangeOpen}
-          onRangeOpen={setRangeOpen}
-          rangeError={rangeError}
-          error={cooldownUntil ? COPY.cooldown(kstClock(cooldownUntil)) : loginError}
-          locked={locked}
-          remaining={config.data.remainingToday}
-          onBack={() => flow.go(paths.walletImportIssuer())}
-          onSubmit={submit}
-        />
+        <>
+          <LoginStep
+            org={org}
+            loginId={loginId}
+            onLoginId={setLoginId}
+            password={password}
+            onPassword={(value) => {
+              setPassword(value)
+              // 다시 입력을 시작하면 로그인 실패 줄은 사라진다(쿨다운 줄은 해제 시각까지 남는다)
+              setLoginError(null)
+            }}
+            passwordRef={passwordRef}
+            card={
+              cardLogin
+                ? {
+                    digits: org.cardPasswordDigits ?? 0,
+                    cardNumber: secrets.cardNumber,
+                    onCardNumber: (value) => {
+                      secrets.setCardNumber(value)
+                      // 다시 입력을 시작하면 에러 줄은 사라진다
+                      setCardError(null)
+                    },
+                    onCardNumberBlur: checkCardNumber,
+                    cardPassword: secrets.cardPassword,
+                    onCardPassword: (value) => {
+                      secrets.setCardPassword(value)
+                      setCardError(null)
+                    },
+                    cardNumberRef,
+                    error: cardError,
+                  }
+                : undefined
+            }
+            range={range}
+            limits={limits}
+            today={today}
+            onRange={(next) => {
+              setRangePick(next)
+              setRangeError(null)
+            }}
+            rangeOpen={rangeOpen}
+            onRangeOpen={setRangeOpen}
+            rangeError={rangeError}
+            error={cooldownUntil ? COPY.cooldown(kstClock(cooldownUntil)) : loginError}
+            locked={locked}
+            remaining={config.data.remainingToday}
+            onBack={() => flow.go(paths.walletImportIssuer())}
+            onSubmit={() => submit()}
+          />
+          {/* HF-53hd 1회 실패 뒤 다시 조회(현대·하나) — 취소 = 입력 화면 유지 */}
+          <Dialog
+            open={lockRiskOpen}
+            title={<TwoLines lines={COPY.lockRiskTitle} />}
+            message={COPY.lockRiskMessage(org.name)}
+            confirmLabel={COPY.retry}
+            onCancel={cancelLockRisk}
+            onConfirm={confirmLockRisk}
+          />
+        </>
       )
   }
 }

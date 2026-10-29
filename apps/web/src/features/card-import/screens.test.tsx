@@ -531,3 +531,302 @@ describe('수동 결제 날짜 단계(HF-46d · SheetContent/DateTime)', () => {
     expect(within(form).getByRole('button', { name: /^날짜/ }).textContent).toContain('11.12 09:05')
   })
 })
+
+describe('W7e 로그인 안내 · 카드사 로고 · 현대·하나 카드 확인 · 잠김 방지', () => {
+  // 테스트용 카드번호(Mastercard 테스트 번호 — 실제 카드 아님)
+  const PAN = '5555555555554444'
+  const PAN_SPACED = '5555 5555 5555 4444'
+  const PAN_MASKED = '5555 •••• •••• 4444'
+
+  /** 지갑 → WF-51(동의가 없으면 체크) → WF-52 → 고른 카드사 */
+  async function toIssuer(name: RegExp) {
+    const app = renderApp('/wallet')
+    fireEvent.click(await screen.findByRole('button', { name: '불러오기' }))
+    await screen.findByText('카드사 로그인 정보')
+    const check = await waitFor(() => screen.queryByRole('checkbox', { name: /카드 내역 조회 동의/ }) ?? button('계속'))
+    if (check.getAttribute('role') === 'checkbox' || check.tagName === 'INPUT') fireEvent.click(check)
+    fireEvent.click(button('계속'))
+    fireEvent.click(await screen.findByRole('button', { name }))
+    await screen.findByLabelText('아이디')
+    return app
+  }
+  const cardNumberInput = () => screen.getByLabelText('카드번호') as HTMLInputElement
+  const cardPasswordInput = (label = '카드 비밀번호 4자리') => screen.getByLabelText(label) as HTMLInputElement
+  function fillHyundai(id: string, { password = PASSWORD, cardNumber = PAN, cardPassword = '1234' } = {}) {
+    fireEvent.change(screen.getByLabelText('아이디'), { target: { value: id } })
+    fireEvent.change(screen.getByLabelText('비밀번호', { selector: 'input' }), { target: { value: password } })
+    if (cardNumber) {
+      fireEvent.focus(cardNumberInput())
+      fireEvent.change(cardNumberInput(), { target: { value: cardNumber } })
+      fireEvent.blur(cardNumberInput())
+    }
+    fireEvent.change(cardPasswordInput(), { target: { value: cardPassword } })
+  }
+  /** 조회 요청 본문을 모은다 */
+  function captureFetches() {
+    const sent: Record<string, unknown>[] = []
+    const listener = ({ request }: { request: Request }) => {
+      if (request.url.endsWith('/api/card-import/fetch')) void request.clone().json().then((b: Record<string, unknown>) => sent.push(b))
+    }
+    server.events.on('request:start', listener)
+    return { sent, stop: () => server.events.removeListener('request:start', listener) }
+  }
+
+  it('HF-52: 9 rows in the Figma order (server sends code order) with logo tiles — initials for 삼성·롯데·현대', async () => {
+    await toLogin()
+    fireEvent.click(button('뒤로 가기'))
+    await screen.findByRole('heading', { name: '카드사 선택' })
+    const rows = screen.getAllByRole('listitem').map((li) => li.textContent)
+    expect(rows).toEqual(['KB국민카드', '삼삼성카드', 'NH농협카드', 'BC카드', '신한카드', '우리카드', '롯롯데카드', '현현대카드', '하나카드'])
+    const tiles = [...document.querySelectorAll<HTMLElement>('[data-issuer-tile]')]
+    expect(tiles.map((t) => t.dataset.issuerTile)).toEqual(['0301', '0303', '0304', '0305', '0306', '0309', '0311', '0302', '0313'])
+    // 로고 6곳은 <img>(꾸밈 — 대체 텍스트 비움, 타일은 aria-hidden), 3곳은 이니셜
+    expect(tiles.filter((t) => t.querySelector('img')).map((t) => t.dataset.issuerTile)).toEqual(['0301', '0304', '0305', '0306', '0309', '0313'])
+    for (const tile of tiles) {
+      expect(tile.getAttribute('aria-hidden')).toBe('true')
+      expect(tile.className).toContain('border-default')
+      expect(tile.className).toContain('bg-surface')
+      expect(tile.querySelector('img')?.getAttribute('alt') ?? '').toBe('')
+    }
+    // 버튼 이름은 카드사 이름만
+    expect(screen.getByRole('button', { name: '현대카드' })).toBeTruthy()
+  })
+
+  it('HF-53 guide block on every card company: copy, "은행 아이디" in Medium, fixed homepage link in a new tab without opener/referrer', async () => {
+    await toLogin()
+    expect(screen.getByText('신한카드 홈페이지 아이디·비밀번호예요')).toBeTruthy()
+    const bank = screen.getByText('은행 아이디')
+    expect(bank.className).toContain('font-medium')
+    expect(bank.parentElement?.textContent).toBe('은행 아이디·간편비밀번호·카드 비밀번호·인증서 비밀번호가 아니에요')
+    expect(screen.getByText('아이디가 없으면 홈페이지에서 만들고 로그인되는지 확인해 주세요')).toBeTruthy()
+    const link = screen.getByRole('link', { name: '신한카드 홈페이지 ›' })
+    expect(link.getAttribute('href')).toBe('https://www.shinhancard.com/mob/MOBFM001N/MOBFM001C01.shc')
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    // 신한은 카드 확인 블록이 없다
+    expect(screen.queryByLabelText('카드번호')).toBeNull()
+  })
+
+  it('L-0 셸: the form scrolls on its own and the CTA stays outside it (keyboard keeps the CTA visible)', async () => {
+    await toLogin()
+    const main = screen.getByLabelText('아이디').closest('main') as HTMLElement
+    expect(main.className).toContain('overflow-y-auto')
+    expect(main.contains(button('불러오기'))).toBe(false)
+    expect(main.contains(screen.getByRole('button', { name: /^기간/ }))).toBe(true)
+  })
+
+  it('HF-53h Hyundai: card inputs (no autofill, no reveal toggle, card-free names), success sends digits + ciphertext and keeps the card number out of caches, storage and URL', async () => {
+    const { sent, stop } = captureFetches()
+    const { router, queryClient } = await toIssuer(/현대카드/)
+    expect(screen.getByText('현대카드는 카드번호와 카드 비밀번호로 한 번 더 확인해요')).toBeTruthy()
+    expect(screen.getByText('이 카드사 계정에 등록된 본인 카드 아무거나 괜찮아요')).toBeTruthy()
+    expect(screen.getByText('카드번호와 카드 비밀번호는 저장하지 않아요')).toBeTruthy()
+    expect(screen.getByRole('link', { name: '현대카드 홈페이지 ›' }).getAttribute('href')).toBe('https://www.hyundaicard.com/cpm/mb/CPMMB0101_01.hc')
+    const number = cardNumberInput()
+    const pin = cardPasswordInput()
+    expect(number.getAttribute('autocomplete')).toBe('off')
+    expect(number.getAttribute('inputmode')).toBe('numeric')
+    expect(number.getAttribute('name')).toBe('yj-import-a')
+    expect(pin.getAttribute('autocomplete')).toBe('one-time-code')
+    expect(pin.getAttribute('maxlength')).toBe('4')
+    expect(pin.getAttribute('placeholder')).toBe('4자리')
+    // 카드 칸은 브라우저 기본 제출을 막는 form 안, 아이디·비밀번호는 form 밖
+    expect(number.closest('form')?.getAttribute('method')).toBe('post')
+    expect(screen.getByLabelText('아이디').closest('form')).toBeNull()
+    // 보기 토글은 비밀번호 칸 하나뿐
+    expect(screen.getAllByRole('button', { name: '비밀번호 보기' })).toHaveLength(1)
+    // 카드번호 형식이 맞아야 불러오기
+    fillHyundai(LOGIN_ID, { cardPassword: '12' })
+    expect(disabled(button('불러오기'))).toBe(true)
+    fireEvent.change(pin, { target: { value: '1234' } })
+    expect(disabled(button('불러오기'))).toBe(false)
+    // blur = 가운데 가림, focus = 전체
+    expect(number.value).toBe(PAN_MASKED)
+    fireEvent.focus(number)
+    expect(number.value).toBe(PAN_SPACED)
+    fireEvent.blur(number)
+
+    fireEvent.click(button('불러오기'))
+    // 카드 비밀번호는 제출 즉시 비운다
+    await waitFor(() => expect(screen.queryByLabelText('카드 비밀번호 4자리')).toBeNull())
+    expect(await screen.findByText('전체 선택')).toBeTruthy()
+    await waitFor(() => expect(sent).toHaveLength(1))
+    stop()
+    expect(sent[0].loginCardNo).toBe(PAN)
+    expect(typeof sent[0].encryptedCardPassword).toBe('string')
+    expect(sent[0]).not.toHaveProperty('acknowledgeLockRisk')
+    expect(JSON.stringify(sent[0])).not.toContain('"1234"')
+    const location = router.state.location
+    const where = `${location.pathname}${location.search}${location.hash}${JSON.stringify(location.state)}`
+    const caches = JSON.stringify([queryClient.getMutationCache().getAll().map((m) => m.state), queryClient.getQueryCache().getAll().map((q) => q.state)])
+    for (const secret of [PAN, PAN_SPACED, '5555']) {
+      expect(where).not.toContain(secret)
+      expect(storageDump()).not.toContain(secret)
+      expect(caches).not.toContain(secret)
+    }
+  })
+
+  it('Hana: "카드 비밀번호 앞 2자리", 2 digits, link to the home page', async () => {
+    await toIssuer(/하나카드/)
+    const pin = cardPasswordInput('카드 비밀번호 앞 2자리')
+    expect(pin.getAttribute('placeholder')).toBe('2자리')
+    fireEvent.change(pin, { target: { value: '1234' } })
+    expect(pin.value).toBe('12')
+    expect(screen.getByRole('link', { name: '하나카드 홈페이지 ›' }).getAttribute('href')).toBe('https://www.hanacard.co.kr/')
+  })
+
+  it('a full-length card number that fails the check is flagged on blur', async () => {
+    await toIssuer(/현대카드/)
+    fireEvent.focus(cardNumberInput())
+    fireEvent.change(cardNumberInput(), { target: { value: '5555555555554443' } })
+    fireEvent.blur(cardNumberInput())
+    expect(screen.getByRole('alert').textContent).toBe('카드번호를 다시 확인해 주세요')
+    expect(cardNumberInput().getAttribute('aria-invalid')).toBe('true')
+    fireEvent.focus(cardNumberInput())
+    fireEvent.change(cardNumberInput(), { target: { value: PAN } })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('CARD_NUMBER_INVALID keeps the card number and focuses it; passwords are emptied', async () => {
+    await toIssuer(/현대카드/)
+    fillHyundai('badcard')
+    fireEvent.click(button('불러오기'))
+    const line = await screen.findByText('카드번호를 다시 확인해 주세요')
+    expect(line.getAttribute('role')).toBe('alert')
+    const number = cardNumberInput()
+    await waitFor(() => expect(document.activeElement).toBe(number))
+    expect(number.value).toBe(PAN_SPACED)
+    expect(number.getAttribute('aria-invalid')).toBe('true')
+    expect(cardPasswordInput().value).toBe('')
+    expect((screen.getByLabelText('비밀번호', { selector: 'input' }) as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('아이디') as HTMLInputElement).value).toBe('badcard')
+  })
+
+  it('HF-53hb → HF-53hd → HF-57h → "확인했어요" (too early toast, then released) → HF-53h keeps id and card number', async () => {
+    const { sent, stop } = captureFetches()
+    await toIssuer(/현대카드/)
+    fillHyundai('badpin')
+    fireEvent.click(button('불러오기'))
+    // HF-53hb: 카드 비밀번호 Error + 비움 + 1회 경고, 카드번호는 가린 채 유지
+    expect((await screen.findByRole('alert')).textContent).toBe('한 번 더 틀리면 카드사에서 잠길 수 있어요')
+    expect(cardPasswordInput().getAttribute('aria-invalid')).toBe('true')
+    expect(cardPasswordInput().value).toBe('')
+    expect(cardNumberInput().value).toBe(PAN_MASKED)
+    // 다시 입력하면 에러 줄이 사라진다
+    fillHyundai('badpin', { cardNumber: '' })
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    // HF-53hd: 보내기 전에 확인 — 취소면 입력 화면 그대로(요청 없음)
+    fireEvent.click(button('불러오기'))
+    let dialog = await screen.findByRole('alertdialog', { name: '한 번 더 틀리면 카드사에서 잠길 수 있어요' })
+    expect(within(dialog).getByText('현대카드 홈페이지에서 먼저 로그인해 보세요')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(cardPasswordInput().value).toBe('1234')
+    expect(sent).toHaveLength(1)
+    fireEvent.click(button('불러오기'))
+    dialog = await screen.findByRole('alertdialog', { name: '한 번 더 틀리면 카드사에서 잠길 수 있어요' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '다시 시도' }))
+
+    // 2회째 실패 → HF-57h
+    expect(await screen.findByRole('heading', { name: '현대카드 홈페이지에서 먼저 확인해 주세요' })).toBeTruthy()
+    await waitFor(() => expect(sent).toHaveLength(2))
+    expect(sent[1].acknowledgeLockRisk).toBe(true)
+    expect(screen.getByText('아이디·비밀번호·카드 비밀번호로 로그인되는지 확인해요')).toBeTruthy()
+    expect(screen.getByRole('link', { name: '현대카드 홈페이지 ›' }).getAttribute('rel')).toBe('noopener noreferrer')
+    expect(screen.getByRole('button', { name: '직접 추가' })).toBeTruthy()
+
+    // 잠긴 직후 → 429 TOO_EARLY: HF-57h 유지 + 토스트 "HH:mm 이후 다시 눌러 주세요"
+    fireEvent.click(button('확인했어요'))
+    expect(await screen.findByText(/^\d{2}:\d{2} 이후 다시 눌러 주세요$/)).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '현대카드 홈페이지에서 먼저 확인해 주세요' })).toBeTruthy()
+
+    // 30분 지남 → 204 → HF-53h(아이디·카드번호 유지, 비밀번호·카드 비밀번호 비움)
+    db.cardImportState.lockedAt = Date.now() - 31 * 60_000
+    fireEvent.click(button('확인했어요'))
+    expect(((await screen.findByLabelText('아이디')) as HTMLInputElement).value).toBe('badpin')
+    expect(cardNumberInput().value).toBe(PAN_MASKED)
+    expect(cardPasswordInput().value).toBe('')
+    expect((screen.getByLabelText('비밀번호', { selector: 'input' }) as HTMLInputElement).value).toBe('')
+    expect(db.cardImportState.lockRiskFailures).toBe(0)
+    // 카운터가 0이라 다이얼로그 없이 바로 보낸다
+    fillHyundai('junyong88', { cardNumber: '' })
+    fireEvent.click(button('불러오기'))
+    expect(await screen.findByText('전체 선택')).toBeTruthy()
+    stop()
+    expect(sent.at(-1)?.loginCardNo).toBe(PAN)
+    expect(sent.at(-1)).not.toHaveProperty('acknowledgeLockRisk')
+  })
+
+  it('409 CARD_LOCK_RISK_CONFIRM_REQUIRED (failure the screen did not see): HF-53hd, then the same ciphertext with acknowledgeLockRisk', async () => {
+    resetCardImportMock({ consented: true })
+    db.cardImportState.lockRiskFailures = 1
+    const { sent, stop } = captureFetches()
+    await toIssuer(/현대카드/)
+    fillHyundai(LOGIN_ID)
+    fireEvent.click(button('불러오기'))
+    const dialog = await screen.findByRole('alertdialog', { name: '한 번 더 틀리면 카드사에서 잠길 수 있어요' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '다시 시도' }))
+    expect(await screen.findByText('전체 선택')).toBeTruthy()
+    await waitFor(() => expect(sent).toHaveLength(2))
+    stop()
+    expect(sent[0]).not.toHaveProperty('acknowledgeLockRisk')
+    expect(sent[1].acknowledgeLockRisk).toBe(true)
+    expect(sent[1].encryptedPassword).toBe(sent[0].encryptedPassword)
+    expect(sent[1].encryptedCardPassword).toBe(sent[0].encryptedCardPassword)
+  })
+
+  it('ack 429 DAILY_LIMIT: toast and "확인했어요" off (직접 추가 only); ‹ returns to HF-53h with the card number', async () => {
+    resetCardImportMock({ consented: true, lockedMinutesAgo: 40 })
+    db.cardImportState.lockoutAcksToday = 2
+    await toIssuer(/현대카드/)
+    fillHyundai(LOGIN_ID)
+    fireEvent.click(button('불러오기'))
+    await screen.findByRole('heading', { name: '현대카드 홈페이지에서 먼저 확인해 주세요' })
+    fireEvent.click(button('확인했어요'))
+    expect(await screen.findByText('오늘은 더 시도할 수 없어요')).toBeTruthy()
+    await waitFor(() => expect(disabled(button('확인했어요'))).toBe(true))
+    expect(disabled(button('직접 추가'))).toBe(false)
+    fireEvent.click(button('뒤로 가기'))
+    expect(await screen.findByLabelText('카드번호')).toBeTruthy()
+    expect(cardNumberInput().value).toBe(PAN_MASKED)
+  })
+
+  it('ack 409 NOT_NEEDED (already released on the server): back to HF-53h', async () => {
+    resetCardImportMock({ consented: true, lockedMinutesAgo: 40 })
+    await toIssuer(/현대카드/)
+    fillHyundai(LOGIN_ID)
+    fireEvent.click(button('불러오기'))
+    await screen.findByRole('heading', { name: '현대카드 홈페이지에서 먼저 확인해 주세요' })
+    db.cardImportState.lockRiskFailures = 0
+    fireEvent.click(button('확인했어요'))
+    expect(((await screen.findByLabelText('아이디')) as HTMLInputElement).value).toBe(LOGIN_ID)
+    expect(cardNumberInput().value).toBe(PAN_MASKED)
+    expect(cardPasswordInput().value).toBe('')
+  })
+
+  it('"직접 추가" on HF-57h opens the manual add sheet', async () => {
+    resetCardImportMock({ consented: true, lockedMinutesAgo: 40 })
+    await toIssuer(/하나카드/)
+    fireEvent.change(screen.getByLabelText('아이디'), { target: { value: LOGIN_ID } })
+    fireEvent.change(screen.getByLabelText('비밀번호', { selector: 'input' }), { target: { value: PASSWORD } })
+    fireEvent.focus(cardNumberInput())
+    fireEvent.change(cardNumberInput(), { target: { value: PAN } })
+    fireEvent.change(cardPasswordInput('카드 비밀번호 앞 2자리'), { target: { value: '12' } })
+    fireEvent.click(button('불러오기'))
+    await screen.findByRole('heading', { name: '하나카드 홈페이지에서 먼저 확인해 주세요' })
+    fireEvent.click(button('직접 추가'))
+    expect(await screen.findByRole('dialog', { name: '결제 내역 추가' })).toBeTruthy()
+  })
+
+  it('leaving for another screen (WF-57 error) drops the card number', async () => {
+    await toIssuer(/현대카드/)
+    fillHyundai('down')
+    fireEvent.click(button('불러오기'))
+    expect(await screen.findByText('현대카드 조회가 잠시 안 돼요')).toBeTruthy()
+    fireEvent.click(button('다시 시도'))
+    expect(await screen.findByLabelText('카드번호')).toBeTruthy()
+    expect(cardNumberInput().value).toBe('')
+    expect((screen.getByLabelText('아이디') as HTMLInputElement).value).toBe('down')
+  })
+})

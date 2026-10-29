@@ -5,35 +5,27 @@ import { addDays, type DateRangeValue, type YmdDate } from '../../ds/SheetConten
 import { formatDateLabel, formatOriginal, kst } from '../payments/rules'
 import { CardLoginInputError } from './cardLogin'
 import { CardImportKeyPinError } from './crypto'
+import { issuerInitial, sortIssuers } from './issuers'
 
 // 카드 내역 불러오기 화면 규칙(화면명세 L절 · 기능명세 4-12). 화면 없이 테스트한다.
 
 // ── 카드사 ───────────────────────────────────────────────────────
 
-/** 카드사 중성 마크(WF-52): 서버가 이니셜을 주지 않아 기관 코드로 정한다. 모르는 코드는 이름 첫 글자 */
-const ORG_MARKS: Record<string, string> = {
-  '0301': 'KB',
-  '0302': '현',
-  '0303': '삼',
-  '0304': 'NH',
-  '0305': 'BC',
-  '0306': '신',
-  '0309': '우',
-  '0311': '롯',
-  '0313': '하',
-}
-
-export const orgMark = (org: Pick<CardImportOrganization, 'code' | 'name'>) => ORG_MARKS[org.code] ?? org.name.slice(0, 1)
+/** 카드사 이니셜(이니셜 타일 · WF-52). issuers.ts에 둔 것을 그대로 쓴다 */
+export const orgMark = issuerInitial
 
 /**
- * 카드번호·카드 비밀번호 입력칸(HF-53 변형)이 화면에 생겼는가. 서버는 현대·하나(requiresCardNo)를 내려 주지만(S8c)
- * 입력칸 디자인이 확정되기 전에는 목록·로그인 화면에서 뺀다(입력칸 없이 고르면 400이 난다). 입력칸을 붙이면 true로 바꾼다
+ * 카드번호·카드 비밀번호 입력칸(WF-53h)이 화면에 있는가. W7e에서 붙여 true다.
+ * 서버 env CARD_NUMBER_LOGIN이 꺼져 있으면 config가 현대·하나를 주지 않으므로 그대로 숨겨진다
  */
-export const CARD_NUMBER_LOGIN_SCREEN_READY: boolean = false
+export const CARD_NUMBER_LOGIN_SCREEN_READY: boolean = true
 
-/** 화면에 보일 카드사(서버 순서 유지). 카드번호 입력칸이 아직 없으면 requiresCardNo 카드사를 뺀다 */
-export const visibleOrganizations = <T extends Pick<CardImportOrganization, 'requiresCardNo'>>(organizations: readonly T[]): T[] =>
-  organizations.filter((o) => CARD_NUMBER_LOGIN_SCREEN_READY || !o.requiresCardNo)
+/**
+ * 화면에 보일 카드사: Figma HF-52 순서(KB·삼성·NH·BC·신한·우리·롯데·현대·하나 — 서버는 기관 코드 순, README C-45).
+ * 카드번호 입력칸이 없으면 requiresCardNo 카드사를 뺀다
+ */
+export const visibleOrganizations = <T extends Pick<CardImportOrganization, 'code' | 'requiresCardNo'>>(organizations: readonly T[]): T[] =>
+  sortIssuers(organizations.filter((o) => CARD_NUMBER_LOGIN_SCREEN_READY || !o.requiresCardNo))
 
 // ── 기간(WF-53 기간 한도) ─────────────────────────────────────────
 

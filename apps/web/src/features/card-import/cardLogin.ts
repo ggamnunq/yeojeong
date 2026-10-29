@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { CARD_NUMBER_MAX_DIGITS, CARD_NUMBER_MIN_DIGITS, isValidCardNumber, isValidCardPassword, type CardImportOrganization } from '@yeojeong/shared'
 
-// 현대·하나 카드번호 로그인 입력 규칙(S8c). 화면(HF-53 변형 입력칸)은 디자인 확정 뒤 이 파일의 규칙·hook을 쓴다.
+// 현대·하나 카드번호 로그인 입력 규칙(S8c). 화면은 steps.tsx CardCheck(WF-53h)·pages/FlowPage(W7e)가 이 파일의 규칙·hook을 쓴다.
 // 메모리 규칙(화면명세 L-0, 비밀번호와 같다): 카드번호·카드 비밀번호 원문은
 // - 이 hook의 React state(메모리)와 buildFetchRequest의 인자로만 산다. history state·sessionStorage·localStorage·URL·
 //   cardImportFlow(흐름 표시)·TanStack 캐시에 넣지 않는다.
-// - 제출하면(take) 바로 비운다. 실패 후 로그인 화면으로 돌아오거나, 카드사가 바뀌거나, 화면을 떠나거나(unmount), pagehide면 비운다.
+// - 카드 비밀번호는 제출하면(takeForSubmit) 바로 비운다. 카드번호는 WF-53h(와 HF-57h)에 머무는 동안 남긴다(화면명세 L-0 v0.7.6 보정 —
+//   실패 뒤 다시 입력하지 않게, blur 마스킹 상태). 카드사가 바뀌거나, 화면을 떠나거나(unmount), pagehide, 조회 성공이면 둘 다 비운다(clear).
 // - 카드 비밀번호는 buildFetchRequest가 비밀번호와 같은 공개키(지문 고정 경유)로 암호화해 암호문만 요청에 넣는다.
 // - 카드번호는 CODEF가 원문으로 받아(암호화 표시 없음) 요청 빌더에서만 숫자 원문으로 요청 객체에 들어간다.
 
@@ -20,6 +21,17 @@ export function formatCardNumberInput(raw: string): string {
 
 /** 서버로 보낼 형식: 공백·하이픈만 뺀다(다른 문자가 있으면 형식 검사에서 걸린다) */
 export const cardNumberDigits = (raw: string) => raw.replace(/[\s-]/g, '')
+
+/**
+ * 포커스를 잃은 카드번호 표시: 앞 4자리·끝 4자리만 보이고 가운데는 •(4자리 띄어쓰기 유지).
+ * 16자리 "9410 •••• •••• 3456". 8자리 이하(입력 중)는 가릴 가운데가 없어 그대로 둔다
+ */
+export function maskCardNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, CARD_NUMBER_MAX_DIGITS)
+  if (digits.length <= 8) return formatCardNumberInput(digits)
+  const masked = digits.slice(0, 4) + '•'.repeat(digits.length - 8) + digits.slice(-4)
+  return masked.replace(/(.{4})(?=.)/gu, '$1 ')
+}
 
 /** 카드 비밀번호 입력: 숫자만, 카드사 자리수까지 */
 export const cardPasswordInput = (raw: string, digits: number) => raw.replace(/\D/g, '').slice(0, digits)
@@ -111,8 +123,11 @@ export class CardLoginInputError extends Error {
 
 /**
  * 카드번호·카드 비밀번호 입력 state(메모리만). organization이 바뀌면 비운다. pagehide·unmount에도 비운다.
- * - take(): 제출할 때 부른다 — 지금 값을 돌려주고 state는 바로 비운다(돌려받은 값은 buildFetchRequest에 바로 넘긴다).
- * - clear(): 실패 후 로그인 화면으로 돌아올 때·취소할 때 부른다.
+ * - take(): 지금 값을 돌려주고 둘 다 바로 비운다.
+ * - takeForSubmit(): WF-53h 제출 — 지금 값을 돌려주고 카드 비밀번호만 비운다. 카드번호는 같은 화면에 머무는 동안 남긴다(v0.7.6 보정).
+ *   돌려받은 값은 buildFetchRequest에 바로 넘긴다.
+ * - clearCardPassword(): 실패로 돌아올 때(카드 비밀번호 칸만 비움).
+ * - clear(): 화면 이탈·조회 성공·취소 — 둘 다 비운다.
  */
 export function useCardSecrets(organization: string | undefined, rule: CardLoginRule | undefined) {
   const digits = rule?.cardPasswordDigits ?? 0
@@ -152,5 +167,14 @@ export function useCardSecrets(organization: string | undefined, rule: CardLogin
     clear()
     return value
   }, [clear])
-  return { cardNumber, cardPassword, setCardNumber, setCardPassword, clear, take }
+  const clearCardPassword = useCallback(() => {
+    current.current = { ...current.current, cardPassword: '' }
+    setPassword('')
+  }, [])
+  const takeForSubmit = useCallback(() => {
+    const value = current.current
+    clearCardPassword()
+    return value
+  }, [clearCardPassword])
+  return { cardNumber, cardPassword, setCardNumber, setCardPassword, clear, clearCardPassword, take, takeForSubmit }
 }

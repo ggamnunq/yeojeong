@@ -113,4 +113,18 @@ describe('Input Type=Password (v1.7)', () => {
     expect(screen.queryByRole('button', { name: '비밀번호 보기' })).toBeNull()
     expect((screen.getByLabelText('이메일') as HTMLInputElement).type).toBe('email')
   })
+
+  it('pin(HF-53h 카드 비밀번호): 보기 토글·경고 아이콘·✕ 없이 테두리로만 Error를 보인다(type password · text 모두)', () => {
+    for (const type of ['password', 'text'] as const) {
+      const { container, unmount } = render(<Input pin type={type} label="카드 비밀번호" value="12" onChange={() => {}} onClear={() => {}} error />)
+      expect(screen.queryByRole('button', { name: '비밀번호 보기' })).toBeNull()
+      expect(screen.queryByRole('button', { name: '입력 지우기' })).toBeNull()
+      expect(container.querySelector('.lucide-triangle-alert')).toBeNull()
+      const input = screen.getByLabelText('카드 비밀번호') as HTMLInputElement
+      expect(input.type).toBe(type)
+      expect(input.getAttribute('aria-invalid')).toBe('true')
+      expect(container.querySelector('.border-error')).toBeTruthy()
+      unmount()
+    }
+  })
 })
