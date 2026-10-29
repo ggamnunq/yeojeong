@@ -12,6 +12,8 @@ export type ApiErrorContext = {
   retry?: () => void
   /** true면 토스트를 띄우지 않는다(쿼리·뮤테이션 meta.silent). 로그인 연결은 그대로 한다 */
   silent?: boolean
+  /** true면 CONSENT_REQUIRED를 화면이 처리한다(전역 동의 처리기를 부르지 않고 토스트도 없다) */
+  consentHandled?: boolean
 }
 
 // ── 로그인이 필요할 때(UNAUTHENTICATED) ─────────────────────────────
@@ -70,6 +72,19 @@ export function onConsentRequired(handler: ConsentRequiredHandler): () => void {
   }
 }
 
+/**
+ * 403 CONSENT_REQUIRED의 details.reason(v0.5.7): 결제수단이 0개라 공개 확대(공동 확정·공동으로 변경·부담 인원 추가)를 거부함.
+ * 재동의 화면이 아니라 지갑 연결 흐름(missing이 있으면 연동 동의 시트 → 연결)으로 잇는다.
+ */
+export const NO_ACTIVE_PAYMENT_METHOD = 'NO_ACTIVE_PAYMENT_METHOD'
+
+/** 결제수단 0개 때문에 막힌 403인가 */
+export function isNoActivePaymentMethod(error: unknown): boolean {
+  return (
+    isApiError(error) && (error.code as string) === CONSENT_REQUIRED && error.details?.reason === NO_ACTIVE_PAYMENT_METHOD
+  )
+}
+
 /** CONSENT_REQUIRED면 다시 받아야 할 동의 항목 ID 목록, 아니면 null */
 export function consentRequiredIds(error: unknown): string[] | null {
   if (!isApiError(error) || (error.code as string) !== CONSENT_REQUIRED) return null
@@ -109,6 +124,7 @@ export function handleApiError(error: unknown, ctx: ApiErrorContext = {}): void 
     return
   }
   const required = consentRequiredIds(error)
+  if (required && ctx.consentHandled) return
   if (required && consentRequiredHandler) {
     consentRequiredHandler(error, required)
     return

@@ -35,6 +35,8 @@ const save = useMutation({
 | `NETWORK_ERROR` (status 0)                             | 화면               | 오류 토스트 + 「다시 시도」(쿼리면 실패한 쿼리를 모두 다시 받는다)          |
 | `TIMEOUT` (status 0)                                   | 화면               | 〃                                                                          |
 | `UPSTREAM_UNAVAILABLE` (502·형식 없는 5xx)             | Worker · 화면      | 〃                                                                          |
+| `CONSENT_REQUIRED` (403)                               | 서버               | 토스트 없음. 가입 동의 항목이면 재동의 화면, 연동 동의(FIN_*)면 그 화면이 동의 시트를 연다 |
+| `CONSENT_REQUIRED` + `details.reason = NO_ACTIVE_PAYMENT_METHOD` | 서버     | 토스트 없음. 재동의 화면으로 가지 않는다. 결제 상세가 지갑 연결 흐름(missing 있으면 동의 시트, 없으면 계좌·카드 추가)으로 잇는다 — `isNoActivePaymentMethod` |
 | `NOT_FOUND` (404) · `CONFLICT` (409)                   | 서버               | 안내 토스트(info), 서버 문구 그대로                                         |
 | `FORBIDDEN` · `BAD_REQUEST` · `PAYLOAD_TOO_LARGE` 등   | 서버               | 오류 토스트, 서버 문구 그대로                                               |
 | `INTERNAL_ERROR` (500) · 그 밖의 5xx                   | 서버               | 오류 토스트 + "(문의 번호 05c8d730)" — 요청 ID 앞 8자                       |

@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { MemberSummary, TripDetail } from '../../api'
 import { paths } from '../../app/paths'
+import { toPerson } from '../../app/person'
 import { rememberTripId } from '../../app/trip'
-import { Button, Dialog, Icon, orderMembers, PanelSide, RowMember } from '../../ds'
+import { Dialog, Icon, orderMembers, PanelSide, RowMember, RowTone } from '../../ds'
 import { toast } from '../../notifications'
 import { useKickMember, useLeaveGroup } from './api'
-import { canKick, formatInviteCode, leaveMessage, toAvatarPerson } from './rules'
+import { canKick, formatInviteCode, leaveMessage } from './rules'
 
 export type MemberPanelProps = {
   open: boolean
@@ -21,7 +22,7 @@ export function MemberPanel({ open, onClose, trip }: MemberPanelProps) {
   const [leaving, setLeaving] = useState(false)
   const kick = useKickMember(trip)
   const leave = useLeaveGroup(trip)
-  const members = orderMembers(trip.members.filter((m) => !m.isLeft).map((m) => ({ ...toAvatarPerson(m), member: m })))
+  const members = orderMembers(trip.members.filter((m) => !m.isLeft).map((m) => ({ ...toPerson(m), member: m })))
 
   const copyInviteCode = async (code: string) => {
     try {
@@ -69,22 +70,16 @@ export function MemberPanel({ open, onClose, trip }: MemberPanelProps) {
         </div>
         {trip.inviteCode && (
           <div className="px-5 pt-6">
-            <div className="flex items-center justify-between gap-3 rounded-lg bg-subtle py-4 pr-4 pl-5">
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-caption text-tertiary">초대코드</span>
-                <span className="font-amount text-amount-m tracking-widest text-primary">
-                  {formatInviteCode(trip.inviteCode)}
-                </span>
-              </div>
-              <Button
-                type="secondary"
-                size="s"
-                label="복사"
-                leadingIcon
-                icon="copy"
-                onClick={() => void copyInviteCode(trip.inviteCode!)}
-              />
-            </div>
+            <RowTone
+              label="초대코드"
+              value={formatInviteCode(trip.inviteCode)}
+              action={{
+                label: '복사',
+                icon: 'copy',
+                'aria-label': '초대코드 복사',
+                onClick: () => void copyInviteCode(trip.inviteCode!),
+              }}
+            />
           </div>
         )}
         <div aria-hidden className="min-h-6 flex-1" />

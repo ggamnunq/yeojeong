@@ -3,7 +3,15 @@ import { ERRORS, type ErrorCode } from '@yeojeong/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { toastStore } from '../notifications/store'
 import { ApiError, type ApiErrorInit } from './client'
-import { fieldErrorPaths, fieldErrors, handleApiError, onUnauthenticated, resetUnauthenticated } from './errors'
+import {
+  fieldErrorPaths,
+  fieldErrors,
+  handleApiError,
+  isNoActivePaymentMethod,
+  onConsentRequired,
+  onUnauthenticated,
+  resetUnauthenticated,
+} from './errors'
 
 const REQUEST_ID = '05c8d730-1b2c-4d5e-8f90-123456789abc'
 
@@ -138,6 +146,35 @@ describe('handleApiError', () => {
     expect(toasts().map((t) => t.message)).toEqual([
       ERRORS.TIMEOUT.message,
       `${ERRORS.INTERNAL_ERROR.message} (문의 번호 05c8d730)`,
+    ])
+  })
+})
+
+describe('CONSENT_REQUIRED · 결제수단 0개(v0.5.7)', () => {
+  const consent = (details: Record<string, unknown>) =>
+    new ApiError({ code: 'CONSENT_REQUIRED' as ErrorCode, message: '금융정보 연동 동의가 필요해요', status: 403, details })
+
+  it('details.reason = NO_ACTIVE_PAYMENT_METHOD만 결제수단 0개로 본다', () => {
+    expect(isNoActivePaymentMethod(consent({ reason: 'NO_ACTIVE_PAYMENT_METHOD', missing: [] }))).toBe(true)
+    expect(isNoActivePaymentMethod(consent({ missing: ['FIN_LINK'] }))).toBe(false)
+    expect(isNoActivePaymentMethod(new ApiError({ code: 'FORBIDDEN', message: '', status: 403 }))).toBe(false)
+  })
+
+  it('토스트 없이 동의 처리기에 넘긴다(처리기가 재동의 화면으로 갈지 정한다)', () => {
+    const handler = vi.fn()
+    const off = onConsentRequired(handler)
+    handleApiError(consent({ reason: 'NO_ACTIVE_PAYMENT_METHOD', missing: ['FIN_LINK', 'FIN_PRIVACY'] }))
+    off()
+    expect(handler).toHaveBeenCalledWith(expect.any(ApiError), ['FIN_LINK', 'FIN_PRIVACY'])
+    expect(toastStore.getSnapshot()).toHaveLength(0)
+  })
+
+  it('모르는 403·409 도메인 코드는 서버 문구 그대로(새 코드가 생겨도 안내가 된다)', () => {
+    handleApiError(new ApiError({ code: 'SOME_NEW_RULE' as ErrorCode, message: '지금은 할 수 없어요', status: 403 }))
+    handleApiError(new ApiError({ code: 'ANOTHER_NEW_RULE' as ErrorCode, message: '이미 바뀌었어요', status: 409 }))
+    expect(toastStore.getSnapshot().map((t) => [t.type, t.message])).toEqual([
+      ['error', '지금은 할 수 없어요'],
+      ['info', '이미 바뀌었어요'],
     ])
   })
 })

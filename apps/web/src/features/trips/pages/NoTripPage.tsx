@@ -16,15 +16,16 @@ export default function NoTripPage() {
 
   return (
     <ShellSub header={{ type: 'logo', onWalletClick: () => navigate(paths.wallet()), onMyClick: () => navigate(paths.me()) }}>
-      {/* Figma: 셸 슬롯 위에서 168(셸이 16을 준다) → 일러스트 144 + 제목 H2(간격 28) → 남은 높이 → 버튼 2(간격 8, 아래 16) */}
+      {/* Figma: 셸 슬롯 위에서 168(셸이 16을 준다) → 일러스트 144 + 제목 H2(간격 28) → 남은 높이 → 버튼 2(한 줄 2열, 간격 8, 아래 16) */}
       <div className="mt-38 flex flex-col items-center gap-7">
         <IllustEmptyTrip size={144} />
         <h2 className="text-center text-h2 text-primary">참여한 여정이 없어요</h2>
       </div>
       <div className="min-h-10 flex-1" />
-      <div className="flex flex-col gap-2 pb-4">
-        <Button type="primary" size="l" label="여정 만들기" className="w-full" onClick={() => navigate(paths.tripNew())} />
-        <Button type="secondary" size="l" label="초대코드로 참여" className="w-full" onClick={() => navigate(paths.join())} />
+      {/* 하단 2버튼은 한 줄 2열(간격 8, 1:1): 보조 왼쪽 · 주 액션 오른쪽 */}
+      <div className="flex gap-2 pb-4">
+        <Button type="secondary" size="l" label="초대코드로 참여" className="min-w-0 flex-1" onClick={() => navigate(paths.join())} />
+        <Button type="primary" size="l" label="여정 만들기" className="min-w-0 flex-1" onClick={() => navigate(paths.tripNew())} />
       </div>
     </ShellSub>
   )

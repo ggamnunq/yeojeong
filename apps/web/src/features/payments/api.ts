@@ -67,8 +67,9 @@ export const outOfPeriodQuery = (tripId: string, side: OutOfPeriodSide) =>
 /** 기간 외 후보 쿼리 키인가(여정 전체 무효화에서 빼서 제공자를 다시 부르지 않게) */
 export const isOutOfPeriodKey = (queryKey: readonly unknown[]) => queryKey[2] === 'out-of-period'
 
+/** 200 = 바뀐 상세. 204(본문 없음, undefined) = 결제수단 0개에서 공동 → 개인이라 결제를 지웠다(v0.5.7) */
 export const classifyExpense = (tripId: string, expenseId: string, input: ClassificationInput) =>
-  apiFetch<PaymentDetail>(`/trips/${tripId}/expenses/${expenseId}/classification`, { method: 'PUT', body: input })
+  apiFetch<PaymentDetail | undefined>(`/trips/${tripId}/expenses/${expenseId}/classification`, { method: 'PUT', body: input })
 
 export const dismissDuplicate = (tripId: string, expenseId: string, version: number) =>
   apiFetch<PaymentDetail>(`/trips/${tripId}/expenses/${expenseId}/duplicate-dismissal`, { body: { version } })

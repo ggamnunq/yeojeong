@@ -22,7 +22,7 @@ const region = (name: string) => screen.getByRole('region', { name })
 
 async function openStats() {
   const app = renderApp('/trips/trip-osaka/stats')
-  await screen.findByRole('heading', { name: /내가 (낼|받을) 금액/ })
+  await screen.findByRole('region', { name: /내가 (낼|받을) 금액/ })
   return app
 }
 
@@ -35,7 +35,7 @@ describe('현황(HF-22) 수치', () => {
     const shared = region('공동 지출')
     expect(shared.textContent).toContain('₩352,790')
     expect(shared.textContent).toContain('/ ₩1,200,000')
-    const bar = within(shared).getByRole('progressbar')
+    const bar = within(shared).getByRole('meter')
     expect(bar.getAttribute('aria-valuenow')).toBe('29')
     expect(bar.getAttribute('data-state')).toBe('normal')
     expect(within(shared).queryByText(/초과/)).toBeNull()
@@ -79,7 +79,7 @@ describe('현황(HF-22) 수치', () => {
       setBudget(budget)
       const app = await openStats()
       const shared = region('공동 지출')
-      expect(within(shared).getByRole('progressbar').getAttribute('data-state')).toBe(state)
+      expect(within(shared).getByRole('meter').getAttribute('data-state')).toBe(state)
       if (over) expect(within(shared).getByText(over)).toBeTruthy()
       else expect(within(shared).queryByText(/초과/)).toBeNull()
       app.unmount()
@@ -122,7 +122,12 @@ describe('현황(HF-22) 수치', () => {
 
   it('탈퇴한 멤버는 "탈퇴한 멤버", 태그 없음', async () => {
     specSample()
-    db.memberships.find((m) => m.membershipId === MEMBER.subin)!.leftAt = '2026-11-13T12:00:00+09:00'
+    // 서버와 같다: 탈퇴하면 멤버십 userId NULL + leaveReason ACCOUNT_DELETED
+    Object.assign(db.memberships.find((m) => m.membershipId === MEMBER.subin)!, {
+      leftAt: '2026-11-13T12:00:00+09:00',
+      userId: null,
+      leaveReason: 'ACCOUNT_DELETED',
+    })
     db.users = db.users.filter((u) => u.id !== USER.subin)
     await openStats()
     const gone = within(region('멤버별 부담')).getAllByRole('listitem')[3]
@@ -137,7 +142,7 @@ describe('현황(HF-22) 수치', () => {
     renderApp('/trips/trip-osaka/stats')
     fireEvent.click(await screen.findByRole('button', { name: '다시 시도' }))
     fail = false
-    expect(await screen.findByRole('heading', { name: '내가 낼 금액' })).toBeTruthy()
+    expect(await screen.findByRole('region', { name: '내가 낼 금액' })).toBeTruthy()
   })
 })
 
@@ -146,7 +151,7 @@ describe('탭 전환', () => {
     const { router } = renderApp('/trips/trip-osaka/payments')
     fireEvent.click(await screen.findByRole('button', { name: '현황' }))
     await waitFor(() => expect(path(router)).toBe('/trips/trip-osaka/stats'))
-    expect(await screen.findByRole('heading', { name: '내가 낼 금액' })).toBeTruthy()
+    expect(await screen.findByRole('region', { name: '내가 낼 금액' })).toBeTruthy()
   })
 
   it('종료 후: 현황 주소는 정산으로, 2번 탭이 정산', async () => {

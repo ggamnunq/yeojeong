@@ -71,13 +71,41 @@ describe('지갑(HF-27)', () => {
     await waitFor(() => expect(screen.queryByText('신한카드 Deep Dream')).toBeNull())
   })
 
-  it('연결의 마지막 결제수단이면 "불러온 결제도 지우기" 선택지가 있다', async () => {
+  it('일부 해제이면서 그 연결의 마지막 결제수단이면 "불러온 결제도 지우기" — 체크하면 그 연결의 개인·미확정만 지운다', async () => {
+    // 신한카드만 따로 연결된 상태(토스 연결에는 계좌·체크카드가 남는다)
+    const state = walletMock()
+    state.connections.push({ ...state.connections[0], id: 'conn-shinhan' })
+    state.methodConnection['pm-shinhan'] = 'conn-shinhan'
+    const fromShinhan = db.expenses.filter((e) => e.paymentMethodId === 'pm-shinhan' && e.status !== 'SHARED').length
+    const total = db.expenses.length
+    renderApp('/wallet')
+    fireEvent.click(await screen.findByRole('button', { name: '신한카드 Deep Dream 더 보기' }))
+    fireEvent.click(await screen.findByRole('button', { name: '연결 해제' }))
+    const dialog = await screen.findByRole('alertdialog', { name: '연결을 해제할까요?' })
+    expect(dialog.textContent).toContain('이후 결제는 불러오지 않아요')
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: '불러온 결제도 지우기' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '해제' }))
+    expect(await screen.findByText('연결을 해제했어요')).toBeTruthy()
+    expect(db.expenses.length).toBe(total - fromShinhan)
+    expect(walletMock().finMissing).toEqual([])
+  })
+
+  it('전부 해제(마지막 결제수단): 체크 없이 "개인·미확정 결제도 지워져요" → 내 개인·미확정 파기 + 연동 동의 철회', async () => {
     for (const p of db.paymentMethods) if (p.id !== 'pm-shinhan' && p.userId === db.meUserId) p.status = 'REMOVED'
     renderApp('/wallet')
     fireEvent.click(await screen.findByRole('button', { name: '신한카드 Deep Dream 더 보기' }))
     fireEvent.click(await screen.findByRole('button', { name: '연결 해제' }))
     const dialog = await screen.findByRole('alertdialog', { name: '연결을 해제할까요?' })
-    expect(within(dialog).getByRole('checkbox', { name: '불러온 결제도 지우기' })).toBeTruthy()
+    expect(dialog.textContent).toContain('개인·미확정 결제도 지워져요')
+    expect(within(dialog).queryByRole('checkbox')).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: '해제' }))
+    expect(await screen.findByText('연결을 해제했어요')).toBeTruthy()
+    expect(await screen.findByText('연결된 계좌·카드가 없어요')).toBeTruthy()
+    const mine = db.memberships.filter((m) => m.userId === db.meUserId).map((m) => m.membershipId)
+    expect(db.expenses.some((e) => mine.includes(e.payerMembershipId) && e.status !== 'SHARED')).toBe(false)
+    expect(db.expenses.some((e) => mine.includes(e.payerMembershipId) && e.status === 'SHARED')).toBe(true)
+    // THIRD_PARTY는 유지(Q-39)
+    expect(walletMock().finMissing).toEqual(['FIN_LINK', 'FIN_PRIVACY'])
   })
 })
 

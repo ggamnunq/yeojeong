@@ -4,13 +4,12 @@ import {
   activeMembership,
   db,
   findTrip,
-  findUser,
+  memberSummary,
   MOCK_NOW,
   tripDetail,
-  USER,
-  type MockMembership,
   type MockTrip,
 } from '../../mocks/data'
+import { deletedGroupIds, ensureDemoTrips } from '../../mocks/seeds'
 import { api, denyUnlessAuthenticated, mockError, noContent, requireMember, type NoContent } from '../../mocks/utils'
 import {
   addDays,
@@ -75,59 +74,6 @@ const PLACES: Place[] = [
   { countryCode: 'KR', countryName: '대한민국', city: '경주', label: '경주', currency: 'KRW' },
   { countryCode: 'KR', countryName: '대한민국', city: '여수', label: '여수', currency: 'KRW' },
 ]
-
-// ── 데모 여정 ─────────────────────────────────────────────────────
-
-type DemoTrip = { trip: MockTrip; members: Omit<MockMembership, 'tripId'>[] }
-
-const demo = (trip: Omit<MockTrip, 'fxPolicy' | 'version'>, members: Omit<MockMembership, 'tripId'>[]): DemoTrip => ({
-  trip: { ...trip, fxPolicy: 'SPOT_AT_PAYMENT', version: 0 },
-  members,
-})
-
-const DEMO_TRIPS: DemoTrip[] = [
-  demo(
-    { tripId: 'trip-tokyo', groupId: 'group-tokyo', groupName: '도쿄 먹방 여행', placeLabel: '일본 도쿄', countryCode: 'JP', currency: 'JPY', startDate: '2026-12-03', endDate: '2026-12-06', budgetKrw: 1_500_000, status: 'UPCOMING', inviteCode: 'T4K9YP' },
-    [
-      { membershipId: 'mem-tokyo-taehyeon', userId: USER.taehyeon, role: 'LEADER', joinOrder: 1, leftAt: null },
-      { membershipId: 'mem-tokyo-minji', userId: USER.minji, role: 'MEMBER', joinOrder: 2, leftAt: null },
-      { membershipId: 'mem-tokyo-subin', userId: USER.subin, role: 'MEMBER', joinOrder: 3, leftAt: null },
-    ],
-  ),
-  demo(
-    { tripId: 'trip-danang', groupId: 'group-danang', groupName: '다낭 가족여행', placeLabel: '베트남 다낭', countryCode: 'VN', currency: 'VND', startDate: '2026-11-11', endDate: '2026-11-15', budgetKrw: 2_000_000, status: 'ONGOING', inviteCode: 'D7N3QA' },
-    [
-      { membershipId: 'mem-danang-minji', userId: USER.minji, role: 'LEADER', joinOrder: 1, leftAt: null },
-      { membershipId: 'mem-danang-taehyeon', userId: USER.taehyeon, role: 'MEMBER', joinOrder: 2, leftAt: null },
-    ],
-  ),
-  demo(
-    { tripId: 'trip-taipei', groupId: 'group-taipei', groupName: '타이베이 주말', placeLabel: '대만 타이베이', countryCode: 'TW', currency: 'TWD', startDate: '2026-12-12', endDate: '2026-12-13', budgetKrw: 500_000, status: 'UPCOMING', inviteCode: 'X2P8RW' },
-    [
-      { membershipId: 'mem-taipei-subin', userId: USER.subin, role: 'LEADER', joinOrder: 1, leftAt: null },
-      { membershipId: 'mem-taipei-junyong', userId: USER.junyong, role: 'MEMBER', joinOrder: 2, leftAt: '2026-11-01T10:00:00+09:00' },
-    ],
-  ),
-]
-
-/** 강퇴 이력이 있는 멤버십(MockMembership에 leaveReason이 없어 따로 둔다) */
-const KICKED_MEMBERSHIP_IDS = new Set(['mem-taipei-junyong'])
-
-/** 삭제한 데모 그룹은 다시 넣지 않는다(resetMockDb가 db.trips 배열을 새로 만들면 같이 풀리도록 그 배열을 키로 기억) */
-const deletedGroups = new WeakMap<object, Set<string>>()
-const deletedIn = () => {
-  let set = deletedGroups.get(db.trips)
-  if (!set) deletedGroups.set(db.trips, (set = new Set()))
-  return set
-}
-
-function ensureDemoTrips() {
-  for (const { trip, members } of DEMO_TRIPS) {
-    if (findTrip(trip.tripId) || deletedIn().has(trip.groupId)) continue
-    db.trips.push(structuredClone(trip))
-    db.memberships.push(...members.map((m) => ({ ...m, tripId: trip.tripId })))
-  }
-}
 
 // 개발 서버 전용 시나리오(쉼표로 여러 개): localStorage 'yj:mock:trips' =
 //   'none' 여정 없음 · 'busan-leader' 부산(시작 전)을 준용이 그룹장으로 · 'expired' 부산 종료일이 지남(Q-26)
@@ -237,7 +183,7 @@ function checkInvite(raw: string): { denied: Response; trip?: undefined } | { de
   if (!trip) return { denied: domainError.inviteInvalid() }
   if (trip.status === 'ENDED') return { denied: domainError.inviteEnded() }
   const kicked = db.memberships.some(
-    (m) => m.tripId === trip.tripId && m.userId === db.meUserId && KICKED_MEMBERSHIP_IDS.has(m.membershipId),
+    (m) => m.tripId === trip.tripId && m.userId === db.meUserId && m.leaveReason === 'KICKED',
   )
   if (kicked) return { denied: domainError.kicked() }
   return { trip }
@@ -378,8 +324,8 @@ export const handlers: HttpHandler[] = [
     const { denied } = requireLeader(trip.tripId)
     if (denied) return denied
     if (trip.status !== 'UPCOMING') return domainError.phase()
-    // 소프트 삭제: 목록·멤버 화면에서 사라진다. db.trips 배열은 그대로 두고 빼야 삭제 기억(deletedIn)이 유지된다
-    deletedIn().add(trip.groupId)
+    // 소프트 삭제: 목록·멤버 화면에서 사라진다. db.trips 배열은 그대로 두고 빼야 삭제 기억(deletedGroupIds)이 유지된다
+    deletedGroupIds().add(trip.groupId)
     db.trips.splice(db.trips.indexOf(trip), 1)
     db.memberships = db.memberships.filter((m) => m.tripId !== trip.tripId)
     return noContent()
@@ -400,8 +346,8 @@ export const handlers: HttpHandler[] = [
       status: trip.status,
       memberCount: members.length,
       membersPreview: members.slice(0, 4).map((m) => {
-        const user = findUser(m.userId)
-        return { nickname: user?.nickname ?? '탈퇴한 멤버', profileImageUrl: user?.profileImageUrl ?? null }
+        const { nickname, profileImageUrl } = memberSummary(m)
+        return { nickname, profileImageUrl }
       }),
       alreadyMember: Boolean(mine),
       tripId: mine ? trip.tripId : null,

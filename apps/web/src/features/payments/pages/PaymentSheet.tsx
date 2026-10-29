@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
-import { handleApiError, isApiError, keys, type MemberSummary } from '../../../api'
+import { handleApiError, isApiError, isNoActivePaymentMethod, keys, type MemberSummary } from '../../../api'
+import { withLoading } from '../../../app/loadingCta'
 import { paths } from '../../../app/paths'
 import { useTripDetail } from '../../../app/trip'
 import {
@@ -15,7 +16,8 @@ import {
   splitEvenly,
 } from '../../../ds'
 import { toast } from '../../../notifications'
-import { classifyExpense, dismissDuplicate, expenseQuery, findCachedExpense } from '../api'
+import { paymentMethodsQuery } from '../../wallet/api'
+import { classifyExpense, dismissDuplicate, expenseQuery, findCachedExpense, isOutOfPeriodKey } from '../api'
 import { DetailText, LockedButton, LockedPersonal, RefundFacts, RefundSummary, SheetSkeleton } from '../components/SheetParts'
 import {
   detailLine,
@@ -35,6 +37,9 @@ const COPY = {
   versionConflict: '최신 내용으로 바뀌었어요',
   sharedInOtherTrip: '다른 여정에서 이미 공동으로 확정됐어요',
   dismissed: '중복 표시를 해제했어요',
+  /** WF-32 결제수단 0개 변형(v0.5.7): 공동 → 개인이면 서버가 결제를 지운다(204) */
+  deletesOnPersonal: '내 결제내역에서도 지워져요',
+  deleted: '결제를 지웠어요',
 }
 
 /**
@@ -95,6 +100,9 @@ function SheetView({ detail, preview, onClose }: SheetViewProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const expenseId = detail?.id ?? preview?.id ?? ''
   const version = detail?.version ?? 0
+  // 결제수단 0개(지갑 목록 API 기준)면 공동 → 개인 확인 문구가 바뀐다(서버가 결제를 지운다)
+  const methods = useQuery({ ...paymentMethodsQuery(), enabled: editable })
+  const noMethods = methods.data?.methods.length === 0
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: keys.trips.detail(trip.tripId) })
 
@@ -103,6 +111,8 @@ function SheetView({ detail, preview, onClose }: SheetViewProps) {
     meta: { silent: true },
     onError: (error) => {
       setConfirmOpen(false)
+      // 결제수단 0개라 공개 확대 거부(403, v0.5.7): 시트는 그대로 둔다. 지갑 연결 흐름은 전역(SessionBridge → FinConnectHost)이 연다
+      if (isNoActivePaymentMethod(error)) return
       if (isApiError(error) && error.code === 'VERSION_CONFLICT' && error.details?.current) {
         // 최신 결제로 시트를 다시 그린다(details.current = ExpenseDetailResponse)
         queryClient.setQueryData(keys.trips.expense(trip.tripId, expenseId), error.details.current as PaymentDetail)
@@ -130,7 +140,19 @@ function SheetView({ detail, preview, onClose }: SheetViewProps) {
   const submit = (action: SheetAction, input: ClassificationInput) => {
     if (classify.isPending) return
     classify.mutate(input, {
-      onSuccess: () => {
+      onSuccess: (result) => {
+        if (result === undefined) {
+          // 204: 결제수단 0개에서 공동 → 개인 = 결제 파기. 시트를 닫고(상세면 뒤로) 목록·현황을 다시 받는다.
+          // 지운 결제의 상세는 다시 받지 않는다(404 안내가 뜨지 않게)
+          toast.success(COPY.deleted)
+          onClose()
+          const gone = keys.trips.expense(trip.tripId, expenseId)
+          void queryClient.invalidateQueries({
+            queryKey: keys.trips.detail(trip.tripId),
+            predicate: (q) => !isOutOfPeriodKey(q.queryKey) && q.queryKey.join('/') !== gone.join('/'),
+          })
+          return
+        }
         toast.success(SUCCESS_TOAST[action])
         void invalidate()
         onClose()
@@ -154,11 +176,14 @@ function SheetView({ detail, preview, onClose }: SheetViewProps) {
         onClose={onClose}
         cta={
           cta
-            ? {
-                label: cta.label,
-                disabled: cta.disabled || classify.isPending || (sharedDisabled && draft.type === 'shared'),
-                onClick: () => run(cta.action),
-              }
+            ? withLoading(
+                {
+                  label: cta.label,
+                  disabled: cta.disabled || (sharedDisabled && draft.type === 'shared'),
+                  onClick: () => run(cta.action),
+                },
+                classify.isPending && !confirmOpen,
+              )
             : undefined
         }
       >
@@ -183,9 +208,11 @@ function SheetView({ detail, preview, onClose }: SheetViewProps) {
       <Dialog
         open={confirmOpen}
         type="shared-to-personal"
+        message={noMethods ? COPY.deletesOnPersonal : undefined}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => submit('TO_PERSONAL', { status: 'PERSONAL', version, confirmSharedToPersonal: true })}
       />
+
     </>
   )
 }

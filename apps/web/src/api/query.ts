@@ -7,6 +7,8 @@ import { handleApiError } from './errors'
 export type ApiQueryMeta = {
   /** true면 실패해도 전역 토스트를 띄우지 않는다(화면이 직접 보여 줄 때). 401 처리는 그대로 한다 */
   silent?: boolean
+  /** true면 403 CONSENT_REQUIRED를 화면이 직접 처리한다(연동 동의 시트를 스스로 여는 연결 흐름). 전역 동의 처리기를 부르지 않는다 */
+  consentHandled?: boolean
 }
 
 declare module '@tanstack/react-query' {
@@ -44,6 +46,7 @@ export function createQueryClient(): QueryClient {
       onError: (error, query) =>
         handleApiError(error, {
           silent: query.meta?.silent === true,
+          consentHandled: query.meta?.consentHandled === true,
           // 토스트는 중복 제거되므로, 다시 시도는 실패해 있는 화면 위 쿼리를 모두 다시 받는다
           retry: () => void client.refetchQueries({ type: 'active', predicate: (q) => q.state.status === 'error' }),
         }),
@@ -51,7 +54,10 @@ export function createQueryClient(): QueryClient {
     mutationCache: new MutationCache({
       // 뮤테이션은 서버에서 이미 처리됐을 수도 있어(시간 초과 등) 자동으로 다시 보내지 않는다. 다시 시도는 화면이 정한다.
       onError: (error, _variables, _context, mutation) =>
-        handleApiError(error, { silent: mutation.meta?.silent === true }),
+        handleApiError(error, {
+          silent: mutation.meta?.silent === true,
+          consentHandled: mutation.meta?.consentHandled === true,
+        }),
     }),
     defaultOptions: {
       queries: {

@@ -25,9 +25,9 @@ export function mockError(
   return HttpResponse.json(body, { status: status ?? known.status }) as unknown as MockErrorResponse
 }
 
-/** 본문 없는 성공(204). 계약 핸들러의 Res는 NoContent로 둔다 */
+/** 본문 없는 성공(204). 계약 핸들러의 Res는 NoContent(또는 `Detail | NoContent`)로 둔다 */
 export type NoContent = undefined
-export const noContent = () => new HttpResponse(null, { status: 204 })
+export const noContent = () => new HttpResponse(null, { status: 204 }) as unknown as HttpResponse<never>
 
 type Method = 'get' | 'post' | 'put' | 'patch' | 'delete'
 

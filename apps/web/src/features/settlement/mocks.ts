@@ -1,7 +1,8 @@
 import { HttpResponse, type HttpHandler } from 'msw'
 import { findTrip, TRIP, type MockTrip } from '../../mocks/data'
 import { api, mockError, requireMember } from '../../mocks/utils'
-import { direction, expenseItems, ledgerOf, meFirst, myMembershipId, seedJejuSettlement, summaryOf } from './mockData'
+import { direction, expenseItems, ledgerOf, meFirst, myMembershipId, summaryOf } from './mockData'
+import { seedJejuSettlement } from '../../mocks/seeds'
 import type { SettlementMemberExpenses, SettlementMemberView, SettlementView } from './types'
 
 // GET …/settlement · GET …/settlement/members/:membershipId/expenses (기능명세 6-3, FR-702~705).

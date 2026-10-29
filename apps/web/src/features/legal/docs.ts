@@ -13,6 +13,8 @@ export type LegalDoc = {
   source: string
   /** 공개 주소 */
   path: string
+  /** 동의서: **굵게**(중요 내용)를 크기·굵기·색으로 강조(「개인정보 보호법」 제22조제2항, docs/legal README 2절) */
+  consent?: boolean
 }
 
 export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
@@ -30,12 +32,14 @@ export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
     file: 'consent-collection.md',
     source: '개인정보 수집·이용 동의서.md',
     path: '/consents/PRIVACY',
+    consent: true,
   },
   'consent-third-party': {
     title: '공동 결제 그룹 공개',
     file: 'consent-third-party.md',
     source: '개인정보 제3자 제공 동의서.md',
     path: '/consents/THIRD_PARTY',
+    consent: true,
   },
 }
 

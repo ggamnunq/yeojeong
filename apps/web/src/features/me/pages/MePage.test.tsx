@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { keys } from '../../../api'
 import { db } from '../../../mocks/data'
 import { renderApp } from '../../../test/render'
+import { expireConnections } from '../../wallet/mocks'
 import { mailto } from '../mailto'
 
 // 전체 실행 때 lazy 화면·목 응답이 늦을 수 있어 기다림을 늘린다
@@ -35,6 +36,18 @@ describe('마이페이지(HF-30)', () => {
     for (const p of db.paymentMethods) if (p.userId === db.meUserId) p.status = 'REMOVED'
     renderApp('/me')
     expect(await screen.findByText('연결 안 됨')).toBeTruthy()
+  })
+
+  it('연결이 만료됐으면 지갑 줄 오른쪽에 「연결 만료」, 아니면 없음', async () => {
+    const first = renderApp('/me')
+    const wallet = await screen.findByRole('link', { name: /내 지갑/ })
+    await within(wallet).findByText('계좌 1 · 카드 2')
+    expect(within(wallet).queryByText('연결 만료')).toBeNull()
+    first.unmount()
+
+    expireConnections()
+    renderApp('/me')
+    expect(await within(await screen.findByRole('link', { name: /내 지갑/ })).findByText('연결 만료')).toBeTruthy()
   })
 
   it('로그아웃: 확인 없이 POST /auth/logout → 캐시 비움 → /login', async () => {

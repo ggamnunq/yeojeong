@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { withLoading } from '../../../app/loadingCta'
 import { Input, ShellSub } from '../../../ds'
 import {
   budgetDigits,
@@ -92,17 +93,17 @@ export function TripForm({
 
   const localPeriodError = periodError(values, mode, today)
   const changed = mode.kind === 'create' || tripUpdateBody(initial, values, editable, 0) !== null
-  const canSubmit = isTripFormValid(values, mode, today) && changed && !busy
+  const canSubmit = isTripFormValid(values, mode, today) && changed
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (canSubmit) onSubmit({ ...values, groupName: values.groupName.trim() })
+    if (canSubmit && !busy) onSubmit({ ...values, groupName: values.groupName.trim() })
   }
 
   return (
     <ShellSub
       header={{ title, onBack }}
-      cta={{ label: submitLabel, htmlType: 'submit', form: formId, disabled: !canSubmit }}
+      cta={withLoading({ label: submitLabel, htmlType: 'submit', form: formId, disabled: !canSubmit }, busy)}
     >
       <form id={formId} ref={formRef} noValidate onSubmit={submit} className="flex flex-col gap-6">
         <Input

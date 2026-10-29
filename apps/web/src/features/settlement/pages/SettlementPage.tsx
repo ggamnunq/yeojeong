@@ -1,15 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { clsx } from 'clsx'
 import { useEffect, useId } from 'react'
 import { useNavigate } from 'react-router'
 import { isApiError, keys } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useTripDetail } from '../../../app/trip'
-import { formatKrw, RouteProgress, SettlementRow } from '../../../ds'
+import { CardHeroTone, formatKrw, SettlementRow } from '../../../ds'
 import { settlementQuery } from '../api'
 import type { SettlementView } from '../types'
 import { CardsSkeleton, InlineError, SectionLabel, TabTitle } from '../ui'
-import { memberState, orderByMember, routeDate, settlementNetOf, settlementRowLabel, toPerson } from '../view'
+import { memberState, orderByMember, routeDate, settlementNetOf, settlementRowLabel, toPersonAt } from '../view'
 
 // WF-25·44 / HF-25·44 정산 요약(종료 후 기본 탭). 톤 영웅(총 공동 지출 · N빵 1인 · 도착한 경로) → 멤버별 정산 행.
 // 송금 권장안(transfers)·예산·안내 문장은 그리지 않는다(C-14). 나간 멤버도 결제·부담이 있으면 남는다(FR-705).
@@ -41,29 +40,22 @@ export default function SettlementPage() {
 function SettlementContent({ view }: { view: SettlementView }) {
   const trip = useTripDetail()
   const navigate = useNavigate()
-  const heroId = useId()
   const listId = useId()
   return (
     <div className="flex flex-col pb-6">
       <div className="px-gutter">
-        {/* 영웅 카드 · 톤(direction §5): 라벨 → 4 → 숫자 40 → 6 → N빵 1인 → 24 → 경로(Ended) */}
-        <section aria-labelledby={heroId} className="flex flex-col rounded-xl bg-subtle px-5 pt-6 pb-5">
-          <h3 id={heroId} className="text-body-s text-secondary">
-            총 공동 지출
-          </h3>
-          <p className="mt-1 font-amount text-amount-xl whitespace-nowrap text-amount-default">{formatKrw(view.totalSharedKrw)}</p>
-          <p className="mt-1.5 flex items-center gap-1.5 text-body-s whitespace-nowrap">
-            <span className="text-secondary">N빵 1인</span>
-            <span className="text-body-s-strong text-primary">{formatKrw(view.perCapitaKrw)}</span>
-          </p>
-          <RouteProgress
-            className="mt-6"
-            phase="ended"
-            start={routeDate(trip.startDate)}
-            end={routeDate(trip.endDate)}
-            days={trip.days}
-          />
-        </section>
+        {/* 톤 영웅(Card/HeroTone, HF-25): 총 공동 지출 → N빵 1인 → 도착한 경로 */}
+        <CardHeroTone
+          headingLevel={3}
+          label="총 공동 지출"
+          hero={formatKrw(view.totalSharedKrw)}
+          sub={
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
+              N빵 1인 <span className="text-body-s-strong text-primary">{formatKrw(view.perCapitaKrw)}</span>
+            </span>
+          }
+          route={{ phase: 'ended', start: routeDate(trip.startDate), end: routeDate(trip.endDate), days: trip.days }}
+        />
       </div>
       <SectionLabel id={listId} level={3} className="px-gutter pt-8 pb-1">
         멤버별 정산
@@ -74,16 +66,15 @@ function SettlementContent({ view }: { view: SettlementView }) {
           return (
             <li key={row.member.membershipId}>
               <SettlementRow
-                person={toPerson(row.member, left)}
+                person={toPersonAt(row.member, left)}
                 paid={row.paidKrw}
                 share={row.burdenKrw}
                 netAmount={row.netKrw}
                 net={settlementNetOf(row.direction)}
                 member={left ? 'left' : 'active'}
                 aria-label={settlementRowLabel(row, left)}
-                // 탈퇴한 멤버는 탭 불가. DS SettlementRow에 비대화형 변형이 없어 비활성 + › 숨김으로 조합(DS 추가 요청)
-                disabled={withdrawn}
-                className={clsx(withdrawn && '[&>svg:last-child]:invisible')}
+                // 탈퇴한 멤버는 상세로 가지 않는다(›·탭 없음, 화면명세 0-8)
+                tappable={!withdrawn}
                 onClick={withdrawn ? undefined : () => navigate(paths.settlementMember(trip.tripId, row.member.membershipId))}
               />
             </li>

@@ -94,7 +94,8 @@ function TossAuth({ attemptId, returnTo, callbackError }: TossAuthProps) {
             size="l"
             label="다시 연결"
             className="w-full"
-            disabled={connect.isPending || !purpose}
+            state={connect.isPending ? 'loading' : 'default'}
+            disabled={!purpose}
             onClick={reconnect}
           />
         ) : (

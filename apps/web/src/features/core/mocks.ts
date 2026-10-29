@@ -1,21 +1,8 @@
 import type { HealthResponse, Me, TripDetailResponse } from '@yeojeong/shared'
 import { HttpResponse, type HttpHandler } from 'msw'
 import type { MyTripsResponse, SessionResponse } from '../../api'
-import { db, findTrip, findUser, tripDetail, tripListItem } from '../../mocks/data'
+import { db, findTrip, meOf, tripDetail, tripListItem } from '../../mocks/data'
 import { api, denyUnlessAuthenticated, mockError, requireMember } from '../../mocks/utils'
-
-function me(): Me {
-  const user = findUser(db.meUserId)!
-  const methods = db.paymentMethods.filter((p) => p.userId === user.id && p.status !== 'REMOVED')
-  return {
-    id: user.id,
-    nickname: user.nickname,
-    profileImageUrl: user.profileImageUrl,
-    hasProfileImage: user.profileImageUrl !== null,
-    paymentMethodCount: methods.length,
-    hasExpiredConnection: methods.some((p) => p.status === 'EXPIRED'),
-  }
-}
 
 export const handlers: HttpHandler[] = [
   api.get<HealthResponse>('/api/health', () => HttpResponse.json({ status: 'ok', db: 'up' })),
@@ -25,7 +12,7 @@ export const handlers: HttpHandler[] = [
       db.session === 'AUTHENTICATED'
         ? {
             status: 'AUTHENTICATED',
-            user: me(),
+            user: meOf(),
             ...(db.consentRequired?.length && {
               reconsentRequired: db.consentRequired.map((id) => ({ id, version: '0.1-draft' })),
             }),
@@ -36,7 +23,7 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  api.get<Me>('/api/users/me', () => denyUnlessAuthenticated() ?? HttpResponse.json(me())),
+  api.get<Me>('/api/users/me', () => denyUnlessAuthenticated() ?? HttpResponse.json(meOf())),
 
   api.get<MyTripsResponse>('/api/me/trips', () => {
     const denied = denyUnlessAuthenticated()

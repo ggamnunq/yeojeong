@@ -42,7 +42,7 @@ export function useTossConnect() {
       }
     },
     // 동의 403은 시트로, 그 밖은 아래에서 전역 처리기로 넘긴다
-    meta: { silent: true },
+    meta: { silent: true, consentHandled: true },
     onSuccess: ({ attemptId, authUrl }, { request, pending }) => {
       const from = request.from ?? location.pathname
       writeAttemptContext(attemptId, {

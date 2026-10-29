@@ -29,8 +29,8 @@ export interface MemberSummary extends Profile {
   joinOrder: number;
   isMe: boolean;
   isLeft: boolean;
-  /** 서버는 항상 채운다. 기존 웹 목과의 호환을 위해 전환 기간에는 선택 필드다. */
-  isWithdrawn?: boolean;
+  /** 탈퇴(LeaveReason ACCOUNT_DELETED, userId NULL)한 멤버. nickname은 "탈퇴한 멤버", 프사는 null */
+  isWithdrawn: boolean;
 }
 
 /** GET /api/users/me */

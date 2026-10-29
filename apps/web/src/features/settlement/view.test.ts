@@ -21,6 +21,7 @@ const member = (nickname: string, joinOrder: number, extra: Partial<MemberSummar
   joinOrder,
   isMe: false,
   isLeft: false,
+  isWithdrawn: false,
   ...extra,
 })
 
@@ -70,11 +71,12 @@ describe('나간 멤버 · 탈퇴한 멤버', () => {
   it('나간 멤버는 흐림 + 태그, 탈퇴한 멤버는 둘 다 없음', () => {
     expect(memberState(member('수빈', 4, { isLeft: true }))).toEqual({ withdrawn: false, left: true })
     expect(memberState(member('수빈', 4), true)).toEqual({ withdrawn: false, left: true })
-    const gone = member('탈퇴한 멤버', 5, { isLeft: true })
+    const gone = member('탈퇴한 멤버', 5, { isLeft: true, isWithdrawn: true })
     expect(memberState(gone)).toEqual({ withdrawn: true, left: false })
-    expect(toPerson(gone).left).toBe(false)
-    // 같은 닉네임이어도 프사가 있으면 실제 사용자
-    expect(isWithdrawn({ nickname: '탈퇴한 멤버', profileImageUrl: 'https://k.kakaocdn.net/a.jpg' })).toBe(false)
+    expect(toPerson(gone)).toMatchObject({ name: '탈퇴한 멤버', source: 'default' })
+    expect(toPerson(gone).left).toBeUndefined()
+    // 서버 isWithdrawn만 본다: 같은 닉네임이어도 플래그가 없으면 실제 사용자
+    expect(isWithdrawn(member('탈퇴한 멤버', 6))).toBe(false)
   })
 })
 

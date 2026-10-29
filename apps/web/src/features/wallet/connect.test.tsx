@@ -133,7 +133,7 @@ describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
 
 describe('금융정보 연동 동의 403 → 시트(W3A HF-05b) → 연결', () => {
   it('연결 요청이 CONSENT_REQUIRED(FIN_*)면 빈 창을 닫고 시트를 연다 → 동의하면 연결 시도 후 WF-06', async () => {
-    walletMock().finConsent = false
+    walletMock().finMissing = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
     const { router } = renderApp('/wallet')
     await openAddSheet()
 
@@ -148,12 +148,12 @@ describe('금융정보 연동 동의 403 → 시트(W3A HF-05b) → 연결', () 
     fireEvent.click(cta)
 
     expect(await screen.findByRole('heading', { name: '토스에서 인증 중' })).toBeTruthy()
-    expect(walletMock().finConsent).toBe(true)
+    expect(walletMock().finMissing).toEqual([])
     expect(router.state.location.state).toMatchObject({ purpose: 'WALLET_ADD', from: '/wallet' })
   })
 
   it('시트를 닫으면 연결 시도 없이 지갑에 남는다', async () => {
-    walletMock().finConsent = false
+    walletMock().finMissing = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
     const { router } = renderApp('/wallet')
     await openAddSheet()
     const sheet = await screen.findByRole('dialog', { name: '금융정보 연동 동의' })

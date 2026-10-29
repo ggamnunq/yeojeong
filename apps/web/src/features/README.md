@@ -64,8 +64,9 @@ export const routes: AppRoute[] = [
 ## 목(MSW)
 
 - 개발: `VITE_MOCK_API=1 pnpm --filter @yeojeong/web dev`. 로그인 전 화면은 콘솔에서 `localStorage.setItem('yj:mock:session', 'ANONYMOUS')` 후 새로고침.
-- 데이터: `src/mocks/data.ts`의 `db`(샘플: 오사카 진행 중 · 부산 시작 전 · 제주 종료, 준용=나). 응답 모양은 `tripDetail()`·`expenseListItem()`·`visibleExpenses()`(I-8 가시성) 등. 핸들러가 `db`를 고쳐도 테스트마다 되돌린다.
-- 핸들러는 `http.*` 대신 **`api.get<Res, Req?>`·`api.post`…**(`src/mocks/utils.ts`)로 만든다. 성공 응답 본문이 `@yeojeong/shared` 계약 타입(Res)과 다르면 컴파일 에러라 목과 서버가 어긋나지 않는다. Res를 빼먹어도 에러, 204는 `api.delete<NoContent>` + `noContent()`, 요청 본문 타입은 Req. `mocks.test.ts`가 `features/*/mocks.ts`에 `http.*`가 없는지 검사한다.
+- 데이터: `src/mocks/data.ts`의 `db`(샘플: 오사카 진행 중 · 부산 시작 전 · 제주 종료, 준용=나). 엔터티마다 원본은 여기 하나다 — 응답 모양 `memberSummary()`(탈퇴 = `userId: null` + `leaveReason: 'ACCOUNT_DELETED'` → `isWithdrawn`)·`meOf()`·`tripDetail()`·`expenseListItem()`·`visibleExpenses()`(I-8 가시성)·`meFirst()`(나 먼저 → 가입 순)·`userMethods()`(해제되지 않은 결제수단). 핸들러가 `db`를 고쳐도 테스트마다 되돌린다.
+- 시나리오 픽스처: `src/mocks/seeds.ts` — 제주 정산 샘플 + 탈퇴한 멤버(`seedJejuSettlement`), 참여용 데모 여정(`ensureDemoTrips`). 필요한 핸들러가 처음 불릴 때 `db`에 넣어 다른 플로우의 기본 수치를 바꾸지 않는다. 기능 목에 픽스처를 따로 두지 않는다.
+- 핸들러는 `http.*` 대신 **`api.get<Res, Req?>`·`api.post`…**(`src/mocks/utils.ts`)로 만든다. 성공 응답 본문이 `@yeojeong/shared` 계약 타입(Res)과 다르면 컴파일 에러라 목과 서버가 어긋나지 않는다. Res를 빼먹어도 에러, 204는 `api.delete<NoContent>`(200·204를 둘 다 주면 `api.put<Detail | NoContent>`) + `noContent()`, 요청 본문 타입은 Req. `mocks.test.ts`가 `features/*/mocks.ts`에 `http.*`가 없는지 검사한다.
 - 헬퍼: `mockError(code: ErrorCode, status?, details?)`(서버 에러 형식, 어느 핸들러에서든 반환 가능), `denyUnlessAuthenticated()`, `requireMember(tripId)`(비멤버 404) — `src/mocks/utils.ts`.
 
 ```ts

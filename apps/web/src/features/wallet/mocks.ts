@@ -1,5 +1,5 @@
 import { HttpResponse, type HttpHandler } from 'msw'
-import { activeMembership, db, findTrip, type MockPaymentMethod } from '../../mocks/data'
+import { activeMembership, db, findTrip, userMethods, type MockPaymentMethod } from '../../mocks/data'
 import { api, denyUnlessAuthenticated, mockError, noContent, requireMember, type NoContent } from '../../mocks/utils'
 import type {
   AttemptPurpose,
@@ -68,8 +68,8 @@ export type WalletMockState = {
   connections: MockConnection[]
   /** 결제수단 ID → 연결 ID */
   methodConnection: Record<string, string>
-  /** 금융정보 연동 동의(FIN_*) 현재 버전 유효 여부 */
-  finConsent: boolean
+  /** 현재 버전이 유효하지 않은 금융정보 연동 동의(403 CONSENT_REQUIRED details.missing). 비면 연결할 수 있다 */
+  finMissing: FinConsentId[]
   attempts: Record<string, MockAttempt>
   /** 여정별 고정 환율 마지막 입력값 */
   fixedRates: Record<string, string>
@@ -93,7 +93,34 @@ const RATES: Record<string, Pick<FxRateView, 'currencyNameKo' | 'displayUnit' | 
   EUR: { currencyNameKo: '유로', displayUnit: 1, rate: '1495.300000' },
 }
 
+const ALL_FIN: readonly FinConsentId[] = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
+/** 결제수단을 전부 해제하면 철회되는 동의(THIRD_PARTY는 유지, 기능명세 Q-39) */
+const REVOKED_ON_LAST_REMOVAL: readonly FinConsentId[] = ['FIN_LINK', 'FIN_PRIVACY']
+
 const states = new WeakMap<MockPaymentMethod[], WalletMockState>()
+
+/** 403 CONSENT_REQUIRED(details.missing = 유효하지 않은 연동 동의). reason을 주면 details.reason도 싣는다 */
+export function finConsentRequired(missing: readonly FinConsentId[], reason?: string) {
+  return mockError(
+    'CONSENT_REQUIRED',
+    403,
+    { missing: [...missing], required: missing.map((id) => ({ id, version: '0.1-draft' })), ...(reason && { reason }) },
+    '금융정보 연동 동의가 필요해요',
+  )
+}
+
+/** 내 개인·미확정 결제를 지운다(공동은 유지). paymentMethodIds를 주면 그 결제수단에서 온 것만 */
+function purgePrivateExpenses(paymentMethodIds?: readonly string[]) {
+  const mine = new Set(db.memberships.filter((m) => m.userId === db.meUserId).map((m) => m.membershipId))
+  db.expenses = db.expenses.filter(
+    (e) =>
+      !(
+        mine.has(e.payerMembershipId) &&
+        e.status !== 'SHARED' &&
+        (!paymentMethodIds || paymentMethodIds.includes(e.paymentMethodId))
+      ),
+  )
+}
 
 function scenario(): string | null {
   try {
@@ -109,7 +136,7 @@ function createState(): WalletMockState {
   const state: WalletMockState = {
     connections: [{ id: connId, userId: db.meUserId, status: 'ACTIVE', connectedAt: '2026-10-20T10:00:00+09:00', lastSyncedAt: todayKstAt(18, 32) }],
     methodConnection: Object.fromEntries(mine.map((p) => [p.id, connId])),
-    finConsent: true,
+    finMissing: [],
     attempts: {},
     fixedRates: {},
     lastManualSyncAt: null,
@@ -121,7 +148,7 @@ function createState(): WalletMockState {
     for (const p of mine) p.status = 'REMOVED'
     state.connections = []
   }
-  if (mode === 'no-consent') state.finConsent = false
+  if (mode === 'no-consent') state.finMissing = [...ALL_FIN]
   return state
 }
 
@@ -135,6 +162,10 @@ export function walletMock(): WalletMockState {
   return state
 }
 
+// 개발 서버: 시나리오('expired' 등)를 첫 API 호출 전에 적용한다. 늦게 만들면 지갑을 열기 전의 여정 응답이
+// 만료 전 상태(connectionExpired false)로 나간다. 테스트는 db를 되돌릴 때마다 처음 부를 때 만든다
+if (import.meta.env.MODE !== 'test') walletMock()
+
 /** 내 연결을 모두 만료시킨다(WF-42). 마지막 성공 동기화는 09:12 */
 export function expireConnections(state: WalletMockState = walletMock()) {
   for (const c of state.connections) {
@@ -147,7 +178,7 @@ export function expireConnections(state: WalletMockState = walletMock()) {
 
 // ── 응답 모양 ─────────────────────────────────────────────────────
 
-const myMethods = () => db.paymentMethods.filter((p) => p.userId === db.meUserId && p.status !== 'REMOVED')
+const myMethods = () => userMethods(db.meUserId)
 
 /** 서버 last4: 카드 끝 4자리, 계좌 끝 3자리 */
 const lastDigitsOf = (p: Pick<MockPaymentMethod, 'type' | 'maskedNumber'>) =>
@@ -294,11 +325,20 @@ export const handlers: HttpHandler[] = [
     const siblings = myMethods().filter((p) => state.methodConnection[p.id] === connectionId)
     const purge = new URL(request.url).searchParams.get('purgeImported') === 'true'
     if (purge && siblings.length > 1) return mockError('BAD_REQUEST', 400)
+    // 전부 해제(마지막 활성 결제수단)는 체크 없이 내 개인·미확정 결제를 지우고 FIN_LINK·FIN_PRIVACY를 철회한다(부록 C-5, v0.5.7)
+    const last = myMethods().length === 1
+    if (purge && last) return mockError('BAD_REQUEST', 400)
     method.status = 'REMOVED'
     if (siblings.length === 1) {
       const conn = state.connections.find((c) => c.id === connectionId)
       if (conn) conn.status = 'REVOKED'
-      state.finConsent = false
+    }
+    if (last) {
+      purgePrivateExpenses()
+      state.finMissing = [...new Set([...state.finMissing, ...REVOKED_ON_LAST_REMOVAL])]
+    } else if (purge) {
+      // 일부 해제 + 그 연결의 마지막 결제수단 + "불러온 결제도 지우기": 그 연결에서 온 개인·미확정만
+      purgePrivateExpenses(db.paymentMethods.filter((p) => state.methodConnection[p.id] === connectionId).map((p) => p.id))
     }
     return noContent()
   }),
@@ -307,15 +347,7 @@ export const handlers: HttpHandler[] = [
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const state = walletMock()
-    if (!state.finConsent) {
-      const missing: FinConsentId[] = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
-      return mockError(
-        'CONSENT_REQUIRED',
-        403,
-        { missing, required: missing.map((id) => ({ id, version: '0.1-draft' })) },
-        '금융정보 연동 동의가 필요해요',
-      )
-    }
+    if (state.finMissing.length > 0) return finConsentRequired(state.finMissing)
     const body = await request.json()
     if (body.purpose === 'RECONNECT' && !state.connections.some((c) => c.id === body.reconnectConnectionId)) {
       return mockError('NOT_FOUND', 404)
@@ -414,10 +446,10 @@ export const handlers: HttpHandler[] = [
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const body = await request.json()
-    const fin: FinConsentId[] = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
-    const ok = fin.every((id) => body.agreements?.some((a) => a.consentId === id && a.agreed && a.version))
+    const ok = ALL_FIN.every((id) => body.agreements?.some((a) => a.consentId === id && a.agreed && a.version))
     if (!ok) return mockError('TERMS_REQUIRED', 400, undefined, '필수 항목에 동의해 주세요')
-    walletMock().finConsent = true
+    // 재동의는 새 행을 덧붙인다(같은 버전이어도 철회 상태가 남지 않는다, S4)
+    walletMock().finMissing = []
     return HttpResponse.json({ valid: true, missing: [], required: [] }, { status: 201 })
   }),
 

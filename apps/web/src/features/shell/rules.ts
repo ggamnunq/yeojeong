@@ -1,5 +1,4 @@
 import type { MemberSummary, TripDetail, TripEvent, TripListItem } from '../../api'
-import type { AvatarPerson } from '../../ds'
 
 // 셸(HF-13·14·15) 표시 규칙. 화면 없이 테스트한다.
 
@@ -13,16 +12,6 @@ export function tripMeta(trip: Pick<TripListItem, 'status' | 'startDate'>): stri
 
 /** 초대코드 3-3 표시: K7M2QX → K7M-2QX */
 export const formatInviteCode = (code: string) => `${code.slice(0, 3)}-${code.slice(3)}`
-
-export function toAvatarPerson(member: MemberSummary): AvatarPerson {
-  return {
-    name: member.nickname,
-    src: member.profileImageUrl ?? undefined,
-    joinOrder: member.joinOrder,
-    me: member.isMe,
-    left: member.isLeft,
-  }
-}
 
 /** 강퇴 버튼: 그룹장 화면, 남의 행, 시작 전·진행 중(FR-207) */
 export function canKick(trip: Pick<TripDetail, 'me' | 'status'>, member: MemberSummary): boolean {

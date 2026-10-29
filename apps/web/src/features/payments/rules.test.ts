@@ -25,6 +25,7 @@ const member = (over: Partial<MemberSummary> = {}): MemberSummary => ({
   joinOrder: 2,
   isMe: false,
   isLeft: false,
+  isWithdrawn: false,
   ...over,
 })
 
@@ -69,7 +70,7 @@ describe('오늘 Day(FR-502)', () => {
 describe('사람', () => {
   it('나간 멤버는 흐림(left), 탈퇴한 멤버는 회색 기본 아바타 + 이름만', () => {
     expect(toPerson(member({ isLeft: true }))).toMatchObject({ name: '민지', left: true, joinOrder: 1 })
-    const withdrawn = member({ nickname: '탈퇴한 멤버', isLeft: true })
+    const withdrawn = member({ nickname: '탈퇴한 멤버', isLeft: true, isWithdrawn: true })
     expect(isWithdrawn(withdrawn)).toBe(true)
     expect(toPerson(withdrawn)).toEqual({ name: '탈퇴한 멤버', src: null, source: 'default', joinOrder: 1 })
   })

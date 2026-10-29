@@ -1,36 +1,12 @@
 import type { ExpenseListItem, MemberSummary, TripDetail } from '../../api'
-import { formatKrw, type AvatarPerson } from '../../ds'
+import { formatKrw } from '../../ds'
 import type { ExpenseRow, PaymentDetail, PaymentsView, SheetCta, SheetDraft, SheetMode } from './types'
 
 // 결제내역·결제 상세의 순수 규칙(화면명세 0-5·0-7·부록 A, 기능명세 4-3). 화면 없이 테스트한다.
 
 // ── 사람 ─────────────────────────────────────────────────────────
 
-/** 서버가 계정이 지워진 멤버(userId NULL)에게 주는 이름(용어집 "탈퇴한 멤버", 서버 WITHDRAWN_NICKNAME) */
-export const WITHDRAWN_NICKNAME = '탈퇴한 멤버'
-
-/**
- * 탈퇴한 멤버인가. 응답에 전용 플래그가 아직 없어 isDeleted·userId null(생기면)과 서버 고정 이름으로 본다.
- * TODO(서버): MemberSummary에 isWithdrawn 같은 플래그가 생기면 그 값만 본다.
- */
-export function isWithdrawn(m: Pick<MemberSummary, 'nickname' | 'profileImageUrl'>): boolean {
-  const extra = m as typeof m & { isDeleted?: boolean; isWithdrawn?: boolean; userId?: string | null }
-  return (
-    extra.isWithdrawn === true ||
-    extra.isDeleted === true ||
-    extra.userId === null ||
-    (m.nickname === WITHDRAWN_NICKNAME && m.profileImageUrl === null)
-  )
-}
-
-/**
- * 서버 MemberSummary → DS AvatarPerson. 서버 joinOrder는 1부터, DS 이니셜 색은 0부터.
- * 탈퇴한 멤버 = 회색 기본 아바타 + "탈퇴한 멤버"(흐림·「나간 멤버」 태그 없음), 나간 멤버 = 흐림(left) + 태그는 쓰는 곳이.
- */
-export function toPerson(m: MemberSummary): AvatarPerson {
-  if (isWithdrawn(m)) return { name: WITHDRAWN_NICKNAME, src: null, source: 'default', joinOrder: m.joinOrder - 1 }
-  return { name: m.nickname, src: m.profileImageUrl, joinOrder: m.joinOrder - 1, me: m.isMe, left: m.isLeft }
-}
+export { isWithdrawn, toPerson, WITHDRAWN_NICKNAME } from '../../app/person'
 
 // ── 날짜·시각(KST) ────────────────────────────────────────────────
 

@@ -3,9 +3,8 @@ import { useId, useRef, useState, type FormEvent } from 'react'
 import { handleApiError, keys } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
-import { ShellOnboarding } from '../../../ds'
+import { Input, ShellOnboarding } from '../../../ds'
 import { postLogout } from '../api'
-import { LargeInput } from '../components/LargeInput'
 import { COPY } from '../copy'
 import { useFlowState } from '../historyState'
 import {
@@ -67,8 +66,10 @@ export default function NicknamePage() {
       <h1 className="sr-only">닉네임</h1>
       <h2 className="text-h1 text-primary">{COPY.nicknameTitle}</h2>
       <form id={formId} noValidate onSubmit={submit} className="pt-8">
-        <LargeInput
+        <Input
           ref={inputRef}
+          size="l"
+          labelVisible={false}
           label="닉네임"
           name="nickname"
           autoComplete="nickname"
@@ -76,8 +77,8 @@ export default function NicknamePage() {
           // 가입 첫 입력이라 바로 쓸 수 있게 포커스를 둔다(Figma State=Focus)
           autoFocus
           value={value}
-          error={error}
-          helper={COPY.nicknameHelper(graphemeLength(value), NICKNAME_MAX_LENGTH)}
+          error={error !== null}
+          helper={error ?? COPY.nicknameHelper(graphemeLength(value), NICKNAME_MAX_LENGTH)}
           onChange={(e) => change(e.currentTarget.value)}
           onCompositionStart={() => {
             composing.current = true

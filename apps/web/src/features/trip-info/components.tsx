@@ -1,6 +1,6 @@
 import { clsx } from 'clsx'
 import { useId, type ReactNode } from 'react'
-import { Avatar, Button, Icon, IconButton, orderMembers, RouteProgress, type RouteProgressPhase } from '../../ds'
+import { Avatar, CardHeroTone, Icon, orderMembers, RowTone, type RouteProgressPhase } from '../../ds'
 import { focusRing, touchTarget } from '../../ds/styles'
 import type { MemberSummary, TripStatus } from '../../api'
 import { formatInviteCode } from '../trips/rules'
@@ -24,25 +24,17 @@ export type TripHeroCardProps = {
   onEdit?: () => void
 }
 
-/** 영웅 카드 · 톤: 라벨 → 영웅 숫자(Amount/XL) [+ 보조] · 연필 → 20 → 경로 → 16 → 메타 한 줄 */
+/** 영웅 카드 · 톤(DS Card/HeroTone): 라벨 → 영웅 숫자 [+ 보조] · 연필 → 경로 → 메타 한 줄 */
 export function TripHeroCard({ status, label, value, suffix, start, end, days, current, meta, onEdit }: TripHeroCardProps) {
   return (
-    <div className="flex flex-col rounded-xl bg-subtle py-5 pr-3 pl-5">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          {label && <p className="text-body-s text-secondary">{label}</p>}
-          <p className="flex items-baseline gap-1.5 whitespace-nowrap">
-            <span className="font-amount text-amount-xl text-amount-default">{value}</span>
-            {suffix && <span className="text-body-l text-tertiary">{suffix}</span>}
-          </p>
-        </div>
-        {onEdit && <IconButton size="s" icon="edit" label="여정 정보 수정" onClick={onEdit} />}
-      </div>
-      <div className="mt-5 pr-2">
-        <RouteProgress phase={PHASE[status]} start={start} end={end} days={days} current={current} />
-      </div>
-      <p className="mt-4 mb-1 text-body-s text-secondary">{meta}</p>
-    </div>
+    <CardHeroTone
+      label={label}
+      hero={value}
+      heroSuffix={suffix}
+      action={onEdit && { label: '여정 정보 수정', onClick: onEdit }}
+      route={{ phase: PHASE[status], start, end, days, current }}
+      meta={meta}
+    />
   )
 }
 
@@ -98,16 +90,14 @@ export function MemberAvatars({ members, onAdd }: MemberAvatarsProps) {
   )
 }
 
-/** 초대코드 톤 행: "초대코드" + K7M-2QX(Amount/M, 자간 2) · 「복사」(Secondary S) */
+/** 초대코드 톤 행(DS Row/Tone): "초대코드" + K7M-2QX · 「복사」 */
 export function InviteCodeRow({ code, onCopy }: { code: string; onCopy: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg bg-subtle py-4 pr-4 pl-5">
-      <p className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-caption text-tertiary">초대코드</span>
-        <span className="font-amount text-amount-m tracking-[2px] whitespace-nowrap text-primary">{formatInviteCode(code)}</span>
-      </p>
-      <Button type="secondary" size="s" leadingIcon icon="copy" label="복사" aria-label="초대코드 복사" onClick={onCopy} />
-    </div>
+    <RowTone
+      label="초대코드"
+      value={formatInviteCode(code)}
+      action={{ label: '복사', icon: 'copy', 'aria-label': '초대코드 복사', onClick: onCopy }}
+    />
   )
 }
 

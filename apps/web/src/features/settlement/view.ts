@@ -10,33 +10,10 @@ import {
   type SettlementRowNet,
 } from '../../ds'
 import type { SettlementDirection } from './types'
-import { isWithdrawn, WITHDRAWN_NICKNAME } from '../payments/rules'
 
 // 현황·정산 화면의 표시 규칙(화면명세 0-5). 서버 값을 글자로만 바꾸고 다시 계산하지 않는다.
 
-/** 탈퇴(FR-109)로 사용자가 없어진 멤버의 표시 이름. 서버(S2C views.ts)가 nickname을 이 값으로, 프사를 null로 준다 */
-export const WITHDRAWN_MEMBER_NAME = WITHDRAWN_NICKNAME
-export { isWithdrawn }
-
-/**
- * 표시 상태(명세 확정): 탈퇴한 멤버 = 회색 기본 아바타 + "탈퇴한 멤버", 태그 없음, 탭 불가.
- * 나간 멤버 = 프사 흐림 + 「나간 멤버」 태그, 탭 가능. leftAtEnd는 정산 응답의 종료 시점 isLeft
- */
-export function memberState(member: MemberSummary, leftAtEnd = false) {
-  const withdrawn = isWithdrawn(member)
-  return { withdrawn, left: !withdrawn && (leftAtEnd || member.isLeft) }
-}
-
-/** 서버 MemberSummary → DS AvatarPerson(프사·나·나간 멤버). 탈퇴한 멤버는 흐리게 하지 않는다(기본 이미지) */
-export function toPerson(member: MemberSummary, left = member.isLeft): AvatarPerson {
-  return {
-    name: member.nickname,
-    src: member.profileImageUrl,
-    joinOrder: member.joinOrder,
-    me: member.isMe,
-    left: left && !isWithdrawn(member),
-  }
-}
+export { isWithdrawn, memberState, toPerson, toPersonAt, WITHDRAWN_NICKNAME as WITHDRAWN_MEMBER_NAME } from '../../app/person'
 
 /** 사람 행 목록 순서(C-05): 나 먼저 → 가입 순. 서버 정렬을 믿되 화면에서도 한 번 더 맞춘다 */
 export function orderByMember<T extends { member: MemberSummary }>(items: readonly T[]): T[] {

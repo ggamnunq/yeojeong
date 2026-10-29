@@ -4,11 +4,11 @@ import { paths } from '../../../app/paths'
 import { ErrorScreen, LoadingScreen, NotFoundScreen } from '../../../app/states'
 import { ShellSub } from '../../../ds'
 import { CONSENT_TITLES, docForPath, LEGAL_DOCS, resolveLegalLink } from '../docs'
-import { Markdown } from '../markdown'
+import { LegalBody } from '../markdown'
 
 const contents = import.meta.glob<string>('../content/*.md', { query: '?raw', import: 'default' })
 
-/** 공개 문서(FR-903, 부록 C-7): ShellSub(‹ + 문서명) + 마크다운 본문. 로그인 없이 열린다 */
+/** 공개 문서(FR-903, 부록 C-7): ShellSub(‹ + 문서명) + 조문 구조 본문. 로그인 없이 열린다 */
 export default function LegalPage() {
   const { consentId } = useParams()
   const navigate = useNavigate()
@@ -37,7 +37,7 @@ export default function LegalPage() {
       ) : content.error ? (
         <ErrorScreen error={content.error} onRetry={() => void content.refetch()} />
       ) : (
-        <Markdown source={content.data ?? ''} resolveLink={resolveLegalLink} />
+        <LegalBody source={content.data ?? ''} resolveLink={resolveLegalLink} emphasis={doc.consent ? 'consent' : 'default'} />
       )}
     </ShellSub>
   )
