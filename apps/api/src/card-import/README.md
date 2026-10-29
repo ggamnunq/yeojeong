@@ -44,7 +44,7 @@ POST /api/wallet/entries/import ─▶  itemToken 검증 → CARD_IMPORT 지갑 
 | 메서드·경로 | 요청 | 응답 | 에러 |
 |---|---|---|---|
 | `GET /api/card-import/config` | — | `CardImportConfig { enabled, publicKey, publicKeyFingerprint, organizations[{code,name,maxRangeDays,maxLookbackDays,requiresCardNo,cardPasswordDigits}](화면 순서. `CARD_NUMBER_LOGIN` off면 7곳, on이면 9곳 — 현대 requiresCardNo·4자리, 하나 requiresCardNo·2자리), maxRangeDays: 92, maxLookbackDays: 365, defaultRange{from,to,basis,tripId}, consent, twoWayTimeoutSeconds: 160, remainingToday }` | 404(꺼짐) |
-| `POST /api/card-import/fetch` | `{ organization, loginId, encryptedPassword, from, to, loginCardNo?, encryptedCardPassword?, acknowledgeLockRisk?, twoWay?: {token, code} }` | 200 `{status:'OK', organization, from, to, items: CardApprovalItem[]}` · 200 `{status:'TWO_WAY_REQUIRED', twoWayToken, method:'SMS', expiresAt}` | 400 `VALIDATION_FAILED`·`CARD_LOGIN_FAILED{failedAttempts}`·`CARD_NUMBER_INVALID{failedAttempts}`·`CARD_PASSWORD_INVALID{failedAttempts}`·`CARD_TWO_WAY_INVALID`·`CARD_PASSWORD_ENCRYPTION_INVALID`, 403 `CONSENT_REQUIRED`·`CSRF_REJECTED`, 404, 409 `CARD_IMPORT_IN_PROGRESS`·`CARD_ACCOUNT_ACTION_REQUIRED`·`CARD_TWO_WAY_UNSUPPORTED`·`CARD_LOCK_RISK_CONFIRM_REQUIRED{failedAttempts}`, 410 `CARD_TWO_WAY_EXPIRED`, 429 `CARD_IMPORT_RATE_LIMITED`·`CARD_IMPORT_LOGIN_COOLDOWN`(`details{retryAfter(ISO UTC), retryAfterSec}` + `Retry-After`), 502 `CARD_IMPORT_FAILED`, 503 `CARD_COMPANY_UNAVAILABLE`·`CARD_IMPORT_DAILY_LIMIT` |
+| `POST /api/card-import/fetch` | `{ organization, loginId, encryptedPassword, from, to, loginCardNo?, encryptedCardPassword?, acknowledgeLockRisk?, twoWay?: {token, code} }` | 200 `{status:'OK', organization, from, to, items: CardApprovalItem[]}` · 200 `{status:'TWO_WAY_REQUIRED', twoWayToken, method:'SMS', expiresAt}` | 400 `VALIDATION_FAILED`·`CARD_LOGIN_FAILED{failedAttempts}`·`CARD_NUMBER_INVALID{failedAttempts}`·`CARD_PASSWORD_INVALID{failedAttempts}`·`CARD_TWO_WAY_INVALID`·`CARD_PASSWORD_ENCRYPTION_INVALID`, 403 `CONSENT_REQUIRED`·`CSRF_REJECTED`, 404, 409 `CARD_IMPORT_IN_PROGRESS`·`CARD_ACCOUNT_ACTION_REQUIRED`·`CARD_TWO_WAY_UNSUPPORTED`·`CARD_LOCK_RISK_CONFIRM_REQUIRED{failedAttempts}`, 410 `CARD_TWO_WAY_EXPIRED`, 429 `CARD_IMPORT_RATE_LIMITED`·`CARD_IMPORT_LOGIN_COOLDOWN`(`details{retryAfter(ISO UTC), retryAfterSec}` + `Retry-After`)·`CARD_IMPORT_LOGIN_LOCKED`(현대·하나, `details{failedAttempts, action}`, retryAfter 없음), 502 `CARD_IMPORT_FAILED`, 503 `CARD_COMPANY_UNAVAILABLE`·`CARD_IMPORT_DAILY_LIMIT` |
 | `POST /api/wallet/entries/import` | `{ items: [{importKey, itemToken, occurredAt, amount, currency, merchantName, krwAmount, tripId?}] }`(1~200) | 201 `{ items[{importKey, created, entry: WalletEntry}], created, skipped, linked }` | 400 `VALIDATION_FAILED`, 403, 404, 410 `CARD_IMPORT_RESULT_EXPIRED{invalidIndexes}`, 503 `FX_RATE_UNAVAILABLE` |
 | `GET /api/consents/status?stage=CARD_IMPORT` · `POST /api/consents {stage:'CARD_IMPORT', screen:'HF-51'}` | 기존 동의 API | `ConsentStatusResponse` | 동의 ID별 게이트: FIN_* = accountLink, CARD_IMPORT = 이 사용자의 cardImport(꺼지면 404) |
 | `GET /api/consents/revocable` | — | `RevocableConsent[] {consentId, title, version, agreedAt, docUrl}` | 플래그와 무관 |
@@ -74,7 +74,7 @@ POST /api/wallet/entries/import ─▶  itemToken 검증 → CARD_IMPORT 지갑 
 
 pino `redact` 경로 목록에 더해 `common/logging/mask.ts`가 **키 이름으로 깊이 제한 없이** 가린다(`formatters.log` + `err` 직렬화기): loginId·password·encrypted*·twoWay*·smsCode·connectedId·loginCardNo·cardPassword·itemToken 등, 정규화한 키에 cardno·cardnum·cardpass·cardpw·cardpin이 들어간 키, 정확히 pan·primaryAccountNumber인 키와 어느 깊이의 `body`(`*.body`, `err.body`, `err.cause.request.body`), CODEF 본문 문맥의 `id`(상위 키에 codef·accountList가 있거나 같은 객체에 loginType·organization·password·connectedId가 있을 때). 에러는 원인(cause)까지 펼쳐서 가린다.
 
-**값 기반 카드번호 차단**(`redactPan`): 키와 무관하게 모든 문자열 값·메시지(pino `hooks.logMethod`, `logger.error(err)`처럼 에러에서 나온 메시지 포함)·Error message·stack에서 카드번호 모양을 `[PAN]`으로 바꾼다. 후보 = 구분자 없는 13~19자리 또는 4자리 묶음(4-4-4-1~7, 4-6-4~5, 공백·하이픈), 앞뒤가 영숫자·하이픈이 아닐 것(UUID·해시 일부 제외). Luhn이 맞거나 62로 시작할 때만 가린다. 13자리 1로 시작(epoch ms)·14자리 19·20으로 시작(yyyyMMddHHmmss)은 제외. URL 인코딩 문자열은 풀어서도 본다.
+**값 기반 카드번호 차단**(`redactPan`): 키와 무관하게 모든 문자열 값·메시지(pino `hooks.logMethod`, `logger.error(err)`처럼 에러에서 나온 메시지 포함)·Error message·stack에서 카드번호 모양을 `[PAN]`으로 바꾼다. 후보 = 구분자 없는 13~19자리 또는 4자리 묶음(4-4-4-1~7, 4-6-4~5, 공백·하이픈), 앞뒤가 영숫자·하이픈이 아닐 것(UUID·해시 일부 제외). Luhn이 맞거나 62로 시작할 때만 가린다. 13자리 1로 시작(epoch ms)·14자리 19·20으로 시작(yyyyMMddHHmmss)은 제외. URL 인코딩 문자열은 연속한 `%XX` 묶음만 관대하게 풀어서도 본다(`lenientUrlDecode` — " 100%" 같은 낱개 %·잘못된 UTF-8이 있어도 원문을 남기지 않는다).
 
 ## 호출 보호
 
@@ -83,7 +83,7 @@ pino `redact` 경로 목록에 더해 `common/logging/mask.ts`가 **키 이름�
 | 사용자당 동시 1건 | 조회 요청 동안(최대 3분) | `card_import_locks`(user_id, expires_at) | 409 `CARD_IMPORT_IN_PROGRESS` |
 | 사용자 횟수 | 10분 3회, KST 하루 10회. 새 조회만 센다(추가 인증 이어가기·우리 서버가 거절한 요청은 안 셈, CODEF까지 간 실패는 셈). **잠금 안에서 CODEF 호출 전에** START 기록을 쓰고, 기록 실패면 조회하지 않는다(fail closed). 결과(건수·결과 코드)는 끝난 뒤 같은 행에 채운다(실패하면 결과를 돌려주지 않는다) | 접근 기록 `FETCH_CARD_APPROVALS` `details.step = START` | 429 `CARD_IMPORT_RATE_LIMITED` |
 | 로그인 연속 실패 | 같은 사용자·기관 30분 안 3회째 실패 응답부터 30분(일반 카드사) | `card_import_login_failures`(user_id, organization, failures, last_failed_at) | 400 `CARD_LOGIN_FAILED` `{failedAttempts}` → 429 `CARD_IMPORT_LOGIN_COOLDOWN` |
-| 잠김 위험(현대·하나) | 모든 로그인 실패(아이디·비밀번호·카드번호·카드 비밀번호)를 따로 센다. 1회 실패 뒤 새 조회는 `acknowledgeLockRisk: true`가 있어야 한다(없으면 409, CODEF 호출 없음). **2회째 실패 응답부터 30분 쿨다운**, 쿨다운이 끝나도 카운터는 남아 다음 시도도 확인이 필요하다. 리셋은 성공 또는 마지막 실패 뒤 24시간만(현대: 카드 비밀번호 3회 오류면 계정 잠김) | 같은 행 `lock_risk_failures`·`lock_risk_last_failed_at` | 400 `CARD_LOGIN_FAILED`·`CARD_NUMBER_INVALID`·`CARD_PASSWORD_INVALID` `{failedAttempts}` → 409 `CARD_LOCK_RISK_CONFIRM_REQUIRED` → 429 `CARD_IMPORT_LOGIN_COOLDOWN` |
+| 잠김 위험(현대·하나) | 모든 로그인 실패(아이디·비밀번호·카드번호·카드 비밀번호)와 매핑 밖 CODEF 오류(502, 미입력·토큰 오류 제외)를 따로 센다. 카운터 1이면 새 조회에 `acknowledgeLockRisk: true`가 있어야 한다(없으면 409, CODEF 호출 없음 — 확인 값은 1일 때만 의미). **2 이상이면 성공할 때까지 잠금**(429, 시간 제한·retryAfter 없음, CODEF 호출 없음). 카운터는 **성공해야만** 0이 된다(현대: 카드 비밀번호 3회 오류면 계정 잠김). 다만 행은 마지막 실패 뒤 7일이면 파기 배치(`CARD_IMPORT_COUNTERS`)가 지우므로 **7일 뒤 행 삭제가 곧 리셋**이다 — 그 사이 사용자가 카드사 홈페이지에서 직접 확인했다고 본다 | 같은 행 `lock_risk_failures`·`lock_risk_last_failed_at` | 400 `CARD_LOGIN_FAILED`·`CARD_NUMBER_INVALID`·`CARD_PASSWORD_INVALID`(·502 `CARD_IMPORT_FAILED`) `{failedAttempts}` → 409 `CARD_LOCK_RISK_CONFIRM_REQUIRED` → 429 `CARD_IMPORT_LOGIN_LOCKED{failedAttempts, action: 'CHECK_CARD_COMPANY_SITE'}` |
 | 서비스 일일 CODEF 예산 | `CODEF_DAILY_CALL_BUDGET`(기본 100). 새 조회마다 4(조회 1 + 이어가기 3, 또는 등록 1 + 조회 1)를 **원자적으로 예약**(`INSERT … ON CONFLICT DO UPDATE … WHERE calls + 4 <= budget RETURNING`)하고, 끝나면 쓰지 않은 만큼 돌려준다. 이어가기는 예약 범위에서 1씩 쓴다. 계정 삭제는 예약과 무관하게 늘 보내고 따로 센다 | `codef_daily_usage`(day, calls), 이어가기 `card_import_two_way_sessions.calls_left` | 503 `CARD_IMPORT_DAILY_LIMIT` |
 | remainingToday | min(10 − 오늘 시작한 조회 수, floor(남은 예산 / 4)) | — | config |
 | OAuth 토큰 | 메모리 캐시(1주일 유효, 만료 1시간 전 재발급) | — | — |
@@ -97,13 +97,13 @@ pino `redact` 경로 목록에 더해 `common/logging/mask.ts`가 **키 이름�
 | CF-12800·12801·12803·12861·12877·12899 | 아이디·비밀번호 오류, 로그인 실패 | `CARD_LOGIN_FAILED`(400) |
 | CF-13101·13102·13103·13104 | 카드번호 일치하는 카드 없음·관련 오류·잘못 입력·형식 오류(현대·하나) | `CARD_NUMBER_INVALID`(400, 잠김 위험으로 센다) |
 | CF-13121·13123·13124·13125 | 카드 비밀번호 오류·형식·자릿수·관련 오류 | `CARD_PASSWORD_INVALID`(400, 잠김 위험으로 센다) |
-| CF-13100·13120·12401 | 카드번호·카드 비밀번호·로그인 파라미터 미입력(우리 본문 문제) | `CARD_IMPORT_FAILED`(502, 사용자 실패로 세지 않는다) |
+| CF-13100·13120·12401·12411 · CF-99999 · 토큰 오류 | 미입력(우리 본문 문제)·우리가 만든 형식 오류 코드·OAuth 토큰 | `CARD_IMPORT_FAILED`(502, 사용자 실패로 세지 않는다 — `CODEF_NOT_USER_FAILURES`) |
 | CF-12802·12834·12207·12830·12833·12108·13122 | 비밀번호 오류 횟수 초과·잠김·반복 로그인 제한·1일 횟수 초과·재설정·카드 소지 확인·카드 비밀번호 오류 횟수 초과 | `CARD_ACCOUNT_ACTION_REQUIRED`(409) |
 | CF-12041·12003·12100·12101·12104·12106·12202 | 이용 시간 아님(점검)·기관 오류·접속 폭주·일시 제한·통신 시간 초과 | `CARD_COMPANY_UNAVAILABLE`(503) |
 | CF-12001·03003·12102 | 입력 시간 초과·2-way 정보 불일치·추가 인증 취소 | `CARD_TWO_WAY_EXPIRED`(410) |
 | CF-12872 | 인증 미완료 | `CARD_TWO_WAY_INVALID`(400) |
 | CF-04020 | 비밀번호 복호화 실패 | `CARD_PASSWORD_ENCRYPTION_INVALID`(400) |
-| 그 밖·통신 실패·형식 오류 | | `CARD_IMPORT_FAILED`(502) |
+| 그 밖·통신 실패·형식 오류 | | `CARD_IMPORT_FAILED`(502). 현대·하나는 매핑 밖 CODEF 코드를 잠김 위험으로 센다(통신 실패는 세지 않는다) |
 
 CODEF가 준 메시지는 화면에 넘기지 않는다. 로그는 경로·결과 코드·소요 시간만(`codef.client.ts`).
 

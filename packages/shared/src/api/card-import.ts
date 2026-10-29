@@ -25,13 +25,22 @@ export const CARD_IMPORT_LOGIN_LIMIT = { FAILURES: 3, WINDOW_SECONDS: 1800, COOL
 /**
  * 카드번호 로그인 카드사(requiresCardNo — 현대·하나)의 잠김 위험 카운터(사용자·기관, 위 카운터와 따로 센다).
  * 현대는 카드 비밀번호 3회 오류면 계정이 잠긴다(CODEF KR_CD_P_002 현대카드 특이사항) — 그래서 이 카드사들은 모든 로그인 실패
- * (CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID)를 센다.
+ * (CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID)와 매핑 밖 CODEF 오류(CARD_IMPORT_FAILED, 미입력·토큰 오류 제외)를 센다.
  * - 1회 실패 뒤 새 조회는 요청에 acknowledgeLockRisk: true가 있어야 한다(없으면 409 CARD_LOCK_RISK_CONFIRM_REQUIRED) —
- *   화면이 "한 번 더 틀리면 잠길 수 있어요"를 확인받고 보낸다.
- * - FAILURES회째 실패 응답부터 COOLDOWN_SECONDS 동안 429 CARD_IMPORT_LOGIN_COOLDOWN. 쿨다운이 끝나도 카운터는 남아 다음 시도도 확인이 필요하다.
- * - 카운터는 로그인에 성공하거나 마지막 실패 뒤 WINDOW_SECONDS(24시간)가 지나야만 0이 된다
+ *   화면이 "한 번 더 틀리면 잠길 수 있어요"를 확인받고 보낸다. acknowledgeLockRisk는 카운터가 1일 때만 의미가 있다.
+ * - FAILURES회째 실패 응답부터 429 CARD_IMPORT_LOGIN_LOCKED(시간 제한 없음, retryAfter 없음). 성공할 때까지 막는다.
+ * - 카운터는 로그인에 성공해야만 0이 된다. 다만 행은 마지막 실패 뒤 7일이 지나면 파기 배치(CARD_IMPORT_COUNTERS)가 지우므로
+ *   그때 풀린다(그 사이 사용자가 카드사에서 직접 확인했다고 본다)
  */
-export const CARD_IMPORT_LOCK_RISK_LIMIT = { FAILURES: 2, WINDOW_SECONDS: 86_400, COOLDOWN_SECONDS: 1800 } as const;
+export const CARD_IMPORT_LOCK_RISK_LIMIT = { FAILURES: 2 } as const;
+
+/** 429 CARD_IMPORT_LOGIN_LOCKED의 details. 화면은 action을 보고 안내 문구를 고른다(문구는 화면이 정한다) */
+export interface CardLoginLockedDetails extends Record<string, unknown> {
+  /** 잠김 위험 카운터(2 이상) */
+  failedAttempts: number;
+  /** 사용자가 할 일: 카드사 홈페이지에서 아이디·비밀번호·카드 비밀번호를 확인한다 */
+  action: 'CHECK_CARD_COMPANY_SITE';
+}
 /** "비슷한 기록" 판정: 같은 통화·같은 금액의 직접 입력 지갑 항목이 승인 시각 ±N분 안에 있으면 similarManualEntryId */
 export const CARD_IMPORT_SIMILAR_WINDOW_MINUTES = 30;
 /** 한 번에 저장할 수 있는 최대 건수(POST /api/wallet/entries/import) */
@@ -109,7 +118,7 @@ export interface CardImportRetryDetails extends Record<string, unknown> {
 export interface CardLoginFailedDetails extends Record<string, unknown> {
   /**
    * 같은 사용자·카드사의 연속 실패 수. 일반 카드사 = 최근 30분(3회째 쿨다운, CARD_IMPORT_LOGIN_LIMIT),
-   * 현대·하나 = 최근 24시간 잠김 위험 카운터(2회째 쿨다운, CARD_IMPORT_LOCK_RISK_LIMIT)
+   * 현대·하나 = 잠김 위험 카운터(성공해야 0, 2회째부터 CARD_IMPORT_LOGIN_LOCKED — CARD_IMPORT_LOCK_RISK_LIMIT)
    */
   failedAttempts: number;
 }
@@ -146,7 +155,7 @@ export interface FetchCardApprovalsRequest {
   /** requiresCardNo 카드사만: 카드 비밀번호(cardPasswordDigits자리)를 config.publicKey로 RSA PKCS#1 v1.5 암호화한 base64 */
   encryptedCardPassword?: string;
   /**
-   * requiresCardNo 카드사만: 최근 24시간 안에 로그인 실패가 있었으면(409 CARD_LOCK_RISK_CONFIRM_REQUIRED) 화면이
+   * requiresCardNo 카드사만: 잠김 위험 카운터가 1이면(409 CARD_LOCK_RISK_CONFIRM_REQUIRED) 화면이
    * "한 번 더 틀리면 카드사에서 잠길 수 있어요"를 확인받고 true로 다시 보낸다. 다른 카드사는 보지 않는다
    */
   acknowledgeLockRisk?: boolean;

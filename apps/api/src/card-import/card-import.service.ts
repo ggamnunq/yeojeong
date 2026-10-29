@@ -48,6 +48,7 @@ import { ItemTokenSigner } from './item-token.js';
 import { CodefClient, type CodefResponse } from './codef/codef.client.js';
 import { CodefConfig } from './codef/codef.config.js';
 import {
+  CODEF_NOT_USER_FAILURES,
   CODEF_OK,
   CODEF_PATHS,
   CODEF_TWO_WAY_REQUIRED,
@@ -266,7 +267,7 @@ export class CardImportService {
         budgeted = 1;
       } else {
         // 새 조회: 사용자 횟수·쿨다운 → 예산 예약(원자적) → 시도 기록(사용자 횟수의 기준)
-        // 현대·하나는 잠김 위험 카운터(24시간, 2회 쿨다운, 1회 실패 뒤엔 확인 필요)
+        // 현대·하나는 잠김 위험 카운터(2 이상이면 성공할 때까지 잠금, 1이면 확인 필요)
         await this.limits.checkStart(
           userId,
           org.code,
@@ -350,11 +351,14 @@ export class CardImportService {
           session.attempts < TWO_WAY_MAX_ATTEMPTS &&
           session.callsLeft > 0;
         // 아이디·비밀번호·카드번호·카드 비밀번호 오류는 연속 실패로 센다(카드사 계정 잠김 예방).
-        // 현대·하나는 잠김 위험 카운터(24시간·2회)로 센다
+        // 현대·하나는 잠김 위험 카운터(성공해야 0, 2회면 잠금)로 세고, 매핑 밖 CODEF 오류도 센다(미입력·토큰 오류 제외)
         if (
           mapped === 'CARD_LOGIN_FAILED' ||
           mapped === 'CARD_NUMBER_INVALID' ||
-          mapped === 'CARD_PASSWORD_INVALID'
+          mapped === 'CARD_PASSWORD_INVALID' ||
+          (org.requiresCardNo &&
+            mapped === 'CARD_IMPORT_FAILED' &&
+            !CODEF_NOT_USER_FAILURES.has(code))
         ) {
           await this.limits.loginFailed(userId, org.code, now, mapped, {
             lockRisk: org.requiresCardNo,

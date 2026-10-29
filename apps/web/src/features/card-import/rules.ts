@@ -175,6 +175,8 @@ export type FetchFailure =
   | { to: 'card-password-invalid'; attempts: number }
   /** 현대·하나: 최근 실패가 있어 "한 번 더 틀리면 잠길 수 있어요"를 확인받고 acknowledgeLockRisk: true로 다시 보내야 한다 */
   | { to: 'lock-risk-confirm'; attempts: number }
+  /** 현대·하나: 실패가 2번 쌓여 성공할 때까지 막혔다(시간 제한 없음). 카드사 홈페이지에서 확인하도록 안내한다 */
+  | { to: 'login-locked'; attempts: number }
   | { to: 'login-cooldown'; until: string }
   | { to: 'error'; kind: ErrorScreenKind; retryAfter?: string }
   | { to: 'in-progress' }
@@ -210,6 +212,8 @@ export function classifyFetchError(error: unknown, now: number): FetchFailure {
       return { to: 'card-password-invalid', attempts: failedAttempts(error) }
     case 'CARD_LOCK_RISK_CONFIRM_REQUIRED':
       return { to: 'lock-risk-confirm', attempts: failedAttempts(error) }
+    case 'CARD_IMPORT_LOGIN_LOCKED':
+      return { to: 'login-locked', attempts: failedAttempts(error) }
     case 'CARD_IMPORT_LOGIN_COOLDOWN': {
       const until = retryAt(error, now)
       return { to: 'login-cooldown', until }

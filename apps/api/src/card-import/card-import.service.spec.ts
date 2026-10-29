@@ -671,6 +671,37 @@ describe('CardImportService.fetch (direct)', () => {
     }
   });
 
+  it('counts unmapped CODEF codes (502) on the lock-risk counter only for Hyundai·Hana (S8c review N1)', async () => {
+    for (const [req, org, counted] of [
+      [hyundaiRequest(), '0302', true],
+      [request(), '0306', false],
+    ] as const) {
+      const { service, limits } = setup({
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-12999', {}),
+      });
+      expect(await codeOf(service.fetch(USER, req, NOW))).toBe(
+        'CARD_IMPORT_FAILED',
+      );
+      if (counted) {
+        expect(limits.loginFailed).toHaveBeenCalledWith(
+          USER,
+          org,
+          NOW,
+          'CARD_IMPORT_FAILED',
+          { lockRisk: true },
+        );
+      } else {
+        expect(limits.loginFailed).not.toHaveBeenCalled();
+      }
+    }
+    // 토큰 오류는 세지 않는다
+    const { service, limits } = setup({
+      [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-09990', {}),
+    });
+    await codeOf(service.fetch(USER, hyundaiRequest(), NOW));
+    expect(limits.loginFailed).not.toHaveBeenCalled();
+  });
+
   it('passes the lock-risk acknowledgement to the start check only for Hyundai·Hana (S8c)', async () => {
     const { service, limits, http } = setup({
       [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-00000', []),

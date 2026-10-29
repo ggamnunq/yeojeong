@@ -93,18 +93,30 @@ function replacePans(text: string): string {
   );
 }
 
-/** 문자열 안의 카드번호 모양을 [PAN]으로. URL 인코딩된 문자열은 풀어서도 보고, 풀어서 걸리면 푼 문자열을 가려 돌려준다 */
+/**
+ * 관대한 URL 디코딩: 연속한 %XX 묶음만 바꾼다. 묶음이 올바른 UTF-8이면 그 글자로, 아니면 바이트마다 latin1 글자로 바꾼다.
+ * 나머지(" 100%" 같은 낱개 %, 잘못된 %Z1)는 그대로 둔다 — decodeURIComponent처럼 문자열 전체를 포기하지 않는다
+ */
+export function lenientUrlDecode(text: string): string {
+  return text.replace(/(?:%[0-9A-Fa-f]{2})+/g, (run) => {
+    try {
+      return decodeURIComponent(run);
+    } catch {
+      return run.replace(/%([0-9A-Fa-f]{2})/g, (_m, hex: string) =>
+        String.fromCharCode(parseInt(hex, 16)),
+      );
+    }
+  });
+}
+
+/** 문자열 안의 카드번호 모양을 [PAN]으로. %XX가 있으면 관대하게 풀어서도 보고, 풀어서 걸리면 푼 문자열을 가려 돌려준다 */
 export function redactPan(text: string): string {
   if (!/\d{4}/.test(text)) return text;
   const replaced = replacePans(text);
   if (/%[0-9A-Fa-f]{2}/.test(replaced)) {
-    try {
-      const decoded = decodeURIComponent(replaced);
-      const masked = replacePans(decoded);
-      if (masked !== decoded) return masked;
-    } catch {
-      // 잘못된 인코딩이면 그대로
-    }
+    const decoded = lenientUrlDecode(replaced);
+    const masked = replacePans(decoded);
+    if (masked !== decoded) return masked;
   }
   return replaced;
 }

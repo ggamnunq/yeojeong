@@ -232,12 +232,15 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     expect(JSON.stringify(ok)).not.toContain(PAN)
     expect(await errorCode(fetchCardApprovals({ ...body('badcard'), organization: '0302', ...card }))).toBe('CARD_NUMBER_INVALID')
     resetCardImportMock({ consented: true })
-    // 잠김 위험: 1회 실패 → 확인 없이 409 → 확인하고 또 틀리면 429 쿨다운
+    // 잠김 위험: 1회 실패 → 확인 없이 409 → 확인하고 또 틀리면 429 잠금(성공할 때까지, 확인 값과 무관)
     expect(await errorCode(fetchCardApprovals({ ...body('badpin'), organization: '0302', ...card }))).toBe('CARD_PASSWORD_INVALID')
     expect(await errorCode(fetchCardApprovals({ ...body('me'), organization: '0302', ...card }))).toBe('CARD_LOCK_RISK_CONFIRM_REQUIRED')
     expect(await errorCode(fetchCardApprovals({ ...body('badpin'), organization: '0302', ...card, acknowledgeLockRisk: true }))).toBe(
-      'CARD_IMPORT_LOGIN_COOLDOWN',
+      'CARD_IMPORT_LOGIN_LOCKED',
     )
+    const locked = await fetchCardApprovals({ ...body('me'), organization: '0302', ...card, acknowledgeLockRisk: true }).catch((e: unknown) => e)
+    expect(locked).toMatchObject({ code: 'CARD_IMPORT_LOGIN_LOCKED', details: { failedAttempts: 2, action: 'CHECK_CARD_COMPANY_SITE' } })
+    expect((locked as { details?: Record<string, unknown> }).details).not.toHaveProperty('retryAfter')
     resetCardImportMock({ consented: true })
     expect(await errorCode(fetchCardApprovals({ ...body('wrong'), organization: '0313', ...card }))).toBe('CARD_LOGIN_FAILED')
     expect((await fetchCardApprovals({ ...body('me'), organization: '0313', ...card, acknowledgeLockRisk: true })).status).toBe('OK')

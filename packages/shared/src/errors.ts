@@ -184,19 +184,27 @@ export const CARD_IMPORT_ERRORS = {
   },
   /**
    * 카드 비밀번호가 맞지 않다(현대 4자리·하나 앞 2자리: 오류·형식·자릿수 — CODEF CF-13121·13123~13125. 미입력 CF-13120은 CARD_IMPORT_FAILED).
-   * details: CardLoginFailedDetails { failedAttempts }. 잠김 위험 카운터 2회째부터는 CARD_IMPORT_LOGIN_COOLDOWN(CARD_IMPORT_LOCK_RISK_LIMIT)
+   * details: CardLoginFailedDetails { failedAttempts }. 잠김 위험 카운터 2회째부터는 CARD_IMPORT_LOGIN_LOCKED(CARD_IMPORT_LOCK_RISK_LIMIT)
    */
   CARD_PASSWORD_INVALID: {
     status: 400,
     message: '카드 비밀번호를 다시 확인해 주세요',
   },
   /**
-   * 현대·하나: 최근 24시간 안에 로그인 실패가 있어 한 번 더 틀리면 카드사 계정이 잠길 수 있다. 화면이 확인받고
+   * 현대·하나: 로그인 실패가 한 번 있어 한 번 더 틀리면 카드사 계정이 잠길 수 있다. 화면이 확인받고
    * acknowledgeLockRisk: true로 다시 보낸다(CARD_IMPORT_LOCK_RISK_LIMIT). details: CardLoginFailedDetails { failedAttempts }. CODEF는 부르지 않았다
    */
   CARD_LOCK_RISK_CONFIRM_REQUIRED: {
     status: 409,
     message: '한 번 더 틀리면 카드사에서 잠길 수 있어요. 확인 후 다시 시도해 주세요',
+  },
+  /**
+   * 현대·하나: 로그인 실패가 2번 쌓여 성공할 때까지 막았다(시간 제한·retryAfter 없음 — 카드사 계정 잠김 예방).
+   * details: CardLoginLockedDetails { failedAttempts, action: 'CHECK_CARD_COMPANY_SITE' }. 마지막 실패 뒤 7일이 지나면 풀린다
+   */
+  CARD_IMPORT_LOGIN_LOCKED: {
+    status: 429,
+    message: '카드사 홈페이지에서 로그인 정보를 확인한 뒤 다시 시도해 주세요',
   },
   /** 화면이 비밀번호를 올바르게 암호화하지 못했다(공개키가 바뀌었을 수 있다 — config를 다시 받는다) */
   CARD_PASSWORD_ENCRYPTION_INVALID: {

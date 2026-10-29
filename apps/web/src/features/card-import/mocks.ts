@@ -35,8 +35,9 @@ import { clock } from '../payments/clock'
 //     카드번호 형식(숫자 14~19자리·Luhn)이 틀리면 400 VALIDATION_FAILED(loginCardNo · cardNumber). 목은 카드번호를 어디에도 남기지 않는다.
 //     현대·하나의 로그인 실패(아이디 "wrong" · "badcard" · "badpin")는 잠김 위험 카운터로 센다(서버 CARD_IMPORT_LOCK_RISK_LIMIT와 같다):
 //       1회 → 400(CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID { failedAttempts: 1 }),
-//       그 뒤 새 조회는 acknowledgeLockRisk: true가 없으면 409 CARD_LOCK_RISK_CONFIRM_REQUIRED, 확인하고 또 틀리면 429 CARD_IMPORT_LOGIN_COOLDOWN.
-//       성공하면 0으로(목에는 24시간 경과·쿨다운 해제 시각이 없다 — resetCardImportMock으로 되돌린다)
+//       그 뒤 새 조회는 acknowledgeLockRisk: true가 없으면 409 CARD_LOCK_RISK_CONFIRM_REQUIRED, 확인하고 또 틀리면
+//       429 CARD_IMPORT_LOGIN_LOCKED { failedAttempts, action: 'CHECK_CARD_COMPANY_SITE' }(retryAfter 없음, 이후 계속 잠김).
+//       성공해야만 0으로(서버는 7일 파기 배치로도 풀린다 — 목은 resetCardImportMock으로 되돌린다)
 //   그 밖            → OK(Figma HF-56 샘플: 전액 취소 2행·비슷한 기록·추가됨·부분 취소·기간 밖·원 승인 없는 취소)
 //   하루 10회를 넘기면 429 CARD_IMPORT_RATE_LIMITED. 저장은 itemToken이 결과 그대로일 때만(아니면 410 CARD_IMPORT_RESULT_EXPIRED)
 // 동의: 처음에는 CARD_IMPORT 동의가 없다(config.consent.valid = false). POST /api/consents stage CARD_IMPORT로 동의한다.
@@ -265,7 +266,9 @@ export const handlers: HttpHandler[] = [
     if (body.loginId === 'limit') return mockError('CARD_IMPORT_RATE_LIMITED', 429, retryAfter(1800))
     if (org.requiresCardNo) {
       const lockRisk = state().lockRiskFailures ?? 0
-      if (lockRisk >= 2) return mockError('CARD_IMPORT_LOGIN_COOLDOWN', 429, retryAfter(1800))
+      const locked = (failedAttempts: number) =>
+        mockError('CARD_IMPORT_LOGIN_LOCKED', 429, { failedAttempts, action: 'CHECK_CARD_COMPANY_SITE' })
+      if (lockRisk >= 2) return locked(lockRisk)
       if (lockRisk >= 1 && body.acknowledgeLockRisk !== true) {
         return mockError('CARD_LOCK_RISK_CONFIRM_REQUIRED', 409, { failedAttempts: lockRisk })
       }
@@ -273,7 +276,7 @@ export const handlers: HttpHandler[] = [
       const code = failed[body.loginId as keyof typeof failed]
       if (code) {
         state().lockRiskFailures = lockRisk + 1
-        if (lockRisk + 1 >= 2) return mockError('CARD_IMPORT_LOGIN_COOLDOWN', 429, retryAfter(1800))
+        if (lockRisk + 1 >= 2) return locked(lockRisk + 1)
         return mockError(code, 400, { failedAttempts: lockRisk + 1 })
       }
       // 성공(결과를 받는 경우)만 0으로 — 카드사 쪽 문제(locked · down)는 그대로 둔다

@@ -233,6 +233,9 @@ export default function FlowPage() {
       case 'card-password-invalid':
         setLoginError(f.attempts >= 1 ? COPY.cardPasswordLockWarning : COPY.cardPasswordInvalid)
         return setStep('login')
+      case 'login-locked':
+        setLoginError(COPY.loginLocked)
+        return setStep('login')
       case 'lock-risk-confirm':
         // 확인 다이얼로그(acknowledgeLockRisk)는 카드번호 입력칸(HF-53 변형)과 함께 붙인다
         setLoginError(COPY.cardPasswordLockWarning)

@@ -193,6 +193,35 @@ describe('createLogger', () => {
     expect(output).toContain('[PAN]');
   });
 
+  it('decodes URL-encoded bodies leniently: a stray "100%" or bad UTF-8 does not keep the raw card number (S8c review N4)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    const PAN = '5555555555554444';
+    const encoded = encodeURIComponent(JSON.stringify({ loginCardNo: PAN }));
+    // decodeURIComponent는 이 문자열 전체에서 예외를 던진다(" 100% " · "%E0%A4" 잘린 UTF-8)
+    const mixed = [
+      `rate 100% done&${encoded}`,
+      `${encoded}%E0%A4&x=100%`,
+      `%ZZ${encoded}`,
+    ];
+    for (const value of mixed) {
+      expect(() => decodeURIComponent(value)).toThrow();
+      logger.info({ payload: value }, 'mixed');
+    }
+    expect(output).not.toContain(PAN);
+    expect(output.match(/\[PAN\]/g)).toHaveLength(3);
+    // 카드번호가 없으면 원문 그대로(관대한 디코딩 결과로 바꾸지 않는다)
+    output = '';
+    logger.info(
+      { payload: 'rate 100% done&a=%7B%22amount%22%3A18000%7D' },
+      'plain',
+    );
+    expect(output).toContain('rate 100% done&a=%7B%22amount%22%3A18000%7D');
+  });
+
   it('keeps ordinary numbers: amounts, ids, timestamps, phone and masked card numbers (S8c review 3)', () => {
     let output = '';
     const logger = createLogger(

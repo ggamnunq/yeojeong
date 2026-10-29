@@ -234,6 +234,19 @@ export const CODEF_ERROR_MAP: Readonly<Record<string, ErrorCode>> = {
   'CF-04020': 'CARD_PASSWORD_ENCRYPTION_INVALID',
 };
 
+/**
+ * 매핑 밖이어도 사용자 로그인 실패로 세지 않는 CODEF 코드: 우리 본문 문제(미입력 CF-13100·13120·12401·12411),
+ * 우리가 만든 형식 오류 코드(CF-99999), OAuth 토큰 오류. 현대·하나는 이 밖의 매핑 밖 코드를 잠김 위험으로 센다
+ */
+export const CODEF_NOT_USER_FAILURES: ReadonlySet<string> = new Set([
+  'CF-13100',
+  'CF-13120',
+  'CF-12401',
+  'CF-12411',
+  'CF-99999',
+  ...CODEF_TOKEN_ERRORS,
+]);
+
 export function mapCodefError(code: string | undefined): ErrorCode {
   return (code && CODEF_ERROR_MAP[code]) || 'CARD_IMPORT_FAILED';
 }
