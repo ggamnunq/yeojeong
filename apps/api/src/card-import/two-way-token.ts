@@ -17,8 +17,10 @@ export interface TwoWayState {
   organization: string;
   from: string;
   to: string;
-  /** hmacRef(loginId): 이어서 보낸 아이디가 처음과 같은지 */
+  /** 아이디의 HMAC: 이어서 보낸 아이디가 처음과 같은지 */
   loginRef: string;
+  /** 무작위 값. DB(card_import_two_way_sessions)에는 SHA-256만 — 시도 수·무효화의 기준(토큰 재사용 방지) */
+  nonce: string;
   info: CodefTwoWayInfo;
 }
 

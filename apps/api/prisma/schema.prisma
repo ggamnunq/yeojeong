@@ -224,6 +224,7 @@ model User {
   /// 카드 승인내역 불러오기(S8) 동시 1건 잠금·로그인 실패 횟수. 내용 없음, 탈퇴하면 같이 지운다
   cardImportLock          CardImportLock?
   cardImportLoginFailures CardImportLoginFailure[]
+  cardImportTwoWays       CardImportTwoWaySession[]
 
   @@map("users")
 }
@@ -688,6 +689,26 @@ model CardImportLoginFailure {
   @@id([userId, organization])
   @@index([lastFailedAt])
   @@map("card_import_login_failures")
+}
+
+/// 카드 승인내역 추가 인증 이어가기 1건(S8). 이어가기 토큰의 nonce 해시로 찾는다 — 토큰 재사용을 시도 3회로 막고,
+/// 결과를 받거나 끝나는 오류면 바로 지운다. 처음 조회 때 예약한 CODEF 호출 중 남은 수(callsLeft)를 들고 있다가 끝나면 돌려준다.
+/// 내용(인증번호·로그인 정보·CODEF 값) 없음. 만료된 행은 파기 배치가 지운다
+model CardImportTwoWaySession {
+  /// SHA-256(nonce) hex. nonce 원문은 암호화 토큰 안에만 있다
+  nonceHash String   @id @map("nonce_hash") @db.Char(64)
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts  Int      @default(0)
+  /// 예약한 CODEF 호출 중 남은 수
+  callsLeft Int      @map("calls_left")
+  /// 예약한 날(KST, codef_daily_usage.day)
+  budgetDay DateTime @map("budget_day") @db.Date
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([expiresAt])
+  @@map("card_import_two_way_sessions")
 }
 
 /// 서비스 전체 CODEF API 호출 수(KST 날짜별, S8). 일일 예산(CODEF_DAILY_CALL_BUDGET) 확인용. 사용자 정보 없음. 7일 지나면 파기 배치가 지운다

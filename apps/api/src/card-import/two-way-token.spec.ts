@@ -12,6 +12,7 @@ const state: TwoWayState = {
   from: '2026-11-01',
   to: '2026-11-13',
   loginRef: 'a'.repeat(64),
+  nonce: 'nonce-value',
   info: {
     jobIndex: 0,
     threadIndex: 1,

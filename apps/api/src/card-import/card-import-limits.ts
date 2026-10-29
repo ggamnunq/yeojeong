@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -12,16 +13,18 @@ import { PrismaService } from '../prisma/prisma.service.js';
 /** 서비스 전체 CODEF 일일 호출 예산 기본값(env CODEF_DAILY_CALL_BUDGET) */
 export const DEFAULT_CODEF_DAILY_CALL_BUDGET = 100;
 /**
- * 새 조회 한 번에 필요할 수 있는 최대 CODEF 호출 수: (account 모드) 계정 등록 + 조회 + 추가 인증 이어가기 + 계정 삭제 = 4.
- * 남은 예산이 이보다 적으면 새 조회를 시작하지 않는다(시작한 조회의 추가 인증·계정 삭제는 막지 않는다)
+ * 새 조회 한 번에 미리 예약하는 CODEF 호출 수 = 조회 1 + 추가 인증 이어가기 최대 3(direct),
+ * 또는 계정 등록 1 + 조회 1(account). 쓰지 않은 만큼은 조회가 끝나면 돌려준다. 계정 삭제는 예약과 무관하게 늘 보내고 따로 센다
  */
 export const CODEF_CALLS_PER_FETCH = 4;
+/** 추가 인증 이어가기 시도 상한(같은 토큰) */
+export const TWO_WAY_MAX_ATTEMPTS = 3;
 /** 조회 잠금 수명: CODEF 조회 제한 시간(30초) + 계정 삭제 재시도 + 여유. 그 안에 요청이 끝나면 바로 푼다 */
 const LOCK_TTL_MS = 3 * 60 * 1000;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 /** KST 날짜 → Prisma @db.Date 값(UTC 자정) */
-const kstDay = (now: Date) => new Date(`${kstDate(now)}T00:00:00Z`);
+export const kstDay = (now: Date) => new Date(`${kstDate(now)}T00:00:00Z`);
 /** 다음 KST 자정 */
 const nextKstMidnight = (now: Date) =>
   new Date(
@@ -47,13 +50,31 @@ const startedFetch = (userId: string, gte: Date) => ({
   details: { path: ['step'], equals: 'START' },
 });
 
+const sha256 = (value: string) =>
+  createHash('sha256').update(value).digest('hex');
+
+/** 예약한 CODEF 호출(돌려줄 때 같은 날짜로) */
+export interface BudgetReservation {
+  day: Date;
+  calls: number;
+}
+
+/** 이어가기 시도 1번(시도 수를 올리고 예약 호출 1개를 썼다) */
+export interface TwoWayAttempt {
+  nonceHash: string;
+  attempts: number;
+  callsLeft: number;
+  budgetDay: Date;
+}
+
 /**
  * 카드 승인내역 불러오기 호출 보호(S8 — CODEF 데모 키 호출 제한·카드사 계정 잠김 예방). 모두 DB 기준이라 Cloud Run 인스턴스가 여럿이어도 같다.
  * - 동시 1건: card_import_locks 행(만료 시각이 지난 행만 다시 잡힌다). 409 CARD_IMPORT_IN_PROGRESS
- * - 사용자 횟수: 접근 기록(FETCH_CARD_APPROVALS, step START)으로 10분 3회·KST 하루 10회. 429 CARD_IMPORT_RATE_LIMITED
+ * - 사용자 횟수: 접근 기록(FETCH_CARD_APPROVALS, step START)으로 10분 3회·KST 하루 10회. START 행은 잠금 안에서 CODEF 호출 전에 쓴다. 429 CARD_IMPORT_RATE_LIMITED
  * - 로그인 연속 실패: card_import_login_failures(사용자·기관). 30분 안 3회째부터 30분 429 CARD_IMPORT_LOGIN_COOLDOWN
- * - 서비스 전체 일일 예산: codef_daily_usage(KST 날짜별 CODEF API 호출 수). 남은 예산 < 4면 503 CARD_IMPORT_DAILY_LIMIT
- * 테이블에는 사용자 ID·날짜·개수·기관 코드만 둔다(내역·로그인 정보 없음).
+ * - 서비스 전체 일일 예산: codef_daily_usage(KST 날짜별). 새 조회마다 4를 원자적으로 예약(넘으면 503 CARD_IMPORT_DAILY_LIMIT), 끝나면 남은 만큼 돌려준다
+ * - 추가 인증 이어가기: card_import_two_way_sessions(토큰 nonce 해시) — 시도 3회, 결과·종료 오류면 바로 지운다
+ * 기록·카운터 쓰기 실패는 삼키지 않는다(조회를 실패시킨다 — fail closed). 테이블에는 사용자 ID·날짜·개수·기관 코드만 둔다.
  */
 @Injectable()
 export class CardImportLimits {
@@ -112,7 +133,7 @@ export class CardImportLimits {
     });
   }
 
-  /** min(사용자 남은 횟수, floor(서비스 남은 예산 / 조회 1회 최소 호출 수)). 예산이 다 떨어졌으면 0 */
+  /** min(사용자 남은 횟수, floor(서비스 남은 예산 / 조회 1회 예약 수)). 예산이 다 떨어졌으면 0 */
   async remainingToday(userId: string, now = new Date()): Promise<number> {
     const [started, calls] = await Promise.all([
       this.startedToday(userId, now),
@@ -125,7 +146,7 @@ export class CardImportLimits {
     return Math.max(0, Math.min(user, service));
   }
 
-  /** 새 조회 전: 사용자 횟수 → 로그인 쿨다운 → 서비스 예산 순서로 본다 */
+  /** 새 조회 전(잠금 안): 사용자 횟수 → 로그인 쿨다운. 예산 예약은 reserveFetch */
   async checkStart(
     userId: string,
     organization: string,
@@ -133,7 +154,6 @@ export class CardImportLimits {
   ): Promise<void> {
     await this.checkUserRate(userId, now);
     await this.checkLoginCooldown(userId, organization, now);
-    await this.checkBudget();
   }
 
   private async checkUserRate(userId: string, now: Date) {
@@ -229,17 +249,43 @@ export class CardImportLimits {
     return row?.calls ?? 0;
   }
 
-  private async checkBudget() {
-    if (this.dailyBudget - (await this.callsToday()) < CODEF_CALLS_PER_FETCH) {
+  /**
+   * 새 조회 한 번 분량(4)을 원자적으로 예약한다. 예산을 넘으면 아무것도 늘리지 않고 503.
+   * INSERT … ON CONFLICT DO UPDATE … WHERE calls + n <= budget RETURNING — 동시에 와도 예산을 넘지 않는다
+   */
+  async reserveFetch(now = new Date()): Promise<BudgetReservation> {
+    const day = kstDay(now);
+    const calls = CODEF_CALLS_PER_FETCH;
+    const rows =
+      calls > this.dailyBudget
+        ? []
+        : await this.prisma.$queryRaw<{ calls: number }[]>`
+      INSERT INTO codef_daily_usage (day, calls, updated_at)
+      VALUES (${day}::date, ${calls}, now())
+      ON CONFLICT (day) DO UPDATE
+        SET calls = codef_daily_usage.calls + EXCLUDED.calls, updated_at = now()
+        WHERE codef_daily_usage.calls + EXCLUDED.calls <= ${this.dailyBudget}
+      RETURNING calls`;
+    if (rows.length === 0) {
       this.logger.warn(
         { budget: this.dailyBudget },
         'CODEF 일일 호출 예산 소진',
       );
       throw AppException.of('CARD_IMPORT_DAILY_LIMIT');
     }
+    return { day, calls };
   }
 
-  /** CODEF API 호출 한 번을 센다(계정 삭제 포함 — 삭제는 예산과 무관하게 늘 보낸다). 실패해도 호출을 막지 않는다 */
+  /** 쓰지 않은 예약을 돌려준다(0 아래로 내려가지 않는다) */
+  async refund(day: Date, calls: number): Promise<void> {
+    if (calls <= 0) return;
+    await this.prisma.$executeRaw`
+      UPDATE codef_daily_usage
+      SET calls = GREATEST(calls - ${calls}, 0), updated_at = now()
+      WHERE day = ${day}::date`;
+  }
+
+  /** 예약과 무관하게 보내는 CODEF 호출(계정 삭제) 한 번을 센다. 삭제를 막지 않도록 실패는 로그만 */
   async recordCodefCall(now = new Date()): Promise<void> {
     try {
       await this.prisma.codefDailyUsage.upsert({
@@ -250,6 +296,105 @@ export class CardImportLimits {
     } catch {
       this.logger.warn('CODEF 호출 수를 남기지 못함');
     }
+  }
+
+  // ─── 추가 인증 이어가기 ───
+
+  /** 이어가기 1건을 연다. nonce 원문은 토큰 안에만 두고 DB에는 해시만 */
+  async openTwoWay(
+    userId: string,
+    reservation: { day: Date; callsLeft: number },
+    expiresAt: Date,
+  ): Promise<string> {
+    const nonce = randomBytes(18).toString('base64url');
+    await this.prisma.cardImportTwoWaySession.create({
+      data: {
+        nonceHash: sha256(nonce),
+        userId,
+        callsLeft: reservation.callsLeft,
+        budgetDay: reservation.day,
+        expiresAt,
+      },
+    });
+    return nonce;
+  }
+
+  /**
+   * 이어가기 시도 1번: 시도 수 +1, 예약 호출 −1을 원자적으로. 없는 토큰·다른 사용자·만료·시도 3회 초과·예약 소진이면 410
+   */
+  async consumeTwoWay(
+    userId: string,
+    nonce: string,
+    now = new Date(),
+  ): Promise<TwoWayAttempt> {
+    const nonceHash = sha256(nonce);
+    const rows = await this.prisma.$queryRaw<
+      { attempts: number; calls_left: number; budget_day: Date }[]
+    >`
+      UPDATE card_import_two_way_sessions
+      SET attempts = attempts + 1, calls_left = calls_left - 1
+      WHERE nonce_hash = ${nonceHash}
+        AND user_id = ${userId}::uuid
+        AND expires_at > ${now}
+        AND attempts < ${TWO_WAY_MAX_ATTEMPTS}
+        AND calls_left > 0
+      RETURNING attempts, calls_left, budget_day`;
+    const row = rows[0];
+    if (!row) throw AppException.of('CARD_TWO_WAY_EXPIRED');
+    return {
+      nonceHash,
+      attempts: row.attempts,
+      callsLeft: row.calls_left,
+      budgetDay: row.budget_day,
+    };
+  }
+
+  /** 이어가기를 끝낸다(결과·종료 오류·시도 소진): 행을 지우고 남은 예약을 돌려준다 */
+  async closeTwoWay(nonceHash: string): Promise<void> {
+    const rows = await this.prisma.$queryRaw<
+      { calls_left: number; budget_day: Date }[]
+    >`
+      DELETE FROM card_import_two_way_sessions WHERE nonce_hash = ${nonceHash}
+      RETURNING calls_left, budget_day`;
+    const row = rows[0];
+    if (row) await this.refund(row.budget_day, row.calls_left);
+  }
+
+  // ─── 접근 기록(사용자 횟수의 기준) ───
+
+  /**
+   * 조회 시도 기록을 CODEF 호출 전에 쓴다(잠금 안 — 사용자 횟수의 기준). 실패하면 조회를 하지 않는다(fail closed).
+   * 결과(건수·결과 코드)는 끝난 뒤 finishAttempt로 채운다
+   */
+  async recordAttempt(
+    userId: string,
+    organization: string,
+    step: 'START' | 'TWO_WAY',
+  ): Promise<string> {
+    const row = await this.prisma.accessLog.create({
+      data: {
+        userId,
+        action: 'FETCH_CARD_APPROVALS',
+        resourceType: 'USER',
+        resourceId: userId,
+        details: { organization, count: 0, result: 'PENDING', step },
+      },
+      select: { id: true },
+    });
+    return row.id;
+  }
+
+  async finishAttempt(
+    id: string,
+    details: {
+      organization: string;
+      count: number;
+      result: string;
+      step: string;
+    },
+  ): Promise<void> {
+    await this.prisma.accessLog.update({ where: { id }, data: { details } });
+    this.logger.log({ accessLogId: id, details }, '접근 기록');
   }
 }
 
