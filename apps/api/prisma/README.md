@@ -100,14 +100,15 @@ Prisma 스키마로 표현할 수 없는 제약은 마이그레이션 SQL 끝에
   2. 코드 배포: 새 컬럼을 읽고 쓰는 코드를 배포한다.
   3. contract: 다음 배포에서 옛 컬럼을 지우거나 제약을 건다.
 
-### 동의 기록 IP: 평문 → HMAC (진행 중)
+### 동의 기록 IP: 평문 → HMAC (완료)
 
-`user_consents.ip`(inet 평문)를 `ip_hash`(HMAC-SHA256, 키 `AUDIT_HMAC_KEY` = Secret Manager `yeojeong-audit-hmac-key`, 접근 기록과 같은 키)로 옮긴다.
+`user_consents.ip`(inet 평문)를 `ip_hash`(HMAC-SHA256, 키 `AUDIT_HMAC_KEY` = Secret Manager `yeojeong-audit-hmac-key`, 접근 기록과 같은 키)로 옮겼다.
 
-1. expand (`20261029000003_consent_ip_hash_expand`, 완료): `ip_hash` 추가, `ip`의 `NOT NULL` 해제. 새 코드는 `ip_hash`만 쓰고 `ip`는 비운다. 옛 리비전은 계속 `ip`를 쓸 수 있다.
-2. 이관: 내부 잡 `POST /api/internal/jobs/consent-ip-backfill`(`@InternalJob()`, 멱등, 500행 배치 × 최대 20회)이 평문을 해시로 옮기고 `ip`를 NULL로 지운다. 응답 `{ hashed, remaining }`. 파기 배치의 `CONSENT_IP_PLAINTEXT` 단계도 매일 같은 일을 해서 배포 중 옛 리비전이 쓴 평문까지 잡는다. 키가 없으면 평문을 지우지 않는다(`skipped: 'NO_KEY'`).
-3. 확인: 배포 후 잡을 한 번 돌리고 평문이 0건인지 본다 — 잡 응답의 `remaining: 0`, 또는 Cloud Logging의 `동의 기록 IP 이관` 로그(`remaining`)와 파기 배치 드라이런의 `CONSENT_IP_PLAINTEXT` 건수(`scripts/prisma-prod.sh`는 임의 SQL을 막는다). 옛 리비전이 더는 트래픽을 받지 않는 것도 확인한다.
-4. contract (별도 PR): 0건 확인 뒤 `drop_user_consents_ip` 마이그레이션으로 `ip` 컬럼을 지우고, 스키마의 `ip` 필드·이관 잡·파기 배치 `CONSENT_IP_PLAINTEXT` 단계·shared `ConsentIpBackfillResult`를 함께 지운다. 이 PR 배포 전에 다시 한 번 0건을 확인한다(옛 리비전이 아직 `ip`를 쓰면 DROP 뒤 그 리비전의 동의 저장이 실패한다).
+1. expand (`20261029000003_consent_ip_hash_expand`, #33): `ip_hash` 추가, `ip`의 `NOT NULL` 해제. 새 코드는 `ip_hash`만 썼다.
+2. 이관: 내부 잡 `consent-ip-backfill`과 파기 배치 `CONSENT_IP_PLAINTEXT` 단계가 평문을 해시로 옮기고 지웠다.
+3. 확인: 운영 파기 배치 수동 실행에서 `CONSENT_IP_PLAINTEXT` count = 0, hasMore = false.
+4. contract (`20261029010003_drop_user_consents_ip`, S4): `ip` 컬럼 DROP. 이관 잡·파기 단계·shared `ConsentIpBackfillResult`·`PurgeStep.CONSENT_IP_PLAINTEXT`도 함께 지웠다(Cloud Scheduler에는 이 잡이 없었다).
+   - 하위 호환: 마이그레이션 적용 뒤 잠시 트래픽을 받는 옛 리비전(#33)의 요청 경로는 `ip`를 읽거나 쓰지 않는다(2026-10-29 로컬 쿼리 로그로 확인 — `createMany`는 넘긴 컬럼만 INSERT, 나머지는 `select` 지정·`updateMany`·`count`·`deleteMany`). `ip`를 쓰는 것은 옛 리비전의 이관 잡(수동)과 파기 배치 `CONSENT_IP_PLAINTEXT` 단계(04:00 KST)뿐이라, 그 창에 파기 배치가 옛 리비전에서 돌면 그 단계에서 500으로 끝나고 Scheduler 재시도가 새 리비전에서 다시 돈다.
 
 ## 롤백
 

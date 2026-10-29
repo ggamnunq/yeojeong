@@ -112,7 +112,6 @@ export async function createSignupConsents(db: Db, userId: string) {
         consentId,
         version: doc?.version ?? '0.1-draft',
         agreed: consentId !== 'MARKETING',
-        ip: '203.0.113.7',
         ua: 'yeojeong-e2e',
         screen: 'WF-04',
         method: 'ALL',

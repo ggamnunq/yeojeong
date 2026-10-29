@@ -282,9 +282,6 @@ model UserConsent {
   /// 선택 항목 미동의도 false로 기록
   agreed          Boolean
   agreedAt        DateTime  @default(now()) @map("agreed_at") @db.Timestamptz
-  /// 폐기 예정(expand 단계): 예전 리비전이 남긴 접속 IP 평문. 새 코드는 쓰지 않고, 이관 잡이 ipHash로 옮긴 뒤 NULL로 지운다.
-  /// 운영에서 0건을 확인한 뒤 contract 마이그레이션으로 컬럼을 지운다(prisma/README.md "동의 기록 IP").
-  ip              String?   @db.Inet
   /// 동의 시 접속 IP(origin lock이 넘긴 클라이언트 IP)의 HMAC-SHA256 hex(AUDIT_HMAC_KEY). 키가 없으면 NULL
   ipHash          String?   @map("ip_hash") @db.Char(64)
   /// User-Agent 512자 자름

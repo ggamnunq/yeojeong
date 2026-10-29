@@ -146,7 +146,7 @@ documents() {}
 - 운영은 Cloud Scheduler가 Cloud Run URL을 직접 호출하며, `Authorization: Bearer <OIDC ID token>`의 Google JWKS 서명·`aud`·서비스 계정 `email`을 검증한다. `INTERNAL_JOB_OIDC_AUDIENCE`와 `INTERNAL_JOB_OIDC_SERVICE_ACCOUNT`가 정확히 일치해야 한다.
 - 로컬·테스트만 `x-internal-job-secret` = `INTERNAL_JOB_SECRET`(32자 이상)을 대체 인증으로 허용한다. `NODE_ENV=production`에서는 이 헤더를 무시한다.
 - `/api/internal/`은 Cloudflare origin lock을 건너뛴다. 이 경로의 인증 경계는 `@InternalJob()` 가드다.
-- 내부 잡 목록(모두 `POST`, 본문 `{}`): `auto-end`(5분), `sync`(10분, 결제 동기화), `fx`(11:10·17:10), `settlements`(매시 15분), `purge`(04:00) — Cloud Scheduler `yeojeong-<이름>`(`infra/envs/prod/scheduler.tf`). `consent-ip-backfill`은 Scheduler 잡 없이 수동으로 부르는 일회성 이관 잡이다(파기 배치가 같은 일을 매일 한다, `prisma/README.md` "동의 기록 IP").
+- 내부 잡 목록(모두 `POST`, 본문 `{}`): `auto-end`(5분), `sync`(10분, 결제 동기화), `fx`(11:10·17:10), `settlements`(매시 15분), `purge`(04:00) — Cloud Scheduler `yeojeong-<이름>`(`infra/envs/prod/scheduler.tf`).
 
 ### 외부 서버 콜백 (`@ExternalWebhook()`)
 

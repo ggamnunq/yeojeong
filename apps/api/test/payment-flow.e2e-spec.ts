@@ -165,7 +165,6 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
           consentId,
           version: 'test',
           agreed: true,
-          ip: '127.0.0.1',
           ua: 'vitest',
           screen: 'WF-05',
           method: 'ALL',
