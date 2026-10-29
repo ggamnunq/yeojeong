@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
+import { AuditService } from '../audit/index.js';
 import { AppException } from '../common/errors/index.js';
 import {
   normalizeMerchantKey,
@@ -88,6 +89,7 @@ interface UserMethod {
   last4: string;
   connection: {
     id: string;
+    provider: string;
     status: string;
     accessTokenEnc: Uint8Array | null;
     refreshTokenEnc: Uint8Array | null;
@@ -109,6 +111,7 @@ export class OutOfPeriodLookupService {
     private readonly adapter: PaymentProviderAdapter,
     private readonly cipher: TokenCipher,
     private readonly sync: SyncService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(
@@ -122,6 +125,7 @@ export class OutOfPeriodLookupService {
     const rows = await this.fetch(userId, methods, range, now);
     const byMethod = new Map(methods.map((method) => [method.id, method]));
     const inTrip = await this.refsInTrip(userId, tripId);
+    const detached = await this.detachedInTrip(tripId, rows, byMethod);
     const cancelled = await this.fullyCancelled(userId, rows);
     const duplicates = this.sameUserDuplicates(rows, byMethod);
 
@@ -130,6 +134,7 @@ export class OutOfPeriodLookupService {
         (row) =>
           row.item.kind === 'APPROVAL' &&
           !inTrip.has(`${row.paymentMethodId}:${row.externalRef}`) &&
+          !detached.has(row.id) &&
           !cancelled.has(row.id) &&
           !duplicates.has(row.id),
       )
@@ -337,6 +342,7 @@ export class OutOfPeriodLookupService {
         connection: {
           select: {
             id: true,
+            provider: true,
             status: true,
             accessTokenEnc: true,
             refreshTokenEnc: true,
@@ -524,6 +530,37 @@ export class OutOfPeriodLookupService {
       );
     });
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  /**
+   * 결제수단 전부 해제로 원본 거래를 지웠지만 공동 결제로 이 여정에 남아 있는 거래(Expense.sourceTxHash).
+   * 다시 연결한 뒤 같은 거래를 후보로 다시 보여 주지 않는다(기능명세 4-10 v0.5.7).
+   */
+  private async detachedInTrip(
+    tripId: string,
+    rows: readonly Row[],
+    byMethod: ReadonlyMap<string, UserMethod>,
+  ): Promise<Set<string>> {
+    const hashOf = new Map<string, string>();
+    for (const row of rows) {
+      const provider = byMethod.get(row.paymentMethodId)?.connection.provider;
+      const hash = provider
+        ? this.audit.sourceTxHash(provider, row.externalRef)
+        : null;
+      if (hash) hashOf.set(row.id, hash);
+    }
+    if (hashOf.size === 0) return new Set();
+    const known = new Set(
+      (
+        await this.prisma.expense.findMany({
+          where: { tripId, sourceTxHash: { in: [...hashOf.values()] } },
+          select: { sourceTxHash: true },
+        })
+      ).map((e) => e.sourceTxHash),
+    );
+    return new Set(
+      [...hashOf].filter(([, hash]) => known.has(hash)).map(([id]) => id),
+    );
   }
 
   private async refsInTrip(

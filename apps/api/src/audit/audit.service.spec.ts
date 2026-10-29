@@ -35,6 +35,24 @@ describe('AuditService', () => {
     expect(() => setup({ AUDIT_HMAC_KEY: 'short' })).toThrow(/32자/);
   });
 
+  it('requires the key in production only', () => {
+    expect(() => setup({ NODE_ENV: 'production' })).toThrow(/AUDIT_HMAC_KEY/);
+    expect(() =>
+      setup({ NODE_ENV: 'production', AUDIT_HMAC_KEY: KEY }),
+    ).not.toThrow();
+    expect(() => setup({ NODE_ENV: 'development' })).not.toThrow();
+  });
+
+  it('hashes provider + transaction ref for Expense.sourceTxHash (null without a key)', () => {
+    const withKey = setup({ AUDIT_HMAC_KEY: KEY }).service;
+    const hash = withKey.sourceTxHash('TOSS', 'tx-1');
+    expect(hash).toBe(
+      createHmac('sha256', KEY).update('source-tx:TOSS:tx-1').digest('hex'),
+    );
+    expect(withKey.sourceTxHash('DEMO', 'tx-1')).not.toBe(hash);
+    expect(setup().service.sourceTxHash('TOSS', 'tx-1')).toBeNull();
+  });
+
   it('stores only IDs, the action and the IP hash', async () => {
     const { service, create } = setup({ AUDIT_HMAC_KEY: KEY });
     await expect(

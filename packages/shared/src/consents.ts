@@ -140,4 +140,15 @@ export interface ConsentRequirement {
 export interface ConsentRequiredDetails extends Record<string, unknown> {
   missing: ConsentId[];
   required: ConsentRequirement[];
+  /**
+   * 동의 외의 이유가 있을 때만. `NO_ACTIVE_PAYMENT_METHOD` = 결제자의 활성 결제수단이 0개라(결제수단 전부 해제 → 연동 동의 철회)
+   * 공개를 넓히는 변경(PENDING·PERSONAL → SHARED, 부담 인원 추가)을 받을 수 없다. 다시 연결하면 풀린다(기능명세 4-10 v0.5.7)
+   */
+  reason?: ConsentRequiredReason;
 }
+
+export const CONSENT_REQUIRED_REASON_VALUES = [
+  'NO_ACTIVE_PAYMENT_METHOD',
+] as const;
+export type ConsentRequiredReason =
+  (typeof CONSENT_REQUIRED_REASON_VALUES)[number];

@@ -8,6 +8,7 @@ import {
   SIGNUP_REQUIRED_CONSENTS,
   type ConsentId,
   type ConsentRequiredDetails,
+  type ConsentRequiredReason,
   type ConsentRequirement,
   type MemberRole,
 } from '@yeojeong/shared';
@@ -153,10 +154,14 @@ export class ConsentGuard implements CanActivate {
   }
 }
 
-export function consentRequired(required: ConsentRequirement[]) {
+export function consentRequired(
+  required: ConsentRequirement[],
+  reason?: ConsentRequiredReason,
+) {
   const details: ConsentRequiredDetails = {
     missing: required.map((item) => item.id),
     required,
+    ...(reason && { reason }),
   };
   return AppException.of('CONSENT_REQUIRED', { details });
 }

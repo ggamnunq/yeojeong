@@ -132,7 +132,10 @@ export class ConsentsService {
   }
 
   /**
-   * 동의 이력 행. 같은 (사용자, 항목, 버전)이 이미 있으면 건너뛴다(append-only, 수정하지 않는다).
+   * 동의 이력 행을 쌓는다(append-only, 기존 행은 고치지 않는다 — 기능명세 4-10 v0.5.7).
+   * - 같은 (사용자, 항목, 버전)에 유효한 행(agreed이고 철회되지 않음)이 이미 있으면 건너뛴다.
+   *   DB의 부분 유니크 user_consents_active_key(WHERE agreed AND withdrawn_at IS NULL)가 skipDuplicates의 기준이라 동시 요청도 한 행만 남는다.
+   * - 철회된 행만 있으면(예: 결제수단 전부 해제로 FIN_LINK·FIN_PRIVACY 철회) 새 행을 추가한다. 철회 기록(withdrawnAt)은 그대로 남아 "철회 후 3년" 보존 대상이 된다.
    * 접속 IP는 평문으로 남기지 않고 HMAC(AUDIT_HMAC_KEY)만 남긴다. 키가 없으면 ipHash도 NULL이다.
    */
   async record(

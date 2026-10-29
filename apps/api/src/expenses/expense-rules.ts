@@ -223,6 +223,19 @@ export function planClassification(
   };
 }
 
+/**
+ * 공개를 넓히는 변경인가: PENDING·PERSONAL → SHARED, 또는 SHARED에서 부담 인원에 새 멤버를 넣는 변경.
+ * 인원을 줄이기만 하는 변경과 공동 → 개인은 아니다. 결제자의 활성 결제수단이 0개면 이 변경을 막는다(기능명세 4-10 v0.5.7).
+ */
+export function expandsSharing(
+  plan: ClassificationPlan,
+  currentParticipantIds: readonly string[],
+): boolean {
+  if (plan.kind !== 'CHANGE' || plan.nextStatus !== 'SHARED') return false;
+  if (plan.becomesShared) return true;
+  return plan.participantIds.some((id) => !currentParticipantIds.includes(id));
+}
+
 // ─── 부담 인원(4-3) ───
 
 export interface GroupMember {

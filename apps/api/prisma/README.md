@@ -75,6 +75,8 @@ Prisma 스키마로 표현할 수 없는 제약은 마이그레이션 SQL 끝에
 | `payment_methods_*_check`              | `masked_number`에 `*` 포함, `last4`는 숫자 2~4자리                                                  |
 | `expenses_*_check`                     | 부모(환불 자식이 아닌 행)만 `net_krw_amount` NOT NULL·≥ 0, 통화 형식                               |
 | `expense_shares`, `exchange_rates`, `settlements`, `settlement_transfers` | 금액·환율 ≥ 0 또는 > 0, 송금 권장안 from ≠ to |
+| `user_consents_active_key`             | 부분 유니크: `(user_id, consent_id, version) WHERE agreed AND withdrawn_at IS NULL`. 철회된 동의와 같은 버전으로 다시 동의하면 새 행을 쌓는다(기능명세 4-10 v0.5.7). 유효 판정은 버전별 최신 행(`common/auth/consent-checker.ts`) |
+| `expenses_source_tx_hash_check`        | `source_tx_hash`는 hex 64자(HMAC). 결제수단 전부 해제 뒤 재인입 방지 키 |
 | `user_consents_*_check`, `consent_documents_*_check`, `account_deletions_channel_check` | screen·method·withdraw_channel·change_type·channel 허용 값, doc_hash·ip_hash 형식 |
 
 ## 배포 흐름

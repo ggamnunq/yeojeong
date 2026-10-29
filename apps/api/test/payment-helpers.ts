@@ -88,22 +88,26 @@ function eventEmitterIfMissing(): DynamicModule[] {
 export async function createPaymentTestApp(options: {
   auth: TestAuth;
   prisma?: object | 'real';
+  /** 실DB의 동의 이력·멤버십으로 판정한다(스텁 대신). 로그인만 스텁이다 */
+  realGuards?: boolean;
 }): Promise<{ app: NestExpressApplication; adapter: FaultyDemoAdapter }> {
   let builder = Test.createTestingModule({
     imports: [AppModule, ...eventEmitterIfMissing()],
   })
     .overrideProvider(SessionResolver)
-    .useValue(options.auth.sessions)
-    .overrideProvider(ConsentChecker)
-    .useValue(options.auth.consents)
-    .overrideProvider(MembershipLookup)
-    .useValue(options.auth.memberships)
-    .overrideProvider(PaymentProviderAdapter)
-    .useFactory({
-      factory: (prisma: PrismaService) =>
-        new FaultyDemoAdapter(new DemoTossAdapter(prismaDemoAnchor(prisma))),
-      inject: [PrismaService],
-    });
+    .useValue(options.auth.sessions);
+  if (!options.realGuards) {
+    builder = builder
+      .overrideProvider(ConsentChecker)
+      .useValue(options.auth.consents)
+      .overrideProvider(MembershipLookup)
+      .useValue(options.auth.memberships);
+  }
+  builder = builder.overrideProvider(PaymentProviderAdapter).useFactory({
+    factory: (prisma: PrismaService) =>
+      new FaultyDemoAdapter(new DemoTossAdapter(prismaDemoAnchor(prisma))),
+    inject: [PrismaService],
+  });
   if (options.prisma !== 'real') {
     builder = builder
       .overrideProvider(PrismaService)

@@ -25,19 +25,27 @@ function matches(
   });
 }
 
+/** 유니크 키. where가 있으면 부분 유니크(그 조건을 만족하는 행끼리만 비교) */
+type UniqueKey = string[] | { keys: string[]; where: (row: Row) => boolean };
+
 class Table {
   readonly rows: Row[] = [];
 
   constructor(
     private readonly defaults: () => Record<string, unknown> = () => ({}),
-    private readonly unique: string[][] = [],
+    private readonly unique: UniqueKey[] = [],
   ) {}
 
   private assertUnique(row: Row) {
-    for (const keys of this.unique) {
+    for (const key of this.unique) {
+      const keys = Array.isArray(key) ? key : key.keys;
+      const where = Array.isArray(key) ? () => true : key.where;
       if (keys.some((k) => row[k] === null || row[k] === undefined)) continue;
+      if (!where(row)) continue;
       if (
-        this.rows.some((r) => r !== row && keys.every((k) => r[k] === row[k]))
+        this.rows.some(
+          (r) => r !== row && where(r) && keys.every((k) => r[k] === row[k]),
+        )
       ) {
         throw Object.assign(new Error('Unique constraint failed'), {
           code: 'P2002',
@@ -182,7 +190,13 @@ export function createFakeAuthPrisma() {
           withdrawnAt: null,
           withdrawChannel: null,
         }),
-        [['userId', 'consentId', 'version']],
+        // 마이그레이션 20261029010000의 부분 유니크 user_consents_active_key
+        [
+          {
+            keys: ['userId', 'consentId', 'version'],
+            where: (row) => row.agreed === true && row.withdrawnAt === null,
+          },
+        ],
       ),
     ),
     consentDocument: pick(new Table(() => ({}), [['consentId', 'version']])),

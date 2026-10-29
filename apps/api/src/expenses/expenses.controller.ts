@@ -7,9 +7,11 @@ import {
   Post,
   Put,
   Query,
+  Res,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -21,6 +23,7 @@ import type {
   ExpenseListResponse,
   OutOfPeriodCandidate,
 } from '@yeojeong/shared';
+import type { Response } from 'express';
 import {
   CurrentMembership,
   RequireTripStatus,
@@ -115,7 +118,11 @@ export class ExpensesController {
     'PARTICIPANTS_REQUIRED',
     'PARTICIPANT_NOT_MEMBER',
   )
-  @ApiErrorResponse(403, 'NOT_PAYER')
+  @ApiNoContentResponse({
+    description:
+      '결제자의 활성 결제수단이 0개(연동 동의 철회)일 때 공동 → 개인: 개인 결제로 남기지 않고 지웠다',
+  })
+  @ApiErrorResponse(403, 'NOT_PAYER', 'CONSENT_REQUIRED')
   @ApiErrorResponse(
     409,
     'EXPENSE_LOCKED',
@@ -129,13 +136,20 @@ export class ExpensesController {
   })
   @RequireTripStatus('ONGOING', { code: 'EXPENSE_LOCKED' })
   @Put('expenses/:expenseId/classification')
-  classify(
+  async classify(
     @Param('tripId') tripId: string,
     @Param('expenseId') expenseId: string,
     @CurrentMembership() me: MembershipContext,
     @Body() body: ClassifyExpenseDto,
-  ): Promise<ExpenseDetailResponse> {
-    return this.command.classify(tripId, me, expenseId, body);
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<ExpenseDetailResponse | undefined> {
+    const result = await this.command.classify(tripId, me, expenseId, body);
+    if (result === null) {
+      // 결제자의 활성 결제수단이 0개라 공동 → 개인 대신 결제를 지웠다
+      res.status(204);
+      return undefined;
+    }
+    return result;
   }
 
   @ApiOperation({

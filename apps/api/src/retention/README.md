@@ -86,6 +86,7 @@ detail() {}
 ```
 
 - 라우트 밖(서비스 트랜잭션 안, 잡)에서는 `AuditService.record({ userId, action, resourceType, resourceId, ip }, tx?)`.
+- 숫자 요약이 필요하면 `details`(jsonb, 예: 파기 건수 `{ expenses, transactions, paymentMethods, detachedShared }`)를 넘긴다. 숫자만 넣는다. 서버 전용 행동은 `audit-actions.ts`에 있다: `PURGE_FINANCIAL_DATA`(결제수단 전부 해제·결제수단 0개일 때 공동 → 개인 삭제), `KAKAO_UNLINKED`(카카오 연결 끊기 알림).
 - 행동은 shared `AccessAction`을 사용한다.
 - 남기는 것: userId, action, resourceType, resourceId(UUID가 아니면 NULL), `ipHash`(HMAC-SHA256, `AUDIT_HMAC_KEY` 없으면 NULL), 시각. 금액·가맹점·닉네임·IP 원문은 남기지 않는다.
 - requestId·user-agent는 테이블에 칸이 없어 같은 요청의 애플리케이션 로그 `접근 기록`(`accessLogId`, requestId 자동)으로 잇는다. 요청 로그 줄에 ip·userAgent가 있다.
@@ -96,7 +97,7 @@ detail() {}
 | 이름                  | 필수         | 설명                                                         |
 | --------------------- | ------------ | ------------------------------------------------------------ |
 | `INTERNAL_JOB_SECRET` | 잡을 부를 때 | 32자 이상. 비우면 내부 잡 전부 403                           |
-| `AUDIT_HMAC_KEY`      | 아니오       | 32자 이상. 접근 기록·동의 기록 IP 해시 키. 없으면 `ipHash` NULL(운영은 Secret Manager `yeojeong-audit-hmac-key`) |
+| `AUDIT_HMAC_KEY`      | 운영 필수    | 32자 이상. 접근 기록·동의 기록 IP 해시와 공동 결제 `sourceTxHash` 키. 운영(`NODE_ENV=production`)에서 없으면 부팅을 멈춘다. 로컬·테스트에서 없으면 `ipHash`·`sourceTxHash` NULL(운영은 Secret Manager `yeojeong-audit-hmac-key`) |
 | `USER_REF_HMAC_KEY`   | 아니오       | 동의 이력이 없는 회원의 `userRefHash` 계산용(auth와 같은 키) |
 
 ## 테스트

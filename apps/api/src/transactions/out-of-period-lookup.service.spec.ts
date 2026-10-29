@@ -68,6 +68,7 @@ function fixture() {
     adapter as never,
     cipher as never,
     sync as never,
+    { sourceTxHash: vi.fn(() => null) } as never,
   );
   return { service, prisma, adapter, sync };
 }

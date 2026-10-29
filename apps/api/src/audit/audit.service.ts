@@ -19,6 +19,8 @@ export interface AuditEntry {
   ip?: string | null;
   requestId?: string | null;
   ua?: string | null;
+  /** 건수 같은 숫자 요약만(예: 파기 건수). 금액·가맹점·개인정보는 넣지 않는다 */
+  details?: Readonly<Record<string, number>> | null;
 }
 
 type AccessLogWriter = Pick<Prisma.TransactionClient, 'accessLog'>;
@@ -40,6 +42,10 @@ export class AuditService {
     if (key && key.length < MIN_KEY_LENGTH) {
       throw new Error(`AUDIT_HMAC_KEY는 ${MIN_KEY_LENGTH}자 이상이어야 합니다`);
     }
+    // 운영은 Secret Manager(yeojeong-audit-hmac-key)에서 늘 주입된다. 빠지면 IP·거래 해시를 남기지 못하므로 부팅을 멈춘다
+    if (!key && config.get<string>('NODE_ENV') === 'production') {
+      throw new Error('AUDIT_HMAC_KEY가 필요합니다(운영)');
+    }
     this.ipKey = key;
   }
 
@@ -55,6 +61,18 @@ export class AuditService {
   hashIp(ip: string | null | undefined): string | null {
     if (!this.ipKey || !ip || isIP(ip) === 0) return null;
     return createHmac('sha256', this.ipKey).update(ip).digest('hex');
+  }
+
+  /**
+   * 공동 결제가 어느 제공자 거래에서 왔는지 남기는 값(Expense.sourceTxHash, hex 64자).
+   * HMAC-SHA256(AUDIT_HMAC_KEY, "제공자:거래 ID"). 결제수단 전부 해제로 거래 원본을 지워도(transactionId = NULL)
+   * 다시 연결한 뒤 같은 거래가 새 미확정으로 들어오지 않게 인입이 이 값으로 건너뛴다. 키가 없으면 NULL(건너뛰기 없음, 로컬·테스트만).
+   */
+  sourceTxHash(provider: string, externalRef: string): string | null {
+    if (!this.ipKey || !provider || !externalRef) return null;
+    return createHmac('sha256', this.ipKey)
+      .update(`source-tx:${provider}:${externalRef}`)
+      .digest('hex');
   }
 
   /**
@@ -75,6 +93,7 @@ export class AuditService {
         ipHash: this.hashIp(entry.ip),
         requestId: entry.requestId?.slice(0, 128) ?? null,
         ua: entry.ua?.slice(0, 512) ?? null,
+        ...(entry.details && { details: { ...entry.details } }),
       },
       select: { id: true },
     });
@@ -84,6 +103,7 @@ export class AuditService {
         action: entry.action,
         resourceType: entry.resourceType,
         resourceId,
+        ...(entry.details && { details: entry.details }),
       },
       '접근 기록',
     );

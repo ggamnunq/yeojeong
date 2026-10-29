@@ -6,6 +6,10 @@ import { ACCESS_ACTION_VALUES } from '@yeojeong/shared';
  */
 export const AUDIT_ACTION_VALUES = [
   ...ACCESS_ACTION_VALUES,
+  /** 활성 결제수단이 0개가 되어 연동 동의(FIN_LINK·FIN_PRIVACY)를 철회하고 개인·미확정 결제를 파기했다. details = 파기 건수 */
+  'PURGE_FINANCIAL_DATA',
+  /** 카카오 쪽 "연결 끊기" 알림을 받아 세션을 폐기했다(기능명세 7-1, 미결 Q-32 기본안) */
+  'KAKAO_UNLINKED',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTION_VALUES)[number];
 
