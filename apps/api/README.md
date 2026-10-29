@@ -264,7 +264,7 @@ throw new NotFoundError();
 - 금액, 카드·계좌번호, 거래 내역, 이메일, 전화번호, 토큰은 로그에 넣지 않는다. 필요하면 ID만 남긴다.
 - 개인정보를 URL 경로나 쿼리에 넣지 않는다(경로는 로그에 남는다).
 - 요청 ID는 서버가 요청마다 UUID v4로 만든다. 클라이언트가 보낸 `x-request-id`는 쓰지 않는다.
-- 화면에서 난 오류는 `POST /api/client-errors`(`src/client-errors`)가 error 레벨 `event=client_error` 한 줄로 남긴다(경로 템플릿·가린 메시지·스택 파일 이름, 로그인 사용자는 HMAC `userRef`). 필터 예시는 [docs/ops/client-errors.md](../../docs/ops/client-errors.md).
+- 화면에서 난 오류는 `POST /api/client-errors`(`src/client-errors`)가 warn 레벨(WARNING) `event=client_error` 한 줄로 남긴다. 서버 장애 알림에서는 이 이벤트를 뺀다(경로 템플릿·가린 메시지·스택 파일 이름, 로그인 사용자는 처리방침 0.3 시행(2026-11-07 00:00 KST)부터 HMAC `userRef`, 그 전에는 `loggedIn`만). 필터 예시는 [docs/ops/client-errors.md](../../docs/ops/client-errors.md).
 
 ## Swagger
 

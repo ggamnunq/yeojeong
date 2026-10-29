@@ -23,7 +23,7 @@
 
 - 탭이 백그라운드에 **30분 넘게** 있다 돌아오면(`visibilitychange`, bfcache `pageshow`) `/version.json`을 봅니다.
 - 다르면 **다음 라우트 이동 때** 전체 새로고침합니다(이동한 주소 그대로 다시 불러옴). 바로 새로고침하지 않습니다.
-- 그 이동에서 넘기는 경우(다음 이동을 기다림): 사용자가 입력한 값이 남은 칸이 이동 뒤에도 화면에 있을 때, 이동에 화면 상태(`location.state` — 카드 불러오기 단계 등)가 실렸을 때, 화면에 `data-no-auto-reload` 속성이 있을 때. 진행 중인 흐름이 새로고침으로 끊기면 안 되는 화면은 이 속성을 붙입니다.
+- 그 이동에서 넘기는 경우(다음 이동을 기다림): 사용자가 입력한 값이 남은 칸이 이동 뒤에도 화면에 있을 때, 저장 요청(뮤테이션)이 진행 중일 때(`queryClient.isMutating() > 0`), 이동에 화면 상태(`location.state` — 카드 불러오기 단계 등)가 실렸을 때, 화면에 `data-no-auto-reload` 속성이 있을 때. 진행 중인 흐름이 새로고침으로 끊기면 안 되는 화면은 이 속성을 붙입니다.
 - 같은 빌드 ID로는 탭마다 한 번만 새로고침합니다(`sessionStorage yj:stale-reload:for`). 배포 전파가 늦어도 무한 반복하지 않습니다.
 - `vite:preloadError`의 기본 동작(에러를 던짐)은 막지 않습니다. 에러 경계가 「새로고침」을 보여 줍니다.
 
@@ -36,12 +36,12 @@
 | 필드 | 내용 |
 | --- | --- |
 | `buildId` | 이 탭의 빌드 ID |
-| `route` | 경로 템플릿(`/trips/:tripId/payments/:expenseId`). 실제 ID·쿼리·해시는 없습니다. 없는 화면은 `/*`, 모르면 `(unknown)` |
+| `route` | 경로 템플릿(`/trips/:tripId/payments/:expenseId`). 실제 ID·쿼리·해시(초대코드 `#code=` 포함)는 없습니다 — 화면은 라우트 정의로만 만들고, 서버는 `?`·`#`가 든 값을 400으로 거절하고 UUID·숫자열을 한 번 더 가립니다. 없는 화면은 `/*`, 모르면 `(unknown)` |
 | `source` | `boundary` · `window` · `promise` |
 | `name` | 에러 이름(`TypeError` 등, 형식이 이상하면 `Error`) |
 | `message` | 가린 메시지 500자: URL은 파일 이름만, 쿼리·해시 값, 큰따옴표 안 문자열, 이메일, UUID, 카드 번호(13~19자리), 4자리 이상 숫자열, 초대코드 모양, 긴 토큰을 가립니다 |
 | `stack` | 앞 8줄의 `파일이름:줄:열`. 함수 이름·경로·쿼리는 빼고, 다른 origin(확장 프로그램 등)은 `(external)` |
-| `userAgent` | 원문이 아니라 `Safari 18 / iOS 18`, `KakaoTalk / iOS 17`, `Chrome 141 WebView / Android 14` 같은 요약 |
+| `userAgent` | 원문이 아니라 브라우저 종류·주버전 + OS 종류만: `Safari 18 / iOS`, `KakaoTalk / iOS`, `Chrome 141 WebView / Android`. OS 버전·세부 버전·기기 모델·빌드 문자열은 싣지 않습니다(지문 최소화). 서버도 같은 수준으로 다시 맞춥니다(모르는 이름은 `other`) |
 | `chunk` | chunk 실패인지 |
 | `staleBuild` | 배포된 빌드와 다른지(확인하지 못했으면 없음) |
 
@@ -49,17 +49,18 @@
 
 **서버**(`apps/api/src/client-errors`):
 
-- 로그인 없이 열려 있습니다(`@Public`). 로그인 상태면 `userId` 대신 `userRef` = HMAC-SHA256(`USER_REF_HMAC_KEY`, `client-error:v1:<userId>`) 앞 16자. 동의 기록의 `userRefHash`와 일부러 다르게 만들어 로그만으로는 DB 기록과 잇지 못합니다.
+- 로그인 없이 열려 있습니다(`@Public`). 로그인 상태면 `userId` 대신 `userRef` = HMAC-SHA256(`USER_REF_HMAC_KEY`, `client-error:v1:<userId>`) 앞 16자. 동의 기록의 `userRefHash`와 일부러 다르게 만들어 로그만으로는 DB 기록과 잇지 못합니다. **`userRef`는 개인정보처리방침 0.3(화면 오류 기록 고지) 시행 시각 2026-11-07 00:00 KST부터만 붙습니다**(`CLIENT_ERROR_USER_REF_FROM`). 그 전에는 로그인 여부 `loggedIn`(true/false)만 남고 `userRef`는 `null`입니다. 사용자당 한도는 시각과 상관없이 메모리 안에서만 셉니다.
 - 상태를 바꾸는 POST라 CSRF 가드(Origin 허용 목록, Origin이 없으면 `Sec-Fetch-Site: same-origin`)를 그대로 받습니다. 화면은 `sendBeacon`이 아니라 같은 origin `fetch(keepalive)`로 보내 Origin이 붙습니다. origin lock(Worker 경유)도 그대로입니다.
-- 본문 8KB 상한(전역 JSON 파서 100kb보다 먼저, 넘거나 chunked면 읽지 않고 413 `PAYLOAD_TOO_LARGE`). IP당 1분 20회(`@Throttle`), 로그인 사용자당 1분 10회(429 `RATE_LIMITED`). 인스턴스당 1분 300건을 넘으면 남기지 않고 버립니다(204).
-- 형식을 좁게 검사합니다(경로 템플릿·`파일이름:줄:열`·UA 요약 형식, 모르는 필드 400). 메시지는 서버가 같은 규칙으로 한 번 더 가리고, 로거의 키 마스킹(`common/logging/mask.ts`)도 그대로 거칩니다.
-- 남기는 것: 구조화 로그 한 줄(severity `ERROR`). DB에는 저장하지 않습니다. 보존은 애플리케이션 로그와 같은 93일입니다.
+- 본문 8KB 상한: 이 경로 전용 `express.json({ limit: '8kb' })`를 전역 JSON 파서(100kb)보다 먼저 둡니다. 스트리밍으로 세어 넘으면 413 `PAYLOAD_TOO_LARGE`. Worker가 본문을 스트림으로 넘겨 Content-Length가 없는 chunked 요청도 같은 상한으로 받습니다. IP당 1분 20회(`@Throttle`), 로그인 사용자당 1분 10회(429 `RATE_LIMITED`). 인스턴스당 1분 300건을 넘으면 남기지 않고 버립니다(204).
+- 형식을 좁게 검사합니다(경로 템플릿·`파일이름:줄:열`·UA 요약 형식, 모르는 필드 400). 메시지·경로·에러 이름·스택 파일 이름은 서버가 같은 규칙으로 한 번 더 가리고(제어문자·폭 없는 문자·방향 제어 문자 제거), 로거의 키 마스킹(`common/logging/mask.ts`)도 그대로 거칩니다.
+- 남기는 것: 구조화 로그 한 줄(severity `WARNING` — 사용자 화면의 오류라 서버 장애와 섞지 않습니다). DB에는 저장하지 않습니다. 보존은 애플리케이션 로그와 같은 93일입니다.
+- **로그 기반 알림(ERROR 이상, 5xx 등)을 만들 때는 `jsonPayload.event!="client_error"`로 이 로그를 뺍니다.** 화면 오류 급증 알림이 필요하면 `jsonPayload.event="client_error"` 건수로 따로 만듭니다.
 
 로그 한 줄(운영):
 
 ```json
 {
-  "severity": "ERROR",
+  "severity": "WARNING",
   "time": "2026-10-30T01:23:45.678Z",
   "requestId": "05c8d730-…",
   "context": "ClientErrorsService",
@@ -70,9 +71,10 @@
   "errorName": "TypeError",
   "errorMessage": "Importing a module script failed.",
   "stack": ["index-Cx1.js:12:9"],
-  "clientUserAgent": "Safari 18 / iOS 18",
+  "clientUserAgent": "Safari 18 / iOS",
   "chunk": true,
   "staleBuild": true,
+  "loggedIn": true,
   "userRef": "9f2c4e1a0b3d5c7e",
   "message": "client_error TypeError /trips/new"
 }
@@ -100,7 +102,7 @@ gcloud logging read 'jsonPayload.event="client_error"' --freshness=1d --limit=5 
 
 로그 탐색기(콘솔)에서는 같은 필터 `jsonPayload.event="client_error"`를 쓰면 됩니다. 요청 줄(`POST /api/client-errors 204`)과는 `jsonPayload.requestId`로 잇습니다.
 
-**특정 회원의 오류를 찾을 때**(문의 처리): 회원 ID를 로그에 남기지 않으므로 운영자가 `userRef`를 계산해 필터합니다. 키는 Secret Manager `yeojeong-user-ref-hmac-key`(`USER_REF_HMAC_KEY`)이고 표준입력으로만 넘겨 화면·셸 히스토리·프로세스 인자에 남기지 않습니다(시크릿 읽기는 Data Access 감사 로그에 남습니다). 회원 ID는 관리자 페이지에서 확인합니다([operator-access.md](operator-access.md)).
+**특정 회원의 오류를 찾을 때**(문의 처리, 2026-11-07 00:00 KST 이후 기록만 가능): 회원 ID를 로그에 남기지 않으므로 운영자가 `userRef`를 계산해 필터합니다. 키는 Secret Manager `yeojeong-user-ref-hmac-key`(`USER_REF_HMAC_KEY`)이고 표준입력으로만 넘겨 화면·셸 히스토리·프로세스 인자에 남기지 않습니다(시크릿 읽기는 Data Access 감사 로그에 남습니다). 회원 ID는 관리자 페이지에서 확인합니다([operator-access.md](operator-access.md)).
 
 ```bash
 read -rs USER_ID   # 회원 ID 붙여 넣기(화면에 보이지 않음)

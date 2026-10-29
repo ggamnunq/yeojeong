@@ -7,7 +7,7 @@ import { isChunkLoadError } from './chunkError'
 // 원인 메시지를 알 수 없던 운영 사고(옛 탭의 「문제가 생겼어요」, 서버 로그엔 4xx/5xx 없음) 때문에 만들었다.
 //
 // 보내는 것: 빌드 ID, 경로 템플릿(/trips/:tripId/payments — 실제 ID·쿼리·해시 없음), 에러 이름, 가린 메시지(500자),
-// 스택 앞 8줄의 파일 이름:줄:열, 브라우저·OS 요약, 어디서 잡았는지, chunk 실패인지, 배포된 빌드와 다른지.
+// 스택 앞 8줄의 파일 이름:줄:열, 브라우저 종류·주버전과 OS 종류, 어디서 잡았는지, chunk 실패인지, 배포된 빌드와 다른지.
 // 보내지 않는 것: 개인정보, 입력값, 주소의 쿼리·해시(초대코드 #code=), 카드 관련 값, 전체 URL, 원문 User-Agent.
 // 같은 오류는 이 탭(세션)에서 한 번만, 페이지 하나에서 최대 MAX_REPORTS_PER_PAGE건만 보낸다. 보내기 실패는 조용히 버린다.
 
@@ -102,12 +102,16 @@ export function sanitizeStack(stack: string | undefined, origin = currentOrigin(
   return frames
 }
 
-/** 원문 User-Agent 대신 "브라우저 주버전 / OS 주버전"(인앱 브라우저 표시) */
+/**
+ * 원문 User-Agent 대신 "브라우저 종류 주버전 / OS 종류"(예: "Safari 18 / iOS", 인앱 브라우저는 앱 이름만).
+ * 지문을 줄이려고 OS 버전·세부 버전·기기 모델·빌드 문자열은 싣지 않는다(개인정보처리방침 "브라우저 종류·버전").
+ * 서버도 같은 수준으로 다시 맞춘다(apps/api/src/client-errors/client-error-mask.ts normalizeClientUserAgent)
+ */
 export function summarizeUserAgent(ua: string): string {
-  const os = /\b(?:iPhone|iPad|iPod)\b.*?\bOS (\d+)/.exec(ua)
-    ? `iOS ${/\bOS (\d+)/.exec(ua)?.[1]}`
-    : /Android (\d+)/.exec(ua)
-      ? `Android ${/Android (\d+)/.exec(ua)?.[1]}`
+  const os = /\b(?:iPhone|iPad|iPod)\b/.test(ua)
+    ? 'iOS'
+    : /Android/.test(ua)
+      ? 'Android'
       : /Mac OS X/.test(ua)
         ? 'macOS'
         : /Windows/.test(ua)

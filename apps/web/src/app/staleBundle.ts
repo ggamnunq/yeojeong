@@ -4,8 +4,9 @@ import { markChunkLoadError } from './chunkError'
 // 오래 열어 둔 탭(옛 번들)을 안전한 때에 새 번들로 바꾼다.
 // 1) 탭이 백그라운드에 BACKGROUND_THRESHOLD_MS(30분) 넘게 있다 돌아오면(visibilitychange · bfcache pageshow) /version.json을 본다.
 // 2) 배포된 빌드가 다르면 「다음 라우트 이동」 때 전체 새로고침한다. 이동이 끝난 화면을 다시 불러오는 것이라 주소는 그대로다.
-// 3) 단, 지금 화면에 사용자가 입력한 칸이 남아 있거나(이동 뒤에도 연결된 입력 요소), 이동에 화면 상태(location.state —
-//    카드 불러오기 단계 등)가 실려 있거나, data-no-auto-reload 표시가 있으면 이번 이동은 넘기고 다음 이동을 기다린다.
+// 3) 단, 지금 화면에 사용자가 입력한 칸이 남아 있거나(이동 뒤에도 연결된 입력 요소), 저장 요청(뮤테이션)이 진행 중이거나,
+//    이동에 화면 상태(location.state — 카드 불러오기 단계 등)가 실려 있거나, data-no-auto-reload 표시가 있으면
+//    이번 이동은 넘기고 다음 이동을 기다린다.
 // 4) 같은 빌드로는 한 번만 새로고침한다(배포 전파가 늦어 새로고침 뒤에도 옛 값이면 무한 반복하지 않게).
 // vite:preloadError(동적 import·CSS preload 실패)는 그 에러를 chunk 실패로 표시하고, 기본 동작(에러를 던짐)은 막지 않는다
 // → 에러 경계가 「새 버전이 나왔어요 · 새로고침」을 보여 준다.
@@ -28,6 +29,8 @@ type Options = {
   reload?: () => void
   /** 다음 화면이 그려진 뒤 부른다(테스트에서 바꾼다) */
   afterPaint?: (fn: () => void) => void
+  /** true면 새로고침하지 않는다(main.tsx: 진행 중인 뮤테이션 queryClient.isMutating() > 0) */
+  isBusy?: () => boolean
 }
 
 const EDITABLE = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]'
@@ -71,6 +74,7 @@ export function installStaleBundleWatch({
   now = Date.now,
   reload = () => win.location.reload(),
   afterPaint = (fn) => win.requestAnimationFrame(() => win.setTimeout(fn, 0)),
+  isBusy = () => false,
 }: Options): () => void {
   const doc = win.document
   let hiddenAt: number | null = doc.visibilityState === 'hidden' ? now() : null
@@ -118,6 +122,7 @@ export function installStaleBundleWatch({
   const safeToReload = (location: RouterLike['state']['location']): boolean => {
     for (const element of touched) if (!element.isConnected || !hasUserValue(element)) touched.delete(element)
     if (touched.size > 0) return false
+    if (isBusy()) return false
     if (location.state != null) return false
     return doc.querySelector(`[${NO_AUTO_RELOAD_ATTR}]`) === null
   }

@@ -1,8 +1,13 @@
+import { request as httpRequest, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { CLIENT_ERROR_IP_LIMIT_PER_MIN } from './../src/client-errors/client-errors.controller.js';
-import { CLIENT_ERROR_USER_LIMIT_PER_MIN } from './../src/client-errors/client-errors.service.js';
+import {
+  CLIENT_ERROR_USER_LIMIT_PER_MIN,
+  CLIENT_ERROR_USER_REF_FROM,
+} from './../src/client-errors/client-errors.service.js';
 import { createLogger } from './../src/common/logging/logger.js';
 import { createTestAuth, TEST_ORIGIN, type TestAuth } from './auth-helpers.js';
 import { createTestApp } from './create-test-app.js';
@@ -51,7 +56,7 @@ describe('POST /api/client-errors (e2e)', () => {
   const clientErrorLines = () =>
     lines.filter((line) => line.event === 'client_error');
 
-  it('받으면 204, severity=ERROR · event=client_error 한 줄(요청 ID 포함). 메시지는 서버가 다시 가린다', async () => {
+  it('받으면 204, severity=WARNING · event=client_error 한 줄(요청 ID 포함). 메시지는 서버가 다시 가린다', async () => {
     const res = await request(app.getHttpServer())
       .post(PATH)
       .set(auth.headers())
@@ -67,7 +72,7 @@ describe('POST /api/client-errors (e2e)', () => {
     const [line, ...rest] = clientErrorLines();
     expect(rest).toHaveLength(0);
     expect(line).toEqual({
-      severity: 'ERROR',
+      severity: 'WARNING',
       time: expect.any(String),
       requestId: res.headers['x-request-id'],
       context: 'ClientErrorsService',
@@ -82,26 +87,40 @@ describe('POST /api/client-errors (e2e)', () => {
         'index-Cx1.js:12:9',
         '(external)',
       ],
-      clientUserAgent: 'Safari 18 / iOS 18',
+      // 옛 형식(OS 버전 포함)으로 와도 OS 종류까지만 남긴다
+      clientUserAgent: 'Safari 18 / iOS',
       chunk: false,
       staleBuild: true,
+      loggedIn: false,
       userRef: null,
       message: 'client_error TypeError /trips/:tripId/info',
     });
     expect(raw).not.toMatch(/4111|traveler|K7M2QX/);
   });
 
-  it('로그인 상태면 userId 대신 userRef(16자 hex)', async () => {
-    const me = auth.addUser();
-    await request(app.getHttpServer())
-      .post(PATH)
-      .set(auth.headers(me))
-      .send(validReport({ staleBuild: undefined }))
-      .expect(204);
-    const [line] = clientErrorLines();
-    expect(line.userRef).toMatch(/^[0-9a-f]{16}$/);
-    expect(line.staleBuild).toBeNull();
-    expect(raw).not.toContain(me.id);
+  it.each([
+    ['처리방침 0.3 시행 전', CLIENT_ERROR_USER_REF_FROM - 1, false],
+    ['시행 시각부터', CLIENT_ERROR_USER_REF_FROM, true],
+  ])('로그인 상태: %s userRef %s', async (_, now, withRef) => {
+    // Date만 바꾼다(타이머는 그대로)
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    try {
+      const me = auth.addUser();
+      await request(app.getHttpServer())
+        .post(PATH)
+        .set(auth.headers(me))
+        .send(validReport({ staleBuild: undefined }))
+        .expect(204);
+      const [line] = clientErrorLines();
+      expect(line.loggedIn).toBe(true);
+      if (withRef) expect(line.userRef).toMatch(/^[0-9a-f]{16}$/);
+      else expect(line.userRef).toBeNull();
+      expect(line.staleBuild).toBeNull();
+      expect(raw).not.toContain(me.id);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('Origin이 없거나 다른 곳이면 403 CSRF_REJECTED(로그 없음)', async () => {
@@ -168,6 +187,69 @@ describe('POST /api/client-errors (e2e)', () => {
         errorCode: 'PAYLOAD_TOO_LARGE',
       }),
     );
+  });
+
+  it.each(['/api/client-errors/', '/API/Client-Errors'])(
+    '경로 표기가 달라도(%s) 같은 8KB 상한',
+    async (path) => {
+      await request(app.getHttpServer())
+        .post(path)
+        .set(auth.headers())
+        .set('Content-Type', 'application/json')
+        .send(JSON.stringify({ ...validReport(), pad: 'x'.repeat(9 * 1024) }))
+        .expect(413);
+    },
+  );
+
+  /** Content-Length 없이 chunked로 보낸다(Cloudflare Worker가 본문 스트림을 그대로 넘기는 경우) */
+  async function postChunked(chunks: string[]) {
+    const server = app.getHttpServer() as Server;
+    if (!server.listening) await new Promise<void>((r) => server.listen(0, r));
+    const { port } = server.address() as AddressInfo;
+    return new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          port,
+          method: 'POST',
+          path: PATH,
+          headers: {
+            'content-type': 'application/json',
+            'transfer-encoding': 'chunked',
+            origin: TEST_ORIGIN,
+          },
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (chunk: Buffer) => (body += chunk.toString()));
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+        },
+      );
+      req.on('error', (error) => {
+        // 상한을 넘으면 서버가 응답 후 연결을 끊을 수 있다
+        if ((error as NodeJS.ErrnoException).code === 'EPIPE') return;
+        reject(error);
+      });
+      for (const chunk of chunks) req.write(chunk);
+      req.end();
+    });
+  }
+
+  it('Worker 경유처럼 chunked(Content-Length 없음)로 온 정상 보고도 받는다', async () => {
+    const json = JSON.stringify(validReport());
+    const res = await postChunked([json.slice(0, 50), json.slice(50)]);
+    expect(res.status).toBe(204);
+    expect(clientErrorLines()).toHaveLength(1);
+  });
+
+  it('chunked 본문도 8KB를 넘으면 413 PAYLOAD_TOO_LARGE', async () => {
+    const json = JSON.stringify({
+      ...validReport(),
+      pad: 'x'.repeat(9 * 1024),
+    });
+    const res = await postChunked(json.match(/[\s\S]{1,1024}/g) ?? []);
+    expect(res.status).toBe(413);
+    expect(JSON.parse(res.body)).toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+    expect(clientErrorLines()).toHaveLength(0);
   });
 
   it(`IP당 1분 ${CLIENT_ERROR_IP_LIMIT_PER_MIN}회를 넘으면 429`, async () => {

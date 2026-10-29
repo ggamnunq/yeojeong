@@ -1,13 +1,16 @@
 import { ConfigService } from '@nestjs/config';
-import type { NextFunction, Request, Response } from 'express';
 import { AppException } from '../common/errors/app-exception.js';
-import { clientErrorBodyLimit } from './client-error-body-limit.js';
-import { maskClientErrorMessage } from './client-error-mask.js';
+import {
+  maskClientErrorMessage,
+  maskStackFrame,
+  normalizeClientUserAgent,
+} from './client-error-mask.js';
 import { FixedWindowLimiter } from './client-error-rate-limiter.js';
 import type { ClientErrorReportDto } from './client-error.dto.js';
 import {
   CLIENT_ERROR_INSTANCE_LIMIT_PER_MIN,
   CLIENT_ERROR_USER_LIMIT_PER_MIN,
+  CLIENT_ERROR_USER_REF_FROM,
   ClientErrorsService,
 } from './client-errors.service.js';
 
@@ -20,7 +23,7 @@ const report = (
   name: 'TypeError',
   message: "Cannot read properties of undefined (reading 'members')",
   stack: ['NewTripPage-B3x9aQ.js:1:2345'],
-  userAgent: 'Safari 18 / iOS 18',
+  userAgent: 'Safari 18 / iOS',
   chunk: false,
   staleBuild: true,
   ...overrides,
@@ -48,8 +51,46 @@ describe('maskClientErrorMessage', () => {
     expect(maskClientErrorMessage(input)).toBe(expected);
   });
 
+  it('폭 없는 문자·방향 제어 문자·BOM을 지운다', () => {
+    const hidden = [0x200b, 0x200f, 0x202a, 0x202e, 0x2066, 0x2069, 0xfeff]
+      .map((code) => String.fromCharCode(code))
+      .join('');
+    expect(maskClientErrorMessage(`a${hidden}b`)).toBe('a b');
+  });
+
   it('500자로 자른다', () => {
     expect(maskClientErrorMessage('word '.repeat(300))).toHaveLength(500);
+  });
+});
+
+describe('maskStackFrame', () => {
+  it.each([
+    ['NewTripPage-B3x9aQ.js:1:23456', 'NewTripPage-B3x9aQ.js:1:23456'],
+    ['traveler@example.com:1:2', '[EMAIL]:1:2'],
+    ['chunk-01012345678.js:10:5', 'chunk-[NUM].js:10:5'],
+    ['(external)', '(external)'],
+  ])('%s → %s', (input, expected) => {
+    expect(maskStackFrame(input)).toBe(expected);
+  });
+});
+
+describe('normalizeClientUserAgent', () => {
+  it.each([
+    ['Safari 18 / iOS', 'Safari 18 / iOS'],
+    ['Safari 18 / iOS 18', 'Safari 18 / iOS'],
+    ['Chrome 141 WebView / Android 14', 'Chrome 141 WebView / Android'],
+    ['KakaoTalk / iOS 17', 'KakaoTalk / iOS'],
+    ['Samsung 27 / Android', 'Samsung 27 / Android'],
+    ['Chrome ? / macOS', 'Chrome ? / macOS'],
+    // 세부 버전·기기 모델·빌드 문자열·모르는 이름은 버린다
+    ['Chrome 141.0.7390.122 / Android 15', 'other / Android'],
+    ['Chrome 141 / Android 15 SM-S928N', 'Chrome 141 / Android'],
+    ['SM-S928N Build/AP3A', 'other / other'],
+    ['Safari 18 WebView / iOS', 'Safari 18 / iOS'],
+    ['Evil 12345 / FreeBSD', 'other / other'],
+    ['', 'other / other'],
+  ])('%s → %s', (input, expected) => {
+    expect(normalizeClientUserAgent(input)).toBe(expected);
   });
 });
 
@@ -84,12 +125,12 @@ describe('ClientErrorsService', () => {
     new ClientErrorsService(new ConfigService(env));
   const KEY = 'k'.repeat(40);
 
-  it('구조화 로그(error, event=client_error) 한 줄. 메시지는 다시 가리고 userId 대신 userRef', () => {
+  it('구조화 로그(warn, event=client_error) 한 줄. 메시지는 다시 가리고 userId 대신 userRef(처리방침 0.3 시행 뒤)', () => {
     const service = create({ USER_REF_HMAC_KEY: KEY });
     const spy = vi
       .spyOn(
-        (service as unknown as { logger: { error: () => void } }).logger,
-        'error',
+        (service as unknown as { logger: { warn: () => void } }).logger,
+        'warn',
       )
       .mockImplementation(() => {});
     const userId = '3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
@@ -97,6 +138,7 @@ describe('ClientErrorsService', () => {
     expect(
       service.record(report({ message: 'bad card 4111111111111111' }), {
         userId,
+        now: CLIENT_ERROR_USER_REF_FROM,
       }),
     ).toBe('logged');
 
@@ -109,9 +151,10 @@ describe('ClientErrorsService', () => {
         errorName: 'TypeError',
         errorMessage: 'bad card [CARD]',
         stack: ['NewTripPage-B3x9aQ.js:1:2345'],
-        clientUserAgent: 'Safari 18 / iOS 18',
+        clientUserAgent: 'Safari 18 / iOS',
         chunk: false,
         staleBuild: true,
+        loggedIn: true,
         userRef: service.userRef(userId),
       },
       'client_error TypeError /trips/new',
@@ -119,12 +162,35 @@ describe('ClientErrorsService', () => {
     expect(JSON.stringify(spy.mock.calls)).not.toContain(userId);
   });
 
+  it('에러 이름·스택 파일 이름도 다시 가린다(줄·열 번호는 그대로)', () => {
+    const service = create();
+    const spy = vi
+      .spyOn(
+        (service as unknown as { logger: { warn: () => void } }).logger,
+        'warn',
+      )
+      .mockImplementation(() => {});
+    service.record(
+      report({
+        name: 'Err01012345678',
+        stack: ['user@example.com:1:23456', 'a-4111111111111111.js:2:3'],
+      }),
+    );
+    expect(spy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorName: 'Err[NUM]',
+        stack: ['[EMAIL]:1:23456', 'a-[CARD].js:2:3'],
+      }),
+      'client_error Err[NUM] /trips/new',
+    );
+  });
+
   it('route에 실제 ID·숫자가 실려 와도 가린다', () => {
     const service = create();
     const spy = vi
       .spyOn(
-        (service as unknown as { logger: { error: () => void } }).logger,
-        'error',
+        (service as unknown as { logger: { warn: () => void } }).logger,
+        'warn',
       )
       .mockImplementation(() => {});
     service.record(
@@ -136,6 +202,32 @@ describe('ClientErrorsService', () => {
       expect.objectContaining({ route: '/trips/[ID]/import/[NUM]' }),
       'client_error TypeError /trips/[ID]/import/[NUM]',
     );
+  });
+
+  it('처리방침 0.3 시행(2026-11-07 00:00 KST) 전에는 userRef 없이 loggedIn만', () => {
+    expect(new Date(CLIENT_ERROR_USER_REF_FROM).toISOString()).toBe(
+      '2026-11-06T15:00:00.000Z',
+    );
+    const service = create({ USER_REF_HMAC_KEY: KEY });
+    const spy = vi
+      .spyOn(
+        (service as unknown as { logger: { warn: () => void } }).logger,
+        'warn',
+      )
+      .mockImplementation(() => {});
+    service.record(report(), {
+      userId: 'u1',
+      now: CLIENT_ERROR_USER_REF_FROM - 1,
+    });
+    service.record(report(), { now: CLIENT_ERROR_USER_REF_FROM - 1 });
+    service.record(report(), { now: CLIENT_ERROR_USER_REF_FROM });
+    expect(
+      (spy.mock.calls as unknown as [unknown][]).map(([fields]) => fields),
+    ).toEqual([
+      expect.objectContaining({ loggedIn: true, userRef: null }),
+      expect.objectContaining({ loggedIn: false, userRef: null }),
+      expect.objectContaining({ loggedIn: false, userRef: null }),
+    ]);
   });
 
   it('userRef: 16자 hex, 같은 사용자는 같고 키가 다르면 다르다. 동의 기록 userRefHash(HMAC(userId))와 다르다', async () => {
@@ -156,8 +248,8 @@ describe('ClientErrorsService', () => {
   it('사용자당 1분 한도를 넘으면 429 RATE_LIMITED', () => {
     const service = create({ USER_REF_HMAC_KEY: KEY });
     vi.spyOn(
-      (service as unknown as { logger: { error: () => void } }).logger,
-      'error',
+      (service as unknown as { logger: { warn: () => void } }).logger,
+      'warn',
     ).mockImplementation(() => {});
     for (let i = 0; i < CLIENT_ERROR_USER_LIMIT_PER_MIN; i++) {
       service.record(report(), { userId: 'u1', now: 0 });
@@ -177,8 +269,8 @@ describe('ClientErrorsService', () => {
     const service = create();
     const spy = vi
       .spyOn(
-        (service as unknown as { logger: { error: () => void } }).logger,
-        'error',
+        (service as unknown as { logger: { warn: () => void } }).logger,
+        'warn',
       )
       .mockImplementation(() => {});
     for (let i = 0; i < CLIENT_ERROR_INSTANCE_LIMIT_PER_MIN; i++) {
@@ -186,57 +278,5 @@ describe('ClientErrorsService', () => {
     }
     expect(service.record(report(), { now: 0 })).toBe('dropped');
     expect(spy).toHaveBeenCalledTimes(CLIENT_ERROR_INSTANCE_LIMIT_PER_MIN);
-  });
-});
-
-describe('clientErrorBodyLimit', () => {
-  function run(path: string, headers: Record<string, string>) {
-    const res = {
-      locals: {} as Record<string, unknown>,
-      statusCode: 200,
-      body: undefined as unknown,
-      headers: {} as Record<string, string>,
-      setHeader(name: string, value: string) {
-        this.headers[name.toLowerCase()] = value;
-      },
-      status(code: number) {
-        this.statusCode = code;
-        return this;
-      },
-      json(body: unknown) {
-        this.body = body;
-        return this;
-      },
-    };
-    const next = vi.fn();
-    clientErrorBodyLimit(100)(
-      { path, headers } as unknown as Request,
-      res as unknown as Response,
-      next as NextFunction,
-    );
-    return { res, next };
-  }
-
-  it('상한 안이면 통과, 다른 경로는 보지 않는다', () => {
-    expect(
-      run('/api/client-errors', { 'content-length': '100' }).next,
-    ).toHaveBeenCalled();
-    expect(
-      run('/api/trips', { 'content-length': '999999' }).next,
-    ).toHaveBeenCalled();
-  });
-
-  it.each([
-    ['/api/client-errors', { 'content-length': '101' }],
-    ['/api/client-errors/', { 'content-length': '101' }],
-    ['/API/Client-Errors', { 'content-length': '101' }],
-    ['/api/client-errors', { 'transfer-encoding': 'chunked' }],
-    ['/api/client-errors', { 'content-length': 'abc' }],
-  ])('%s %j → 413 PAYLOAD_TOO_LARGE', (path, headers) => {
-    const { res, next } = run(path, headers);
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(413);
-    expect(res.body).toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
-    expect(res.locals.errorCode).toBe('PAYLOAD_TOO_LARGE');
   });
 });

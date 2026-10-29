@@ -111,19 +111,19 @@ describe('summarizeUserAgent', () => {
   it.each([
     [
       'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1',
-      'Safari 18 / iOS 18',
+      'Safari 18 / iOS',
     ],
     [
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 KAKAOTALK 10.8.5',
-      'KakaoTalk / iOS 17',
+      'KakaoTalk / iOS',
     ],
     [
       'Mozilla/5.0 (Linux; Android 15; SM-S928N) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/125.0.0.0 Mobile Safari/537.36',
-      'Samsung 27 / Android 15',
+      'Samsung 27 / Android',
     ],
     [
       'Mozilla/5.0 (Linux; Android 14; Pixel 7; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.0.0 Mobile Safari/537.36',
-      'Chrome 141 WebView / Android 14',
+      'Chrome 141 WebView / Android',
     ],
     [
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
@@ -133,6 +133,14 @@ describe('summarizeUserAgent', () => {
     ['', 'other / other'],
   ])('%s', (ua, expected) => {
     expect(summarizeUserAgent(ua)).toBe(expected)
+  })
+
+  it('OS 버전·세부 버전·기기 모델·빌드 문자열은 싣지 않는다', () => {
+    const ua =
+      'Mozilla/5.0 (Linux; Android 15; SM-S928N Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.7390.122 Mobile Safari/537.36'
+    const summary = summarizeUserAgent(ua)
+    expect(summary).toBe('Chrome 141 WebView / Android')
+    expect(summary).not.toMatch(/15|SM-S928N|AP3A|7390/)
   })
 })
 

@@ -39,16 +39,19 @@ function background(ms: number) {
   setVisibility('visible')
 }
 
+let busy = false
+
 function setup(pathname = '/trips') {
   const { router, go } = fakeRouter(pathname)
   const reload = vi.fn()
-  dispose = installStaleBundleWatch({ router, now: () => clock, reload, afterPaint: (fn) => fn() })
+  dispose = installStaleBundleWatch({ router, now: () => clock, reload, afterPaint: (fn) => fn(), isBusy: () => busy })
   return { go, reload }
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 beforeEach(() => {
+  busy = false
   clock = 1_000_000
   visibility = 'visible'
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
@@ -121,6 +124,18 @@ describe('installStaleBundleWatch', () => {
     expect(reload).not.toHaveBeenCalled()
 
     input.remove()
+    go('/trips')
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('저장 요청(뮤테이션)이 진행 중이면 넘기고, 끝난 다음 이동 때 새로고침한다', async () => {
+    const { go, reload } = setup()
+    background(BACKGROUND_THRESHOLD_MS + 1)
+    await flush()
+    busy = true
+    go('/trips/new')
+    expect(reload).not.toHaveBeenCalled()
+    busy = false
     go('/trips')
     expect(reload).toHaveBeenCalledTimes(1)
   })

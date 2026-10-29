@@ -39,7 +39,7 @@ test.describe('옛 번들 · 화면 오류 보고', () => {
     const body = (await reported).postDataJSON() as Record<string, unknown>
     expect(body).toMatchObject({ buildId: 'dev', route: '/trips/new', source: 'boundary', chunk: true, staleBuild: false })
     expect(JSON.stringify(body)).not.toMatch(/K7M2QX|from=qr|localhost/)
-    expect(body.userAgent).toMatch(/^Chrome \d+ \/ Android \d+$/)
+    expect(body.userAgent).toMatch(/^Chrome \d+ \/ Android$/)
   })
 
   test('30분 넘게 백그라운드에 있다 돌아와 새 빌드가 있으면 다음 이동 때 한 번 새로고침한다', async ({ page }) => {

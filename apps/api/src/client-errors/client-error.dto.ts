@@ -70,8 +70,9 @@ export class ClientErrorReportDto {
   stack: string[];
 
   @ApiProperty({
-    example: 'Safari 18 / iOS 18',
-    description: '브라우저·OS 주버전 요약(원문 User-Agent 아님)',
+    example: 'Safari 18 / iOS',
+    description:
+      '브라우저 종류·주버전 + OS 종류(원문 User-Agent 아님). 서버가 같은 수준으로 다시 맞춘다',
   })
   @IsString()
   @Matches(/^[\w .?/-]{0,80}$/)
