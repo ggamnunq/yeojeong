@@ -1,3 +1,4 @@
+import { FILE_IMPORT_PROVIDER_VALUES } from '@yeojeong/shared'
 import { setupWorker } from 'msw/browser'
 import { resetCardImportMock } from '../features/card-import/mocks'
 import { db } from './data'
@@ -14,7 +15,7 @@ const SESSION_KEY = 'yj:mock:session'
  *   ('low' = 오늘 남은 횟수 2, 'exhausted' = 0 — WF-53r · 57d 확인용). 시나리오 아이디는 features/card-import/mocks.ts 머리 주석.
  *   동의 유지: localStorage.setItem('yj:mock:cardImportConsent', '1') — 서버에 카드 내역 조회 동의가 남아 있는 상태로 시작한다
  *   (목 db는 페이지 메모리라 보통은 새로고침하면 동의가 사라진다. WF-53~56 새로고침 → WF-51 재현용).
- * 위챗페이 파일 가져오기(features.fileImport) 켜기: localStorage.setItem('yj:mock:fileImport', '1') 후 새로고침(features/file-import/mocks.ts)
+ * 파일 가져오기(features.fileImport) 켜기: localStorage.setItem('yj:mock:fileImport', '1')(위챗페이만) 또는 'WECHAT,ALIPAY'(알리페이도) 후 새로고침(features/file-import/mocks.ts)
  * QA 시나리오(시점 전환 · 엣지 응답 · 5명 넘는 진행 중 여정 · 패널)는 scenario.ts 머리 주석.
  */
 export async function startMockWorker() {
@@ -27,8 +28,12 @@ export async function startMockWorker() {
     // 카드 내역 불러오기 기능 플래그(FR-830). 기본 꺼짐
     const cardImport = localStorage.getItem('yj:mock:cardImport')
     db.cardImport = cardImport === '1' || cardImport === 'low' || cardImport === 'exhausted'
-    // 위챗페이 파일 가져오기 기능 플래그(W10). 기본 꺼짐
-    db.fileImport = localStorage.getItem('yj:mock:fileImport') === '1'
+    // 파일 가져오기 기능 플래그(W10 · W11). 기본 꺼짐. '1' = 위챗페이만, 'WECHAT,ALIPAY'처럼 공급자 목록도 받는다
+    const fileImport = localStorage.getItem('yj:mock:fileImport')
+    db.fileImport = !!fileImport
+    if (fileImport && fileImport !== '1') {
+      db.fileImportProviders = FILE_IMPORT_PROVIDER_VALUES.filter((p) => fileImport.split(',').includes(p))
+    }
     // 동의 유지: 새로고침해도 동의가 남아 있다(실서버처럼)
     if (localStorage.getItem('yj:mock:cardImportConsent') === '1') resetCardImportMock({ consented: true })
     db.cardImportState.remaining = cardImport === 'low' ? 2 : cardImport === 'exhausted' ? 0 : null

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
-import { parseCsv, decodeText } from './csv'
+import { MAX_ROW_CELLS, parseCsv, decodeText } from './csv'
 import { txnDigest } from './digest'
 import { parseStatementFile, readSheet } from './index'
 import { MAX_FILE_BYTES, StatementFileError, type StatementItem } from './types'
@@ -149,7 +149,16 @@ describe('CSV', () => {
     expect(() => new TextDecoder('utf-8', { fatal: true }).decode(gbk)).toThrow()
   })
 
-  it('parseCsv: 빈 줄을 뺀다', () => {
+  it('parseCsv: 한 행이 칸 상한(200)을 넘으면(쉼표 수만 개 줄) format — 상한까지는 읽는다', async () => {
+    expect(parseCsv(`${'a,'.repeat(MAX_ROW_CELLS - 1)}a`, 10)[0]).toHaveLength(MAX_ROW_CELLS)
+    expect(() => parseCsv(','.repeat(MAX_ROW_CELLS), 10)).toThrow(StatementFileError)
+    const bomb = `交易时间,交易类型\n${','.repeat(50_000)}\n`
+    const error = await parseBytes(new TextEncoder().encode(bomb)).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(StatementFileError)
+    expect((error as StatementFileError).kind).toBe('format')
+  })
+
+    it('parseCsv: 빈 줄을 뺀다', () => {
     expect(parseCsv('a,b\n\n"c\nd",e\r\n', 10)).toEqual([
       ['a', 'b'],
       ['c\nd', 'e'],

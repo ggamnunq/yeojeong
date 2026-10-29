@@ -91,6 +91,12 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.feature_file_import
       }
 
+      # 켤 파일 공급자(W11 알리페이는 목록에 더해야 켜진다)
+      env {
+        name  = "FILE_IMPORT_PROVIDERS"
+        value = var.file_import_providers
+      }
+
       # 카드 승인내역 불러오기(S8). CODEF 키는 enable_codef로 external_secret_env에 붙는다
       env {
         name  = "FEATURE_CARD_IMPORT"

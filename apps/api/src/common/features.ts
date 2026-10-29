@@ -4,7 +4,11 @@ import {
   type ExecutionContext,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { FeatureFlags as FeatureFlagsView } from '@yeojeong/shared';
+import {
+  FILE_IMPORT_PROVIDER_VALUES,
+  type FeatureFlags as FeatureFlagsView,
+  type FileImportProvider,
+} from '@yeojeong/shared';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NotFoundError } from './errors/app-exception.js';
@@ -57,7 +61,7 @@ export function parseAllowedUserIds(
 }
 
 export const FILE_IMPORT_MODE_VALUES = ['off', 'on'] as const;
-/** 거래 내역 파일 가져오기(W10, 위챗페이) 공개 단계 */
+/** 거래 내역 파일 가져오기(W10 · W11) 공개 단계. 공급자별로는 FILE_IMPORT_PROVIDERS */
 export type FileImportMode = (typeof FILE_IMPORT_MODE_VALUES)[number];
 
 /** env FEATURE_FILE_IMPORT: 비면 off. off·on(대소문자 무시)만 받고 그 밖이면 부팅을 멈춘다 */
@@ -68,6 +72,34 @@ export function parseFileImportMode(raw: string | undefined): FileImportMode {
     return value as FileImportMode;
   }
   throw new Error(`FEATURE_FILE_IMPORT는 off·on 중 하나여야 합니다: ${value}`);
+}
+
+/** FILE_IMPORT_PROVIDERS가 비었을 때: 위챗페이만(W10 동작 그대로 — 알리페이는 명시해야 켜진다) */
+export const DEFAULT_FILE_IMPORT_PROVIDERS: readonly FileImportProvider[] = [
+  'WECHAT',
+];
+
+/**
+ * env FILE_IMPORT_PROVIDERS: 쉼표로 구분한 공급자(대소문자 무시, 예: "WECHAT,ALIPAY"). 비면 DEFAULT_FILE_IMPORT_PROVIDERS.
+ * 모르는 값이면 부팅을 멈춘다. 결과는 FILE_IMPORT_PROVIDER_VALUES 순서(중복 없음)
+ */
+export function parseFileImportProviders(
+  raw: string | undefined,
+): FileImportProvider[] {
+  const values = (raw ?? '')
+    .split(',')
+    .map((v) => v.trim().toUpperCase())
+    .filter((v) => v !== '');
+  if (values.length === 0) return [...DEFAULT_FILE_IMPORT_PROVIDERS];
+  const unknown = values.filter(
+    (v) => !(FILE_IMPORT_PROVIDER_VALUES as readonly string[]).includes(v),
+  );
+  if (unknown.length > 0) {
+    throw new Error(
+      `FILE_IMPORT_PROVIDERS는 ${FILE_IMPORT_PROVIDER_VALUES.join('·')}를 쉼표로 구분한 값이어야 합니다: ${unknown.join(',')}`,
+    );
+  }
+  return FILE_IMPORT_PROVIDER_VALUES.filter((p) => values.includes(p));
 }
 
 /**
@@ -82,8 +114,10 @@ export function parseFileImportMode(raw: string | undefined): FileImportMode {
  *   CODEF 키(CODEF_CLIENT_ID·CODEF_CLIENT_SECRET·CODEF_PUBLIC_KEY)가 하나라도 없으면 단계와 무관하게 off다.
  *   운영에서는 importKey 전용 키(IMPORT_KEY_HMAC_KEY)도 있어야 한다.
  *   꺼진 사용자에게는 /api/card-import/*·POST /api/wallet/entries/import가 404(CardImportGuard), 세션 features.cardImport = false
- * - FEATURE_FILE_IMPORT(기본 off): 거래 내역 파일 가져오기(W10, 위챗페이). off | on.
+ * - FEATURE_FILE_IMPORT(기본 off): 거래 내역 파일 가져오기(W10 위챗페이 · W11 알리페이). off | on.
  *   운영에서는 importKey 전용 키(IMPORT_KEY_HMAC_KEY)가 없으면 off다. 꺼져 있으면 /api/wallet/entries/file-import*가 404(FileImportGuard)
+ * - FILE_IMPORT_PROVIDERS(기본 "WECHAT"): 켤 공급자(W11 알리페이는 "WECHAT,ALIPAY"처럼 더해야 켜진다).
+ *   켜지지 않은 공급자로 요청하면 404(FileImportController). 세션 features.fileImportProviders
  */
 @Injectable()
 export class FeatureFlags {
@@ -94,9 +128,16 @@ export class FeatureFlags {
   readonly cardImportEnvAllowlist: ReadonlySet<string>;
   /** 거래 내역 파일 가져오기(W10). 운영에서 IMPORT_KEY_HMAC_KEY가 없으면 false */
   readonly fileImport: boolean;
+  /** 켜진 파일 공급자(fileImport가 false면 빈 배열) */
+  readonly fileImportProviders: readonly FileImportProvider[];
 
   constructor(config: ConfigService) {
+    // 공급자 목록은 기능이 꺼져 있어도 검사한다(잘못된 값이면 켜기 전에 부팅에서 드러나게)
+    const providers = parseFileImportProviders(
+      config.get<string>('FILE_IMPORT_PROVIDERS'),
+    );
     this.fileImport = fileImportEnabled(config);
+    this.fileImportProviders = this.fileImport ? providers : [];
     this.accountLink = parseBooleanEnv(
       'FEATURE_ACCOUNT_LINK',
       config.get<string>('FEATURE_ACCOUNT_LINK'),
@@ -133,7 +174,13 @@ export class FeatureFlags {
       accountLink: this.accountLink,
       cardImport: this.cardImportFor(userId),
       fileImport: this.fileImport,
+      fileImportProviders: [...this.fileImportProviders],
     };
+  }
+
+  /** 이 공급자의 파일 가져오기가 켜져 있는가(FEATURE_FILE_IMPORT + FILE_IMPORT_PROVIDERS) */
+  fileImportEnabledFor(provider: FileImportProvider): boolean {
+    return this.fileImportProviders.includes(provider);
   }
 }
 

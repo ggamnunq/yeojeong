@@ -11,8 +11,8 @@ export type MockScenario = {
   cardImport?: boolean | 'low' | 'exhausted'
   /** 카드 내역 조회 동의가 서버에 남아 있는 상태로 시작(새로고침해도 유지). 기본 false */
   cardImportConsent?: boolean
-  /** 세션 features.fileImport(위챗페이 파일 가져오기). 기본 false */
-  fileImport?: boolean
+  /** 세션 features.fileImport(파일 가져오기). true = 위챗페이만, 'WECHAT,ALIPAY'처럼 공급자 목록도 된다. 기본 false */
+  fileImport?: boolean | string
   /** 재동의가 필요한 가입 동의(예: ['TOS', 'PRIVACY', 'AGE14']) — 정식 약관 시행 뒤 초안 동의자 */
   reconsent?: string[]
 }
@@ -27,7 +27,7 @@ export async function useMockScenario(page: Page, scenario: MockScenario = {}) {
     if (s.wallet) localStorage.setItem('yj:mock:wallet', s.wallet)
     if (s.accountLink) localStorage.setItem('yj:mock:accountLink', '1')
     if (s.cardImport) localStorage.setItem('yj:mock:cardImport', s.cardImport === true ? '1' : s.cardImport)
-    if (s.fileImport) localStorage.setItem('yj:mock:fileImport', '1')
+    if (s.fileImport) localStorage.setItem('yj:mock:fileImport', s.fileImport === true ? '1' : s.fileImport)
     if (s.cardImportConsent) localStorage.setItem('yj:mock:cardImportConsent', '1')
     if (s.reconsent) localStorage.setItem('yj:mock:reconsent', s.reconsent.join(','))
   }, scenario)

@@ -52,7 +52,7 @@ export class FileImportItemDto implements FileImportItem {
 
   @ApiProperty({
     example: '2026-10-01T12:34:56+08:00',
-    description: '오프셋 포함 ISO 8601. 위챗 파일 시각은 중국 표준시(+08:00)',
+    description: '오프셋 포함 ISO 8601. 위챗·알리페이 파일 시각은 중국 표준시(+08:00)',
   })
   @IsString({ message: '결제 시각을 다시 확인해 주세요' })
   @IsISO8601({ strict: true }, { message: '결제 시각을 다시 확인해 주세요' })

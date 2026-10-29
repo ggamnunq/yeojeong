@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FILE_IMPORT_CHECK_MAX,
+  FILE_IMPORT_PROVIDER_VALUES,
   FILE_IMPORT_ITEMS_MAX,
   type FileImportItem,
   type FileImportProvider,
@@ -18,10 +19,21 @@ export function fileImportOf(session: SessionResponse | undefined | null): boole
   return session?.features?.fileImport === true
 }
 
-/** 지갑의 "위챗페이 파일 가져오기" 진입점을 보일지. 세션 쿼리 캐시만 읽는다 */
-export function useFileImportEnabled(): boolean {
+/**
+ * 켜진 파일 공급자(features.fileImportProviders, W11). fileImport가 false면 빈 배열.
+ * 옛 서버(목록 없음)면 위챗페이만. 모르는 값은 버린다
+ */
+export function fileImportProvidersOf(session: SessionResponse | undefined | null): FileImportProvider[] {
+  if (!fileImportOf(session)) return []
+  const listed = session?.features?.fileImportProviders
+  if (!Array.isArray(listed)) return ['WECHAT']
+  return FILE_IMPORT_PROVIDER_VALUES.filter((p) => listed.includes(p))
+}
+
+/** 켜진 파일 공급자(HF-65 시트 행 · 공급자 화면 진입 허용). 세션 쿼리 캐시만 읽는다 */
+export function useFileImportProviders(): FileImportProvider[] {
   const { data } = useQuery({ ...sessionQuery(), enabled: false })
-  return fileImportOf(data)
+  return fileImportProvidersOf(data)
 }
 
 /** "추가됨" 대조를 상한씩 나눠 묻고 순서대로 잇는다. **대조값(txnDigest)만** 보낸다(일시·금액·가맹점 없음 — 명세 4-13-7) */

@@ -139,7 +139,12 @@ describe('Auth (e2e)', () => {
         returnTo: null,
       },
       // 기능 플래그(env FEATURE_ACCOUNT_LINK). 테스트 환경은 켜 둔다(test/env.ts)
-      features: { accountLink: true, cardImport: false, fileImport: false },
+      features: {
+        accountLink: true,
+        cardImport: false,
+        fileImport: false,
+        fileImportProviders: [],
+      },
     });
     const pending = await agent.get('/api/users/me').expect(403);
     expect(pending.body.code).toBe('SIGNUP_REQUIRED');

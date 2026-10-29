@@ -9,6 +9,7 @@ import {
   FileImportGuard,
   parseBooleanEnv,
   parseFileImportMode,
+  parseFileImportProviders,
 } from './features.js';
 
 // ConfigService는 process.env(테스트 env는 플래그를 켠다)를 먼저 읽으므로 값만 돌려주는 가짜를 쓴다
@@ -24,6 +25,7 @@ describe('기능 플래그(FR-006)', () => {
       accountLink: false,
       cardImport: false,
       fileImport: false,
+      fileImportProviders: [],
     });
     expect(flagsWith('').accountLink).toBe(false);
     expect(flagsWith('TRUE').accountLink).toBe(true);
@@ -76,11 +78,13 @@ describe('기능 플래그(FR-006)', () => {
       accountLink: false,
       cardImport: true,
       fileImport: false,
+      fileImportProviders: [],
     });
     expect(allow.view(other)).toEqual({
       accountLink: false,
       cardImport: false,
       fileImport: false,
+      fileImportProviders: [],
     });
     expect(() => flags({ FEATURE_CARD_IMPORT: 'true', ...keys })).toThrow(
       /off·allowlist·on/,
@@ -164,11 +168,13 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
       accountLink: false,
       cardImport: true,
       fileImport: false,
+      fileImportProviders: [],
     });
     expect(await access.view(nobody)).toEqual({
       accountLink: false,
       cardImport: false,
       fileImport: false,
+      fileImportProviders: [],
     });
     expect(access.enabledWithGrant(nobody, true)).toBe(true);
     expect(access.enabledWithGrant(nobody, false)).toBe(false);
@@ -231,6 +237,7 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
       accountLink: false,
       cardImport: false,
       fileImport: true,
+      fileImportProviders: ['WECHAT'],
     });
     expect(parseFileImportMode(undefined)).toBe('off');
     expect(() => flags({ FEATURE_FILE_IMPORT: 'true' })).toThrow(/off·on/);
@@ -256,5 +263,43 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
         ctx,
       ),
     ).toBe(true);
+  });
+
+  it('FILE_IMPORT_PROVIDERS picks providers (default WECHAT only — ALIPAY off unless listed), unknown values stop boot (W11)', () => {
+    const flags = (env: Record<string, string>) =>
+      new FeatureFlags({
+        get: (name: string) => env[name],
+      } as unknown as ConfigService);
+    expect(parseFileImportProviders(undefined)).toEqual(['WECHAT']);
+    expect(parseFileImportProviders(' ')).toEqual(['WECHAT']);
+    expect(parseFileImportProviders('alipay, wechat,ALIPAY')).toEqual([
+      'WECHAT',
+      'ALIPAY',
+    ]);
+    expect(parseFileImportProviders('ALIPAY')).toEqual(['ALIPAY']);
+    expect(() => parseFileImportProviders('WECHAT,PAYPAL')).toThrow(
+      /FILE_IMPORT_PROVIDERS.*PAYPAL/,
+    );
+    // 기능이 꺼져 있어도 잘못된 값이면 부팅을 멈춘다
+    expect(() => flags({ FILE_IMPORT_PROVIDERS: 'X' })).toThrow(
+      /FILE_IMPORT_PROVIDERS/,
+    );
+
+    const on = flags({ FEATURE_FILE_IMPORT: 'on' });
+    expect(on.fileImportEnabledFor('WECHAT')).toBe(true);
+    expect(on.fileImportEnabledFor('ALIPAY')).toBe(false);
+    const both = flags({
+      FEATURE_FILE_IMPORT: 'on',
+      FILE_IMPORT_PROVIDERS: 'WECHAT,ALIPAY',
+    });
+    expect(both.fileImportEnabledFor('ALIPAY')).toBe(true);
+    expect(both.view().fileImportProviders).toEqual(['WECHAT', 'ALIPAY']);
+    // 전체 플래그가 꺼져 있으면 공급자 목록과 무관하게 아무것도 켜지지 않는다
+    const off = flags({ FILE_IMPORT_PROVIDERS: 'WECHAT,ALIPAY' });
+    expect(off.fileImportEnabledFor('ALIPAY')).toBe(false);
+    expect(off.view()).toMatchObject({
+      fileImport: false,
+      fileImportProviders: [],
+    });
   });
 });

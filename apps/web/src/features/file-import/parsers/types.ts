@@ -13,12 +13,14 @@ export type RefundState = 'NONE' | 'FULL' | 'PARTIAL'
 
 /**
  * 가져올 후보 결제 한 건(화면 메모리 전용). 거래 번호 원문은 들고 있지 않다 — 파싱하면서 바로 txnDigest(SHA-256)로 바꾼다.
- * 支付方式·商户单号·备注는 읽지 않고, 商品은 가맹점 이름이 비었을 때 대신 쓰는 데만 쓰고 버린다
+ * 위챗 支付方式·商户单号·备注, 알리페이 对方账号·收/付款方式·商家订单号·备注는 정규화 단계에서 쓰지 않고 이 타입에 자리도 없다
+ * (CSV·xlsx를 쪼개는 단계에서는 모든 칸이 파서 지역 변수에 잠시 올라갔다가 파싱이 끝나면 버려진다).
+ * 商品·商品说明은 가맹점 이름이 비었을 때 대신 쓰는 데만 쓰고 버린다
  */
 export interface StatementItem {
   /** SHA-256("{provider}:{거래 번호}") hex. 행 키·중복 판정(서버 HMAC 재료) */
   txnDigest: string
-  /** ISO 8601 + 공급자 시간대 오프셋(위챗 "+08:00") */
+  /** ISO 8601 + 공급자 시간대 오프셋(위챗·알리페이 "+08:00") */
   occurredAt: string
   /** 양수 decimal 소수 2자리. 부분 환불이면 순액(원 금액 − 환불액) */
   amount: string
@@ -32,9 +34,9 @@ export interface StatementItem {
   refundAmount: string | null
 }
 
-/** 조용히 뺀 것과 화면에 개수를 알리는 것. transfer(송금·홍바오)만 결과 화면 Caption에 보인다 */
+/** 조용히 뺀 것과 화면에 개수를 알리는 것. transfer(송금·홍바오·이체)만 결과 화면 Caption에 보인다 */
 export interface ExcludedCounts {
-  /** 송금·홍바오·이체·받은 돈 등 사람 사이 거래 → "송금·홍바오 N건은 제외했어요" */
+  /** 송금·홍바오·이체·받은 돈 등 사람 사이 거래 → 위챗 "송금·홍바오 N건은 제외했어요" · 알리페이 "송금·이체 N건은 제외했어요" */
   transfer: number
   /** 충전·출금·중성·그 밖의 수입·실패·알 수 없는 유형(세지만 보이지 않는다) */
   other: number
