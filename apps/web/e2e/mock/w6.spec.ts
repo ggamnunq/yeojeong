@@ -44,6 +44,53 @@ test.describe('수동 결제(W6)', () => {
     expect(await amount.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(0)
   })
 
+  test('날짜 시트(DS19): 시·분을 한 자씩 쳐도 친 값 그대로 저장(W7b · HF-46d · 48 · 50)', async ({ page }) => {
+    await useMockScenario(page)
+    /** 날짜 단계를 열고 시 칸부터 한 자씩 친다(2자리면 분으로 넘어간다) */
+    const typeTime = async (sheetName: string, keys: string, day?: RegExp) => {
+      await page.getByRole('dialog', { name: sheetName }).getByRole('button', { name: /^날짜/ }).click()
+      const step = page.getByRole('dialog', { name: '날짜' })
+      if (day) await step.getByRole('button', { name: day }).click()
+      await step.getByRole('textbox', { name: '시' }).click()
+      await page.keyboard.type(keys, { delay: 120 })
+      return step
+    }
+
+    // HF-48 지갑 결제 추가 · 어제
+    await page.goto('/wallet/new')
+    let step = await typeTime('결제 추가', '1520', /11월 12일/)
+    await expect(step.getByRole('textbox', { name: '시' })).toHaveValue('15')
+    await expect(step.getByRole('textbox', { name: '분' })).toHaveValue('20')
+    await step.getByRole('button', { name: '확인' }).click()
+    await expect(page.getByRole('dialog', { name: '결제 추가' }).getByRole('button', { name: /^날짜/ })).toContainText('11.12 15:20')
+
+    // HF-46d 여정 결제 추가 · 오늘(목 지금 18:34 → 18:39까지): 18:40은 확인 비활성, 18:39로 고치면 저장
+    await page.goto('/trips/trip-osaka/payments')
+    await page.getByRole('button', { name: '결제 추가' }).click()
+    step = await typeTime('결제 추가', '1840')
+    await expect(step.getByRole('textbox', { name: '시' })).toHaveValue('18')
+    await expect(step.getByRole('textbox', { name: '분' })).toHaveValue('40')
+    await expect(step.getByRole('textbox', { name: '분' })).toHaveAttribute('aria-invalid', 'true')
+    await expect(step.getByRole('button', { name: '확인' })).toBeDisabled()
+    await step.getByRole('textbox', { name: '분' }).click()
+    await page.keyboard.type('39', { delay: 120 })
+    await expect(step.getByRole('button', { name: '확인' })).toBeEnabled()
+    await step.getByRole('button', { name: '확인' }).click()
+    await expect(page.getByRole('dialog', { name: '결제 추가' }).getByRole('button', { name: /^날짜/ })).toContainText('11.13 18:39')
+
+    // HF-50 지갑 결제 수정 · 19시 · 21시도(QA: "19"→"01", "21"→"02")
+    await page.goto('/wallet')
+    await page.getByRole('button', { name: /다카시마야|패밀리마트|MK택시|빅카메라/ }).first().click()
+    step = await typeTime('결제 수정', '1907', /11월 12일/)
+    await expect(step.getByRole('textbox', { name: '시' })).toHaveValue('19')
+    await step.getByRole('button', { name: '확인' }).click()
+    await expect(page.getByRole('dialog', { name: '결제 수정' }).getByRole('button', { name: /^날짜/ })).toContainText('11.12 19:07')
+    step = await typeTime('결제 수정', '2105')
+    await expect(step.getByRole('textbox', { name: '시' })).toHaveValue('21')
+    await step.getByRole('button', { name: '확인' }).click()
+    await expect(page.getByRole('dialog', { name: '결제 수정' }).getByRole('button', { name: /^날짜/ })).toContainText('11.12 21:05')
+  })
+
   test('지갑 여정 선택: 이미 고른 여정을 다시 눌러도 폼으로 돌아간다(W6b · HF-48b)', async ({ page }) => {
     await useMockScenario(page)
     await page.goto('/wallet/new')

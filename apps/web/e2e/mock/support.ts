@@ -9,6 +9,8 @@ export type MockScenario = {
   accountLink?: boolean
   /** 세션 features.cardImport(카드 내역 불러오기). true = 켜짐, 'low' = 오늘 남은 횟수 2, 'exhausted' = 0. 기본 꺼짐 */
   cardImport?: boolean | 'low' | 'exhausted'
+  /** 카드 내역 조회 동의가 서버에 남아 있는 상태로 시작(새로고침해도 유지). 기본 false */
+  cardImportConsent?: boolean
 }
 
 export async function useMockScenario(page: Page, scenario: MockScenario = {}) {
@@ -21,5 +23,6 @@ export async function useMockScenario(page: Page, scenario: MockScenario = {}) {
     if (s.wallet) localStorage.setItem('yj:mock:wallet', s.wallet)
     if (s.accountLink) localStorage.setItem('yj:mock:accountLink', '1')
     if (s.cardImport) localStorage.setItem('yj:mock:cardImport', s.cardImport === true ? '1' : s.cardImport)
+    if (s.cardImportConsent) localStorage.setItem('yj:mock:cardImportConsent', '1')
   }, scenario)
 }

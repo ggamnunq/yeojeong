@@ -7,7 +7,7 @@ import { Icon, ShellSub } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { toast } from '../../../notifications'
 import { COPY } from '../copy'
-import { useFlowNav, type CardImportFlowState } from '../flow'
+import { useFlowNav } from '../flow'
 import { useCardImportConfig } from '../hooks'
 import { orgMark } from '../rules'
 
@@ -23,7 +23,7 @@ export default function IssuerPage() {
   useEffect(() => {
     if (failed) toast.error(COPY.later)
   }, [failed])
-  if (failed) return <Navigate replace to={paths.walletImport()} state={{ cardImportFlow: true } satisfies CardImportFlowState} />
+  if (failed) return <Navigate replace to={paths.walletImport()} state={flow.navState()} />
 
   return (
     <ShellSub header={{ title: COPY.issuerTitle, onBack: () => flow.go(paths.walletImport()) }} gutter={false}>

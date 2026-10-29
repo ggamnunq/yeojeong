@@ -123,6 +123,19 @@ describe('SheetContentDateRange', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1)
   })
 
+  it('startLabel · endLabel: 칩과 날짜 버튼이 같은 이름으로 읽힌다(출발일·도착일 고정 아님)', () => {
+    render(<Harness startLabel="시작일" endLabel="종료일" initial={{ start: '2026-11-12', end: '2026-11-15' }} />)
+    expect(screen.getByRole('button', { name: '시작일 11.12 (목)' })).toBeTruthy()
+    expect(day(/^2026년 11월 12일 목요일, 시작일$/)).toBeTruthy()
+    expect(day(/^2026년 11월 15일 일요일, 종료일$/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /출발일|도착일/ })).toBeNull()
+  })
+
+  it('시작 = 끝(하루)이면 "시작일·종료일"', () => {
+    render(<Harness startLabel="시작일" endLabel="종료일" initial={{ start: '2026-11-12', end: '2026-11-12' }} />)
+    expect(day(/^2026년 11월 12일 목요일, 시작일·종료일$/)).toBeTruthy()
+  })
+
   it('고를 수 없는 날을 눌러도 값이 바뀌지 않는다', () => {
     const onValue = vi.fn()
     render(<Harness onValue={onValue} />)

@@ -16,7 +16,7 @@ import { monthTotalLabel, walletMeta, walletRowAmounts } from './rules'
 import type { WalletEntry } from './types'
 
 // WF-49 내 지갑(수동, accountLink=false) · WF-49b 빈 상태. 행 탭 → WF-50(지갑 폼), "결제 추가" → WF-48.
-// (v0.7.0, features.cardImport) 헤더 "불러오기"·빈 상태 "카드 내역 불러오기" → WF-51(남은 횟수 0이면 그 화면이 WF-57d를 그린다).
+// (v0.7.0, features.cardImport) 헤더 "불러오기"(내역이 있을 때)·빈 상태 "카드 내역 불러오기"(이때 헤더 액션 없음) → WF-51(남은 횟수 0이면 그 화면이 WF-57d를 그린다).
 // "이번 달" 합계는 서버 S7b 필드(monthTotalKrw · 추정이 섞이면 monthTotalEstimated → "약 ₩…")를 그대로 쓴다.
 
 export default function WalletListPage() {
@@ -36,7 +36,7 @@ export default function WalletListPage() {
   // 카드 내역 불러오기 진입점. 설정(remainingToday)은 미리 받아 둔다(꺼져 있으면 부르지 않는다)
   const cardImport = useCardImportEnabled()
   useCardImportConfig()
-  const openImport = () => navigate(paths.walletImport(), { state: startFlowState })
+  const openImport = () => navigate(paths.walletImport(), { state: startFlowState() })
 
   const add = () => navigate(paths.walletNew(), { state: { fromList: true } })
   const open = (entry: WalletEntry) => navigate(paths.walletEntryEdit(entry.id), { state: { fromList: true } })
@@ -44,7 +44,8 @@ export default function WalletListPage() {
 
   return (
     <ShellSub
-      header={{ title: '내 지갑', onBack: back, textAction: cardImport ? { label: '불러오기', onClick: openImport } : undefined }}
+      // HF-49b: 빈 지갑에서는 진입점을 텍스트 버튼 "카드 내역 불러오기" 하나로 둔다(헤더 "불러오기"는 내역이 있을 때만)
+      header={{ title: '내 지갑', onBack: back, textAction: cardImport && items.length > 0 ? { label: '불러오기', onClick: openImport } : undefined }}
       gutter={false} cta={empty ? { label: '결제 추가', leadingIcon: true, icon: 'plus', onClick: add } : undefined}>
       {query.isPending ? (
         <LoadingScreen inset gutter />

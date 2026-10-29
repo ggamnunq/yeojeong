@@ -7,6 +7,7 @@ import { server } from '../../mocks/server'
 import { api, mockError } from '../../mocks/utils'
 import { renderApp } from '../../test/render'
 import { cardImportKeys } from './api'
+import { typeKeys } from '../../test/typeKeys'
 import { resetCardImportMock } from './mocks'
 
 // W7 카드 내역 불러오기 화면(WF-51~58) · 보안 요구(화면명세 L-0 메모리 규칙). 목 시점 = 11.13 18:34, 오사카 진행 중.
@@ -69,10 +70,12 @@ describe('진입점(HF-49 · 49b · 0-11)', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/wallet'))
   })
 
-  it('shows "카드 내역 불러오기" above the CTA on the empty wallet', async () => {
+  it('shows "카드 내역 불러오기" above the CTA on the empty wallet — and hides the header "불러오기" there (HF-49b)', async () => {
     db.walletEntries = []
     renderApp('/wallet')
     expect(await screen.findByText('결제 기록이 없어요')).toBeTruthy()
+    // 빈 상태의 진입점은 텍스트 버튼 하나
+    expect(screen.queryByRole('button', { name: '불러오기' })).toBeNull()
     fireEvent.click(button('카드 내역 불러오기'))
     expect(await screen.findByText('외부 업체(CODEF)')).toBeTruthy()
   })
@@ -98,6 +101,80 @@ describe('진입점(HF-49 · 49b · 0-11)', () => {
   it('a reload into the middle of the flow restarts at WF-51', async () => {
     const { router } = renderApp('/wallet/import/0306')
     await waitFor(() => expect(router.state.location.pathname).toBe('/wallet/import'))
+  })
+
+  it('a restored history state from an earlier page load (stale nonce) restarts at WF-51, even with the consent kept', async () => {
+    resetCardImportMock({ consented: true })
+    const { router } = renderApp('/wallet')
+    await screen.findByText('이번 달')
+    // 새로고침 뒤 브라우저가 돌려준 history state: 흐름 표시는 있지만 이 페이지 메모리의 nonce가 아니다
+    await router.navigate('/wallet/import/0306', { state: { cardImportFlow: true, nonce: 'from-before-reload', fromWallet: true } })
+    await waitFor(() => expect(router.state.location.pathname).toBe('/wallet/import'))
+    expect(await screen.findByText('카드사 로그인 정보')).toBeTruthy()
+    expect(screen.queryByLabelText('아이디')).toBeNull()
+    // WF-51에서 다시 시작하면 흐름이 이어진다
+    await waitFor(() => expect(disabled(button('계속'))).toBe(false))
+    fireEvent.click(button('계속'))
+    fireEvent.click(await screen.findByRole('button', { name: /신한카드/ }))
+    expect(await screen.findByLabelText('아이디')).toBeTruthy()
+    for (const path of ['/wallet/import/issuer', '/wallet/import/0306']) {
+      await router.navigate(path, { state: { cardImportFlow: true, nonce: 'from-before-reload' } })
+      await waitFor(() => expect(router.state.location.pathname).toBe('/wallet/import'))
+    }
+  })
+
+  it('forward into an old flow entry after leaving the flow restarts at WF-51', async () => {
+    resetCardImportMock({ consented: true })
+    const { router } = renderApp('/wallet')
+    fireEvent.click(await screen.findByRole('button', { name: '불러오기' }))
+    await waitFor(() => expect(disabled(button('계속'))).toBe(false))
+    fireEvent.click(button('계속'))
+    fireEvent.click(await screen.findByRole('button', { name: /신한카드/ }))
+    await screen.findByLabelText('아이디')
+    const oldState = router.state.location.state
+    // ‹ ‹ ‹로 흐름을 끝내고 지갑으로
+    fireEvent.click(button('뒤로 가기'))
+    fireEvent.click(await screen.findByRole('button', { name: '뒤로 가기' }))
+    await screen.findByText('고른 결제만')
+    fireEvent.click(button('뒤로 가기'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/wallet'))
+    await router.navigate('/wallet/import/0306', { state: oldState })
+    await waitFor(() => expect(router.state.location.pathname).toBe('/wallet/import'))
+  })
+
+  it('the consent row › opens the document in-app, and ‹ there returns to WF-51 with the check kept (HF-51)', async () => {
+    const { router } = renderApp('/wallet')
+    fireEvent.click(await screen.findByRole('button', { name: '불러오기' }))
+    const check = await screen.findByRole('checkbox', { name: /카드 내역 조회 동의/ })
+    fireEvent.click(check)
+    const link = screen.getByRole('link', { name: '카드 내역 조회 동의 전문' })
+    expect(link.getAttribute('href')).toBe('/consents/CARD_IMPORT')
+    // 라우터 이동이면 메모리 라우터 주소가 바뀐다(href 기본 동작 = 전체 새로고침이면 바뀌지 않는다)
+    expect(fireEvent.click(link)).toBe(false)
+    await waitFor(() => expect(router.state.location.pathname).toBe('/consents/CARD_IMPORT'))
+    fireEvent.click(await screen.findByRole('button', { name: '뒤로 가기' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/wallet/import'))
+    const again = await screen.findByRole('checkbox', { name: /카드 내역 조회 동의/ })
+    expect((again as HTMLInputElement).checked).toBe(true)
+    await waitFor(() => expect(disabled(button('계속'))).toBe(false))
+    fireEvent.click(button('계속'))
+    expect(await screen.findByRole('heading', { name: '카드사 선택' })).toBeTruthy()
+    expect(db.cardImportState.consentVersion).toBe('0.1-draft')
+    // 흐름은 그대로(WF-52 ‹ → WF-51, 동의 뒤라 체크 행 없음 · 지갑에서 들어온 흐름이라 ‹ 한 번 더 → 지갑)
+    fireEvent.click(button('뒤로 가기'))
+    await screen.findByText('고른 결제만')
+    fireEvent.click(button('뒤로 가기'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/wallet'))
+  })
+
+  it('a new flow from the wallet starts with the check off', async () => {
+    const { router } = renderApp('/wallet')
+    fireEvent.click(await screen.findByRole('button', { name: '불러오기' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: /카드 내역 조회 동의/ }))
+    fireEvent.click(button('뒤로 가기'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/wallet'))
+    fireEvent.click(await screen.findByRole('button', { name: '불러오기' }))
+    expect(((await screen.findByRole('checkbox', { name: /카드 내역 조회 동의/ })) as HTMLInputElement).checked).toBe(false)
   })
 })
 
@@ -318,6 +395,16 @@ describe('보안(L-0 메모리 규칙)', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/wallet'))
   })
 
+  it('0건(56b) EmptyState = 일러스트 144 + 제목 H2(HF-09와 같은 구성)', async () => {
+    await toLogin()
+    fillLogin('empty')
+    fireEvent.click(button('불러오기'))
+    const title = await screen.findByRole('heading', { level: 2, name: '이 기간에 승인 내역이 없어요' })
+    const illust = title.parentElement?.querySelector('svg')
+    expect(illust?.getAttribute('width')).toBe('144')
+    expect(button('기간 바꾸기')).toBeTruthy()
+  })
+
   it('shows 56e when the result tokens expired', async () => {
     server.use(api.post('/api/wallet/entries/import', () => mockError('CARD_IMPORT_RESULT_EXPIRED', 410, { invalidIndexes: [0] })))
     await toLogin()
@@ -410,6 +497,22 @@ describe('WF-51 재동의(약관 MAJOR 버전 상승)', () => {
 })
 
 describe('수동 결제 날짜 단계(HF-46d · SheetContent/DateTime)', () => {
+  it('typing the hour one key at a time keeps "15" (not "01") — HF-48', async () => {
+    renderApp('/wallet/new')
+    const sheet = await screen.findByRole('dialog', { name: '결제 추가' })
+    fireEvent.click(within(sheet).getByRole('button', { name: /^날짜/ }))
+    const step = await screen.findByRole('dialog', { name: '날짜' })
+    fireEvent.click(within(step).getByRole('button', { name: /11월 12일/ }))
+    const hour = within(step).getByRole('textbox', { name: '시' }) as HTMLInputElement
+    const minute = within(step).getByRole('textbox', { name: '분' }) as HTMLInputElement
+    typeKeys(hour, '1520')
+    expect(hour.value).toBe('15')
+    expect(minute.value).toBe('20')
+    fireEvent.click(within(step).getByRole('button', { name: '확인' }))
+    const form = await screen.findByRole('dialog', { name: '결제 추가' })
+    expect(within(form).getByRole('button', { name: /^날짜/ }).textContent).toContain('11.12 15:20')
+  })
+
   it('picks a date and time with the DS19 sheet', async () => {
     renderApp('/wallet/new')
     const sheet = await screen.findByRole('dialog', { name: '결제 추가' })

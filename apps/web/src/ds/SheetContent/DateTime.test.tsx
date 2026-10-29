@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { typeKeys } from '../../test/typeKeys'
 import { SheetContentDateTime, type SheetContentDateTimeProps } from './DateTime'
 import {
   dateTimeDraft,
@@ -141,6 +142,81 @@ describe('SheetContentDateTime', () => {
     expect(minute.value).toBe('05')
     fireEvent.change(minute, { target: { value: '4x' } })
     expect(minute.value).toBe('4')
+  })
+
+  describe('한 글자씩 입력(키보드 그대로)', () => {
+    const fields = () => ({
+      hour: screen.getByRole('textbox', { name: '시' }) as HTMLInputElement,
+      minute: screen.getByRole('textbox', { name: '분' }) as HTMLInputElement,
+    })
+
+    it.each([
+      ['15', '20'],
+      ['19', '45'],
+      ['21', '07'],
+      ['09', '59'],
+      ['00', '00'],
+    ])('시 "%s" → 분 "%s"를 한 자씩 치면 그대로 남는다(앞 글자로 0을 붙여 덮어쓰지 않는다)', (h, m) => {
+      const onValue = vi.fn()
+      render(<Harness initial={{ date: '2026-11-12', hour: '08', minute: '30' }} onValue={onValue} />)
+      const { hour, minute } = fields()
+      typeKeys(hour, h)
+      expect(hour.value).toBe(h)
+      expect(document.activeElement).toBe(minute)
+      // 분 칸으로 옮겨 가면 전체 선택이라 바로 덮어쓴다
+      typeKeys(minute, m)
+      expect(hour.value).toBe(h)
+      expect(minute.value).toBe(m)
+      expect(onValue).toHaveBeenLastCalledWith({ date: '2026-11-12', hour: h, minute: m })
+      // 분으로 넘어가며 생기는 시 칸 blur가 첫 글자로 "0X"를 덮어쓰지 않는다
+      if (h !== `0${h[0]}`) expect(onValue).not.toHaveBeenCalledWith(expect.objectContaining({ hour: `0${h[0]}` }))
+    })
+
+    it('시에서 4글자를 이어 치면 2글자 뒤 분으로 넘어가 "15:20"', () => {
+      render(<Harness initial={{ date: '2026-11-12', hour: '08', minute: '30' }} />)
+      const { hour, minute } = fields()
+      typeKeys(hour, '1520')
+      expect(hour.value).toBe('15')
+      expect(minute.value).toBe('20')
+    })
+
+    it('1자리만 치고 떠나면 앞에 0(시 · 분)', () => {
+      render(<Harness initial={{ date: '2026-11-12', hour: '08', minute: '30' }} />)
+      const { hour, minute } = fields()
+      typeKeys(hour, '7')
+      expect(document.activeElement).toBe(hour)
+      act(() => minute.focus())
+      expect(hour.value).toBe('07')
+      typeKeys(minute, '5')
+      act(() => hour.focus())
+      expect(minute.value).toBe('05')
+      expect(hour.value).toBe('07')
+    })
+
+    it('오늘 + 지금+5분 제한: 15:21은 확인 비활성 · 15:20은 켜지고 그 값으로 확인', () => {
+      const onClick = vi.fn()
+      const onValue = vi.fn()
+      render(<Harness initial={{ date: '2026-11-13', hour: '10', minute: '00' }} onValue={onValue} cta={{ onClick }} />)
+      const { hour, minute } = fields()
+      typeKeys(hour, '1521')
+      expect(hour.value).toBe('15')
+      expect(minute.value).toBe('21')
+      expect(confirm().disabled).toBe(true)
+      expect(minute.getAttribute('aria-invalid')).toBe('true')
+      // 분을 다시 눌러(전체 선택) 한 자씩 고친다
+      act(() => minute.blur())
+      typeKeys(minute, '20')
+      expect(minute.value).toBe('20')
+      expect(confirm().disabled).toBe(false)
+      expect(minute.getAttribute('aria-invalid')).toBeNull()
+      fireEvent.click(confirm())
+      expect(onClick).toHaveBeenCalledTimes(1)
+      expect(onValue).toHaveBeenLastCalledWith({ date: '2026-11-13', hour: '15', minute: '20' })
+      // 시를 16으로 치면 다시 범위 밖
+      typeKeys(hour, '16')
+      expect(hour.value).toBe('16')
+      expect(confirm().disabled).toBe(true)
+    })
   })
 
   it('오늘 + 지금+5분 넘는 시각 → 시각 칸 aria-invalid · 확인 비활성, 고치면 다시 켜짐', () => {
