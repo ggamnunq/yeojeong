@@ -22,3 +22,7 @@
 # 브라우저는 목록의 마지막 정책(no-referrer)을 쓴다. 앱은 시작 즉시 주소에서 코드를 지운다(pendingInvite.captureInviteLink)
 /join
   Referrer-Policy: no-referrer
+
+# 배포된 빌드 ID(오래 열어 둔 탭이 새 번들이 나왔는지 확인한다, src/app/buildInfo.ts). 캐시하면 옛 값을 보게 되므로 no-store
+/version.json
+  Cache-Control: no-store

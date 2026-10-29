@@ -97,6 +97,7 @@ documents() {}
 | GET    | `/api/users/me`                                    | 로그인           | `Me`(`hasProfileImage`, 결제수단 수, 만료 연결 여부)                                             |
 | DELETE | `/api/users/me`                                    | 로그인           | 앱 안 탈퇴(FR-109, HF-59) `{ confirm: true }` → 204, 세션 쿠키 삭제. 재동의 전에도 허용          |
 | GET    | `/api/notices/active`                              | 공개             | 게시 중인 공지(Q-57) `{ items: [{ id, title, url, startsAt, endsAt }] }`, 최신부터. `Cache-Control: private, max-age=300`(세션 연장 Set-Cookie가 실릴 수 있어 공유 캐시 금지) |
+| POST   | `/api/client-errors`                               | 공개, Origin     | 화면 오류 보고 → 구조화 로그 `event=client_error`(DB 저장 없음). 204. 본문 8KB(413), IP 1분 20회·사용자 1분 10회(429). [docs/ops/client-errors.md](../../docs/ops/client-errors.md) |
 | GET    | `/api/consents/documents?stage=SIGNUP\|FIN_LINK`    | 공개             | 동의 문서 현재 버전(`hidden`이면 화면에 그리지 않음)                                            |
 | GET    | `/api/consents/status?stage=FIN_LINK`              | 로그인           | 연동 동의 유효 여부                                                                              |
 | POST   | `/api/consents`                                    | 로그인           | 연동 동의(FIN_LINK·FIN_PRIVACY·THIRD_PARTY) 저장. 성공해야 결제수단 연결을 시작한다              |
@@ -263,6 +264,7 @@ throw new NotFoundError();
 - 금액, 카드·계좌번호, 거래 내역, 이메일, 전화번호, 토큰은 로그에 넣지 않는다. 필요하면 ID만 남긴다.
 - 개인정보를 URL 경로나 쿼리에 넣지 않는다(경로는 로그에 남는다).
 - 요청 ID는 서버가 요청마다 UUID v4로 만든다. 클라이언트가 보낸 `x-request-id`는 쓰지 않는다.
+- 화면에서 난 오류는 `POST /api/client-errors`(`src/client-errors`)가 error 레벨 `event=client_error` 한 줄로 남긴다(경로 템플릿·가린 메시지·스택 파일 이름, 로그인 사용자는 HMAC `userRef`). 필터 예시는 [docs/ops/client-errors.md](../../docs/ops/client-errors.md).
 
 ## Swagger
 

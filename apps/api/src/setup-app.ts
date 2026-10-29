@@ -4,6 +4,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import type { Logger as PinoInstance } from 'pino';
+import { clientErrorBodyLimit } from './client-errors/client-error-body-limit.js';
 import { createHttpLogger } from './common/logging/http-logger.js';
 import { PINO_LOGGER } from './common/logging/logging.module.js';
 import { REQUEST_ID_HEADER } from './common/logging/request-id.js';
@@ -34,6 +35,8 @@ export function setupApp(app: NestExpressApplication) {
     app.use(originLock(originSecret));
   }
 
+  // 화면 오류 보고(/api/client-errors)는 로그인 없이 열려 있어 본문을 8KB로 더 좁힌다. 전역 파서보다 먼저 둔다
+  app.use(clientErrorBodyLimit());
   app.useBodyParser('json', { limit: '100kb' });
 
   // 화면과 API가 같은 origin(jinyeojeong.com)이라 운영에서는 비워 둔다

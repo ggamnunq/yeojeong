@@ -8,7 +8,7 @@
 
 - **보안 헤더**: helmet을 쓴다. `X-Powered-By`도 제거된다.
 - **입력 검증**: 전역 `ValidationPipe`(whitelist, forbidNonWhitelisted, transform)를 쓴다. DTO에 없는 필드가 오면 400으로 거부한다.
-- **요청 본문**: JSON만 받고 크기는 100kb로 제한한다. 폼(urlencoded) 파서는 꺼 두었다.
+- **요청 본문**: JSON만 받고 크기는 100kb로 제한한다. 폼(urlencoded) 파서는 꺼 두었다. 로그인 없이 열린 화면 오류 보고(`POST /api/client-errors`)는 8KB로 더 좁히고 IP·사용자별 한도를 따로 둔다([docs/ops/client-errors.md](ops/client-errors.md)).
 - **Rate limit**: 전역으로 IP당 1분에 120회까지 허용한다.
   - 로그인이나 인증번호처럼 무차별 대입 대상이 되는 엔드포인트에는 `@StrictThrottle()`(1분에 10회)를 붙인다.
   - 카운터는 인스턴스 메모리에 있어서 Cloud Run 인스턴스마다 따로 센다. 인증을 붙일 때 Redis 같은 공유 저장소를 검토한다.
