@@ -20,10 +20,10 @@ locals {
       paused      = false
     }
     sync = {
-      description = "진행 중 여정 결제 동기화(PR #23 배포 후 활성화)"
+      description = "진행 중 여정 결제 동기화"
       schedule    = "*/10 * * * *"
       path        = "/api/internal/jobs/sync"
-      paused      = true
+      paused      = false
     }
     fx = {
       description = "한국수출입은행 고시 근처 환율 수집"

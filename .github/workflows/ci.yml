@@ -32,6 +32,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://yeojeong:yeojeong@localhost:5432/yeojeong_test
       TEST_DATABASE_URL: postgresql://yeojeong:yeojeong@localhost:5432/yeojeong_s2a_test
+      # 결제수단·인입 e2e(test/payment-flow.e2e-spec.ts). S2A 테스트의 TRUNCATE와 겹치지 않게 DB를 따로 둔다
+      PAYMENT_TEST_DATABASE_URL: postgresql://yeojeong:yeojeong@localhost:5432/yeojeong_s2b_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,8 +45,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: PGPASSWORD=yeojeong createdb -h localhost -U yeojeong yeojeong_s2a_test
+      - run: PGPASSWORD=yeojeong createdb -h localhost -U yeojeong yeojeong_s2b_test
       - run: pnpm --filter @yeojeong/api db:migrate:deploy
       - run: DATABASE_URL="$TEST_DATABASE_URL" pnpm --filter @yeojeong/api db:migrate:deploy
+      - run: DATABASE_URL="$PAYMENT_TEST_DATABASE_URL" pnpm --filter @yeojeong/api db:migrate:deploy
       # api의 type-aware 린트가 shared 빌드 결과를 참조하므로 빌드를 먼저 한다
       - run: pnpm build
       - run: pnpm --filter @yeojeong/web ds:tokens:check

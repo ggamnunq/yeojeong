@@ -6,7 +6,6 @@ import {
   expensesDuplicateFlagger,
 } from './duplicate-flagger.js';
 import { ImportService } from './import.service.js';
-import { InternalJobGuard } from './internal-job.guard.js';
 import { JobsController } from './jobs.controller.js';
 import { OutOfPeriodLookupService } from './out-of-period-lookup.service.js';
 import { SyncService } from './sync.service.js';
@@ -24,7 +23,6 @@ import { TripEventsListener } from './trip-events.listener.js';
     ImportService,
     OutOfPeriodLookupService,
     TripEventsListener,
-    InternalJobGuard,
     { provide: DuplicateFlagger, useValue: expensesDuplicateFlagger },
   ],
   exports: [SyncService, ImportService, OutOfPeriodLookupService],
