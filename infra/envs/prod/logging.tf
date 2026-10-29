@@ -54,8 +54,9 @@ locals {
     "secretmanager.googleapis.com" = ["ADMIN_READ", "DATA_READ", "DATA_WRITE"]
     # 서비스·리비전 설정(env, 시크릿 연결) 조회
     "run.googleapis.com" = ["ADMIN_READ", "DATA_READ", "DATA_WRITE"]
-    # 서비스 계정 가장(GitHub Actions WIF 배포, 사람이 SA로 토큰 발급)
-    "iamcredentials.googleapis.com" = ["DATA_READ"]
+    # 서비스 계정 가장(GitHub Actions WIF 배포, 사람이 SA로 토큰 발급).
+    # iamcredentials.googleapis.com은 서비스 단위 감사 설정을 받지 않는다 — IAM API 설정이 함께 다룬다.
+    "iam.googleapis.com" = ["DATA_READ"]
     # Terraform state 버킷 읽기·쓰기(state에 DB 비밀번호가 들어 있다)
     "storage.googleapis.com" = ["DATA_READ", "DATA_WRITE"]
     # 로그 조회. 앱 로그에 접속 IP가 있다
