@@ -19,6 +19,43 @@ export abstract class ConsentChecker {
   ): Promise<ConsentRequirement[]>;
 }
 
+/** 판정에 쓰는 동의 이력 행 */
+export interface ConsentHistoryRow {
+  consentId: ConsentId;
+  version: string;
+  agreed: boolean;
+  agreedAt: Date;
+  withdrawnAt: Date | null;
+  createdAt: Date;
+}
+
+/**
+ * 이 항목에서 지금 유효한 버전 목록(기능명세 4-10 v0.5.7, docs/legal/consents.md 4절).
+ * 버전마다 가장 최근 행(agreedAt 최대, 같으면 createdAt)만 보고, 그 행이 agreed이고 철회되지 않았을 때만 유효하다.
+ * 철회 뒤 다시 동의하면 새 행이 쌓이므로(append) 최신 행이 유효해지고, 철회된 옛 행은 기록으로 남는다.
+ */
+export function validConsentVersions(
+  rows: readonly ConsentHistoryRow[],
+  consentId: ConsentId,
+): string[] {
+  const latest = new Map<string, ConsentHistoryRow>();
+  for (const row of rows) {
+    if (row.consentId !== consentId) continue;
+    const current = latest.get(row.version);
+    if (
+      !current ||
+      row.agreedAt.getTime() > current.agreedAt.getTime() ||
+      (row.agreedAt.getTime() === current.agreedAt.getTime() &&
+        row.createdAt.getTime() > current.createdAt.getTime())
+    ) {
+      latest.set(row.version, row);
+    }
+  }
+  return [...latest.values()]
+    .filter((row) => row.agreed && row.withdrawnAt === null)
+    .map((row) => row.version);
+}
+
 @Injectable()
 export class PrismaConsentChecker extends ConsentChecker {
   constructor(
@@ -36,23 +73,23 @@ export class PrismaConsentChecker extends ConsentChecker {
     const [docs, rows] = await Promise.all([
       this.catalog.load(),
       this.prisma.userConsent.findMany({
-        where: {
-          userId,
-          consentId: { in: [...consentIds] },
+        where: { userId, consentId: { in: [...consentIds] } },
+        select: {
+          consentId: true,
+          version: true,
           agreed: true,
-          withdrawnAt: null,
+          agreedAt: true,
+          withdrawnAt: true,
+          createdAt: true,
         },
-        select: { consentId: true, version: true },
       }),
     ]);
     const now = new Date();
     return consentIds
-      .filter((id) => {
-        const versions = rows
-          .filter((row) => row.consentId === id)
-          .map((row) => row.version);
-        return !isConsentSatisfied(id, versions, docs, now);
-      })
+      .filter(
+        (id) =>
+          !isConsentSatisfied(id, validConsentVersions(rows, id), docs, now),
+      )
       .map((id) => ({
         id,
         version: currentConsentVersion(id, docs, now).version,

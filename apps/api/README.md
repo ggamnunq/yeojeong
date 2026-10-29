@@ -136,6 +136,9 @@ documents() {}
 | `TOKEN_ENCRYPTION_KEY`                    | Secret Manager(random_bytes 32)        | `*_enc` 컬럼 AES-256-GCM(`TokenCipher`) |
 | `USER_REF_HMAC_KEY`                       | Secret Manager(random_password)        | 교체 금지(prevent_destroy)              |
 | `SUPPORT_EMAIL`                           | Cloud Run 일반 env                     | 임시 주소                               |
+| `KAKAO_ADMIN_KEY`                         | Secret Manager(사용자가 gcloud로 생성, `yeojeong-kakao-admin-key`) | 선택. 없으면 연결 끊기 알림 404. Terraform `enable_kakao_unlink` |
+| `KAKAO_APP_ID`                            | Cloud Run 일반 env(`kakao_app_id`)     | 선택. 연결 끊기 알림 app_id 확인         |
+| `EXIM_API_KEY`                            | Secret Manager(사용자가 gcloud로 생성, `yeojeong-exim-api-key`) | 선택. 있으면 환율 소스 koreaexim. Terraform `enable_exim_fx` |
 
 ### 내부 잡 인증
 
@@ -143,7 +146,13 @@ documents() {}
 - 운영은 Cloud Scheduler가 Cloud Run URL을 직접 호출하며, `Authorization: Bearer <OIDC ID token>`의 Google JWKS 서명·`aud`·서비스 계정 `email`을 검증한다. `INTERNAL_JOB_OIDC_AUDIENCE`와 `INTERNAL_JOB_OIDC_SERVICE_ACCOUNT`가 정확히 일치해야 한다.
 - 로컬·테스트만 `x-internal-job-secret` = `INTERNAL_JOB_SECRET`(32자 이상)을 대체 인증으로 허용한다. `NODE_ENV=production`에서는 이 헤더를 무시한다.
 - `/api/internal/`은 Cloudflare origin lock을 건너뛴다. 이 경로의 인증 경계는 `@InternalJob()` 가드다.
-- 내부 잡 목록(모두 `POST`, 본문 `{}`): `auto-end`(5분), `sync`(10분, 결제 동기화), `fx`(11:10·17:10), `settlements`(매시 15분), `purge`(04:00) — Cloud Scheduler `yeojeong-<이름>`(`infra/envs/prod/scheduler.tf`). `consent-ip-backfill`은 Scheduler 잡 없이 수동으로 부르는 일회성 이관 잡이다(파기 배치가 같은 일을 매일 한다, `prisma/README.md` "동의 기록 IP").
+- 내부 잡 목록(모두 `POST`, 본문 `{}`): `auto-end`(5분), `sync`(10분, 결제 동기화), `fx`(11:10·17:10), `settlements`(매시 15분), `purge`(04:00) — Cloud Scheduler `yeojeong-<이름>`(`infra/envs/prod/scheduler.tf`).
+
+### 외부 서버 콜백 (`@ExternalWebhook()`)
+
+- 브라우저가 아닌 외부 서버가 부르는 콜백(지금은 카카오 "연결 끊기 알림" `GET|POST /api/auth/kakao/unlink`)에만 붙인다. `@Public()` + CSRF 예외라 **핸들러가 호출자를 직접 인증해야 한다**(공유 비밀 상수 시간 비교).
+- `/api/internal/`과 달리 origin lock은 그대로다. 카카오 → `jinyeojeong.com/api/...`(Cloudflare Worker가 `x-origin-auth`를 붙이고 `Authorization`·본문·쿼리를 그대로 넘김, `apps/web/worker/index.test.ts`) → Cloud Run.
+- 카카오 연결 끊기 알림: `Authorization: KakaoAK {Admin 키}`를 `KAKAO_ADMIN_KEY`와 SHA-256 다이제스트로 상수 시간 비교, `KAKAO_APP_ID`가 있으면 `app_id`도 확인. 틀리면 본문 없는 401, 키가 없으면 404. 성공은 회원 여부와 무관하게 200 빈 본문. 처리 = 그 회원의 세션 전부 폐기 + 가입 대기 삭제 + 접근 기록 `KAKAO_UNLINKED` + 경고 로그(운영 알림). 탈퇴 여부는 미결 Q-32(기본안: 탈퇴하지 않음).
 
 ### 테스트에서 로그인 흉내 내기
 

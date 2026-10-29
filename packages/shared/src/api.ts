@@ -49,6 +49,16 @@ export type AuthStatus = 'ANONYMOUS' | 'SIGNUP_REQUIRED' | 'AUTHENTICATED';
 export interface SignupDraft {
   kakaoNickname: string | null;
   profileImageUrl: string | null;
+  /**
+   * 로그인 시작(`/api/auth/kakao/start?returnTo=`) 때 받은 돌아갈 화면 경로(같은 origin의 상대 경로만, 예: `/join?code=K7M2QX`).
+   * 가입을 마친 뒤 이리로 보낸다. 없으면 null. 서버는 항상 채운다(전환 기간 웹 목 호환을 위해 선택 필드)
+   */
+  returnTo?: string | null;
+}
+
+/** POST /api/auth/signup 응답(FR-103·104). 가입을 마친 뒤 갈 화면은 returnTo(없으면 null → 진입 라우팅) */
+export interface SignupResponse extends Me {
+  returnTo: string | null;
 }
 
 /** GET /api/auth/session (FR-102) */

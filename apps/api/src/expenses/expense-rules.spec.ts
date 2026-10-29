@@ -4,6 +4,7 @@ import {
   computePermissions,
   computeSplit,
   effectiveStatus,
+  expandsSharing,
   invalidParticipants,
   isPayerOnly,
   isVisibleTo,
@@ -275,6 +276,38 @@ describe('state transitions (3-2)', () => {
     expect(
       plan(current({ status: 'PERSONAL' }), { status: 'PERSONAL' }, active),
     ).toEqual({ kind: 'NOOP' });
+  });
+
+  it('expandsSharing: only pending/personal → shared and adding a participant widen disclosure (4-10 v0.5.7)', () => {
+    const shared = current({
+      status: 'SHARED',
+      participantIds: ['a', 'b', 'c'],
+      firstSharedAt: new Date(),
+    });
+    const widen = (c: ClassificationCurrent, r: Parameters<typeof plan>[1]) =>
+      expandsSharing(plan(c, r, active), c.participantIds);
+    expect(widen(current(), { status: 'SHARED' })).toBe(true);
+    expect(
+      widen(current({ status: 'PERSONAL' }), {
+        status: 'SHARED',
+        participantIds: ['a', 'b'],
+      }),
+    ).toBe(true);
+    expect(
+      widen(shared, { status: 'SHARED', participantIds: ['a', 'b', 'c', 'd'] }),
+    ).toBe(true);
+    // 한 명 빼고 다른 한 명을 넣는 것도 새 멤버 추가다
+    expect(
+      widen(shared, { status: 'SHARED', participantIds: ['a', 'b', 'd'] }),
+    ).toBe(true);
+    expect(
+      widen(shared, { status: 'SHARED', participantIds: ['a', 'b'] }),
+    ).toBe(false);
+    expect(
+      widen(shared, { status: 'PERSONAL', confirmSharedToPersonal: true }),
+    ).toBe(false);
+    expect(widen(current(), { status: 'PERSONAL' })).toBe(false);
+    expect(widen(shared, { status: 'SHARED' })).toBe(false);
   });
 });
 

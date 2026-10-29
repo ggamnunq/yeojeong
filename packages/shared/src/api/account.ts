@@ -44,7 +44,6 @@ export const PURGE_STEP_VALUES = [
   'REVOKED_CONNECTIONS',
   'INACTIVE_USERS',
   'USER_CONSENTS',
-  'CONSENT_IP_PLAINTEXT',
   'ACCESS_LOGS',
   'ACCOUNT_DELETIONS',
 ] as const;
@@ -64,11 +63,8 @@ export interface PurgeStepResult {
   count: number;
   /** 한 번에 처리하는 상한에 걸려 남은 대상이 있으면 true. 다음 실행이 이어서 지운다 */
   hasMore: boolean;
-  /**
-   * LOCKED = 다른 실행이 잠금을 쥐고 있어 건너뜀.
-   * NO_KEY = AUDIT_HMAC_KEY가 없어 동의 기록 IP 평문을 해시로 바꾸지 못함(평문은 그대로 둔다)
-   */
-  skipped?: 'LOCKED' | 'NO_KEY';
+  /** LOCKED = 다른 실행이 잠금을 쥐고 있어 건너뜀 */
+  skipped?: 'LOCKED';
 }
 
 export interface PurgeJobResult {
@@ -79,12 +75,3 @@ export interface PurgeJobResult {
   steps: PurgeStepResult[];
 }
 
-/** POST /api/internal/jobs/consent-ip-backfill 응답(내부 잡, 동의 기록 IP 평문 → HMAC 이관) */
-export interface ConsentIpBackfillResult {
-  /** 이번 실행에서 해시로 바꾸고 평문을 지운 행 수 */
-  hashed: number;
-  /** 실행 뒤 남은 평문 행 수. 0이면 contract(평문 컬럼 DROP) 조건을 만족한다 */
-  remaining: number;
-  /** AUDIT_HMAC_KEY가 없어 아무것도 바꾸지 않은 경우 */
-  skipped?: 'NO_KEY';
-}

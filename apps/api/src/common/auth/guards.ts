@@ -8,6 +8,7 @@ import {
   SIGNUP_REQUIRED_CONSENTS,
   type ConsentId,
   type ConsentRequiredDetails,
+  type ConsentRequiredReason,
   type ConsentRequirement,
   type MemberRole,
 } from '@yeojeong/shared';
@@ -19,6 +20,7 @@ import {
 } from '../errors/app-exception.js';
 import { IS_INTERNAL_JOB_KEY } from '../internal-job/internal-job.constants.js';
 import {
+  IS_EXTERNAL_WEBHOOK_KEY,
   IS_PUBLIC_KEY,
   REQUIRED_CONSENTS_KEY,
   REQUIRED_ROLE_KEY,
@@ -63,6 +65,9 @@ export class CsrfGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest<Request>();
     if (!UNSAFE_METHODS.has(req.method)) return true;
     if (metadata<boolean>(this.reflector, IS_INTERNAL_JOB_KEY, ctx))
+      return true;
+    // 서버 간 콜백은 브라우저 요청이 아니라 Origin이 없다. 핸들러가 공유 비밀로 직접 인증한다(@ExternalWebhook)
+    if (metadata<boolean>(this.reflector, IS_EXTERNAL_WEBHOOK_KEY, ctx))
       return true;
 
     const origin = req.headers.origin;
@@ -153,10 +158,14 @@ export class ConsentGuard implements CanActivate {
   }
 }
 
-export function consentRequired(required: ConsentRequirement[]) {
+export function consentRequired(
+  required: ConsentRequirement[],
+  reason?: ConsentRequiredReason,
+) {
   const details: ConsentRequiredDetails = {
     missing: required.map((item) => item.id),
     required,
+    ...(reason && { reason }),
   };
   return AppException.of('CONSENT_REQUIRED', { details });
 }

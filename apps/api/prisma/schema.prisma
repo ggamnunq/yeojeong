@@ -282,9 +282,6 @@ model UserConsent {
   /// 선택 항목 미동의도 false로 기록
   agreed          Boolean
   agreedAt        DateTime  @default(now()) @map("agreed_at") @db.Timestamptz
-  /// 폐기 예정(expand 단계): 예전 리비전이 남긴 접속 IP 평문. 새 코드는 쓰지 않고, 이관 잡이 ipHash로 옮긴 뒤 NULL로 지운다.
-  /// 운영에서 0건을 확인한 뒤 contract 마이그레이션으로 컬럼을 지운다(prisma/README.md "동의 기록 IP").
-  ip              String?   @db.Inet
   /// 동의 시 접속 IP(origin lock이 넘긴 클라이언트 IP)의 HMAC-SHA256 hex(AUDIT_HMAC_KEY). 키가 없으면 NULL
   ipHash          String?   @map("ip_hash") @db.Char(64)
   /// User-Agent 512자 자름
@@ -301,7 +298,10 @@ model UserConsent {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@unique([userId, consentId, version])
+  /// 철회 뒤 같은 버전에 다시 동의하면 새 행을 쌓는다(append, 기능명세 4-10 v0.5.7). 그래서 전체 UNIQUE 대신
+  /// 부분 유니크 user_consents_active_key (user_id, consent_id, version) WHERE agreed AND withdrawn_at IS NULL 을 둔다.
+  /// Prisma 스키마로 표현할 수 없어 마이그레이션 SQL(20261029010000_user_consents_append_regrant)에만 있다. 유효 판정은 버전별 최신 행(common/auth/consent-checker.ts).
+  @@index([userId, consentId, version])
   @@index([consentId, version])
   @@index([userRefHash])
   @@map("user_consents")
@@ -624,6 +624,9 @@ model Expense {
   /// 원본 거래를 파기해도 SHARED 결제는 복사해 둔 값으로 남는다(NULL)
   transactionId                    String?       @map("transaction_id") @db.Uuid
   transaction                      Transaction?  @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  /// 원본 제공자 거래의 HMAC-SHA256(AUDIT_HMAC_KEY, "source-tx:제공자:거래 ID") hex. 공동으로 확정될 때 남긴다.
+  /// 결제수단 전부 해제로 거래 원본을 지워(transactionId = NULL) 다시 연결해도 같은 거래를 새 미확정으로 다시 들이지 않는 기준(기능명세 4-10 v0.5.7)
+  sourceTxHash                     String?       @map("source_tx_hash") @db.Char(64)
   payerMembershipId                String        @map("payer_membership_id") @db.Uuid
   payer                            Membership    @relation("ExpensePayer", fields: [payerMembershipId], references: [id])
   status                           ExpenseStatus @default(PENDING)
@@ -673,6 +676,7 @@ model Expense {
   @@index([payerMembershipId])
   @@index([refundOfExpenseId])
   @@index([duplicateGroupId])
+  @@index([tripId, sourceTxHash])
   @@map("expenses")
 }
 
@@ -845,6 +849,8 @@ model AccessLog {
   ipHash       String?  @map("ip_hash") @db.Char(64)
   requestId    String?  @map("request_id") @db.VarChar(128)
   ua           String?  @db.VarChar(512)
+  /// 숫자 요약만(예: 파기 건수 { expenses, transactions }). 금액·가맹점·개인정보는 넣지 않는다
+  details      Json?
   at           DateTime @default(now()) @db.Timestamptz
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz

@@ -7,7 +7,14 @@ import { AppException, NotFoundError } from '../common/errors/index.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SyncService } from '../transactions/sync.service.js';
 import { waitAtMost } from '../transactions/wait.js';
+import { AuditService } from '../audit/index.js';
 import { FinancialAccessLog } from './access-log.js';
+import {
+  FIN_CONSENTS_WITHDRAWN_ON_UNLINK,
+  purgeAllFinancialData,
+  purgeConnectionData,
+  type PurgedFinancialData,
+} from './unlink-purge.js';
 
 /** 수동 동기화 사용자당 간격(제안 60초) */
 export const MANUAL_SYNC_INTERVAL_MS = 60_000;
@@ -23,6 +30,7 @@ export class PaymentMethodsService {
     private readonly prisma: PrismaService,
     private readonly sync: SyncService,
     private readonly accessLog: FinancialAccessLog,
+    private readonly audit: AuditService,
   ) {}
 
   /** GET /api/payment-methods — 해제(REMOVED)된 결제수단과 결제수단 없는 연결은 빼고, 마스킹 값만 */
@@ -94,10 +102,14 @@ export class PaymentMethodsService {
   }
 
   /**
-   * DELETE /api/payment-methods/:paymentMethodId — REMOVED. 이미 들어온 결제는 그대로 둔다.
-   * 연결의 마지막 결제수단이면 연결 REVOKED + 토큰 삭제·제공자 폐기 + 연동 동의(FIN_LINK·FIN_PRIVACY) 철회(WF-27).
-   * purgeImported는 마지막일 때만: 내 PENDING·PERSONAL Expense, 그 연결의 Transaction·PaymentMethod를 즉시 파기
-   * (SHARED는 transactionId가 NULL이 되어 남는다).
+   * DELETE /api/payment-methods/:paymentMethodId — REMOVED.
+   * - 연결의 마지막 결제수단이면 연결 REVOKED + 토큰 삭제·제공자 폐기(연결 단위).
+   * - 사용자의 활성 결제수단(REMOVED가 아닌 것)이 0개가 되면(전부 해제, purgeImported는 무시 — 기능명세 FR-804·4-10 v0.5.7):
+   *   연동 동의 FIN_LINK·FIN_PRIVACY 철회(WF-27, THIRD_PARTY는 유지 — 미결 Q-39 기본안) +
+   *   내 PENDING·PERSONAL 결제(종료된 여정 포함)·거래 원본·결제수단 행을 즉시 파기(수집·이용 동의서 2절 "지체 없이 파기").
+   *   SHARED 결제는 장부에 남고 transactionId만 NULL(sourceTxHash로 재인입을 막는다). 파기 건수는 접근 기록(PURGE_FINANCIAL_DATA).
+   * - 일부 해제는 결제 유지가 기본이다. purgeImported는 그 연결의 마지막 결제수단일 때만: 그 연결의 거래로 만든
+   *   내 PENDING·PERSONAL, 그 연결의 Transaction·PaymentMethod를 파기(SHARED는 transactionId가 NULL이 되어 남는다).
    */
   async remove(
     userId: string,
@@ -127,63 +139,61 @@ export class PaymentMethodsService {
       });
     }
 
-    await this.prisma.$transaction(async (tx) => {
+    const hash = (provider: string, externalRef: string) =>
+      this.audit.sourceTxHash(provider, externalRef);
+    const outcome = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
-      await tx.paymentMethod.update({
-        where: { id: method.id },
+      const removed = await tx.paymentMethod.updateMany({
+        where: { id: method.id, status: { not: 'REMOVED' } },
         data: { status: 'REMOVED', removedAt: now },
       });
-      if (!isLast) return;
-      await tx.paymentConnection.update({
-        where: { id: method.connectionId },
-        data: {
-          status: 'REVOKED',
-          accessTokenEnc: null,
-          refreshTokenEnc: null,
-          tokenExpiresAt: null,
-        },
+      // 동시에 같은 결제수단을 해제한 요청이 먼저 끝났다
+      if (removed.count === 0) throw new NotFoundError();
+      if (isLast) {
+        await tx.paymentConnection.update({
+          where: { id: method.connectionId },
+          data: {
+            status: 'REVOKED',
+            accessTokenEnc: null,
+            refreshTokenEnc: null,
+            tokenExpiresAt: null,
+          },
+        });
+      }
+      const remaining = await tx.paymentMethod.count({
+        where: { userId, status: { not: 'REMOVED' } },
       });
-      // 연동 동의 철회(docs/legal/consents.md 5절). 다음 연결 때 연동 동의 시트가 다시 뜬다
-      await tx.userConsent.updateMany({
-        where: {
-          userId,
-          consentId: { in: ['FIN_LINK', 'FIN_PRIVACY'] },
-          withdrawnAt: null,
-        },
-        data: { withdrawnAt: now, withdrawChannel: 'WF-27' },
-      });
-      if (!purgeImported) return;
-      const methodIds = (
-        await tx.paymentMethod.findMany({
-          where: { connectionId: method.connectionId },
-          select: { id: true },
-        })
-      ).map((m) => m.id);
-      const transactionIds = (
-        await tx.transaction.findMany({
-          where: { paymentMethodId: { in: methodIds } },
-          select: { id: true },
-        })
-      ).map((t) => t.id);
-      // 개인·미확정은 결제자만 보던 것이라 지운다(취소 자식은 부모와 함께 지워진다)
-      await tx.expense.deleteMany({
-        where: {
-          transactionId: { in: transactionIds },
-          status: { in: ['PENDING', 'PERSONAL'] },
-          refundOfExpenseId: null,
-        },
-      });
-      await tx.expense.deleteMany({
-        where: {
-          transactionId: { in: transactionIds },
-          status: { in: ['PENDING', 'PERSONAL'] },
-        },
-      });
-      // SHARED Expense는 transactionId가 ON DELETE SET NULL로 비워지고 복사해 둔 값으로 남는다
-      await tx.transaction.deleteMany({
-        where: { id: { in: transactionIds } },
-      });
-      await tx.paymentMethod.deleteMany({ where: { id: { in: methodIds } } });
+      let purged: PurgedFinancialData | null = null;
+      if (remaining === 0) {
+        // 연동 동의 철회(docs/legal/consents.md 5절). 행은 고치지 않고 withdrawnAt만 채운다. 다시 연결하면 새 행이 쌓인다
+        await tx.userConsent.updateMany({
+          where: {
+            userId,
+            consentId: { in: [...FIN_CONSENTS_WITHDRAWN_ON_UNLINK] },
+            withdrawnAt: null,
+          },
+          data: { withdrawnAt: now, withdrawChannel: 'WF-27' },
+        });
+        // 전부 해제는 purgeImported와 무관하게 사용자 단위로 파기한다(purgeImported의 연결 단위 파기를 포함한다)
+        purged = await purgeAllFinancialData(tx, userId, hash);
+      } else if (purgeImported) {
+        // 일부 해제: 이 연결의 마지막 결제수단 + "불러온 결제도 지우기"일 때만
+        await purgeConnectionData(tx, method.connectionId, hash);
+      }
+      if (purged) {
+        // 철회·파기와 같은 트랜잭션에 남긴다(파기했는데 기록이 없는 일이 없게)
+        await this.audit.record(
+          {
+            userId,
+            action: 'PURGE_FINANCIAL_DATA',
+            resourceType: 'USER',
+            resourceId: userId,
+            details: { ...purged },
+          },
+          tx,
+        );
+      }
+      return { withdrawn: remaining === 0, purged };
     });
 
     if (isLast) {
@@ -204,7 +214,9 @@ export class PaymentMethodsService {
         userId,
         paymentMethodId: method.id,
         revoked: isLast,
-        purged: purgeImported,
+        consentWithdrawn: outcome.withdrawn,
+        purged: outcome.purged,
+        purgedConnection: purgeImported,
       },
       '결제수단 연결 해제',
     );

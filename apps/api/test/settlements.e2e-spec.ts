@@ -420,6 +420,34 @@ describe.skipIf(!withDb)('Settlements · summary (e2e, real DB)', () => {
       await get(`/api/trips/${s.tripId}/settlement`, s.d).expect(404); // 나간 멤버는 열람 불가(Q-09)
     });
 
+    it('HF-44: left and withdrawn members get 404 on every settlement route after the trip ends', async () => {
+      const s = await seedScenario(fixture);
+      await fixture.end(s.tripId);
+      await app.get(EventEmitter2).emitAsync(TRIP_EVENTS.ENDED, ended(s));
+      // 탈퇴(FR-109) 흉내: 멤버십의 userId를 비우고 ACCOUNT_DELETED로 나간 것으로 둔다. 예전 사용자 ID로 직접 불러도 막혀야 한다
+      await app.get(PrismaService).membership.update({
+        where: { id: s.c.membershipId },
+        data: {
+          userId: null,
+          leftAt: new Date('2026-11-16T09:00:00+09:00'),
+          leaveReason: 'ACCOUNT_DELETED',
+        },
+      });
+      for (const who of [s.d, s.e, s.c]) {
+        for (const path of [
+          `/api/trips/${s.tripId}/settlement`,
+          `/api/trips/${s.tripId}/settlement/members/${s.a.membershipId}/expenses`,
+          `/api/trips/${s.tripId}/settlement/members/${who.membershipId}/expenses`,
+        ]) {
+          const res = await get(path, who).expect(404);
+          expect(res.body.code).toBe('NOT_FOUND');
+          expect(visibleText(res.body)).not.toMatch(/이치란|30,?000/);
+        }
+      }
+      // 남은 멤버는 그대로 본다
+      await get(`/api/trips/${s.tripId}/settlement`, s.a).expect(200);
+    });
+
     it('keeps everyone at ₩0 with no transfers when nothing was shared', async () => {
       const t = await fixture.createTrip({
         members: [{ nickname: 'P' }, { nickname: 'Q' }],

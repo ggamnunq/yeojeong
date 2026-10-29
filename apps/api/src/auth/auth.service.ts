@@ -4,7 +4,7 @@ import {
   SIGNUP_REQUIRED_CONSENTS,
   normalizeNickname,
   type AuthSessionResponse,
-  type Me,
+  type SignupResponse,
 } from '@yeojeong/shared';
 import type { Request, Response } from 'express';
 import { AuthConfig } from '../common/auth/auth-config.js';
@@ -56,6 +56,14 @@ export const WEB_PATHS = {
 
 const KAKAO_NICKNAME_MAX = 64;
 const RETURN_TO_MAX = 512;
+
+/** 가입 대기 쿠키(서명) 값 */
+interface SignupCookieValue {
+  /** SignupTicket id */
+  t: string;
+  /** 로그인 시작 때 받은 돌아갈 화면 경로(safeReturnTo를 거친 값) */
+  r: string | null;
+}
 
 interface OAuthState {
   /** state 원문 */
@@ -199,11 +207,13 @@ export class AuthService {
         select: { id: true },
       });
     });
+    // 신규 회원도 로그인 시작 때의 returnTo(예: /join?code=…)를 잃지 않게 가입 대기 쿠키에 함께 담는다
+    const pending: SignupCookieValue = { t: ticket.id, r: stored.r };
     setCookie(
       res,
       this.web,
       SIGNUP_COOKIE,
-      this.config.signer.sign(SIGNUP_PURPOSE, ticket.id, SIGNUP_TTL_SECONDS),
+      this.config.signer.sign(SIGNUP_PURPOSE, pending, SIGNUP_TTL_SECONDS),
       SIGNUP_TTL_SECONDS * 1000,
     );
     return WEB_PATHS.signupNickname;
@@ -228,6 +238,7 @@ export class AuthService {
         signupDraft: {
           kakaoNickname: ticket.kakaoNickname,
           profileImageUrl: ticket.profileImageUrl,
+          returnTo: ticket.returnTo,
         },
       };
     }
@@ -242,7 +253,7 @@ export class AuthService {
     req: Request,
     res: Response,
     dto: SignupDto,
-  ): Promise<{ me: Me; created: boolean }> {
+  ): Promise<{ me: SignupResponse; created: boolean }> {
     const ticket = await this.findTicket(req);
     if (!ticket) {
       throw new UnauthenticatedError(
@@ -275,7 +286,7 @@ export class AuthService {
       where: { kakaoId: ticket.kakaoId },
       select: { id: true },
     });
-    if (existing) return this.finishExisting(req, res, existing.id, ticket.id);
+    if (existing) return this.finishExisting(req, res, existing.id, ticket);
 
     try {
       const userId = await this.prisma.$transaction(async (tx) => {
@@ -303,7 +314,10 @@ export class AuthService {
       });
       clearCookie(res, this.web, SIGNUP_COOKIE);
       this.logger.log({ userId }, '가입');
-      return { me: await this.users.me(userId), created: true };
+      return {
+        me: { ...(await this.users.me(userId)), returnTo: ticket.returnTo },
+        created: true,
+      };
     } catch (error) {
       // 같은 순간 다른 탭에서 가입이 끝난 경우
       if (
@@ -314,7 +328,7 @@ export class AuthService {
           where: { kakaoId: ticket.kakaoId },
           select: { id: true },
         });
-        if (user) return this.finishExisting(req, res, user.id, ticket.id);
+        if (user) return this.finishExisting(req, res, user.id, ticket);
       }
       throw error;
     }
@@ -353,20 +367,23 @@ export class AuthService {
     req: Request,
     res: Response,
     userId: string,
-    ticketId: string,
+    ticket: { id: string; returnTo: string | null },
   ) {
-    await this.prisma.signupTicket.deleteMany({ where: { id: ticketId } });
+    await this.prisma.signupTicket.deleteMany({ where: { id: ticket.id } });
     await this.sessions.revokeCurrent(req, res);
     await this.sessions.issue(res, userId);
     clearCookie(res, this.web, SIGNUP_COOKIE);
-    return { me: await this.users.me(userId), created: false };
+    return {
+      me: { ...(await this.users.me(userId)), returnTo: ticket.returnTo },
+      created: false,
+    };
   }
 
   private async findTicket(req: Request) {
-    const id = this.sessions.signupTicketId(req);
-    if (!id) return null;
-    return this.prisma.signupTicket.findFirst({
-      where: { id, expiresAt: { gt: new Date() } },
+    const pending = this.sessions.signupCookie(req);
+    if (!pending) return null;
+    const ticket = await this.prisma.signupTicket.findFirst({
+      where: { id: pending.ticketId, expiresAt: { gt: new Date() } },
       select: {
         id: true,
         kakaoId: true,
@@ -374,5 +391,9 @@ export class AuthService {
         profileImageUrl: true,
       },
     });
+    // 서명된 값이지만 오픈 리다이렉트를 막는 검사를 한 번 더 거친다
+    return ticket
+      ? { ...ticket, returnTo: safeReturnTo(pending.returnTo) }
+      : null;
   }
 }

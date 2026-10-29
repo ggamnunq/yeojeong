@@ -165,7 +165,6 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
           consentId,
           version: 'test',
           agreed: true,
-          ip: '127.0.0.1',
           ua: 'vitest',
           screen: 'WF-05',
           method: 'ALL',
@@ -381,8 +380,20 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
         'VIEW_PAYMENT_METHODS',
         'SYNC',
         'DISCONNECT',
+        'PURGE_FINANCIAL_DATA',
       ]),
     );
+    // 전부 해제의 파기 건수(접근 기록 details): 미확정 4건 + 개인 1건, 거래 원본 10건, 결제수단 행 3개, transactionId가 비워진 공동 1건
+    const purge = await prisma.accessLog.findFirstOrThrow({
+      where: { userId: me.id, action: 'PURGE_FINANCIAL_DATA' },
+    });
+    expect(purge).toMatchObject({ resourceType: 'USER', resourceId: me.id });
+    expect(purge.details).toEqual({
+      expenses: 5,
+      transactions: 10,
+      paymentMethods: 3,
+      detachedShared: 1,
+    });
   });
 
   it('attaches a same-day cancel to its payment as a refund child (FR-406)', async () => {

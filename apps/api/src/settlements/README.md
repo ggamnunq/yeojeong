@@ -72,7 +72,12 @@
 
 - `@InternalJob()` 공통 가드: 운영은 Cloud Scheduler OIDC, 로컬·테스트는 `x-internal-job-secret` 대체 인증을 쓴다.
 - `@InternalJob()` 라우트는 전역 CSRF·Cloudflare origin lock 대신 내부 잡 인증으로 방어한다.
-- 환율 소스: env `FX_RATE_SOURCE` = `demo`(기본, 고정 샘플 값, 출처 "데모 매매기준율") | `koreaexim`(한국수출입은행 OpenAPI, 뼈대만 — 잡이 503). `KOREAEXIM_API_KEY`는 Secret Manager.
+- 환율 소스: env `FX_RATE_SOURCE` = `demo`(고정 샘플 값, 출처 "데모 매매기준율") | `koreaexim`(한국수출입은행 현재환율 OpenAPI, 출처 "한국수출입은행 매매기준율"). 비우면 `EXIM_API_KEY`가 있을 때 `koreaexim`, 없으면 `demo`. `koreaexim`인데 키가 없거나 모르는 값이면 서버가 뜨지 않는다. `EXIM_API_KEY`는 Secret Manager이고 로그·오류 메시지에 남기지 않는다.
+- 한국수출입은행(`src/fx/korea-exim-fx-rate-source.ts`):
+  - KST 오늘 날짜(`searchdate`)로 부르고, 빈 배열(주말·공휴일·11시 고시 전)이면 하루씩 최대 7일 거슬러 첫 고시를 쓴다. 8일 모두 비면 아무것도 저장하지 않는다(직전 고시 유지).
+  - `cur_unit` "JPY(100)"의 괄호 값이 고시 단위, `deal_bas_r`(쉼표 포함)을 단위로 나눠 1단위당 원(소수 6자리, half-up)으로 저장한다. 고시 시각은 고시일 11:00 KST로 둔다.
+  - 역외 위안 `CNH`를 `CNY`로 쓴다. 대만 달러(TWD)·베트남 동(VND)·필리핀 페소(PHP)는 고시하지 않아 그 통화 여정은 저장된 고시가 없으면 매매기준율 환산이 503(`FX_RATE_UNAVAILABLE`)이다.
+  - 요청당 5초, 네트워크 오류·5xx·JSON 아님은 2번까지 다시 부른다(전체 20초 안, 스케줄러 제한 30초). 결과 코드 2(DATA 코드)·3(인증키)·4(일일 한도)는 바로 실패해 잡이 503을 돌려주고 저장된 고시는 그대로 둔다.
 - 환율 잡은 같은 (통화, 출처, 고시 시각)을 한 번만 저장하고, 진행 중 외화 여정(SPOT·CARD_BILLED)을 다시 환산한다.
 
 ## 테스트

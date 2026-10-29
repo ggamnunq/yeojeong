@@ -13,3 +13,5 @@ export const REQUIRED_ROLE_KEY = 'auth:requiredRole';
 export const REQUIRED_TRIP_STATUS_KEY = 'auth:requiredTripStatus';
 export const REQUIRED_CONSENTS_KEY = 'auth:requiredConsents';
 export const SKIP_CONSENT_CHECK_KEY = 'auth:skipConsentCheck';
+/** 브라우저가 아닌 외부 서버가 부르는 콜백(카카오 연결 끊기 알림). CSRF 가드를 건너뛰고 라우트가 직접 인증한다 */
+export const IS_EXTERNAL_WEBHOOK_KEY = 'auth:isExternalWebhook';

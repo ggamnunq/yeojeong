@@ -5,11 +5,6 @@ import type {
   PurgeStepResult,
 } from '@yeojeong/shared';
 import { AccountDeletionService } from '../account/account-deletion.service.js';
-import { AuditService } from '../audit/audit.service.js';
-import {
-  countPlaintextConsentIps,
-  hashConsentIpBatch,
-} from '../consents/consent-ip-backfill.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RETENTION, cutoff } from './retention-policy.js';
@@ -19,7 +14,6 @@ type Tx = Prisma.TransactionClient;
 interface StepOutcome {
   count: number;
   hasMore: boolean;
-  skipped?: 'NO_KEY';
 }
 
 /** 한 번 실행에서 단계마다 처리하는 상한. 남으면 hasMore = true이고 다음 실행(매일)이 이어서 지운다 */
@@ -43,7 +37,6 @@ export class PurgeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accountDeletion: AccountDeletionService,
-    private readonly audit: AuditService,
   ) {}
 
   async run({
@@ -258,20 +251,6 @@ export class PurgeService {
             remove: (ids) =>
               tx.userConsent.deleteMany({ where: { id: { in: ids } } }),
           });
-        },
-      ],
-      [
-        'CONSENT_IP_PLAINTEXT',
-        // 동의 기록 IP 평문 → HMAC(consent-ip-backfill 잡과 같은 함수). 배포 중 옛 리비전이 남긴 평문도 여기서 잡힌다.
-        // 평문 컬럼을 지우는 contract 마이그레이션이 나가면 이 단계도 함께 지운다(prisma/README.md "동의 기록 IP").
-        async (tx, dryRun) => {
-          if (dryRun || !this.audit.ipHashEnabled) {
-            const count = await countPlaintextConsentIps(tx);
-            if (dryRun || count === 0) return { count, hasMore: false };
-            // 키가 없으면 평문을 지우지 않는다(해시 없이 지우면 입증 자료가 사라진다)
-            return { count: 0, hasMore: true, skipped: 'NO_KEY' };
-          }
-          return hashConsentIpBatch(tx, (ip) => this.audit.hashIp(ip), rows);
         },
       ],
       [

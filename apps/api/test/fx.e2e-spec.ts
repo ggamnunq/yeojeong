@@ -17,6 +17,9 @@ import {
   type FixtureMember,
 } from './settlements-fixtures.js';
 
+// 로컬 .env에 EXIM_API_KEY가 있어도 실제 한국수출입은행을 부르지 않게 데모로 고정한다
+process.env.FX_RATE_SOURCE = 'demo';
+
 const withDb = await hasDatabase();
 const SECRET_HEADER = 'x-internal-job-secret';
 /** ISO 4217 시험용 코드. 공유 로컬 DB의 실제 통화 고시와 섞이지 않는다 */

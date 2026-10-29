@@ -1,9 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
-import {
-  createFxRateSource,
-  DemoFxRateSource,
-  KoreaEximFxRateSource,
-} from './fx-rate-source.js';
+import { createFxRateSource, DemoFxRateSource } from './fx-rate-source.js';
+import { KoreaEximFxRateSource } from './korea-exim-fx-rate-source.js';
 import { SpotRateTable } from './fx-rates.service.js';
 import { asOfFromQuery, toKstIso } from './kst.js';
 
@@ -80,17 +77,29 @@ describe('FxRateSource', () => {
     ]);
   });
 
-  it('is picked by FX_RATE_SOURCE', async () => {
-    expect(createFxRateSource(config({}))).toBeInstanceOf(DemoFxRateSource);
+  it('is picked by FX_RATE_SOURCE and EXIM_API_KEY', () => {
+    const key = 'test-exim-key';
+    const pick = (values: Record<string, string>) =>
+      createFxRateSource(config(values));
+
+    // FX_RATE_SOURCE가 비면 키 유무로 정한다
+    expect(pick({})).toBeInstanceOf(DemoFxRateSource);
+    expect(pick({ FX_RATE_SOURCE: '' })).toBeInstanceOf(DemoFxRateSource);
+    expect(pick({ EXIM_API_KEY: '  ' })).toBeInstanceOf(DemoFxRateSource);
+    expect(pick({ EXIM_API_KEY: key })).toBeInstanceOf(KoreaEximFxRateSource);
+    // 명시하면 그대로
+    expect(pick({ FX_RATE_SOURCE: 'DEMO' })).toBeInstanceOf(DemoFxRateSource);
+    expect(pick({ FX_RATE_SOURCE: 'demo', EXIM_API_KEY: key })).toBeInstanceOf(
+      DemoFxRateSource,
+    );
     expect(
-      createFxRateSource(config({ FX_RATE_SOURCE: 'DEMO' })),
-    ).toBeInstanceOf(DemoFxRateSource);
-    const exim = createFxRateSource(config({ FX_RATE_SOURCE: 'koreaexim' }));
-    expect(exim).toBeInstanceOf(KoreaEximFxRateSource);
-    await expect(exim.fetchLatest(['JPY'], new Date())).rejects.toThrow();
-    expect(() =>
-      createFxRateSource(config({ FX_RATE_SOURCE: 'scrape' })),
-    ).toThrow('FX_RATE_SOURCE');
+      pick({ FX_RATE_SOURCE: 'koreaexim', EXIM_API_KEY: key }),
+    ).toBeInstanceOf(KoreaEximFxRateSource);
+    // koreaexim인데 키가 없으면 부팅 실패
+    expect(() => pick({ FX_RATE_SOURCE: 'koreaexim' })).toThrow('EXIM_API_KEY');
+    expect(() => pick({ FX_RATE_SOURCE: 'scrape', EXIM_API_KEY: key })).toThrow(
+      'FX_RATE_SOURCE',
+    );
   });
 });
 

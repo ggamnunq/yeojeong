@@ -1,8 +1,9 @@
 import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import { KoreaEximFxRateSource } from './korea-exim-fx-rate-source.js';
 
 // 환율 소스 어댑터 경계(기능명세 7-3). 수집 잡(POST /api/internal/jobs/fx)만 부른다.
-// env FX_RATE_SOURCE로 고른다: demo(기본, 고정 샘플 값) | koreaexim(한국수출입은행 OpenAPI, 뼈대만).
+// env FX_RATE_SOURCE로 고른다: demo(고정 샘플 값) | koreaexim(한국수출입은행 OpenAPI, korea-exim-fx-rate-source.ts).
 
 export interface FetchedRate {
   currency: string;
@@ -68,41 +69,28 @@ export class DemoFxRateSource implements FxRateSource {
 }
 
 /**
- * 한국수출입은행 현재환율 OpenAPI(기능명세 7-3 추천안, 미결 Q-04). 어댑터 뼈대만 있다.
- * TODO(Q-04 확정 후):
- * - GET https://www.koreaexim.go.kr/site/program/financial/exchangeJSON?authkey={KOREAEXIM_API_KEY}&searchdate=YYYYMMDD&data=AP01
- * - 응답 cur_unit "JPY(100)"의 괄호 값이 고시 단위, deal_bas_r "919.2"(쉼표 포함 가능)가 고시 단위당 매매기준율 → 1단위당으로 나눈다.
- * - 영업일 오전 하루 1회 고시. 주말·공휴일·고시 전에는 빈 배열 → 직전 영업일 값을 쓴다(effectiveAt = 고시일 11:00 KST 가정).
- * - 키는 Secret Manager. 응답 원문은 로그에 남기지 않는다.
+ * env로 환율 소스를 고른다. 모르는 값이거나 필요한 키가 없으면 서버가 뜨지 않게 예외.
+ * - FX_RATE_SOURCE=demo → 데모, FX_RATE_SOURCE=koreaexim → 한국수출입은행(EXIM_API_KEY 필수)
+ * - FX_RATE_SOURCE가 비면 EXIM_API_KEY가 있을 때 한국수출입은행, 없으면 데모
  */
-export class KoreaEximFxRateSource implements FxRateSource {
-  readonly id = 'koreaexim';
-  readonly sourceLabel = '한국수출입은행 매매기준율';
-
-  constructor(private readonly apiKey: string | undefined) {}
-
-  fetchLatest(): Promise<FetchedRate[]> {
-    return Promise.reject(
-      new Error(
-        this.apiKey
-          ? 'KoreaEximFxRateSource는 아직 구현되지 않았습니다(미결 Q-04)'
-          : 'KOREAEXIM_API_KEY가 없습니다',
-      ),
-    );
-  }
-}
-
-/** env FX_RATE_SOURCE로 소스를 고른다. 모르는 값이면 서버가 뜨지 않게 예외 */
 export function createFxRateSource(config: ConfigService): FxRateSource {
-  const id = (config.get<string>('FX_RATE_SOURCE') || 'demo').toLowerCase();
+  const apiKey = config.get<string>('EXIM_API_KEY')?.trim() || undefined;
+  const id =
+    config.get<string>('FX_RATE_SOURCE')?.trim().toLowerCase() ||
+    (apiKey ? 'koreaexim' : 'demo');
+  const logger = new Logger('FxRateSource');
   switch (id) {
     case 'demo':
+      logger.log('환율 소스: demo(샘플 값)');
       return new DemoFxRateSource();
     case 'koreaexim':
-      new Logger('FxRateSource').warn(
-        'FX_RATE_SOURCE=koreaexim은 뼈대만 있어 수집 잡이 503을 돌려줍니다',
-      );
-      return new KoreaEximFxRateSource(config.get<string>('KOREAEXIM_API_KEY'));
+      if (!apiKey) {
+        throw new Error(
+          'FX_RATE_SOURCE=koreaexim에는 EXIM_API_KEY가 필요합니다',
+        );
+      }
+      logger.log('환율 소스: koreaexim(한국수출입은행)');
+      return new KoreaEximFxRateSource(apiKey);
     default:
       throw new Error(`알 수 없는 FX_RATE_SOURCE: ${id} (demo | koreaexim)`);
   }

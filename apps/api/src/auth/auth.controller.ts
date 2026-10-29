@@ -19,7 +19,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import type { AuthSessionResponse, Me } from '@yeojeong/shared';
+import type { AuthSessionResponse, SignupResponse } from '@yeojeong/shared';
 import type { Request, Response } from 'express';
 import type { AuthUser } from '../common/auth/auth-context.js';
 import {
@@ -30,12 +30,12 @@ import {
 import { WebConfig } from '../common/auth/web-config.js';
 import { ApiErrorResponse } from '../common/errors/api-error.dto.js';
 import { StrictThrottle } from '../common/throttle.js';
-import { MeDto } from '../users/dto/user.dto.js';
 import { AuthService } from './auth.service.js';
 import {
   AuthSessionResponseDto,
   ReconsentDto,
   SignupDto,
+  SignupResponseDto,
 } from './dto/auth.dto.js';
 
 @ApiTags('auth')
@@ -101,10 +101,10 @@ export class AuthController {
   @ApiOperation({
     summary: '가입 (FR-103·104)',
     description:
-      '가입 대기 쿠키가 필요하다. TOS·PRIVACY·AGE14 현재 버전에 모두 agreed=true여야 한다. 201: 새로 가입, 200: 같은 카카오 계정이 이미 가입돼 있어 그 계정으로 로그인.',
+      '가입 대기 쿠키가 필요하다. TOS·PRIVACY·AGE14 현재 버전에 모두 agreed=true여야 한다. 201: 새로 가입, 200: 같은 카카오 계정이 이미 가입돼 있어 그 계정으로 로그인. returnTo = 로그인 시작 때 받은 돌아갈 화면(예: /join?code=…, 없으면 null).',
   })
-  @ApiResponse({ status: 201, type: MeDto })
-  @ApiOkResponse({ type: MeDto, description: '이미 가입된 계정' })
+  @ApiResponse({ status: 201, type: SignupResponseDto })
+  @ApiOkResponse({ type: SignupResponseDto, description: '이미 가입된 계정' })
   @ApiErrorResponse(400, 'VALIDATION_FAILED', 'TERMS_REQUIRED')
   @ApiErrorResponse(401, 'UNAUTHENTICATED')
   @ApiErrorResponse(403, 'CSRF_REJECTED')
@@ -115,7 +115,7 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
     @Body() dto: SignupDto,
-  ): Promise<Me> {
+  ): Promise<SignupResponse> {
     const { me, created } = await this.auth.signup(req, res, dto);
     res.status(created ? 201 : 200);
     return me;

@@ -12,3 +12,7 @@ kakao_client_secret = "..."
 support_forward_to = "<운영자 메일 주소>"
 # 감사 로그 버킷 보존 잠금(되돌릴 수 없음). 첫 적용 뒤 로그 유입을 확인하고 true로 바꾼다.
 # audit_log_bucket_locked = true
+# 사용자가 gcloud로 시크릿(yeojeong-kakao-admin-key, yeojeong-exim-api-key)을 만든 뒤에만 켠다. 값은 Terraform에 넣지 않는다.
+enable_kakao_unlink = false
+kakao_app_id        = ""
+enable_exim_fx      = false

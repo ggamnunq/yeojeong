@@ -136,6 +136,7 @@ describe('Auth (e2e)', () => {
       signupDraft: {
         kakaoNickname: kakao.profile.nickname,
         profileImageUrl: kakao.profile.profileImageUrl,
+        returnTo: null,
       },
     });
     const pending = await agent.get('/api/users/me').expect(403);
@@ -217,6 +218,64 @@ describe('Auth (e2e)', () => {
       .set('Cookie', cookieValue(session))
       .expect(401);
     expect(after.body.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('keeps returnTo for a new member through signup (초대 링크로 들어온 신규 회원, QA)', async () => {
+    const agent = await start();
+    const callback = await loginWithKakao(agent, '/join?code=K7M2QX');
+    // 닉네임 화면으로 보내고 returnTo는 가입 대기 쿠키(서명)에 남긴다
+    expect(callback.headers.location).toBe(`${TEST_ORIGIN}/signup/nickname`);
+    expect(cookies(callback).yj_signup).not.toContain('K7M2QX');
+    const session = await agent.get('/api/auth/session').expect(200);
+    expect(session.body.signupDraft.returnTo).toBe('/join?code=K7M2QX');
+
+    const created = await agent
+      .post('/api/auth/signup')
+      .set('Origin', TEST_ORIGIN)
+      .send({ nickname: '민지', agreements: AGREEMENTS, method: 'ALL' })
+      .expect(201);
+    expect(created.body).toMatchObject({
+      nickname: '민지',
+      returnTo: '/join?code=K7M2QX',
+    });
+
+    // 가입 대기 중 다른 탭이 같은 카카오 계정으로 먼저 가입을 마쳤으면 200(그 계정으로 로그인)이고 returnTo는 그대로다
+    kakao.profile = { ...kakao.profile, id: '4001234568' };
+    const otherTab = request.agent(app.getHttpServer());
+    await loginWithKakao(otherTab, '/join?code=ABCDEF');
+    await db.user.create({
+      data: { kakaoId: '4001234568', nickname: '다른 탭' },
+    });
+    const late = await otherTab
+      .post('/api/auth/signup')
+      .set('Origin', TEST_ORIGIN)
+      .send({ nickname: '다른 탭', agreements: AGREEMENTS, method: 'ALL' })
+      .expect(200);
+    expect(late.body.returnTo).toBe('/join?code=ABCDEF');
+  });
+
+  it('drops an unsafe returnTo (open redirect) for new members', async () => {
+    for (const unsafe of [
+      'https://evil.example/join',
+      '//evil.example/join',
+      '/\\evil.example',
+      '/api/users/me',
+    ]) {
+      db = createFakeAuthPrisma();
+      const agent = await start();
+      await loginWithKakao(agent, unsafe);
+      const session = await agent.get('/api/auth/session').expect(200);
+      expect(session.body.signupDraft.returnTo).toBeNull();
+      const created = await agent
+        .post('/api/auth/signup')
+        .set('Origin', TEST_ORIGIN)
+        .send({ nickname: '태현', agreements: AGREEMENTS, method: 'ALL' })
+        .expect(201);
+      expect(created.body.returnTo).toBeNull();
+      await app.close();
+    }
+    db = createFakeAuthPrisma();
+    await start();
   });
 
   it('logs an existing user in and returns to the requested screen', async () => {

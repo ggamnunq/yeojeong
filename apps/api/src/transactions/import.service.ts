@@ -4,6 +4,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { normalizeMerchantKey } from '../payment-methods/masking.js';
 import type { ProviderTransaction } from '../payment-methods/providers/payment-provider.adapter.js';
 import { CipherPurpose, TokenCipher } from '../payment-methods/token-cipher.js';
+import { AuditService } from '../audit/index.js';
 import { AppException } from '../common/errors/index.js';
 import { FxRatesService } from '../fx/fx-rates.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -57,6 +58,7 @@ export class ImportService {
     private readonly cipher: TokenCipher,
     private readonly duplicates: DuplicateFlagger,
     private readonly fx: FxRatesService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -379,10 +381,39 @@ export class ImportService {
         paymentMethod: { status: { not: 'REMOVED' } },
         expenses: { none: { tripId: trip.id } },
       },
+      include: {
+        paymentMethod: {
+          select: { connection: { select: { provider: true } } },
+        },
+      },
       orderBy: { occurredAt: 'asc' },
     });
+    // 결제수단 전부 해제로 원본 거래를 지운 공동 결제(transactionId = NULL)가 이미 이 여정에 있으면
+    // 다시 연결한 뒤 같은 거래를 새 미확정으로 들이지 않는다(Expense.sourceTxHash, 기능명세 4-10 v0.5.7)
+    const hashOf = new Map(
+      candidates.map((t) => [
+        t.id,
+        this.audit.sourceTxHash(
+          t.paymentMethod.connection.provider,
+          t.externalRef,
+        ),
+      ]),
+    );
+    const hashes = [...hashOf.values()].filter((h): h is string => h !== null);
+    const known = new Set(
+      hashes.length === 0
+        ? []
+        : (
+            await tx.expense.findMany({
+              where: { tripId: trip.id, sourceTxHash: { in: hashes } },
+              select: { sourceTxHash: true },
+            })
+          ).map((e) => e.sourceTxHash),
+    );
     const data: Prisma.ExpenseCreateManyInput[] = [];
     for (const t of candidates) {
+      const sourceTxHash = hashOf.get(t.id);
+      if (sourceTxHash && known.has(sourceTxHash)) continue;
       // 원화는 S2C fx(FxRatesService.convertForTrip)가 정한다. 고시가 아직 없으면 다음 동기화에서 다시 시도한다
       let krw;
       try {
