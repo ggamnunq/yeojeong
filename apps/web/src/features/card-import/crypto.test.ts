@@ -41,9 +41,8 @@ describe('encryptCardPassword (RSA PKCS#1 v1.5, CODEF 형식)', () => {
   it('rejects an empty password and malformed or short keys', async () => {
     await expect(encryptCardPassword(spkiBase64, '')).rejects.toThrow()
     expect(() => spkiBytes('not a key!')).toThrow()
-    const short = generateKeyPairSync('rsa', { modulusLength: 512 }).publicKey
-    await expect(
-      encryptCardPassword(short.export({ type: 'spki', format: 'der' }).toString('base64'), 'pw'),
-    ).rejects.toThrow()
+    // 512비트 공개키(거절 확인용 고정값). 테스트에서 약한 키를 새로 만들지 않는다
+    const SHORT_SPKI = 'MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBALRkwAam5oKxPIfXMtLGvmFk0Ri7TNuK65zsSBo3DSVkzdMK86vOhXa9oBqdB7SjGTI4kjeQlEB2s2XR6GoxUqUCAwEAAQ=='
+    await expect(encryptCardPassword(SHORT_SPKI, 'pw')).rejects.toThrow()
   })
 })
