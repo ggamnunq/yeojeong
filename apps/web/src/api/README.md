@@ -47,7 +47,8 @@ const save = useMutation({
 - 문구는 서버 `message`가 먼저다. 화면 전용 코드 4개의 고정 문구는 shared `CLIENT_ERRORS`에 있고 Worker 502도 같은 문구를 쓴다. 조합 문구는 `messages.ts`(`COPY`).
 - 형식 없는 응답: 5xx HTML(Cloudflare 1xxx·502, Cloud Run 503)은 `UPSTREAM_UNAVAILABLE`, 그 밖은 `INVALID_RESPONSE`. 단 HTML 429는 Cloudflare rate limit이라 `RATE_LIMITED`로 본다.
 - 같은 코드·문구 토스트는 떠 있는 동안 + 2초 안에는 다시 띄우지 않는다.
-- 렌더링 중 에러는 `app/ErrorBoundary`가 「문제가 생겼어요 · 다시 시도」 화면으로 바꾼다(`ApiError`면 문의 번호). 배포 직후 옛 chunk를 못 받으면 「새 버전이 나왔어요 · 새로고침」.
+- 렌더링 중 에러는 `app/ErrorBoundary`가 「문제가 생겼어요 · 다시 시도」 화면으로 바꾼다(`ApiError`면 문의 번호). 배포 직후 옛 chunk를 못 받으면(`app/chunkError.ts`) 「새 버전이 나왔어요 · 새로고침」. 그 밖의 에러는 `/version.json`으로 배포된 빌드를 확인해 이 탭이 옛 번들이면 같은 「새 버전」 화면을 보인다.
+- `ApiError`가 아닌 화면 오류(에러 경계 · `window.onerror` · `unhandledrejection`)는 `app/clientErrors.ts`가 `POST /api/client-errors`로 보고한다(경로 템플릿·가린 메시지·스택 파일 이름만, 세션당 같은 오류 한 번). 오래 열어 둔 탭은 `app/staleBundle.ts`가 안전한 이동 때 새로고침한다. 진행 중인 흐름이 새로고침으로 끊기면 안 되는 화면은 `data-no-auto-reload`를 붙인다. 자세한 내용과 로그 보는 법은 [docs/ops/client-errors.md](../../../../docs/ops/client-errors.md).
 
 ## 폼 에러
 

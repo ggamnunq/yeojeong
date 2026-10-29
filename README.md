@@ -141,6 +141,7 @@ terraform apply
 
 - Cloudflare 배포 토큰 `yeojeong-web-deploy`(계정 Workers Scripts Write만, 2027-10-28 만료)는 GitHub `production` 환경 secret입니다. 이 환경은 `main` 브랜치에서만 쓸 수 있습니다.
 - workers.dev와 preview URL은 꺼 두었고, 진입 도메인 연결은 Terraform(`cloudflare_workers_custom_domain`)이 맡습니다.
+- 빌드 ID(커밋 SHA 앞 12자, `GITHUB_SHA`)가 번들과 `/version.json`(no-store)에 같이 들어갑니다. 오래 열어 둔 탭이 옛 번들인지 이것으로 알고 새로고침을 권합니다. 화면 오류는 Cloud Logging `jsonPayload.event="client_error"`로 봅니다([docs/ops/client-errors.md](docs/ops/client-errors.md)).
 - Worker secret `API_ORIGIN`(Cloud Run 주소)과 `ORIGIN_SECRET`은 처음 한 번, 또는 값을 바꿀 때만 넣습니다.
   ```bash
   cd apps/web

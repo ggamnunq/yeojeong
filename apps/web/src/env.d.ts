@@ -6,6 +6,8 @@ interface ImportMetaEnv {
    * 있으면 서버가 내려준 공개키 지문과 비교해 다르면 암호화를 거부한다. 운영 빌드에서 비어 있으면 카드 불러오기 진입을 막는다
    */
   readonly VITE_CODEF_PUBKEY_SHA256?: string
+  /** 빌드 ID(vite.config.ts buildInfo 플러그인이 넣는다. 운영: 커밋 SHA 앞 12자, 개발 서버: 'dev'). /version.json과 비교한다 */
+  readonly VITE_BUILD_ID?: string
 }
 
 /** apps/web package.json version(vite.config.ts define). src/app/version.ts로만 읽는다 */
