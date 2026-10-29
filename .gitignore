@@ -49,3 +49,5 @@ docs/legal/*
 !docs/legal/releases.json
 # 게시본 폴더의 README(내부 법률 검토 메모)는 비공개. 공개해도 되는 게시 절차는 docs/ops/legal-publishing.md
 docs/legal/v*/README.md
+# 개정 작업본(docs/legal/v0.N-draft/)은 게시 전이라 올리지 않는다 — 위 !docs/legal/v0.*/ 예외에 걸리므로 다시 제외
+docs/legal/*-draft/
