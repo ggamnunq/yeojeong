@@ -14,7 +14,7 @@ import { MAX_FILE_BYTES, StatementFileError, type ParsedStatement, type SheetRow
 const fixture = (name: string) => new Uint8Array(readFileSync(resolve(process.cwd(), 'src/features/file-import/parsers/fixtures', name)))
 
 const HEADER = ['交易时间', '交易分类', '交易对方', '对方账号', '商品说明', '收/支', '金额', '收/付款方式', '交易状态', '交易订单号', '商家订单号', '备注']
-/** 버리는 열(파서가 읽지 않아야 하는 칸) */
+/** 버리는 열(정규화 단계가 접근하지 않아야 하는 칸) */
 const DROPPED = ['对方账号', '收/付款方式', '商家订单号', '备注'] as const
 const PREAMBLE = ['导出信息：', '姓名：示例用户', '起始时间：[2026-09-01 00:00:00]    终止时间：[2026-09-30 23:59:59]', '共3笔记录', '特别提示：', '1.示例；']
 
@@ -83,7 +83,7 @@ describe('fixture 파일(GBK)', () => {
   })
 })
 
-describe('읽지 않는 열(对方账号 · 收/付款方式 · 商家订单号 · 备注)', () => {
+describe('버리는 열(对方账号 · 收/付款方式 · 商家订单号 · 备注)', () => {
   /** 칸을 읽을 때마다 위치를 적는 행(헤더 아래 데이터 행에만 씌운다) */
   function tracked(rows: SheetRows, headerIndex: number) {
     const touched = new Set<number>()
@@ -100,7 +100,7 @@ describe('읽지 않는 열(对方账号 · 收/付款方式 · 商家订单号 
     return { wrapped, touched }
   }
 
-  it('파서는 버리는 열의 칸을 한 번도 읽지 않는다(행 배열을 통째로 훑거나 보관하지 않는다)', async () => {
+  it('정규화 단계는 버리는 열의 칸에 한 번도 접근하지 않는다(행 배열을 통째로 훑거나 보관하지 않는다)', async () => {
     const rows = parseCsv(decodeText(fixture('alipay-gbk.csv')), 1000)
     const headerIndex = rows.findIndex((r) => r[0] === '交易时间')
     const { wrapped, touched } = tracked(rows, headerIndex)

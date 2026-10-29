@@ -18,7 +18,10 @@ export function decodeText(bytes: Uint8Array): string {
   }
 }
 
-/** CSV 문자열 → 행. 빈 줄은 뺀다. maxRows를 넘으면 tooLarge */
+/** 한 행의 칸 상한(xlsx 읽기의 열 상한과 같다). 넘으면 거래 내역 파일이 아니다(format) — 쉼표만 수만 개인 줄이 메모리를 키우지 못하게 */
+export const MAX_ROW_CELLS = 200
+
+/** CSV 문자열 → 행. 빈 줄은 뺀다. maxRows를 넘으면 tooLarge, 한 행이 MAX_ROW_CELLS칸을 넘으면 format */
 export function parseCsv(text: string, maxRows: number): SheetRows {
   const rows: SheetRows = []
   let row: string[] = []
@@ -27,6 +30,7 @@ export function parseCsv(text: string, maxRows: number): SheetRows {
   const endField = () => {
     row.push(field)
     field = ''
+    if (row.length > MAX_ROW_CELLS) throw new StatementFileError('format')
   }
   const endRow = () => {
     endField()
