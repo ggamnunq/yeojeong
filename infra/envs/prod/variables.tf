@@ -81,6 +81,17 @@ variable "support_email" {
   default     = "support@jinyeojeong.com"
 }
 
+variable "payment_provider" {
+  description = "결제 데이터 제공자. toss = 실제 토스 연동(계약 전이라 미구현, 연결 시작이 503), demo = 샘플 데이터 어댑터. 출시 전 테스트 기간에만 demo를 쓰고, 정식 연동 때 toss로 되돌리며 데모로 만든 결제수단·결제를 정리한다"
+  type        = string
+  default     = "toss"
+
+  validation {
+    condition     = contains(["toss", "demo"], var.payment_provider)
+    error_message = "payment_provider는 toss 또는 demo여야 합니다."
+  }
+}
+
 variable "support_forward_to" {
   description = "support_email로 온 메일을 전달받을 운영자 주소(terraform.tfvars 또는 TF_VAR_support_forward_to, 커밋 금지). Cloudflare가 보내는 확인 메일을 한 번 눌러야 전달이 시작된다"
   type        = string
