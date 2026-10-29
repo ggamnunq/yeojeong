@@ -9,7 +9,11 @@ import {
 } from './membership-lookup.js';
 import { SessionResolver, SessionService } from './session-resolver.js';
 import { WebConfig } from './web-config.js';
-import { AccountLinkGuard, FeatureFlags } from '../features.js';
+import {
+  AccountLinkGuard,
+  CardImportAccess,
+  FeatureFlags,
+} from '../features.js';
 
 /** 전역 가드와 auth 모듈이 쓰는 설정·조회 서비스. 테스트는 test/auth-helpers.ts의 스텁으로 바꿔 끼운다 */
 @Global()
@@ -31,10 +35,12 @@ import { AccountLinkGuard, FeatureFlags } from '../features.js';
     { provide: ConsentChecker, useClass: PrismaConsentChecker },
     { provide: MembershipLookup, useClass: PrismaMembershipLookup },
     FeatureFlags,
+    CardImportAccess,
     AccountLinkGuard,
   ],
   exports: [
     FeatureFlags,
+    CardImportAccess,
     AccountLinkGuard,
     WebConfig,
     AuthConfig,

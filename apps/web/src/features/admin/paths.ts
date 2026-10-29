@@ -17,6 +17,7 @@ export const adminPaths = {
   users: () => `${ADMIN_BASE}/users`,
   user: (userId: string) => `${ADMIN_BASE}/users/${encodeURIComponent(userId)}`,
   codef: () => `${ADMIN_BASE}/codef`,
+  cardImport: () => `${ADMIN_BASE}/card-import`,
 } as const
 
 /**

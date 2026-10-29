@@ -1,10 +1,15 @@
 import {
+  ADMIN_CARD_IMPORT_GRANT_NOTE_MAX,
   ADMIN_LOGIN_LIMIT,
   ADMIN_STEP_UP_LIMIT,
   ADMIN_USER_PAGE_SIZE,
   ADMIN_WITHDRAW_REASON_LENGTH,
   CARD_IMPORT_FETCH_LIMIT,
+  type AdminCardImportGrant,
+  type AdminCardImportGrantList,
+  type AdminCardImportGrantSource,
   type AdminCodefUsage,
+  type AdminCreateCardImportGrantRequest,
   type AdminLoginRequest,
   type AdminSessionView,
   type AdminUserDetail,
@@ -20,6 +25,7 @@ import { api, mockError, noContent, type NoContent } from '../../mocks/utils'
 // 개발 서버: VITE_MOCK_API=1에서 /admin/login → 아이디 admin · 비밀번호 admin-password-123 · 인증 코드 246810(목 전용 값).
 // 인증 코드(TOTP)는 한 번 쓰면 다시 받지 않는다(서버와 같이). 로그인 뒤 탈퇴 재인증에는 두 번째 코드 135791을 쓴다.
 // 로그인 여부는 sessionStorage 'yj:mock:admin'에 둬서 새로고침해도 유지된다. 테스트는 afterEach에서 resetAdminMock().
+// 카드 불러오기 권한: 단계 allowlist, env 목록 = 준용 + 탈퇴한 ID 하나, 관리자 권한 = 여행자05(시작 상태). 권한 추가·회수는 이 파일 상태만 바꾼다.
 
 export const ADMIN_MOCK_CREDENTIALS = { username: 'admin', password: 'admin-password-123' } as const
 /** 목이 받는 인증 코드(목 전용). 각 코드는 한 번만 쓸 수 있다 — 로그인에 [0], 재인증에 [1] */
@@ -34,13 +40,20 @@ export const ADMIN_MOCK_USER = {
   withdrawn: uuid(99),
 } as const
 
+/** 목 관리자 행위자 ID(서버는 아이디에서 만든 UUID) */
+export const ADMIN_MOCK_ACTOR_ID = '6f1c2a9e-0b7d-4c55-9e1a-3d2f8b7c6a10'
+/** env CARD_IMPORT_ALLOWED_USER_IDS 흉내(회수 불가) — 준용 + 탈퇴한 회원 ID */
+const ENV_ALLOWLIST: readonly string[] = [ADMIN_MOCK_USER.junyong, ADMIN_MOCK_USER.withdrawn]
+/** 시작할 때 관리자 권한이 있는 회원(여행자05) */
+export const ADMIN_MOCK_GRANTED_USER = uuid(5)
+
 const BASE = Date.parse('2026-10-29T12:00:00+09:00')
 const DAY = 86_400_000
 const kstIso = (ms: number) => `${new Date(ms + 9 * 3_600_000).toISOString().slice(0, 19)}+09:00`
 
 function fixtureUsers(): AdminUserDetail[] {
   const named: [string, Partial<AdminUserDetail>][] = [
-    ['준용', { cardImport: { allowlisted: true, enabled: true }, kakaoIdLast4: '4821' }],
+    ['준용', { kakaoIdLast4: '4821' }],
     [
       '민지',
       {
@@ -64,7 +77,8 @@ function fixtureUsers(): AdminUserDetail[] {
       tripCount: i % 3,
       walletEntryCount: (i * 5) % 17,
       status: 'ACTIVE',
-      cardImport: { allowlisted: false, enabled: false },
+      // 실제 값은 응답 때 권한 상태로 채운다(withCardImport)
+      cardImport: { allowlisted: false, granted: false, enabled: false },
       kakaoIdLast4: String(1000 + i),
       deletionRequest: null,
       consents: [
@@ -167,7 +181,54 @@ function fixtureCodefUsage(): AdminCodefUsage {
   }
 }
 
-const state = { loggedIn: false, failures: 0, stepUpFailures: 0, usedCodes: new Set<string>(), users: fixtureUsers() }
+type MockGrant = { grantedAt: string; note: string | null }
+const fixtureGrants = () => new Map<string, MockGrant>([[ADMIN_MOCK_GRANTED_USER, { grantedAt: kstIso(BASE - 2 * DAY), note: '운영자 실테스트' }]])
+
+const state = {
+  loggedIn: false,
+  failures: 0,
+  stepUpFailures: 0,
+  usedCodes: new Set<string>(),
+  users: fixtureUsers(),
+  grants: fixtureGrants(),
+}
+
+/** 회원의 카드 불러오기 상태(단계 allowlist: env 목록 또는 관리자 권한) */
+function withCardImport<T extends AdminUserDetail>(user: T): T {
+  const allowlisted = ENV_ALLOWLIST.includes(user.id)
+  const granted = state.grants.has(user.id)
+  return { ...user, cardImport: { allowlisted, granted, enabled: allowlisted || granted } }
+}
+
+function grantItem(userId: string): AdminCardImportGrant {
+  const grant = state.grants.get(userId)
+  const user = state.users.find((u) => u.id === userId)
+  const sources: AdminCardImportGrantSource[] = []
+  if (grant) sources.push('ADMIN')
+  if (ENV_ALLOWLIST.includes(userId)) sources.push('ENV')
+  return {
+    userId,
+    nickname: user?.nickname ?? null,
+    sources,
+    grantedAt: grant?.grantedAt ?? null,
+    grantedBy: grant ? ADMIN_MOCK_ACTOR_ID : null,
+    note: grant?.note ?? null,
+    revocable: grant !== undefined,
+    cardImportConsent: user?.consents.some((c) => c.consentId === 'CARD_IMPORT' && c.agreed && !c.withdrawnAt) ?? false,
+    todayFetchCount: userId === ADMIN_MOCK_USER.junyong ? 6 : 0,
+  }
+}
+
+function grantList(): AdminCardImportGrantList {
+  const admin = [...state.grants.entries()].sort((a, b) => b[1].grantedAt.localeCompare(a[1].grantedAt)).map(([id]) => id)
+  const envOnly = ENV_ALLOWLIST.filter((id) => !state.grants.has(id))
+  return {
+    asOf: kstIso(BASE),
+    flags: { featureCardImport: 'allowlist', effectiveMode: 'allowlist' },
+    dailyLimit: CARD_IMPORT_FETCH_LIMIT.DAILY,
+    items: [...admin, ...envOnly].map(grantItem),
+  }
+}
 
 /** 맞고 아직 쓰지 않은 인증 코드면 쓴 것으로 표시하고 true */
 function claimTotp(code: unknown): boolean {
@@ -206,6 +267,7 @@ export function resetAdminMock() {
   state.stepUpFailures = 0
   state.usedCodes = new Set()
   state.users = fixtureUsers()
+  state.grants = fixtureGrants()
 }
 
 /** 테스트에서 바로 로그인한 상태로 시작 */
@@ -221,8 +283,10 @@ function sessionView(): AdminSessionView {
 const denyUnlessAdmin = () => (readLoggedIn() ? null : mockError('ADMIN_UNAUTHENTICATED', 401))
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const listItem = ({ id, nickname, createdAt, lastLoginAt, tripCount, walletEntryCount, status, cardImport }: AdminUserDetail) =>
-  ({ id, nickname, createdAt, lastLoginAt, tripCount, walletEntryCount, status, cardImport }) satisfies AdminUserListItem
+const listItem = (user: AdminUserDetail) => {
+  const { id, nickname, createdAt, lastLoginAt, tripCount, walletEntryCount, status, cardImport } = withCardImport(user)
+  return { id, nickname, createdAt, lastLoginAt, tripCount, walletEntryCount, status, cardImport } satisfies AdminUserListItem
+}
 
 export const handlers: HttpHandler[] = [
   api.post<AdminSessionView, AdminLoginRequest>('/api/admin/login', async ({ request }) => {
@@ -275,7 +339,7 @@ export const handlers: HttpHandler[] = [
     const denied = denyUnlessAdmin()
     if (denied) return denied
     const user = state.users.find((u) => u.id === params.userId)
-    return user ? HttpResponse.json(user) : mockError('NOT_FOUND', 404)
+    return user ? HttpResponse.json(withCardImport(user)) : mockError('NOT_FOUND', 404)
   }),
 
   api.post<AdminWithdrawUserResponse, AdminWithdrawUserRequest>('/api/admin/users/:userId/withdraw', async ({ params, request }) => {
@@ -302,8 +366,36 @@ export const handlers: HttpHandler[] = [
     }
     state.stepUpFailures = 0
     state.users = state.users.filter((u) => u.id !== user.id)
+    // 탈퇴하면 관리자 권한도 지워진다(서버 탈퇴 파이프라인)
+    state.grants.delete(user.id)
     return HttpResponse.json({ status: 'DELETED', accountDeletionId: uuid(5000), completedAt: kstIso(Date.now()) })
   }),
 
   api.get<AdminCodefUsage>('/api/admin/codef-usage', () => denyUnlessAdmin() ?? HttpResponse.json(fixtureCodefUsage())),
+
+  api.get<AdminCardImportGrantList>('/api/admin/card-import-grants', () => denyUnlessAdmin() ?? HttpResponse.json(grantList())),
+
+  api.post<AdminCardImportGrant, AdminCreateCardImportGrantRequest>('/api/admin/card-import-grants', async ({ request }) => {
+    const denied = denyUnlessAdmin()
+    if (denied) return denied
+    const body = await request.json()
+    const note = typeof body.note === 'string' ? body.note.trim() : ''
+    if (!UUID.test(String(body.userId)) || note.length > ADMIN_CARD_IMPORT_GRANT_NOTE_MAX) {
+      return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'userId', code: 'isUuid', message: '사용자 ID를 확인해 주세요' }] })
+    }
+    const user = state.users.find((u) => u.id === body.userId)
+    if (!user) return mockError('NOT_FOUND', 404)
+    if (state.grants.has(user.id)) return mockError('ADMIN_CARD_IMPORT_GRANT_EXISTS', 409)
+    state.grants.set(user.id, { grantedAt: kstIso(Date.now()), note: note || null })
+    return HttpResponse.json(grantItem(user.id), { status: 201 })
+  }),
+
+  api.delete<NoContent>('/api/admin/card-import-grants/:userId', ({ params }) => {
+    const denied = denyUnlessAdmin()
+    if (denied) return denied
+    const userId = String(params.userId)
+    if (state.grants.delete(userId)) return noContent()
+    if (ENV_ALLOWLIST.includes(userId)) return mockError('ADMIN_CARD_IMPORT_GRANT_ENV_ONLY', 409)
+    return mockError('NOT_FOUND', 404)
+  }),
 ]

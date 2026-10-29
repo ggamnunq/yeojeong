@@ -1,7 +1,9 @@
 import type { ConfigService } from '@nestjs/config';
+import type { PrismaService } from '../prisma/prisma.service.js';
 import { NotFoundError } from './errors/app-exception.js';
 import {
   AccountLinkGuard,
+  CardImportAccess,
   CardImportGuard,
   FeatureFlags,
   parseBooleanEnv,
@@ -96,21 +98,114 @@ describe('기능 플래그(FR-006)', () => {
         ...keys,
       }).cardImportMode,
     ).toBe('on');
+  });
+});
 
-    const ctx = (userId?: string) =>
-      ({
-        switchToHttp: () => ({
-          getRequest: () => ({
-            auth: userId ? { user: { id: userId } } : undefined,
-          }),
+describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 권한)', () => {
+  const keys = {
+    CODEF_CLIENT_ID: 'id',
+    CODEF_CLIENT_SECRET: 'secret',
+    CODEF_PUBLIC_KEY: 'key',
+  };
+  const envUser = '11111111-1111-4111-8111-111111111111';
+  const granted = '22222222-2222-4222-8222-222222222222';
+  const nobody = '33333333-3333-4333-8333-333333333333';
+
+  /** card_import_grants 가짜: granted 한 명만 있고, 조회 수를 센다 */
+  function setup(mode: string, grants = new Set([granted])) {
+    const flags = new FeatureFlags({
+      get: (name: string) =>
+        ({
+          FEATURE_CARD_IMPORT: mode,
+          CARD_IMPORT_ALLOWED_USER_IDS: envUser,
+          ...keys,
+        })[name],
+    } as unknown as ConfigService);
+    const findUnique = vi.fn(({ where }: { where: { userId: string } }) =>
+      Promise.resolve(
+        grants.has(where.userId) ? { userId: where.userId } : null,
+      ),
+    );
+    const prisma = {
+      cardImportGrant: { findUnique },
+    } as unknown as PrismaService;
+    return { access: new CardImportAccess(flags, prisma), findUnique, grants };
+  }
+
+  const ctx = (userId?: string, req: object = {}) =>
+    ({
+      switchToHttp: () => ({
+        getRequest: () => ({
+          ...req,
+          auth: userId ? { user: { id: userId } } : undefined,
         }),
-      }) as never;
-    expect(() => new CardImportGuard(allow).canActivate(ctx(other))).toThrow(
-      NotFoundError,
+      }),
+    }) as never;
+
+  it('allowlist: env 목록 또는 관리자 권한이 있으면 켜진다(env는 DB를 보지 않는다)', async () => {
+    const { access, findUnique } = setup('allowlist');
+    expect(await access.enabledFor(envUser)).toBe(true);
+    expect(findUnique).not.toHaveBeenCalled();
+    expect(await access.enabledFor(granted)).toBe(true);
+    expect(await access.enabledFor(nobody)).toBe(false);
+    expect(await access.enabledFor(null)).toBe(false);
+    // UUID가 아니면 DB를 보지 않는다
+    expect(await access.enabledFor('not-a-uuid')).toBe(false);
+    expect(findUnique).toHaveBeenCalledTimes(2);
+    expect(await access.view(granted)).toEqual({
+      accountLink: false,
+      cardImport: true,
+    });
+    expect(await access.view(nobody)).toEqual({
+      accountLink: false,
+      cardImport: false,
+    });
+    expect(access.enabledWithGrant(nobody, true)).toBe(true);
+    expect(access.enabledWithGrant(nobody, false)).toBe(false);
+    expect(access.enabledWithGrant(envUser, false)).toBe(true);
+  });
+
+  it('off·on은 권한 행과 무관하다(DB를 보지 않는다)', async () => {
+    const off = setup('off');
+    expect(await off.access.enabledFor(granted)).toBe(false);
+    expect(await off.access.enabledFor(envUser)).toBe(false);
+    expect((await off.access.view(granted)).cardImport).toBe(false);
+    expect(off.access.enabledWithGrant(granted, true)).toBe(false);
+    const on = setup('on');
+    expect(await on.access.enabledFor(nobody)).toBe(true);
+    expect(await on.access.enabledFor(undefined)).toBe(true);
+    expect(off.findUnique).not.toHaveBeenCalled();
+    expect(on.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('같은 요청 안에서는 한 번만 읽고, 다음 요청은 다시 읽는다(회수가 바로 반영된다)', async () => {
+    const { access, findUnique, grants } = setup('allowlist');
+    const req = {};
+    expect((await access.view(granted, req)).cardImport).toBe(true);
+    expect(await access.enabledFor(granted, req)).toBe(true);
+    expect(findUnique).toHaveBeenCalledTimes(1);
+    grants.delete(granted);
+    expect(await access.enabledFor(granted, {})).toBe(false);
+    expect(findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('CardImportGuard: 꺼진 사용자는 404, env·관리자 권한이면 통과', async () => {
+    const { access } = setup('allowlist');
+    await expect(
+      new CardImportGuard(access).canActivate(ctx(nobody)),
+    ).rejects.toThrow(NotFoundError);
+    await expect(
+      new CardImportGuard(access).canActivate(ctx(undefined)),
+    ).rejects.toThrow(NotFoundError);
+    expect(await new CardImportGuard(access).canActivate(ctx(envUser))).toBe(
+      true,
     );
-    expect(new CardImportGuard(allow).canActivate(ctx(me))).toBe(true);
-    expect(() => new CardImportGuard(flags(keys)).canActivate(ctx(me))).toThrow(
-      NotFoundError,
+    expect(await new CardImportGuard(access).canActivate(ctx(granted))).toBe(
+      true,
     );
+    const off = setup('off');
+    await expect(
+      new CardImportGuard(off.access).canActivate(ctx(granted)),
+    ).rejects.toThrow(NotFoundError);
   });
 });
