@@ -4,6 +4,7 @@ import { Icon } from '../Icon/Icon'
 import type { IconName } from '../Icon/icons'
 
 // Figma Tag(24:7086) · Type × Size. 비대화형 라벨. Shared는 레거시(공동 결제는 AvatarStack). Changed는 v1.4(미확정과 같은 중립 회색).
+// v1.7: Pending의 Label(TEXT, 기본 "미확정") — Row/Pick chip 등에서 `label`로 "추가됨" · "취소됨" · "비슷한 기록"을 넣는다(같은 회색 칩).
 // Warning(v1.6.2 · M 70:10539 · S 70:10544) = "연결 만료" — HF-30 마이페이지 지갑 줄 오른쪽. 옅은 warning 면 + 진한 warning 글자, 아이콘 없음.
 export type TagType = 'shared' | 'personal' | 'pending' | 'duplicate' | 'refund' | 'left' | 'changed' | 'warning'
 export type TagSize = 'm' | 's'
@@ -11,7 +12,7 @@ export type TagSize = 'm' | 's'
 export type TagProps = Omit<HTMLAttributes<HTMLSpanElement>, 'children'> & {
   type: TagType
   size?: TagSize
-  /** 기본 문구(공동·개인·미확정·중복 의심·환불·나간 멤버·변경됨·연결 만료)를 바꿀 때 */
+  /** Figma Label(v1.7, Pending): 기본 문구(공동·개인·미확정·중복 의심·환불·나간 멤버·변경됨·연결 만료)를 바꿀 때. 예: type="pending" label="추가됨" */
   label?: ReactNode
   children?: never
 }

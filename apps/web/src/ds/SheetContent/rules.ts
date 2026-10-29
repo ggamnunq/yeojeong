@@ -143,3 +143,89 @@ export function pickDate(
   }
   return { value: { start: value.start, end: ymd }, field: 'end' }
 }
+
+// ── SheetContent/DateTime(v1.7 · B-27) 날짜·시각 계산 ─────────────────────
+// 시점은 epoch ms, 달력·시각은 KST(UTC+9, 서머타임 없음) 벽시계로 본다. 기기 시간대와 무관하다.
+// 범위: 지금 + 5분 이후 · 365일 이전은 고를 수 없다(양끝 포함). 값 표기는 KST ISO "2026-11-13T15:20:00+09:00".
+
+export const KST_OFFSET_MS = 9 * 60 * 60_000
+/** 미래 허용 폭(분): 지금 + 5분까지 */
+export const DATE_TIME_AHEAD_MINUTES = 5
+/** 과거 허용 폭(일) */
+export const DATE_TIME_PAST_DAYS = 365
+
+/** 시트에서 고르는 중인 값. hour · minute는 입력 칸 글자 그대로(0~2자리 숫자) */
+export type DateTimeDraft = { date: YmdDate; hour: string; minute: string }
+/** 고를 수 있는 시점 범위(epoch ms, 양끝 포함) */
+export type DateTimeLimits = { min: number; max: number }
+export type SheetContentDateTimeMode = 'datetime' | 'date'
+
+/** epoch ms → KST 날짜 · 시 · 분("HH" · "mm") */
+export function kstParts(at: number) {
+  const d = new Date(at + KST_OFFSET_MS)
+  return {
+    date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}` as YmdDate,
+    hour: pad(d.getUTCHours()),
+    minute: pad(d.getUTCMinutes()),
+  }
+}
+
+/** 기본 범위: [지금 − 365일, 지금 + 5분] */
+export const dateTimeLimits = (
+  now: number,
+  { aheadMinutes = DATE_TIME_AHEAD_MINUTES, pastDays = DATE_TIME_PAST_DAYS }: { aheadMinutes?: number; pastDays?: number } = {},
+): DateTimeLimits => ({ min: now - pastDays * 86_400_000, max: now + aheadMinutes * 60_000 })
+
+/** 시트를 열 때 초기값: 고른 시점(ISO · epoch ms)이 없으면 지금 */
+export function dateTimeDraft(value: string | number | null | undefined, now: number): DateTimeDraft {
+  const at = value == null ? now : typeof value === 'number' ? value : Date.parse(value)
+  return kstParts(Number.isNaN(at) ? now : at)
+}
+
+/** 시·분 칸 입력 정리: 숫자만, 최대 2자리 */
+export const timeDigits = (input: string) => input.replace(/\D/g, '').slice(0, 2)
+
+const timeNumber = (digits: string, max: number) => {
+  if (!/^\d{1,2}$/.test(digits)) return null
+  const n = Number(digits)
+  return n <= max ? n : null
+}
+
+/** 고른 값 → KST ISO "2026-11-13T15:20:00+09:00". 시·분이 비었거나 범위(0~23 · 0~59) 밖이면 null */
+export function dateTimeIso(draft: DateTimeDraft): string | null {
+  const h = timeNumber(draft.hour, 23)
+  const m = timeNumber(draft.minute, 59)
+  if (h === null || m === null) return null
+  return `${draft.date}T${pad(h)}:${pad(m)}:00+09:00`
+}
+
+/** 달력에서 그 날을 누를 수 있는가: 범위 양끝 시점이 든 KST 날짜까지 */
+export const isDateTimeDaySelectable = (ymd: YmdDate, limits: DateTimeLimits) =>
+  ymd >= kstParts(limits.min).date && ymd <= kstParts(limits.max).date
+
+/**
+ * 확인을 누를 수 없는 이유. null이면 확인 가능.
+ * - incomplete: 시·분이 비었거나 0~23 · 0~59 밖(Mode=DateTime)
+ * - range: 날짜가 범위 밖이거나, 그 날짜 + 시각이 범위 밖(오늘이면 지금 + 5분까지만)
+ */
+export function dateTimeProblem(
+  draft: DateTimeDraft,
+  limits: DateTimeLimits,
+  mode: SheetContentDateTimeMode = 'datetime',
+): 'incomplete' | 'range' | null {
+  if (!isDateTimeDaySelectable(draft.date, limits)) return 'range'
+  if (mode === 'date') return null
+  const iso = dateTimeIso(draft)
+  if (iso === null) return 'incomplete'
+  const at = Date.parse(iso)
+  return at < limits.min || at > limits.max ? 'range' : null
+}
+
+/** Row/Field 날짜 값: 손대지 않았으면(null) "지금", 고르면 KST "11.13 15:20" */
+export function formatDateTimeValue(value: string | number | null | undefined) {
+  if (value == null) return '지금'
+  const at = typeof value === 'number' ? value : Date.parse(value)
+  if (Number.isNaN(at)) return '지금'
+  const p = kstParts(at)
+  return `${p.date.slice(5, 7)}.${p.date.slice(8, 10)} ${p.hour}:${p.minute}`
+}

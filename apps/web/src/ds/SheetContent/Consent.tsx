@@ -71,7 +71,7 @@ export function SheetContentConsent({
       {loading ? (
         <div role="status" aria-label="불러오는 중" className="mt-3 flex flex-col gap-1">
           {Array.from({ length: SKELETON_ROWS }, (_, i) => (
-            <div key={i} className="flex items-center gap-3 py-3.5 pl-5">
+            <div key={i} className="flex items-center gap-3 py-4 pl-5">
               <div className="size-5 shrink-0 animate-pulse rounded-full bg-muted motion-reduce:animate-none" />
               <div className="h-4 w-1/2 animate-pulse rounded-sm bg-muted motion-reduce:animate-none" />
             </div>

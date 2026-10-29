@@ -15,6 +15,8 @@ import {
   CreditCard,
   Crown,
   Ellipsis,
+  Eye,
+  EyeOff,
   Funnel,
   House,
   Info,
@@ -46,7 +48,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-// Figma `Icon/<이름>`(Icons8 Fluency Systems Regular) → lucide 아이콘. 키는 Figma 이름 그대로. v1.4에 chevron-up·crown 추가(44종).
+// Figma `Icon/<이름>`(Icons8 Fluency Systems Regular) → lucide 아이콘. 키는 Figma 이름 그대로. v1.4에 chevron-up·crown, v1.7에 eye·eye-off 추가(46종).
 export const ICONS = {
   'chevron-down': ChevronDown,
   'chevron-right': ChevronRight,
@@ -93,6 +95,9 @@ export const ICONS = {
   // v1.4: 펼친 그룹 드롭다운(TopHeader Dropdown=Open) · 그룹장 왕관(Row/Member Leader)
   'chevron-up': ChevronUp,
   crown: Crown,
+  // v1.7: 비밀번호 보기 토글(Input Type=Password) — 가려진 상태 eye · 보이는 상태 eye-off
+  eye: Eye,
+  'eye-off': EyeOff,
 } as const satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof ICONS
@@ -154,6 +159,9 @@ export const ICON_VIEWBOX: Record<IconName, readonly [x: number, y: number, size
   menu: [1.62, 1.62, 20.76],
   'chevron-up': [4.62, 4.38, 14.77],
   crown: [0.3, 0.3, 23.41],
+  // v1.7 Icon/eye(114:15059) · eye-off(114:15073): Figma 자체 벡터 bbox(선 포함) 20.5×14.5 · 20.5×18.5, 중심 (12.5, 12.5) · (12.5, 12)
+  eye: [-1.16, -1.16, 25.26],
+  'eye-off': [-1.16, -0.63, 25.26],
 }
 
 /**

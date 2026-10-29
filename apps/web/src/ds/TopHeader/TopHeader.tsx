@@ -1,6 +1,7 @@
 import { clsx } from 'clsx'
 import type { MouseEventHandler, ReactNode } from 'react'
 import { Badge, type BadgeStatus } from '../Badge/Badge'
+import { Button } from '../Button/Button'
 import { Icon } from '../Icon/Icon'
 import type { IconName } from '../Icon/icons'
 import { IconButton } from '../IconButton/IconButton'
@@ -9,6 +10,7 @@ import { focusRing } from '../styles'
 
 // Figma TopHeader(24:7328) · Type=Group/Back/Logo/Close(v1.6) × Dropdown=Closed/Open(v1.4, Group만) × Status badge · Menu · Center title(v1.6).
 // Close = 왼쪽 ✕(흐름 닫기 — 생성 완료 HF-11 등) + 가운데 제목(H3, 선택) + 오른쪽 40 균형 자리.
+// Back(v1.7, 24:7296) = ‹ + Title visible · Title(H3) + Action · text action(Button Ghost S, 기본 "불러오기") — 오른쪽 끝 텍스트 액션.
 // 높이 56(layout/header-height), 아래 1px border/default.
 // divider · groupNameSize는 Figma 세트 속성이 아니라 Shell/App·Sub 인스턴스의 덮어쓰기(구분선 끔 · 그룹명 H2, spec 9-2 미승격 후보)다.
 // 화면에서는 직접 쓰지 말고 Shell* 컴포넌트를 쓴다.
@@ -38,13 +40,23 @@ export type TopHeaderGroupProps = {
   onMyClick?: Click
 }
 
+/** Figma Action + text action(v1.7): 오른쪽 끝 Button Ghost S */
+export type TopHeaderTextAction = {
+  /** Figma text action Label. 기본 "불러오기" */
+  label?: ReactNode
+  onClick?: Click
+  disabled?: boolean
+}
+
 export type TopHeaderBackProps = {
   type: 'back'
-  /** Figma title */
-  title: ReactNode
+  /** Figma Title + Title visible(v1.7): 넘기면 제목(H3)이 보인다. 없으면 ‹만(Figma 기본 off) */
+  title?: ReactNode
   onBack?: Click
-  /** 오른쪽 action 버튼(Figma 기본 more). 없으면 그리지 않는다. */
+  /** 오른쪽 아이콘 action 버튼(Figma 기본 more). 없으면 그리지 않는다. */
   action?: { icon?: IconName; label: string; onClick?: Click }
+  /** Figma Action(v1.7): 오른쪽 끝 텍스트 액션(Button Ghost S, 기본 "불러오기"). 객체를 주면 켜진다 */
+  textAction?: TopHeaderTextAction
 }
 
 export type TopHeaderLogoProps = {
@@ -88,13 +100,22 @@ export function TopHeader(props: TopHeaderProps) {
 
 function Content(props: TopHeaderProps) {
   if (props.type === 'back') {
-    const { title, onBack, action } = props
+    const { title, onBack, action, textAction } = props
     return (
       <>
         <IconButton size="m" icon="chevron-left" label="뒤로 가기" onClick={onBack} />
-        <h1 className="min-w-0 truncate text-h3 text-primary">{title}</h1>
+        {title != null && <h1 className="min-w-0 truncate text-h3 text-primary">{title}</h1>}
         <Spacer />
         {action && <IconButton size="m" icon={action.icon ?? 'more'} label={action.label} onClick={action.onClick} />}
+        {textAction && (
+          <Button
+            type="ghost"
+            size="s"
+            label={textAction.label ?? '불러오기'}
+            disabled={textAction.disabled}
+            onClick={textAction.onClick}
+          />
+        )}
       </>
     )
   }

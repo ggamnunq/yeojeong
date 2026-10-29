@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
-import { clsx } from 'clsx'
 import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { isApiError, keys } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useTripDetail } from '../../../app/trip'
-import { Button, Callout, Checkbox, EmptyState, formatKrw, SegmentedControl, ShellSub } from '../../../ds'
+import { Button, Callout, EmptyState, formatKrw, RowPick, SegmentedControl, ShellSub } from '../../../ds'
 import { toast } from '../../../notifications'
 import { FinConsentSheet } from '../../auth/components/FinConsentSheet'
 import { paymentMethodsQuery } from '../../wallet/api'
@@ -161,24 +160,16 @@ function Candidates({
       {query.data.map((c) => {
         const on = picked.includes(c.candidateId)
         const [, mm, dd] = c.localDate.split('-')
+        // Row/Pick(v1.7): Sub amount off, Meta text = 날짜
         return (
-          <li key={c.candidateId} className="px-5 py-0.5">
-            <Checkbox
-              className="w-full"
+          <li key={c.candidateId}>
+            <RowPick
+              title={c.merchantName}
+              meta={`${mm}.${dd}`}
+              amount={c.krwAmount !== null ? formatKrw(c.krwAmount) : formatOriginal(c.originalAmount, c.currency)}
               checked={on}
               disabled={!on && full}
               onChange={(event) => onToggle(c.candidateId, event.target.checked)}
-              label={
-                <span className="flex min-w-0 flex-1 items-center gap-3.5">
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-body-m-strong text-primary">{c.merchantName}</span>
-                    <span className="text-caption text-tertiary">{`${mm}.${dd}`}</span>
-                  </span>
-                  <span className={clsx('shrink-0 font-amount text-amount-s whitespace-nowrap', on ? 'text-amount-default' : 'text-secondary')}>
-                    {c.krwAmount !== null ? formatKrw(c.krwAmount) : formatOriginal(c.originalAmount, c.currency)}
-                  </span>
-                </span>
-              }
             />
           </li>
         )

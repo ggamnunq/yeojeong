@@ -80,6 +80,22 @@ export default defineCatalog({
             </Variant>
           </Row>
         </Sub>
+        <Sub title='Type=Password (v1.7) — type="password": 가림 점 + 보기 토글(eye 20 ↔ eye-off), Focus·Error에서도 ✕·경고 대신 토글'>
+          <Row>
+            <Variant name="Default (자리표시 비밀번호)" className="w-[350px]">
+              <Input type="password" label="비밀번호" placeholder="비밀번호" autoComplete="off" className="w-full" />
+            </Variant>
+            <Variant name="값 · 눌러서 Focus · 토글로 보기" className="w-[350px]">
+              <Input type="password" label="비밀번호" defaultValue="yeojeong12" autoComplete="off" className="w-full" />
+            </Variant>
+            <Variant name="Error" className="w-[350px]">
+              <Input type="password" label="비밀번호" defaultValue="yeojeong12" error helper="아이디나 비밀번호가 맞지 않아요" autoComplete="off" className="w-full" />
+            </Variant>
+            <Variant name="Disabled" className="w-[350px]">
+              <Input type="password" label="비밀번호" defaultValue="yeojeong12" disabled autoComplete="off" className="w-full" />
+            </Variant>
+          </Row>
+        </Sub>
         <Sub title='size="l" (온보딩 큰 입력 · 필드 60 · 값 H3)'>
           <Row>
             <Variant name='size="l"' className="w-[350px]">
