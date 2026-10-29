@@ -2,7 +2,7 @@ import { Navigate, useNavigate } from 'react-router'
 import { paths } from '../../../app/paths'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { pickEntryTrip, readLastTripId, useMyTrips } from '../../../app/trip'
-import { EmptyState, ShellSub } from '../../../ds'
+import { EmptyState, IllustEmptyTrip, ShellSub } from '../../../ds'
 
 /** HF-09 여정 없음(FR-205). 소속 여정이 생겼으면(다른 기기에서 참여 등) 진입 라우팅 규칙으로 보낸다 */
 export default function NoTripPage() {
@@ -26,7 +26,7 @@ export default function NoTripPage() {
     >
       {/* EmptyState Type=Illust(일러스트 160 + H2, 설명 없음). 버튼은 하단 CTA 자리에 둔다 */}
       <div className="flex flex-1 flex-col justify-center pb-16">
-        <EmptyState type="illust" title="참여한 여정이 없어요" />
+        <EmptyState type="illust" illust={<IllustEmptyTrip size={144} />} title="참여한 여정이 없어요" />
       </div>
     </ShellSub>
   )
