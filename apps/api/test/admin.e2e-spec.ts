@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -241,6 +242,8 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
         details: { reason: 'BAD_CREDENTIALS' },
       });
       expect(rows[0].ipHash).toMatch(/^[0-9a-f]{64}$/);
+      // 접속지 정보: 관리자 기록은 원 IP도 남긴다(로그인 실패 포함 — 공격 추적)
+      expect(isIP(rows[0].clientIp ?? '')).not.toBe(0);
     });
 
     it('requires a TOTP code (2FA) and never accepts the same code twice (replay)', async () => {
@@ -334,6 +337,8 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
         orderBy: { at: 'desc' },
       });
       expect(limited?.details).toEqual({ reason: 'RATE_LIMITED', scope: 'IP' });
+      // 시도 제한에 걸린 기록도 요청한 원 IP를 남긴다
+      expect(limited?.clientIp).toBe(ip);
       // 계속 막혀도 접근 기록은 키·창마다 한 번만 쓰고 나머지는 카운터로만 센다
       const rateLimitedRows = () =>
         prisma.accessLog.count({
@@ -806,7 +811,8 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
     });
 
     it('shows detail with counts only — no payment contents, amounts or merchants — and records ADMIN_VIEW_USER', async () => {
-      const res = await get(`/api/admin/users/${alice}`)
+      const viewerIp = nextIp();
+      const res = await get(`/api/admin/users/${alice}`, viewerIp)
         .set('Cookie', cookie)
         .expect(200);
       const detail = res.body as AdminUserDetail;
@@ -854,6 +860,11 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
         },
       });
       expect(row).not.toBeNull();
+      // 열람 기록의 접속지 정보 = 원 IP(+ 해시)
+      expect(row).toMatchObject({
+        clientIp: viewerIp,
+        ipHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      });
       const missing = randomUUID();
       await get(`/api/admin/users/${missing}`)
         .set('Cookie', cookie)

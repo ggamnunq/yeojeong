@@ -960,6 +960,9 @@ model AccessLog {
   resourceType String   @map("resource_type") @db.VarChar(32)
   resourceId   String?  @map("resource_id") @db.Uuid
   ipHash       String?  @map("ip_hash") @db.Char(64)
+  /// 원 IP(접속지 정보). 관리자 접근 기록(ADMIN_*, 로그인 실패 포함)에만 — 운영자 본인의 접속이라 1년 보관한다.
+  /// 일반 사용자 행은 ipHash만 쓴다(CHECK access_logs_client_ip_admin_only_check, 마이그레이션 20261030010002)
+  clientIp     String?  @map("client_ip") @db.Inet
   requestId    String?  @map("request_id") @db.VarChar(128)
   ua           String?  @db.VarChar(512)
   /// 숫자 요약만(예: 파기 건수 { expenses, transactions }). 금액·가맹점·회원 개인정보는 넣지 않는다.

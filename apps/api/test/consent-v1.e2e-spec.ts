@@ -298,4 +298,29 @@ describeWithDb('Formal terms v1.0 → reconsent (e2e, real DB)', () => {
       ).body,
     ).toEqual({ items: [] });
   });
+
+  it('keeps raw client IPs only on admin access log rows (CHECK access_logs_client_ip_admin_only_check)', async () => {
+    const userId = '00000000-0000-4000-8000-0000000000aa';
+    await expect(
+      db.accessLog.create({
+        data: {
+          userId,
+          action: 'LIST_EXPENSES',
+          resourceType: 'TRIP',
+          clientIp: '203.0.113.9',
+        },
+      }),
+    ).rejects.toThrow();
+    const admin = await db.accessLog.create({
+      data: {
+        userId,
+        action: 'ADMIN_LOGIN',
+        resourceType: 'ADMIN',
+        clientIp: '203.0.113.9',
+      },
+      select: { id: true, clientIp: true },
+    });
+    expect(admin.clientIp).toBe('203.0.113.9');
+    await db.accessLog.delete({ where: { id: admin.id } });
+  });
 });

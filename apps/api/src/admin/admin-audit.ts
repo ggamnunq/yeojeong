@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { Injectable, Logger } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuditAction, AuditResourceType } from '../audit/index.js';
@@ -8,6 +9,14 @@ import { AdminConfig } from './admin-config.js';
 import { rateLimitAddress } from './admin-login-throttle.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 원 IP(origin lock을 통과한 운영 요청이면 Worker가 넘긴 클라이언트 IP). IPv4-mapped IPv6는 IPv4로. 모양이 이상하면 NULL */
+export function clientIp(ip: string | undefined): string | null {
+  if (!ip) return null;
+  const plain =
+    ip.startsWith('::ffff:') && isIP(ip.slice(7)) === 4 ? ip.slice(7) : ip;
+  return isIP(plain) ? plain : null;
+}
 
 export interface AdminAuditEntry {
   resourceType: AuditResourceType;
@@ -23,7 +32,9 @@ export type AdminAuditDetails = Readonly<
 
 /**
  * 관리자 열람·조치 접근 기록(access_logs, 1년 보존 — 개인정보취급자 접속 기록).
- * user_id = 관리자 행위자 ID(AdminConfig.actorId, 아이디에서 만든 UUID), IP는 HMAC만, 요청 ID·UA를 남긴다.
+ * user_id = 관리자 행위자 ID(AdminConfig.actorId, 아이디에서 만든 UUID), 요청 ID·UA를 남긴다.
+ * 접속지 정보: 원 IP(client_ip, 운영자 본인의 접속이라 1년 보관 — 로그인 실패·시도 제한도 공격 추적용)와 ip_hash를 함께 남긴다.
+ * 일반 사용자 접근 기록은 ip_hash만이고, DB CHECK가 ADMIN_* 행에만 client_ip를 허용한다.
  * 열람·조치 기록은 **응답 전에** 쓰고 실패하면 요청을 실패시킨다(fail closed — 기록 없는 열람이 없게).
  * 애플리케이션 로그(Cloud Logging)에는 행위·대상만 남기고 details(탈퇴 사유)는 남기지 않는다.
  */
@@ -58,6 +69,7 @@ export class AdminAuditLog {
         resourceType: entry.resourceType,
         resourceId,
         ipHash: this.audit.hashIp(req.ip),
+        clientIp: clientIp(req.ip),
         requestId: getRequestId(req).slice(0, 128) || null,
         ua: req.get('user-agent')?.slice(0, 512) ?? null,
         ...(entry.details && { details: { ...entry.details } }),

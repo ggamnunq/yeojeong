@@ -29,6 +29,8 @@ scripts/ops/db-connect.sh --reason "결제 동기화 장애 조사(#123)"
 | 세션 | psql, TLS `verify-full`(레포의 Supabase CA). `PSQL_HISTORY=/dev/null`이라 입력한 쿼리를 `~/.psql_history`에 남기지 않습니다. `application_name = yeojeong-operator:<세션 ID>`. 세션 안의 Ctrl-C는 쿼리 취소이고 스크립트를 끝내지 않습니다 |
 | 종료 기록 | 정상 종료(`\q`)·오류·창 닫힘(SIGHUP)·SIGTERM 모두 EXIT trap 한 곳에서 `OPERATOR_DB_ACCESS_END` — 접속 시간(초)·종료 코드(= psql 종료 코드). START와 END는 같은 `request_id`(`opdb:<세션 ID>`)로 이어집니다 |
 
+**접속지 정보**: 스크립트는 외부 IP 조회 서비스를 부르지 않는다. DB 직접 접속의 접속지 기준은 **GCP 감사 로그의 `callerIp`**(같은 접속에서 한 Secret Manager `yeojeong-direct-url` 읽기, 400일)다 — `access_logs`의 `host`(호스트 이름)·세션 시각과 함께 4절 3번 쿼리로 대조한다. (관리자 페이지 접근 기록은 원 IP를 `access_logs.client_ip`에 1년 남긴다.)
+
 기록 형식(`access_logs`): `user_id` = `md5('operator:' + 이메일)`로 만든 UUID(회원 행 없음), `action` = `OPERATOR_DB_ACCESS_START`·`END`, `resource_type` = `DATABASE`, `ua` = `scripts/ops/db-connect.sh`, `details` = `{ operator, reason, host, at }`(+ END는 `durationSec`, `exitStatus`). 다른 접근 기록과 같이 **1년 보관 후 파기 배치(`ACCESS_LOGS`)**가 지웁니다.
 
 `SIGKILL`이나 전원 차단처럼 trap이 돌 수 없는 종료로 END가 빠지면, 다음 접속 때 같은 세션 ID로 아래처럼 수동 기록을 남기고 월간 점검 메모에 적습니다.
@@ -70,7 +72,14 @@ VALUES (md5('operator:' || lower('<이메일>'))::uuid, 'OPERATOR_DB_ACCESS_END'
    ORDER BY s.at;
    ```
 
-2. 관리자 페이지: `ADMIN_LOGIN_FAILED` 급증, 업무와 맞지 않는 `ADMIN_VIEW_USER`·`ADMIN_WITHDRAW_USER`가 없는지.
+2. 관리자 페이지: `ADMIN_LOGIN_FAILED` 급증(원 IP `client_ip`별), 낯선 `client_ip`의 `ADMIN_LOGIN`, 업무와 맞지 않는 `ADMIN_VIEW_USER`·`ADMIN_WITHDRAW_USER`가 없는지.
+
+   ```sql
+   SELECT action, client_ip, count(*), min(at), max(at)
+   FROM access_logs
+   WHERE action LIKE 'ADMIN\_%' AND at >= date_trunc('month', now()) - interval '1 month' AND at < date_trunc('month', now())
+   GROUP BY action, client_ip ORDER BY action, count(*) DESC;
+   ```
 3. GCP 감사 로그(**기준 기록**): DB 비밀번호를 얻을 수 있는 읽기를 모두 대조합니다. 사람 계정의 읽기마다 위 1의 START가 있어야 하고, 서비스 계정의 읽기는 정해진 것(아래)만 있어야 합니다.
    - Secret Manager `yeojeong-direct-url`(세션 풀러) — 사람: `db-connect.sh` 접속, 배포 서비스 계정: 마이그레이션
    - Secret Manager `yeojeong-database-url`(런타임 연결) — Cloud Run 런타임 서비스 계정(인스턴스 시작)만. 사람의 읽기는 없어야 합니다
@@ -80,10 +89,10 @@ VALUES (md5('operator:' || lower('<이메일>'))::uuid, 'OPERATOR_DB_ACCESS_END'
    gcloud logging read 'protoPayload.methodName="google.cloud.secretmanager.v1.SecretManagerService.AccessSecretVersion"
      AND (protoPayload.resourceName:"secrets/yeojeong-direct-url" OR protoPayload.resourceName:"secrets/yeojeong-database-url")' \
      --freshness=35d --project yeojeong-11fb29 \
-     --format='table(timestamp, protoPayload.resourceName, protoPayload.authenticationInfo.principalEmail)'
+     --format='table(timestamp, protoPayload.resourceName, protoPayload.authenticationInfo.principalEmail, protoPayload.requestMetadata.callerIp)'
    gcloud logging read 'protoPayload.serviceName="storage.googleapis.com" AND protoPayload.methodName="storage.objects.get"
      AND resource.labels.bucket_name="yeojeong-11fb29-tfstate"' --freshness=35d --project yeojeong-11fb29 \
-     --format='table(timestamp, protoPayload.authenticationInfo.principalEmail)'
+     --format='table(timestamp, protoPayload.authenticationInfo.principalEmail, protoPayload.requestMetadata.callerIp)'
    ```
 
 4. 이상이 있으면 원인을 확인하고, 필요하면 비밀번호 교체(Terraform `random_password.db` 재생성)와 처리방침 제9조(유출 통지) 절차를 검토합니다.
