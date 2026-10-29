@@ -1,8 +1,9 @@
 import type { ConsentId } from '../../api'
 
-// 공개 법적 문서(FR-903, 부록 C-7). 본문은 content/<file>.md를 빌드 때 ?raw로 읽는다(문서마다 따로 chunk).
-// 게시본 원문은 docs/legal/v1.0(정식 발행본 v1.0, 레포에 있음) — scripts/sync-legal.mjs가 시행일을 채워 content/로 복사한다.
-// v1.0에 없는 동의(연동 FIN_*·THIRD_PARTY, 카드 불러오기 CARD_IMPORT, MARKETING)는 정식 전문이 없어 "준비 중" 안내(pending.md 등)로 연다.
+// 공개 법적 문서(FR-903, 부록 C-7). 본문은 content/v<버전>/<file>.md를 빌드 때 ?raw로 읽는다(문서·판마다 따로 chunk).
+// 게시본 원문은 docs/legal/v<버전>(정식 발행본, 레포에 있음) — scripts/sync-legal.mjs가 시행일을 채워 content/v<버전>/로 복사한다.
+// 어느 판을 보여 줄지(현행·이전·예정, ?v=)는 versions.ts. 판이 없는 안내 문서(준비 중 등)는 content/<file>.md.
+// 정식 전문이 없는 동의(연동 FIN_*·THIRD_PARTY, MARKETING)는 "준비 중" 안내(pending.md 등)로 연다.
 
 export type LegalDocId =
   | 'terms'
@@ -12,17 +13,18 @@ export type LegalDocId =
   | 'licenses'
   | 'consent-collection'
   | 'consent-third-party'
+  | 'consent-card-import'
   | 'pending'
 
 export type LegalDoc = {
   title: string
-  /** content/ 아래 파일 이름 */
+  /** content/v<버전>/ 아래 파일 이름(판이 없는 안내 문서는 content/ 바로 아래) */
   file: string
-  /** docs/legal/v1.0 원본 파일 이름(sync-legal.mjs·문서 안 링크 해석용). 게시본이 없는 안내 문서는 null */
+  /** docs/legal/v<버전> 원본 파일 이름(sync-legal.mjs·문서 안 링크 해석용). 게시본이 없는 안내 문서는 null */
   source: string | null
   /** 공개 주소 */
   path: string
-  /** 동의서: **굵게**(중요 내용)를 크기·굵기·색으로 강조(「개인정보 보호법」 제22조제2항, docs/legal/v1.0/consents.md 2절) */
+  /** 동의서: **굵게**(중요 내용)를 크기·굵기·색으로 강조(「개인정보 보호법」 제22조제2항, docs/legal/v0.1/consents.md 2절) */
   consent?: boolean
 }
 
@@ -46,6 +48,14 @@ export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
     path: '/consents/PRIVACY',
     consent: true,
   },
+  // S8 카드 승인내역 불러오기 동의(CARD_IMPORT) 전문 — 0.2 판에서 처음 게시(버전 0.1)
+  'consent-card-import': {
+    title: '카드 승인내역 불러오기',
+    file: 'consent-card-import.md',
+    source: '카드 내역 조회 동의서.md',
+    path: '/consents/CARD_IMPORT',
+    consent: true,
+  },
   'consent-third-party': {
     title: '공동 결제 그룹 공개',
     file: 'consent-third-party.md',
@@ -53,13 +63,13 @@ export const LEGAL_DOCS: Record<LegalDocId, LegalDoc> = {
     path: '/consents/THIRD_PARTY',
     consent: true,
   },
-  /** v1.0에 정식 전문이 없는 동의(MARKETING·FIN_PRIVACY·CARD_IMPORT) — /consents/:consentId로만 연다 */
+  /** 정식 전문이 없는 동의(MARKETING·FIN_PRIVACY) — /consents/:consentId로만 연다 */
   pending: { title: '동의서 준비 중', file: 'pending.md', source: null, path: '/consents/pending' },
 }
 
 /**
- * /consents/:consentId → 전문 문서(docs/legal/v1.0 consents.md 1절). AGE14는 약관 제7조라 약관으로.
- * v1.0에서 받지 않는 동의(consents.md 5절)는 정식 전문이 없다 — v1.0 수집·이용 동의서에는 그 내용이 없으므로
+ * /consents/:consentId → 전문 문서(docs/legal/v<판> consents.md 1절). AGE14는 약관 제7조라 약관으로.
+ * 정식 전문이 없는 동의(연동 FIN_*·마케팅)는 수집·이용 동의서에 그 내용이 없으므로
  * 그 문서로 보내지 않고 준비 중 안내로 연다(링크는 깨지지 않게 둔다)
  */
 export const CONSENT_DOCS: Record<ConsentId, LegalDocId> = {
@@ -70,8 +80,8 @@ export const CONSENT_DOCS: Record<ConsentId, LegalDocId> = {
   FIN_LINK: 'fin-link',
   FIN_PRIVACY: 'pending',
   THIRD_PARTY: 'consent-third-party',
-  // S8 카드 승인내역 불러오기 동의. v1.1에서 정식 동의서를 게시한다(docs/ops/legal-publishing.md "게시 범위"). 그 전에는 allowlist(운영자)만 쓴다
-  CARD_IMPORT: 'pending',
+  // S8 카드 승인내역 불러오기 동의 — 카드 내역 조회 동의서(0.2 판에서 게시, 버전 0.1)
+  CARD_IMPORT: 'consent-card-import',
 }
 
 /** 화면 제목: 동의 항목이면 그 항목 제목(consents.md 1절 화면 제목) */

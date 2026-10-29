@@ -1,42 +1,78 @@
 # 약관·개인정보 문서 게시 절차
 
-정식 발행본은 `docs/legal/v1.0/`에 있고 웹은 `apps/web/src/features/legal/content/`의 사본을 보여 준다. 초안(`docs/legal/*.md`)과 내부 검토 메모(`docs/legal/v1.0/README.md`)는 공개 레포에 올리지 않는다(`.gitignore`).
+정식 발행본은 판(릴리스) 폴더 `docs/legal/v0.1/`, `docs/legal/v0.2/` …에 있고, 게시일은 `docs/legal/releases.json`에 적는다. 웹은 `apps/web/src/features/legal/content/v<판>/`의 사본(자리표시를 채운 게시본)을 보여 준다. 초안(`docs/legal/*.md`)과 판 폴더의 내부 검토 메모(`README.md`)는 공개 레포에 올리지 않는다(`.gitignore`).
 
-## 게시 대상 (v1.0, 시행일 2026-10-30)
+## 버전 규칙(MVP 기간 0.x)
 
-| 원문 (`docs/legal/v1.0/`) | 웹 사본 (`content/`) | 공개 주소 | 동의 |
+- **문서마다 버전을 따로 매긴다.** 문서 머리 줄 `버전 X · 시행일 YYYY-MM-DD`가 그 문서 판의 버전·시행일이다. 판 폴더에는 그 판에서 바뀐 문서만 넣는다 — 폴더에 없는 문서는 이전 판이 그대로 현행이다.
+- 시행 시각 = 시행일 00:00 KST. 웹 공개 페이지와 서버 동의 판정이 같은 시각에 저절로 바뀐다(배포 시각과 무관).
+- **재동의는 번호가 아니라 버전 행의 "재동의 필요" 표시로 정한다**(0.x는 MAJOR가 늘 0). 그 판 `consents.md` 1절 표의 "재동의 필요" 열 → `consent_documents.reconsent_required`. `change_type`(MAJOR/MINOR)은 기록용.
+- **2026-10-30 재번호**: 게시 당시 표기 1.0 = 지금 0.1(시행 2026-10-30 그대로), 정정판 계획 1.1 = 0.2. 공개 주소의 옛 표기 `?v=1.0`·`?v=1.1`은 0.1·0.2로 연다.
+
+## 게시 대상
+
+| 원문(판 폴더) | 웹 사본 | 공개 주소 | 동의 |
 |---|---|---|---|
-| 서비스 이용약관.md | terms.md | `/terms`, `/consents/TOS` | `TOS` 1.0, `AGE14` 1.0(제7조) |
-| 개인정보 수집·이용 동의서.md | consent-collection.md | `/consents/PRIVACY` | `PRIVACY` 1.0 |
+| 서비스 이용약관.md | terms.md | `/terms`, `/consents/TOS` | `TOS`, `AGE14`(제7조) |
+| 개인정보 수집·이용 동의서.md | consent-collection.md | `/consents/PRIVACY` | `PRIVACY` |
+| 카드 내역 조회 동의서.md | consent-card-import.md | `/consents/CARD_IMPORT` | `CARD_IMPORT` |
 | 개인정보처리방침.md | privacy.md | `/privacy` | 고지 |
 | 개인정보 처리위탁 고지.md | processors.md | `/privacy/processors` | 고지 |
 | 오픈소스 및 라이선스 고지.md | licenses.md | `/oss`(예전 `/licenses`는 리다이렉트) | 고지 |
-| consents.md | — (개발용, 게시 안 함) | — | 동의 ID·버전·해시 표 |
+| consents.md | — (개발용, 게시 안 함) | — | 동의 ID·버전·시행일·doc_hash·재동의 필요 표 |
 
-## 게시 범위
+판별 현황(`packages/shared/src/legal-manifest.ts`가 기준):
 
-v1.0은 지금 제공하는 기능(카카오 로그인, 여정·그룹, 수동 결제 입력, 지갑, 정산, 환율, 탈퇴)만 다룬다. 아래 기능을 운영에 켜려면 먼저 약관·처리방침을 개정해 게시하고, 필요하면 동의서를 새로 발행한다(약관 제10조④).
-
-| 기능 | 운영 상태(개정 전) | 웹의 동의 전문 링크 |
+| 판 | 게시일 | 문서(버전 · 시행) |
 |---|---|---|
-| 카드 내역 불러오기(`CARD_IMPORT`) | `FEATURE_CARD_IMPORT`는 `off` 또는 `allowlist`(운영자 본인)만 | `/consents/CARD_IMPORT` → "준비 중" 안내 |
-| 토스 계좌 연동(`FIN_LINK`·`FIN_PRIVACY`·`THIRD_PARTY`) | `FEATURE_ACCOUNT_LINK=false` | `/terms/fin-link`·`/consents/FIN_*`·`/consents/THIRD_PARTY` → "준비 중" 안내 |
-| 마케팅 수신(`MARKETING`) | 숨김 | `/consents/MARKETING` → "준비 중" 안내 |
+| `v0.1` | 2026-10-30 | 이용약관·처리방침·수집이용 동의서·처리위탁 고지·오픈소스 고지 0.1(구 1.0) · 2026-10-30 |
+| `v0.2` | 머지하는 날(`{{게시일}}`) | 처리방침·처리위탁 고지·수집이용 동의서 0.2, 카드 내역 조회 동의서 0.1 · 게시일 즉시 / 이용약관 0.2 · 게시일 + 7일. 오픈소스 고지는 0.1 그대로 |
 
-이 동의들의 `consent_documents`는 초안(`0.1-draft`)만 있다.
+정식 전문이 없는 동의(토스 연동 `FIN_LINK`·`FIN_PRIVACY`·`THIRD_PARTY`, 마케팅 `MARKETING`)는 `consent_documents`에 초안(`0.1-draft`)만 있고 웹은 "준비 중" 안내를 연다. 이 기능을 운영에 켜려면 먼저 약관·처리방침을 개정해 게시한다(약관 제10조④).
 
-## 원문을 고쳤을 때
+## 이전·예정 판 열람(처리방침 "이전 버전은 같은 공개 주소에서 계속 확인")
+
+- `<공개 주소>?v=<버전>` — 예: `/privacy?v=0.1`, `/terms?v=0.2`, `/consents/CARD_IMPORT?v=0.1`. 없는 버전은 현행으로 연다(정확히 같은 버전만, 앞부분 비교 없음).
+- 현행 판 맨 아래 "이전 버전 · 0.1(2026-10-30 ~ MM-DD) ›" / 시행 전 판이 있으면 "예정 버전 · 0.2(MM-DD부터) ›". 이전·예정 판을 열면 맨 위에 안내("이전 버전 0.1이에요 …" / "예정 버전 0.2이에요 …", 누르면 현행)와 아래에 현행 링크.
+- `?v=`로 연 화면에는 같은 판에서 함께 바뀐 문서 목록(판 안내 한 줄 + 문서별 링크)을 보인다 — 개정 공지("이용약관이 바뀌어요")에서 온 회원이 처리방침 정정·카드 불러오기 안내도 보게 한다.
+
+## 게시하기
 
 ```bash
-# 작성한 사본을 레포 원문으로 가져오며 동기화(시행일 채움 · 웹 사본 · consents.md 해시 칸)
-pnpm --filter @yeojeong/web legal:sync -- --from <작성 폴더>
-# 레포 원문만 고쳤으면
-pnpm --filter @yeojeong/web legal:sync
-# 최신인지 확인만
+# 1) 작성한 사본을 판 폴더로(README는 복사하지 않음 — .gitignore). 판이 새로우면 releases.json에 { "dir": "v0.3", "published": null, "summary": "…" }를 먼저 더한다
+pnpm --filter @yeojeong/web legal:sync -- --from <작성 폴더> --release v0.2
+# 2) 머지하는 날: 게시일을 정하고 다시 만든다 — {{게시일}}·{{게시일+N}} 채움, 웹 사본, manifest, consents.md doc_hash, 마이그레이션
+pnpm --filter @yeojeong/web legal:sync -- --published 2026-11-02
+# 최신인지 확인만(CI·리뷰)
 pnpm --filter @yeojeong/web legal:sync -- --check
 ```
 
-- 시행일은 `apps/web/scripts/sync-legal.mjs`의 `EFFECTIVE_DATE`. 개정판은 새 폴더(`v1.1` 등)와 `VERSION_DIR`을 함께 바꾼다.
-- 동의 문서(TOS·PRIVACY·AGE14)의 본문이 바뀌면 해시가 바뀐다. **게시본 해시 = 동의 기록의 `doc_hash`**이므로 이미 시행한 버전의 본문을 고치지 말고 새 버전 행을 마이그레이션으로 추가한다(`version` 1.1 = MINOR 고지만, 2.0 = MAJOR 재동의, 시행일은 `effective_at`). `apps/api/src/common/auth/consent-catalog.spec.ts`가 게시본 파일 해시와 마이그레이션 값을 대조한다.
-- 개정을 알릴 때는 공지 목록(`apps/api/src/notices/notices.ts`)에 새 id로 공지를 더한다. 약관 제3조③: 시행 7일 전(불리·중대 변경은 30일 전)부터 게시.
-- 오픈소스 고지는 운영 빌드에 실제로 들어가는 패키지 기준이다. 의존성이 바뀌면 웹을 빌드해 번들 모듈 목록(rolldown `generateBundle`의 `chunk.modules`)과 각 패키지 `LICENSE`의 저작권 줄로 다시 맞춘다(`pnpm --filter @yeojeong/web licenses list --prod`는 참고용 — 번들에 안 들어가는 패키지도 나온다).
+`legal:sync`가 만드는 것(손으로 고치지 않는다):
+
+| 산출물 | 내용 |
+|---|---|
+| `apps/web/src/features/legal/content/v<판>/*.md` | 자리표시(`{{시행일}}`·`{{게시일}}` = 게시일, `{{게시일+N}}` = 게시일 + N일)를 채운 게시본. 원문(`docs/legal`)은 자리표시를 그대로 둔다 — 게시일만 바꿔 다시 만들 수 있게 |
+| `packages/shared/src/legal-manifest.ts` | 판·게시일, 문서별 판 목록(버전·시행일·경로·SHA-256), 0.x 동의 문서 행. 웹(판 고르기·공지 목)과 서버(동의 카탈로그·공지 날짜)가 같이 읽는다 |
+| 판 폴더 `consents.md` 1절 표의 doc_hash 칸 | 게시본 해시(이 판에서 바뀌지 않은 동의는 그 버전 문서의 해시 — 예: AGE14 0.1 = 이용약관 0.1 해시) |
+| `apps/api/prisma/migrations/20261030020000_consent_documents_v0_x/migration.sql` | `reconsent_required`·`replaces_version` 열 + 0.x 동의 문서 행 |
+
+- **이 마이그레이션은 운영에 적용되기 전까지만 다시 만든다.** 적용한 뒤의 새 판(0.3 …)은 새 마이그레이션 이름으로 내도록 스크립트의 `MIGRATION`을 바꾼다(이미 적용한 파일을 바꾸면 Prisma 체크섬이 달라진다).
+- `consent-catalog.spec.ts`가 manifest · 웹 사본 해시 · consents.md · 마이그레이션을 서로 대조하고, `legal.test.tsx`가 manifest와 content 파일(머리 줄 버전·시행일)을 대조한다.
+- 이미 시행한 판의 본문은 고치지 않는다. 고칠 일이 있으면 다음 판을 낸다(**게시본 해시 = 동의 기록의 `doc_hash`**).
+
+## 0.1 재번호와 동의 기록(1.0 = 0.1)
+
+- 2026-10-30에 게시한 본문의 머리 줄은 "버전 1.0"이었다. 재번호로 머리 줄만 "버전 0.1"로 바뀌어 **0.1 게시본 해시는 1.0 해시와 다르다**(본문은 같음).
+- **`user_consents`는 고치지 않는다**(append-only 동의 증거). 그때 동의한 회원의 행은 `version = '1.0'`, `doc_hash` = 그때 게시본(머리 "버전 1.0") 해시 그대로다.
+- `consent_documents`의 1.0 행(그때 게시 기록, 해시 `97b15008…`(TOS·AGE14) · `ad74dea6…`(PRIVACY))도 지우지 않는다. 0.1 행이 `replaces_version = '1.0'`로 1.0을 대신한다 — 판정에서 1.0 행은 빠지고, `version = '1.0'` 동의는 0.1 동의로 본다. 당시 본문은 git `6d8261b`의 `apps/web/src/features/legal/content/*.md`.
+- 버전 비교는 모두 문자열 정확히 일치다. 초안 `0.1-draft`와 정식 `0.1`은 서로 대신하지 않는다(정식본이 시행되면 초안 동의자는 재동의).
+
+## 공지
+
+- 공지 목록은 `apps/api/src/notices/notices.ts`(정적, git 이력 = 게시 기록). 0.2 공지의 날짜는 manifest(게시일·이용약관 0.2 시행일)에서 계산한다.
+- 화면은 한 번에 하나(최신 = 시작이 늦은 것, 같으면 목록에서 뒤에 적은 것). 0.2: ① "개인정보처리방침을 바로잡고 카드 불러오기 안내를 더했어요"(→ `/privacy`, 게시일부터 14일) ② "이용약관이 바뀌어요 · MM.DD부터"(→ `/terms?v=0.2`, 게시일부터 시행일 하루 끝까지) — ②가 먼저 보이고, 닫으면 ①. 정식 약관 게시 공지(2026-10-30)는 0.2 게시일에 내린다.
+- 약관 제3조③: 시행 7일 전(불리·중대 변경은 30일 전)부터 게시.
+
+## 오픈소스 고지
+
+운영 빌드에 실제로 들어가는 패키지 기준이다. 의존성이 바뀌면 웹을 빌드해 번들 모듈 목록(rolldown `generateBundle`의 `chunk.modules`)과 각 패키지 `LICENSE`의 저작권 줄로 다시 맞춘다(`pnpm --filter @yeojeong/web licenses list --prod`는 참고용 — 번들에 안 들어가는 패키지도 나온다).

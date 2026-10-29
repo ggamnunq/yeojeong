@@ -1,3 +1,4 @@
+import { mockConsentVersion } from './consentVersions'
 import { TRIP_EDITABLE_FIELDS, type SupportedCurrency } from '@yeojeong/shared'
 import type {
   ConsentId,
@@ -323,8 +324,10 @@ export type MockCardImportState = {
   consentAgreedAt: string | null
   /** 동의한 문서 버전 */
   consentVersion: string | null
-  /** 지금 문서 버전. MAJOR(첫 자리)가 동의한 버전과 다르면 재동의가 필요하다(서버 validConsentVersions 흉내) */
+  /** 지금 문서 버전. 동의한 버전과 다르고 requiredReconsent면 재동의가 필요하다(서버 isConsentSatisfied 흉내) */
   requiredVersion: string
+  /** 지금 버전이 재동의를 요구하는지(서버 consent_documents.reconsent_required). false면 이전 정식 버전 동의도 유효 */
+  requiredReconsent: boolean
   /** 오늘 시작한 조회 수(remainingToday) */
   startedToday: number
   /** 연속 로그인 실패 수(아이디 "wrong") */
@@ -363,7 +366,7 @@ export function createMockDb(): MockDb {
     session: 'AUTHENTICATED',
     accountLink: false,
     cardImport: false,
-    cardImportState: { consentAgreedAt: null, consentVersion: null, requiredVersion: '0.1-draft', startedToday: 0, loginFailures: 0, importedKeys: [], twoWayTokens: [], remaining: null },
+    cardImportState: { consentAgreedAt: null, consentVersion: null, requiredVersion: mockConsentVersion('CARD_IMPORT'), requiredReconsent: true, startedToday: 0, loginFailures: 0, importedKeys: [], twoWayTokens: [], remaining: null },
     signupReturnTo: null,
     consentRequired: null,
     meUserId: USER.junyong,

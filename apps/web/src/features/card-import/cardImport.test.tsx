@@ -1,3 +1,4 @@
+import { mockConsentVersion } from '../../mocks/consentVersions'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -39,7 +40,7 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
   it('needs the CARD_IMPORT consent first, then returns approvals', async () => {
     const client = createTestQueryClient()
     const config = await client.fetchQuery(cardImportConfigQuery())
-    expect(config.consent).toEqual({ valid: false, missing: ['CARD_IMPORT'], required: [{ id: 'CARD_IMPORT', version: '0.1-draft' }] })
+    expect(config.consent).toEqual({ valid: false, missing: ['CARD_IMPORT'], required: [{ id: 'CARD_IMPORT', version: mockConsentVersion('CARD_IMPORT') }] })
     expect(await errorCode(fetchCardApprovals(body('me')))).toBe('CONSENT_REQUIRED')
 
     await submitCardImportConsent(config.consent.required[0].version)
@@ -121,9 +122,9 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
   it('lists and withdraws the revocable consent (HF-58)', async () => {
     const client = createTestQueryClient()
     expect(await client.fetchQuery(revocableConsentsQuery())).toEqual([])
-    await submitCardImportConsent('0.1-draft')
+    await submitCardImportConsent(mockConsentVersion('CARD_IMPORT'))
     expect(await client.fetchQuery({ ...revocableConsentsQuery(), staleTime: 0 })).toEqual([
-      expect.objectContaining({ consentId: 'CARD_IMPORT', version: '0.1-draft' }),
+      expect.objectContaining({ consentId: 'CARD_IMPORT', version: mockConsentVersion('CARD_IMPORT') }),
     ])
     await withdrawConsent('CARD_IMPORT')
     expect(await client.fetchQuery({ ...revocableConsentsQuery(), staleTime: 0 })).toEqual([])

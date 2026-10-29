@@ -1,0 +1,20 @@
+{
+  "$comment": "약관·개인정보 문서 게시 기록(apps/web/scripts/sync-legal.mjs가 읽는다). published = 게시일(KST). 문서의 {{게시일}}·{{게시일+N}}·{{시행일}}을 이 값으로 채운다. 머지하는 날 `pnpm --filter @yeojeong/web legal:sync -- --published YYYY-MM-DD`로 마지막 판의 게시일을 정한다(docs/ops/legal-publishing.md).",
+  "releases": [
+    {
+      "dir": "v0.1",
+      "published": "2026-10-30",
+      "replaces": {
+        "TOS": "1.0",
+        "PRIVACY": "1.0",
+        "AGE14": "1.0"
+      },
+      "summary": "정식 약관 0.1(구 표기 1.0) 시행 — 수동 결제·지갑·공동 결제 공개 범위 반영, 연동·카드 불러오기·마케팅 제외"
+    },
+    {
+      "dir": "v0.2",
+      "published": "2026-10-30",
+      "summary": "약관 0.2 — 사실 정정, 카드 승인내역 불러오기 반영"
+    }
+  ]
+}

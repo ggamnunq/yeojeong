@@ -1,3 +1,4 @@
+import { mockConsentVersion } from '../../mocks/consentVersions'
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import type { FetchCardApprovalsResponse } from '@yeojeong/shared'
 import { HttpResponse } from 'msw'
@@ -159,7 +160,7 @@ describe('진입점(HF-49 · 49b · 0-11)', () => {
     await waitFor(() => expect(disabled(button('계속'))).toBe(false))
     fireEvent.click(button('계속'))
     expect(await screen.findByRole('heading', { name: '카드사 선택' })).toBeTruthy()
-    expect(db.cardImportState.consentVersion).toBe('0.1-draft')
+    expect(db.cardImportState.consentVersion).toBe(mockConsentVersion('CARD_IMPORT'))
     // 흐름은 그대로(WF-52 ‹ → WF-51, 동의 뒤라 체크 행 없음 · 지갑에서 들어온 흐름이라 ‹ 한 번 더 → 지갑)
     fireEvent.click(button('뒤로 가기'))
     await screen.findByText('고른 결제만')
@@ -205,7 +206,7 @@ describe('보안(L-0 메모리 규칙)', () => {
     const caches = () =>
       JSON.stringify([queryClient.getMutationCache().getAll().map((m) => m.state), queryClient.getQueryCache().getAll().map((q) => q.state)])
     // 뮤테이션 캐시에는 동의 저장(WF-51, 변수 = 문서 버전)만 있다
-    expect(queryClient.getMutationCache().getAll().map((m) => m.state.variables)).toEqual(['0.1-draft'])
+    expect(queryClient.getMutationCache().getAll().map((m) => m.state.variables)).toEqual([mockConsentVersion('CARD_IMPORT')])
     fireEvent.change(code, { target: { value: '123456' } })
     fireEvent.click(button('확인'))
     expect(await screen.findByText('전체 선택')).toBeTruthy()
@@ -472,10 +473,11 @@ describe('동의 관리(WF-30 · 58 · 58b) — 기능 플래그와 무관, 유�
   })
 })
 
-describe('WF-51 재동의(약관 MAJOR 버전 상승)', () => {
-  it('shows the consent row again when the agreed MAJOR version is outdated, and agrees with the new version', async () => {
+describe('WF-51 재동의(새 버전이 재동의를 요구할 때 — 번호가 아니라 reconsentRequired로 판단)', () => {
+  it('shows the consent row again when the new version requires it (even 0.1 → 0.2), and agrees with the new version', async () => {
     resetCardImportMock({ consented: true })
-    db.cardImportState.requiredVersion = '1.0'
+    db.cardImportState.requiredVersion = '0.2'
+    db.cardImportState.requiredReconsent = true
     renderApp('/wallet')
     fireEvent.click(await screen.findByRole('button', { name: '불러오기' }))
     const row = await screen.findByRole('checkbox', { name: /카드 내역 조회 동의/ })
@@ -483,12 +485,13 @@ describe('WF-51 재동의(약관 MAJOR 버전 상승)', () => {
     fireEvent.click(row)
     fireEvent.click(button('계속'))
     expect(await screen.findByRole('heading', { name: '카드사 선택' })).toBeTruthy()
-    expect(db.cardImportState.consentVersion).toBe('1.0')
+    expect(db.cardImportState.consentVersion).toBe('0.2')
   })
 
-  it('keeps the row hidden after a MINOR bump', async () => {
+  it('keeps the row hidden when the new version does not require a new consent', async () => {
     resetCardImportMock({ consented: true })
     db.cardImportState.requiredVersion = '0.2'
+    db.cardImportState.requiredReconsent = false
     renderApp('/wallet')
     fireEvent.click(await screen.findByRole('button', { name: '불러오기' }))
     await waitFor(() => expect(disabled(button('계속'))).toBe(false))

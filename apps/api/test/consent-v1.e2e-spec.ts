@@ -3,8 +3,10 @@ import { ERRORS } from '@yeojeong/shared';
 import request from 'supertest';
 import {
   CONSENT_DOCUMENT_VERSIONS,
+  currentConsentVersion,
   V1_EFFECTIVE_AT,
 } from './../src/common/auth/index.js';
+import { activeNotices } from './../src/notices/notices.js';
 import type { PrismaService } from './../src/prisma/prisma.service.js';
 import {
   createDbTestApp,
@@ -15,9 +17,10 @@ import {
 } from './account-fixtures.js';
 import { TEST_ORIGIN } from './auth-helpers.js';
 
-// 정식 약관 v1.0(L-1): 마이그레이션 20261030010000이 넣은 행과, 시행일부터 초안 동의자가 재동의를 타는지(실DB·실제 가드).
-// 시행일(2026-10-30 00:00 KST) 전후를 Date만 바꿔 본다(타이머·DB 시각은 그대로).
-describeWithDb('Formal terms v1.0 → reconsent (e2e, real DB)', () => {
+// 정식 약관(L-1, 게시 당시 표기 1.0 = 지금 0.1): 마이그레이션 20261030010000이 넣은 행과, 시행일부터 초안 동의자가 재동의를 타는지(실DB·실제 가드).
+// 시행일(2026-10-30 00:00 KST) 전후를 Date만 바꿔 본다(타이머·DB 시각은 그대로). 지금 받는 버전(0.1, 같은 날 게시한 다음 판이 있으면 그 판)은
+// 카탈로그(currentConsentVersion)로 정한다 — 다음 판 게시일은 docs/legal/releases.json.
+describeWithDb('Formal terms 1.0 (= 0.1) → reconsent (e2e, real DB)', () => {
   let app: NestExpressApplication;
   let db: PrismaService;
   const users: string[] = [];
@@ -85,18 +88,12 @@ describeWithDb('Formal terms v1.0 → reconsent (e2e, real DB)', () => {
       });
       expect(row.effectiveAt.toISOString()).toBe(V1_EFFECTIVE_AT.toISOString());
     }
-    // v1.0에 없는 동의는 초안만 있다
+    // 정식본을 낸 적 없는 동의는 초안만 있다(카드 불러오기는 0.x에서 정식본을 낸다)
     expect(
       await db.consentDocument.count({
         where: {
           consentId: {
-            in: [
-              'MARKETING',
-              'FIN_LINK',
-              'FIN_PRIVACY',
-              'THIRD_PARTY',
-              'CARD_IMPORT',
-            ],
+            in: ['MARKETING', 'FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY'],
           },
           isDraft: false,
         },
@@ -122,18 +119,22 @@ describeWithDb('Formal terms v1.0 → reconsent (e2e, real DB)', () => {
     ).toEqual(['0.1-draft', '0.1-draft', '0.1-draft']);
   });
 
-  it('asks draft signers to agree to 1.0 from the effective date, then lets them in', async () => {
+  it('asks draft signers to agree to the formal version from the effective date, then lets them in', async () => {
     const { user, cookie } = await draftSigner();
     at('2026-10-30T00:00:30+09:00');
     // 캐시(1분)가 시행일 전 목록을 들고 있지 않게 새 앱으로 본다
     await app.close();
     ({ app, db } = await createDbTestApp());
     const server = app.getHttpServer();
-    const required = [
-      { id: 'TOS', version: '1.0' },
-      { id: 'PRIVACY', version: '1.0' },
-      { id: 'AGE14', version: '1.0' },
-    ];
+    const now = new Date();
+    const current = (id: 'TOS' | 'PRIVACY' | 'AGE14') =>
+      currentConsentVersion(id, CONSENT_DOCUMENT_VERSIONS, now);
+    const required = (['TOS', 'PRIVACY', 'AGE14'] as const).map((id) => ({
+      id,
+      version: current(id).version,
+    }));
+    // 게시 당시 표기 1.0은 더 이상 받지 않는다(0.1이 대신한다)
+    expect(required.map((r) => r.version)).not.toContain('1.0');
 
     const blocked = await request(server)
       .get('/api/users/me')
@@ -157,11 +158,7 @@ describeWithDb('Formal terms v1.0 → reconsent (e2e, real DB)', () => {
       (docs.body as { consentId: string; version: string; isDraft: boolean }[])
         .filter((d) => d.consentId !== 'MARKETING')
         .map((d) => [d.consentId, d.version, d.isDraft]),
-    ).toEqual([
-      ['TOS', '1.0', false],
-      ['PRIVACY', '1.0', false],
-      ['AGE14', '1.0', false],
-    ]);
+    ).toEqual(required.map((r) => [r.id, r.version, false]));
 
     // 초안 버전으로 재동의하면 거절
     await request(server)
@@ -193,14 +190,15 @@ describeWithDb('Formal terms v1.0 → reconsent (e2e, real DB)', () => {
       .expect(204);
 
     const rows = await db.userConsent.findMany({
-      where: { userId: user.id, version: '1.0' },
+      where: { userId: user.id, screen: 'RECONSENT' },
     });
     expect(rows).toHaveLength(3);
     for (const row of rows) {
+      const doc = current(row.consentId as 'TOS' | 'PRIVACY' | 'AGE14');
       expect(row).toMatchObject({
-        screen: 'RECONSENT',
+        version: doc.version,
         agreed: true,
-        docHash: v1.find((d) => d.consentId === row.consentId)!.docHash,
+        docHash: doc.docHash,
       });
     }
     // 초안 동의 행은 고치지 않고 남는다(append-only)
@@ -278,18 +276,12 @@ describeWithDb('Formal terms v1.0 → reconsent (e2e, real DB)', () => {
       .get('/api/notices/active')
       .expect(200);
     expect(res.headers['cache-control']).toBe('private, max-age=300');
-    expect(res.body).toEqual({
-      items: [
-        {
-          id: 'legal-v1.0-published',
-          title: '서비스 이용약관과 개인정보처리방침을 게시했어요',
-          url: '/terms',
-          startsAt: '2026-10-29T15:00:00.000Z',
-          endsAt: '2026-11-28T15:00:00.000Z',
-        },
-      ],
-    });
-    at('2026-11-29T00:00:00+09:00');
+    // 목록은 정적 정의(src/notices/notices.ts, 0.2 공지 날짜는 legal-manifest)와 같다 — 최신부터, UTC ISO
+    expect(res.body).toEqual({ items: activeNotices(new Date()) });
+    expect(
+      (res.body as { items: { id: string }[] }).items.length,
+    ).toBeGreaterThan(0);
+    at('2027-06-01T00:00:00+09:00');
     expect(
       (
         await request(app.getHttpServer())

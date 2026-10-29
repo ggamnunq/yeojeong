@@ -11,7 +11,8 @@ import { dismissedNoticeIds, dismissNotice, pickNotice } from './notices'
 configure({ asyncUtilTimeout: 3000 })
 vi.setConfig({ testTimeout: 15_000 })
 
-const TITLE = '서비스 이용약관과 개인정보처리방침을 게시했어요'
+const TITLE = MOCK_NOTICES.items[0].title
+const OLDER = '개인정보처리방침을 바로잡고 카드 불러오기 안내를 더했어요'
 const notice = (id: string, url = '/terms') => ({ id, title: id, url, startsAt: '', endsAt: '' })
 
 afterEach(() => {
@@ -69,13 +70,19 @@ describe('Banner/Notice (DS)', () => {
 describe('공지 배너 자리(Q-57 · HF-60·60b)', () => {
   const banner = () => screen.findByRole('button', { name: TITLE })
 
-  it('GET /notices/active 첫 공지: 결제내역 헤더 아래에 보이고 누르면 이용약관', async () => {
-    expect(MOCK_NOTICES.items[0]).toMatchObject({ id: 'legal-v1.0-published', url: '/terms' })
+  it('GET /notices/active 첫 공지(이용약관 개정 예고): 결제내역 헤더 아래에 보이고 누르면 이용약관 예정본(0.2)', async () => {
+    expect(MOCK_NOTICES.items.map((n) => [n.id, n.url])).toEqual([
+      ['legal-v0.2-terms', '/terms?v=0.2'],
+      ['legal-v0.2-privacy', '/privacy'],
+    ])
+    expect(TITLE).toMatch(/^이용약관이 바뀌어요 · \d{2}\.\d{2}부터$/)
     const { router } = renderApp(`/trips/${TRIP.osaka}/payments`)
     const button = await banner()
     expect(button.closest('[data-banner-notice]')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: OLDER })).toBeNull()
     fireEvent.click(button)
     await waitFor(() => expect(router.state.location.pathname).toBe('/terms'))
+    expect(router.state.location.search).toBe('?v=0.2')
   })
 
   it('✕로 닫으면 그 공지는 다른 화면(마이페이지)에서도 안 보인다', async () => {
@@ -83,7 +90,9 @@ describe('공지 배너 자리(Q-57 · HF-60·60b)', () => {
     await banner()
     fireEvent.click(screen.getByRole('button', { name: '공지 닫기' }))
     await waitFor(() => expect(screen.queryByText(TITLE)).toBeNull())
-    expect(dismissedNoticeIds()).toEqual(['legal-v1.0-published'])
+    expect(dismissedNoticeIds()).toEqual(['legal-v0.2-terms'])
+    // 한 번에 하나: 닫으면 그다음(처리방침 정정·카드 불러오기 안내) 공지
+    expect(await screen.findByRole('button', { name: OLDER })).toBeTruthy()
     first.unmount()
     renderApp('/me')
     await screen.findByRole('heading', { name: '준용' })

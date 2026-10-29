@@ -1,3 +1,4 @@
+import { mockConsentVersion } from '../../mocks/consentVersions'
 import {
   CARD_IMPORT_MAX_LOOKBACK_DAYS,
   CARD_IMPORT_MAX_RANGE_DAYS,
@@ -58,6 +59,7 @@ export function resetCardImportMock(options: { consented?: boolean } = {}) {
     consentAgreedAt: options.consented ? new Date().toISOString() : null,
     consentVersion: options.consented ? CONSENT_VERSION : null,
     requiredVersion: CONSENT_VERSION,
+    requiredReconsent: true,
     startedToday: 0,
     loginFailures: 0,
     importedKeys: [],
@@ -67,13 +69,17 @@ export function resetCardImportMock(options: { consented?: boolean } = {}) {
 }
 
 const state = () => db.cardImportState
-const CONSENT_VERSION = '0.1-draft'
-const major = (version: string) => version.split('.')[0]
+/** 카드 내역 조회 동의서 지금 버전(서버 consent_documents CARD_IMPORT 정식본 — 0.2 판에서 게시한 0.1) */
+const CONSENT_VERSION = mockConsentVersion('CARD_IMPORT')
 
-/** 유효한 CARD_IMPORT 동의: 철회 안 됐고, 동의한 버전의 MAJOR가 지금 문서와 같다(MAJOR가 오르면 재동의) */
+/**
+ * 유효한 CARD_IMPORT 동의: 철회 안 됐고, 지금 버전에 동의했거나 지금 버전이 재동의를 요구하지 않으면 이전 정식 버전 동의도 된다.
+ * 버전 번호로 판단하지 않는다(0.x는 MAJOR가 늘 0 — 서버 consent-catalog isConsentSatisfied와 같은 규칙). 초안 동의는 정식본이 있으면 무효
+ */
 const consentValid = () => {
-  const { consentAgreedAt, consentVersion, requiredVersion } = state()
-  return consentAgreedAt !== null && consentVersion !== null && major(consentVersion) === major(requiredVersion)
+  const { consentAgreedAt, consentVersion, requiredVersion, requiredReconsent } = state()
+  if (consentAgreedAt === null || consentVersion === null) return false
+  return consentVersion === requiredVersion || (!requiredReconsent && !consentVersion.endsWith('-draft'))
 }
 
 const DAY_MS = 86_400_000
