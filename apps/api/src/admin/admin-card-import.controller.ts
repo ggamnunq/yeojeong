@@ -21,12 +21,17 @@ import type {
   AdminCardImportGrantList,
 } from '@yeojeong/shared';
 import type { Request } from 'express';
-import { AppException, ApiErrorResponse } from '../common/errors/index.js';
+import {
+  AppException,
+  ApiErrorResponse,
+  NotFoundError,
+} from '../common/errors/index.js';
 import { AdminAuditLog } from './admin-audit.js';
 import { AdminCardImportService } from './admin-card-import.service.js';
 import { AdminConfig } from './admin-config.js';
 import { ADMIN_COOKIE } from './admin.constants.js';
 import { AdminOnly } from './admin.guard.js';
+import { UUID } from './admin-users.service.js';
 import {
   AdminCardImportGrantDto,
   AdminCardImportGrantListDto,
@@ -125,6 +130,8 @@ export class AdminCardImportController {
     @Param('userId') userId: string,
     @Req() req: Request,
   ): Promise<void> {
+    // UUID가 아니면 기록(resource_id uuid)을 쓰기 전에 없는 경로와 같은 404
+    if (!UUID.test(userId)) throw new NotFoundError();
     const logId = await this.audit.record(req, 'ADMIN_REVOKE_CARD_IMPORT', {
       resourceType: 'USER',
       resourceId: userId,
