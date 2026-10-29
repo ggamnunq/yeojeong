@@ -123,6 +123,16 @@ describe('FileImportService (W10)', () => {
     );
   });
 
+  it('keys ALIPAY separately from WECHAT with the same v1 material format (W11)', () => {
+    const { service } = setup();
+    expect(service.importKeyOf('ALIPAY', ME, DIGEST_A)).not.toBe(
+      service.importKeyOf('WECHAT', ME, DIGEST_A),
+    );
+    expect(service.importKeyOf('ALIPAY', ME, DIGEST_A)).toBe(
+      hasher.hash(`file-import:v1|ALIPAY|${ME}|${DIGEST_A}`),
+    );
+  });
+
   it('saves each item with the hashed key, skips already-saved ones and records counts only', async () => {
     const { service, saved, audit } = setup();
     const first = await service.import(

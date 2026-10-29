@@ -225,3 +225,14 @@ variable "feature_file_import" {
     error_message = "feature_file_import는 off 또는 on이어야 합니다."
   }
 }
+
+variable "file_import_providers" {
+  description = "켤 파일 공급자(FILE_IMPORT_PROVIDERS): 쉼표로 구분, 기본 \"WECHAT\"(알리페이 W11은 \"WECHAT,ALIPAY\"로 더해야 켜진다). feature_file_import = on일 때만 의미가 있다"
+  type        = string
+  default     = "WECHAT"
+
+  validation {
+    condition     = alltrue([for p in split(",", var.file_import_providers) : contains(["WECHAT", "ALIPAY"], upper(trimspace(p)))])
+    error_message = "file_import_providers는 WECHAT·ALIPAY를 쉼표로 구분한 값이어야 합니다."
+  }
+}

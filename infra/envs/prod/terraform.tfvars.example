@@ -29,3 +29,5 @@ card_number_login            = false
 codef_daily_call_budget      = 100
 # 거래 내역 파일 가져오기(W10, 위챗페이). 처리방침에 수집 항목·방법을 반영한 뒤 on
 feature_file_import = "off"
+# 켤 공급자(기본 위챗페이만). 알리페이(W11)는 처리방침 반영 뒤 "WECHAT,ALIPAY"
+file_import_providers = "WECHAT"

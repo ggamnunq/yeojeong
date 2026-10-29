@@ -6,6 +6,7 @@ import {
   FILE_IMPORT_DAILY_MAX,
   type FileImportCheckResponse,
   type FileImportItem,
+  type FileImportProvider,
   type FileImportResponse,
   type WalletEntryListResponse,
 } from '@yeojeong/shared';
@@ -31,7 +32,7 @@ import {
   type SeedTrip,
 } from './expenses-fixtures.js';
 
-// 거래 내역 파일 가져오기(W10, 위챗페이) 실제 DB e2e.
+// 거래 내역 파일 가져오기(W10 위챗페이 · W11 알리페이) 실제 DB e2e.
 // 증명: 플래그 off면 404 · 고른 결제 저장 + 여정 자동 연결 · 다시 보내면 건너뜀(행 1개) · DB에 거래 다이제스트가 없다(importKey = HMAC) ·
 //       응답·로그에 다이제스트·가맹점·금액이 없다 · 계약 밖 필드 400 · S7 입력 규칙 400(값을 되돌리지 않음) · 확인 API(추가됨·여정) ·
 //       사용자당 호출 제한(1분 5회) · 사용자당 하루 2,000건 · 한 요청은 전부 저장되거나 하나도 저장되지 않는다.
@@ -45,8 +46,8 @@ const kstDay = (offsetDays: number) =>
     .slice(0, 10);
 const RATE_SOURCE = 'W10 e2e 매매기준율';
 /** 브라우저와 같은 다이제스트: SHA-256("WECHAT:{거래 번호}") */
-const digestOf = (txnNo: string) =>
-  createHash('sha256').update(`WECHAT:${txnNo}`, 'utf8').digest('hex');
+const digestOf = (txnNo: string, provider: FileImportProvider = 'WECHAT') =>
+  createHash('sha256').update(`${provider}:${txnNo}`, 'utf8').digest('hex');
 const TXN_A = '4200009988202610290000000001';
 const TXN_B = '4200009988202610290000000002';
 const MERCHANT = 'e2e瑞幸咖啡zq7';
@@ -62,12 +63,21 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
     accountLink: false,
     cardImportMode: 'off' as const,
     fileImport: true,
+    /** FILE_IMPORT_PROVIDERS(W11). fileImport가 false면 실제 FeatureFlags처럼 빈 목록으로 본다 */
+    providers: ['WECHAT'] as FileImportProvider[],
     cardImportFor: () => false,
+    get fileImportProviders(): FileImportProvider[] {
+      return this.fileImport ? this.providers : [];
+    },
+    fileImportEnabledFor(provider: FileImportProvider) {
+      return this.fileImportProviders.includes(provider);
+    },
     view() {
       return {
         accountLink: false,
         cardImport: false,
         fileImport: this.fileImport,
+        fileImportProviders: [...this.fileImportProviders],
       };
     },
   };
@@ -120,6 +130,7 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
 
   beforeEach(() => {
     flags.fileImport = true;
+    flags.providers = ['WECHAT'];
   });
 
   const server = () => app.getHttpServer();
@@ -480,8 +491,9 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
       ]),
     );
     expect(JSON.stringify(dto.body)).not.toContain(TXN_A);
+    // 모르는 공급자는 400(켜지지 않은 알리페이는 404 — W11 테스트)
     await importAs(seed, '준용', {
-      provider: 'ALIPAY',
+      provider: 'PAYPAL',
       items: [item()],
     }).expect(400);
     await importAs(seed, '준용', { provider: 'WECHAT', items: [] }).expect(400);
@@ -618,5 +630,88 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
     expect(
       ordered.map((r: (typeof rows)[number] | undefined) => r?.expenses.length),
     ).toEqual([0, 1, 1]);
+  });
+  it('ALIPAY (W11): 404 until listed in FILE_IMPORT_PROVIDERS; then saves with import_provider ALIPAY, keys separate from WECHAT, +08:00 kept', async () => {
+    const seed = await seedOngoing();
+    const userId = seed.members['준용'].userId;
+    const ALI_TXN = '2026102922001400000000000001';
+    const aliItem = item({
+      txnDigest: digestOf(ALI_TXN, 'ALIPAY'),
+      occurredAt: cst(kstDay(-1), '23:30:00'),
+      amount: '88.80',
+      merchantName: 'e2e盒马鲜生',
+    });
+
+    // 위챗만 켜져 있으면 알리페이 두 경로 모두 404, 세션 목록에도 없다
+    await importAs(seed, '준용', {
+      provider: 'ALIPAY',
+      items: [aliItem],
+    }).expect(404);
+    await checkAs(seed, '준용', {
+      provider: 'ALIPAY',
+      txnDigests: [aliItem.txnDigest],
+    }).expect(404);
+    const off = await request(server())
+      .get('/api/auth/session')
+      .set(as(seed, '준용'))
+      .expect(200);
+    expect(off.body.features).toMatchObject({
+      fileImport: true,
+      fileImportProviders: ['WECHAT'],
+    });
+    expect(await fileRows(userId)).toHaveLength(0);
+
+    flags.providers = ['WECHAT', 'ALIPAY'];
+    const on = await request(server())
+      .get('/api/auth/session')
+      .set(as(seed, '준용'))
+      .expect(200);
+    expect(on.body.features.fileImportProviders).toEqual(['WECHAT', 'ALIPAY']);
+
+    const saved = (
+      await importAs(seed, '준용', {
+        provider: 'ALIPAY',
+        items: [aliItem],
+      }).expect(201)
+    ).body as FileImportResponse;
+    expect(saved).toMatchObject({ created: 1, skipped: 0 });
+    const row = await prisma.transaction.findUniqueOrThrow({
+      where: { id: saved.items[0].entryId },
+    });
+    expect(row).toMatchObject({
+      source: 'FILE_IMPORT',
+      importProvider: 'ALIPAY',
+      originalCurrency: 'CNY',
+      merchantNameRaw: 'e2e盒马鲜生',
+    });
+    // 중국 23:30(+08:00) = KST 다음 날 00:30
+    expect(row.occurredAt.toISOString()).toBe(
+      new Date(cst(kstDay(-1), '23:30:00')).toISOString(),
+    );
+    expect(row.externalRef).not.toBe(aliItem.txnDigest);
+
+    // 확인: 같은 다이제스트라도 공급자가 다르면 다른 거래(WECHAT으로 물으면 false)
+    const ali = await checkAs(seed, '준용', {
+      provider: 'ALIPAY',
+      txnDigests: [aliItem.txnDigest],
+    }).expect(200);
+    expect(ali.body).toEqual({ imported: [true] });
+    const wechat = await checkAs(seed, '준용', {
+      provider: 'WECHAT',
+      txnDigests: [aliItem.txnDigest],
+    }).expect(200);
+    expect(wechat.body).toEqual({ imported: [false] });
+
+    // 다시 보내면 건너뛴다. 통화는 CNY만
+    await importAs(seed, '준용', { provider: 'ALIPAY', items: [aliItem] })
+      .expect(201)
+      .expect((res) =>
+        expect(res.body).toMatchObject({ created: 0, skipped: 1 }),
+      );
+    await importAs(seed, '준용', {
+      provider: 'ALIPAY',
+      items: [item({ txnDigest: digestOf('X-2', 'ALIPAY'), currency: 'JPY' })],
+    }).expect(400);
+    expect(await fileRows(userId)).toHaveLength(1);
   });
 });

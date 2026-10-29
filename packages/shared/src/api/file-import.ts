@@ -1,9 +1,9 @@
-// 거래 내역 파일 가져오기(W10) API 타입. 1차 공급자는 위챗페이(WECHAT), 알리페이는 같은 구조로 붙인다.
+// 거래 내역 파일 가져오기(W10 위챗페이 · W11 알리페이) API 타입. 공급자마다 화면 파서만 다르고 서버 계약은 같다.
 // 파일은 브라우저에서만 읽는다(원본·전체 내용을 서버로 보내지 않는다). 서버는 사용자가 고른 결제만 받아 지갑에 저장한다.
-// 시각 = ISO 8601(오프셋 포함, 위챗은 +08:00), 원통화 금액 = 문자열 decimal.
+// 시각 = ISO 8601(오프셋 포함, 위챗·알리페이 모두 +08:00), 원통화 금액 = 문자열 decimal.
 
-export const FILE_IMPORT_PROVIDER_VALUES = ["WECHAT"] as const;
-/** 파일 공급자. 알리페이는 "ALIPAY"를 더한다 */
+export const FILE_IMPORT_PROVIDER_VALUES = ["WECHAT", "ALIPAY"] as const;
+/** 파일 공급자: WECHAT = 위챗페이(W10), ALIPAY = 알리페이(W11). 공급자별로 켠다(서버 env FILE_IMPORT_PROVIDERS → 세션 features.fileImportProviders) */
 export type FileImportProvider = (typeof FILE_IMPORT_PROVIDER_VALUES)[number];
 
 /** 한 번에 저장할 수 있는 최대 건수(POST /api/wallet/entries/file-import). 더 많으면 화면이 나눠 보낸다(요청 본문 100kb 안) */
@@ -25,6 +25,7 @@ export const FILE_IMPORT_CHECK_MAX = 500;
 /**
  * 거래 번호 다이제스트 형식: 소문자 hex 64자.
  * txnDigest = SHA-256(UTF-8 "{provider}:{거래 번호}") — 브라우저가 계산한다. 거래 번호(위챗 交易单号) 원문은 서버로 보내지 않는다.
+ * (위챗 交易单号 · 알리페이 交易订单号)
  * 서버는 이 값에 전용 키(IMPORT_KEY_HMAC_KEY)로 HMAC을 씌워 importKey로 저장한다(키 없이 다시 계산·복원할 수 없다)
  */
 export const FILE_IMPORT_TXN_DIGEST_PATTERN = "^[0-9a-f]{64}$";
@@ -33,13 +34,13 @@ export const FILE_IMPORT_TXN_DIGEST_PATTERN = "^[0-9a-f]{64}$";
 export interface FileImportItem {
   /** SHA-256("{provider}:{거래 번호}") hex 64자(FILE_IMPORT_TXN_DIGEST_PATTERN). 거래 번호 원문은 보내지 않는다 */
   txnDigest: string;
-  /** 결제 시각(ISO 8601, 오프셋 포함). 위챗 파일 시각은 중국 표준시(UTC+8)로 본다 → "2026-10-01T12:34:56+08:00" */
+  /** 결제 시각(ISO 8601, 오프셋 포함). 위챗·알리페이 파일 시각은 중국 표준시(UTC+8)로 본다 → "2026-10-01T12:34:56+08:00" */
   occurredAt: string;
   /** 양수 decimal(부분 환불은 순액). 소수 2자리까지 */
   amount: string;
-  /** 위챗은 늘 CNY */
+  /** 위챗·알리페이는 늘 CNY */
   currency: string;
-  /** 가맹점(交易对方). 40자까지 */
+  /** 가맹점(交易对方 — 가맹점 결제 행만). 40자까지 */
   merchantName: string;
 }
 

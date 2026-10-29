@@ -136,9 +136,10 @@ enum TxSource {
   @@map("tx_source")
 }
 
-/// 거래 내역 파일 공급자(W10). Transaction.importProvider — FILE_IMPORT 행에만 있다(CHECK transactions_import_provider_check)
+/// 거래 내역 파일 공급자(W10 위챗페이 · W11 알리페이). Transaction.importProvider — FILE_IMPORT 행에만 있다(CHECK transactions_import_provider_check)
 enum FileImportProvider {
   WECHAT
+  ALIPAY
 
   @@map("file_import_provider")
 }

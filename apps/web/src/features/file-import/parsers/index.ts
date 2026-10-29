@@ -1,15 +1,17 @@
 import type { FileImportProvider } from '@yeojeong/shared'
 import { decodeText, parseCsv } from './csv'
 import { MAX_DATA_ROWS, MAX_FILE_BYTES, StatementFileError, type ParsedStatement, type SheetRows, type StatementParser } from './types'
+import { alipayParser } from './alipay'
 import { wechatParser } from './wechat'
 import { isOle, isZip, readXlsxRows } from './xlsx'
 
 // 거래 내역 파일 읽기 진입점(화면이 지연 로딩한다 — import('./parsers')).
 // 파일 → (xlsx | CSV) 표 → 공급자 해석기 → StatementItem[]. 파일 바이트·표는 이 함수 안 지역 변수로만 있고 끝나면 버린다.
-// 알리페이를 붙일 때: parsers/alipay.ts에 StatementParser를 만들고 아래 PARSERS에 더한다.
+// 공급자를 붙일 때: parsers/<provider>.ts에 StatementParser를 만들고 아래 PARSERS에 더한다(위챗 W10 · 알리페이 W11).
 
 const PARSERS: Record<FileImportProvider, StatementParser> = {
   WECHAT: wechatParser,
+  ALIPAY: alipayParser,
 }
 
 /** 요약 블록 줄을 넉넉히 더한 표 행 상한 */

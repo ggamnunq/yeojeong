@@ -1,6 +1,6 @@
 import { StatementFileError, type SheetRows } from './types'
 
-// 예전 위챗 CSV(UTF-8 BOM · UTF-8 · GBK/GB18030). 인코딩을 고른 뒤 RFC 4180 규칙(따옴표 안 쉼표·줄바꿈·"" 이스케이프)으로 나눈다.
+// 예전 위챗 CSV · 알리페이 CSV(UTF-8 BOM · UTF-8 · GBK/GB18030). 인코딩을 고른 뒤 RFC 4180 규칙(따옴표 안 쉼표·줄바꿈·"" 이스케이프)으로 나눈다.
 
 /** 바이트 → 문자열. BOM이 있으면 그 인코딩, 없으면 UTF-8(엄격) → 실패하면 GB18030(GBK 상위 집합) */
 export function decodeText(bytes: Uint8Array): string {

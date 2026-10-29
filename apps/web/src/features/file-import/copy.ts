@@ -1,4 +1,4 @@
-// 거래 내역 파일 가져오기(W10, HF-65~68) 문구. 공급자 이름·내보내기 단계는 PROVIDERS(providers.ts).
+// 거래 내역 파일 가져오기(W10 · W11, HF-65~68) 문구. 공급자 이름·내보내기 단계·제외 안내는 PROVIDERS(providers.ts).
 export const COPY = {
   menuTitle: '내역 불러오기',
   menuCard: '카드 내역 불러오기',
@@ -8,7 +8,8 @@ export const COPY = {
   pick: '파일 선택',
   reading: '파일 읽는 중',
   cancel: '취소',
-  formatTitle: (provider: string) => `${provider} 거래 내역 파일이 아니에요`,
+  // HF-66b · 66ab: "거래 내역" 뒤에서 줄을 바꾼다(Figma)
+  formatTitle: (provider: string) => `${provider} 거래 내역\n파일이 아니에요`,
   archiveTitle: '압축을 풀고 올려 주세요',
   tooLargeTitle: '파일이 너무 커요',
   tooLargeSub: '기간을 나눠서 다시 받아 주세요',
@@ -16,7 +17,6 @@ export const COPY = {
   resultTitle: (provider: string, n: number) => `${provider} · ${n}건`,
   selectAll: '전체 선택',
   selectCount: (total: number, count: number) => `${total}건 중 ${count}건`,
-  excludedTransfer: (n: number) => `송금·홍바오 ${n}건은 제외했어요`,
   add: (n: number) => `${n}건 추가`,
   added: (n: number) => `${n}건을 추가했어요`,
   alreadyAdded: '이미 추가한 결제예요',

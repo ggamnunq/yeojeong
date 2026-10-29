@@ -1,5 +1,5 @@
 import { mockConsentVersion } from './consentVersions'
-import { TRIP_EDITABLE_FIELDS, type SupportedCurrency } from '@yeojeong/shared'
+import { TRIP_EDITABLE_FIELDS, type FileImportProvider, type SupportedCurrency } from '@yeojeong/shared'
 import type {
   ConsentId,
   ExpenseListItem,
@@ -354,6 +354,8 @@ export type MockDb = {
   cardImportState: MockCardImportState
   /** 세션 응답 features.fileImport(W10 위챗페이 파일 가져오기). 기본 false. 개발 서버는 localStorage 'yj:mock:fileImport' = '1'로 켠다 */
   fileImport: boolean
+  /** 세션 응답 features.fileImportProviders(W11). fileImport가 true일 때만 실린다. 기본 ['WECHAT'] — localStorage 'yj:mock:fileImport' = 'WECHAT,ALIPAY'로 알리페이도 켠다 */
+  fileImportProviders: FileImportProvider[]
   /** 파일 가져오기로 저장한 거래 다이제스트(features/file-import/mocks.ts — "추가됨" 판정) */
   fileImportedDigests: string[]
   /** 가입 대기(SIGNUP_REQUIRED)에 담긴 돌아갈 경로(서버 yj_signup 쿠키의 r). 로그인 시작 returnTo를 서버 규칙으로 거른 값 */
@@ -377,6 +379,7 @@ export function createMockDb(): MockDb {
     accountLink: false,
     cardImport: false,
     fileImport: false,
+    fileImportProviders: ['WECHAT'],
     fileImportedDigests: [],
     cardImportState: { consentAgreedAt: null, consentVersion: null, requiredVersion: mockConsentVersion('CARD_IMPORT'), requiredReconsent: true, startedToday: 0, loginFailures: 0, importedKeys: [], twoWayTokens: [], remaining: null },
     signupReturnTo: null,

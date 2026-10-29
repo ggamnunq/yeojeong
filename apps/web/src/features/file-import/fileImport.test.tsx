@@ -88,6 +88,9 @@ describe('진입점(HF-49 · 49b · 65)', () => {
     await screen.findByText('이번 달')
     expect(screen.queryByRole('button', { name: '불러오기' })).toBeNull()
     db.fileImport = true
+    await router.navigate('/wallet/file-import/paypal')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/wallet'))
+    // 켜지지 않은 공급자(FILE_IMPORT_PROVIDERS에 없는 알리페이)도 지갑으로
     await router.navigate('/wallet/file-import/alipay')
     await waitFor(() => expect(router.state.location.pathname).toBe('/wallet'))
   })

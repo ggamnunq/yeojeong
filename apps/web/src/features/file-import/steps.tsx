@@ -29,7 +29,7 @@ export function FileInput({ inputRef, accept, onFile }: { inputRef: RefObject<HT
   )
 }
 
-/** HF-66 내보내는 방법(Figma 167:17190): 번호 단계(Row/Step — 중국어 메뉴명 괄호·보조색, 보조 줄) · 사실 줄 · CTA "파일 선택" */
+/** HF-66 내보내는 방법(Figma 167:17190 · 알리페이 HF-66a 176:18199): 번호 단계(Row/Step — 중국어 메뉴명 괄호·보조색, 보조 줄) · 사실 줄 · CTA "파일 선택" */
 export function GuideStep({ info, onBack, onPick }: { info: ProviderInfo; onBack: () => void; onPick: () => void }) {
   return (
     <ShellSub header={{ title: info.title, onBack }} cta={{ label: COPY.pick, onClick: onPick }}>
@@ -40,11 +40,14 @@ export function GuideStep({ info, onBack, onPick }: { info: ProviderInfo; onBack
               {index + 1}
             </span>
             <span className="flex min-w-0 flex-col gap-0.5 pt-px">
-              <span className="text-body-m text-primary">
+              <span className="text-body-m break-keep text-primary">
                 {step.parts.map((part, i) =>
                   'zh' in part ? (
-                    <span key={i} lang="zh-CN" className="whitespace-nowrap text-tertiary">
-                      ({part.zh})
+                    <span key={i} className="whitespace-nowrap">
+                      {part.before}
+                      <span lang="zh-CN" className="text-tertiary">
+                        ({part.zh})
+                      </span>
                     </span>
                   ) : (
                     <span key={i}>{part.text}</span>
@@ -86,7 +89,7 @@ export function ReadingStep({ fileName, onCancel }: { fileName: string; onCancel
   )
 }
 
-/** HF-66b 형식 다름(169:17266) · 66c 압축·암호(169:17340) · 너무 큼(HF-57 레이아웃, 헤더 공급자 이름). CTA "다른 파일 선택" */
+/** HF-66b 형식 다름(169:17266, 알리페이 66ab 176:18220) · 66c 압축·암호(169:17340, 66ac 176:18235) · 66d 너무 큼(176:18250, 공통 — 헤더만 공급자 이름). CTA "다른 파일 선택" */
 export function FileErrorStep({ info, kind, onBack, onPick }: { info: ProviderInfo; kind: StatementErrorKind; onBack: () => void; onPick: () => void }) {
   const [title, sub] =
     kind === 'archive'
@@ -96,12 +99,12 @@ export function FileErrorStep({ info, kind, onBack, onPick }: { info: ProviderIn
         : [COPY.formatTitle(info.name), info.formatSub]
   return (
     <ShellSub header={{ title: info.name, onBack }} cta={{ label: COPY.otherFile, onClick: onPick }}>
-      <CenterStatus phase="before" title={title} sub={sub} />
+      <CenterStatus phase="before" title={<span className="whitespace-pre-line">{title}</span>} sub={sub} />
     </ShellSub>
   )
 }
 
-/** HF-68 결과(170:17343 · 68s 170:18102, HF-56 구조) — 가맹점 이름은 중국어 원문 그대로: 전체 선택 + 제외 Caption · 날짜 묶음 RowPick · CTA "N건 추가" */
+/** HF-68 결과(170:17343 · 68s 170:18102 · 알리페이 68a 176:18265, HF-56 구조) — 가맹점 이름은 중국어 원문 그대로: 전체 선택 + 제외 Caption · 날짜 묶음 RowPick · CTA "N건 추가" */
 export function ResultStep({
   info,
   rows,
@@ -137,7 +140,7 @@ export function ResultStep({
           <Checkbox label={COPY.selectAll} checked={all.checked} indeterminate={all.indeterminate} disabled={all.total === 0} onChange={onToggleAll} />
           <span className="text-caption text-secondary">{COPY.selectCount(all.total, all.count)}</span>
         </div>
-        {excluded.transfer > 0 && <p className="px-gutter pb-1 text-caption text-tertiary">{COPY.excludedTransfer(excluded.transfer)}</p>}
+        {excluded.transfer > 0 && <p className="px-gutter pb-1 text-caption text-tertiary">{info.excludedTransfer(excluded.transfer)}</p>}
         {groupRows(rows).map((group, index) => (
           <section key={group.localDate} aria-label={group.label} className={clsx(index > 0 ? 'pt-4' : 'pt-1')}>
             <DateHeader style="plain" date={group.label} />
