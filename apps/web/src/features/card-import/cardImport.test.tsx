@@ -129,7 +129,7 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     expect(await client.fetchQuery({ ...revocableConsentsQuery(), staleTime: 0 })).toEqual([])
   })
 
-  it('encrypts before mutating so the mutation cache only ever holds ciphertext (L3)', async () => {
+  it('keeps loginId, ciphertext and the SMS code out of every TanStack cache (no mutation) and reuses the ciphertext (L3 · M1)', async () => {
     resetCardImportMock({ consented: true })
     const client = createTestQueryClient()
     const wrapper = ({ children }: { children: ReactNode }) => <ApiProvider client={client}>{children}</ApiProvider>
@@ -141,12 +141,19 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     }
     server.events.on('request:start', listener)
     const input = { publicKey: MOCK_CARD_IMPORT_PUBLIC_KEY, organization: '0306', loginId: 'twoway', password, from: today, to: today }
-    const first = await act(() => result.current.start(input))
+    // 화면이 먼저 암호화하고 hook에는 암호문 요청만 넘긴다(hook은 평문을 받지 않는다)
+    const request = await buildFetchRequest(input)
+    expect(JSON.stringify(request)).not.toContain(password)
+    const first = await act(() => result.current.start(request))
     expect(first.status).toBe('TWO_WAY_REQUIRED')
     if (first.status !== 'TWO_WAY_REQUIRED') return
-    const variables = () => JSON.stringify(client.getMutationCache().getAll().map((m) => m.state.variables))
-    expect(variables()).not.toContain(password)
-    expect(variables()).toContain('encryptedPassword')
+    const caches = () =>
+      JSON.stringify([
+        client.getMutationCache().getAll().map((m) => m.state),
+        client.getQueryCache().getAll().map((q) => q.state),
+      ])
+    expect(client.getMutationCache().getAll()).toHaveLength(0)
+    for (const secret of [password, 'twoway', request.encryptedPassword]) expect(caches()).not.toContain(secret)
     // 이어가기는 같은 암호문을 다시 쓴다(다시 암호화하지 않는다)
     const done = await act(() => result.current.continueTwoWay({ token: first.twoWayToken, code: MOCK_TWO_WAY_CODE }))
     expect(done.status).toBe('OK')
@@ -156,7 +163,8 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     expect(a.encryptedPassword).toBe(b.encryptedPassword)
     expect(sent.join()).not.toContain(password)
     expect(a).not.toHaveProperty('password')
-    expect(variables()).not.toContain(password)
+    expect(client.getMutationCache().getAll()).toHaveLength(0)
+    for (const secret of [password, 'twoway', request.encryptedPassword, MOCK_TWO_WAY_CODE]) expect(caches()).not.toContain(secret)
     // 쿼리 캐시에는 조회 결과가 없다
     expect(client.getQueryCache().getAll()).toHaveLength(0)
     act(() => result.current.reset())

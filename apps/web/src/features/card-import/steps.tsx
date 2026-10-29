@@ -80,8 +80,18 @@ export function LoginStep({
   const submitOnEnter = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing && ready) onSubmit()
   }
-  // 아이디·비밀번호: 브라우저가 카드사 계정을 여정 주소에 저장·자동완성하지 않게(autocomplete off), 맞춤법 검사로 서버에 보내지 않게
-  const secretInput = { autoComplete: 'off', spellCheck: false, autoCapitalize: 'none', autoCorrect: 'off' } as const
+  // 아이디·비밀번호: 브라우저가 카드사 계정을 여정 주소에 저장·자동완성하지 않게(autocomplete off), 맞춤법 검사로 서버에 보내지 않게.
+  // 비밀번호 관리자(1Password · LastPass · Bitwarden · Dashlane 등)에도 무시 신호를 준다 — 완전히 막을 수는 없다(브라우저·확장 재량)
+  const secretInput = {
+    autoComplete: 'off',
+    spellCheck: false,
+    autoCapitalize: 'none',
+    autoCorrect: 'off',
+    'data-1p-ignore': true,
+    'data-lpignore': 'true',
+    'data-bwignore': true,
+    'data-form-type': 'other',
+  } as const
 
   return (
     <ShellSub header={{ title: org.name, onBack }} cta={{ label: COPY.fetch, onClick: () => ready && onSubmit(), state: ready ? 'default' : 'disabled' }}>

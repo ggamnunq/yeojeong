@@ -6,6 +6,7 @@ import { db } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { api, mockError } from '../../mocks/utils'
 import { renderApp } from '../../test/render'
+import { cardImportKeys } from './api'
 import { resetCardImportMock } from './mocks'
 
 // W7 카드 내역 불러오기 화면(WF-51~58) · 보안 요구(화면명세 L-0 메모리 규칙). 목 시점 = 11.13 18:34, 오사카 진행 중.
@@ -121,35 +122,101 @@ describe('보안(L-0 메모리 규칙)', () => {
     const { router, queryClient } = await toLogin()
     fillLogin('twoway')
     fireEvent.click(button('불러오기'))
-    // 추가 인증(WF-54) 동안 — 원문은 화면 state에 없고, hook은 암호문만 들고 있다
+    // 추가 인증(WF-54) 동안 — 원문은 화면 state에 없고, 조회는 TanStack 뮤테이션을 쓰지 않는다(variables에 아이디·암호문·인증번호가 남지 않게)
     const code = await screen.findByLabelText('인증번호')
     expect(screen.getByText('2:40')).toBeTruthy()
-    const mutations = () => JSON.stringify(queryClient.getMutationCache().getAll().map((m) => m.state))
-    expect(mutations()).not.toContain(PASSWORD)
-    expect(mutations()).toContain('encryptedPassword')
+    const caches = () =>
+      JSON.stringify([queryClient.getMutationCache().getAll().map((m) => m.state), queryClient.getQueryCache().getAll().map((q) => q.state)])
+    // 뮤테이션 캐시에는 동의 저장(WF-51, 변수 = 문서 버전)만 있다
+    expect(queryClient.getMutationCache().getAll().map((m) => m.state.variables)).toEqual(['0.1-draft'])
     fireEvent.change(code, { target: { value: '123456' } })
     fireEvent.click(button('확인'))
     expect(await screen.findByText('전체 선택')).toBeTruthy()
 
     const location = router.state.location
     const where = `${location.pathname}${location.search}${location.hash}${JSON.stringify(location.state)}`
-    for (const secret of [PASSWORD, LOGIN_ID, 'twoway']) {
+    for (const secret of [PASSWORD, LOGIN_ID, 'twoway', '123456']) {
       expect(where).not.toContain(secret)
       expect(storageDump()).not.toContain(secret)
+      expect(caches()).not.toContain(secret)
     }
-    expect(mutations()).not.toContain(PASSWORD)
-    // 결과를 받으면 암호문도 버린다
-    expect(mutations()).not.toContain('encryptedPassword')
+    expect(caches()).not.toContain('encryptedPassword')
     // 결과(가맹점·itemToken)는 쿼리 캐시에 없다
-    const queries = JSON.stringify(queryClient.getQueryCache().getAll().map((q) => q.state.data))
-    expect(queries).not.toContain('다카시마야')
-    expect(queries).not.toContain('mock.')
+    expect(caches()).not.toContain('다카시마야')
+    expect(caches()).not.toContain('mock.')
     await waitFor(() => expect(sent).toHaveLength(2))
     server.events.removeListener('request:start', listener)
     expect(sent.join()).not.toContain(PASSWORD)
     const [first, second] = sent.map((t) => JSON.parse(t) as Record<string, unknown>)
     expect(first).not.toHaveProperty('password')
     expect(second.encryptedPassword).toBe(first.encryptedPassword)
+    expect(caches()).not.toContain(String(first.encryptedPassword))
+  })
+
+  it('tells password managers to ignore the login inputs (best effort)', async () => {
+    await toLogin()
+    for (const input of [screen.getByLabelText('아이디'), screen.getByLabelText('비밀번호', { selector: 'input' })]) {
+      expect(input.getAttribute('data-1p-ignore')).toBe('true')
+      expect(input.getAttribute('data-lpignore')).toBe('true')
+      expect(input.getAttribute('data-bwignore')).toBe('true')
+      expect(input.getAttribute('data-form-type')).toBe('other')
+    }
+  })
+
+  it('wipes ids, password and the result on pagehide, and restarts at WF-51 when restored from bfcache', async () => {
+    const { router } = await toLogin()
+    fillLogin()
+    fireEvent.click(button('불러오기'))
+    await screen.findByText('전체 선택')
+    window.dispatchEvent(new Event('pagehide'))
+    expect(await screen.findByLabelText('아이디')).toBeTruthy()
+    expect((screen.getByLabelText('아이디') as HTMLInputElement).value).toBe('')
+    expect(screen.queryByText('다카시마야 난바점')).toBeNull()
+    const show = new Event('pageshow') as PageTransitionEvent
+    Object.defineProperty(show, 'persisted', { value: true })
+    window.dispatchEvent(show)
+    await waitFor(() => expect(router.state.location.pathname).toBe('/wallet/import'))
+  })
+
+  it('aborts the in-flight fetch on cancel and ignores its response', async () => {
+    let aborted = false
+    server.use(
+      api.post<FetchCardApprovalsResponse>('/api/card-import/fetch', async ({ request }) => {
+        request.signal.addEventListener('abort', () => {
+          aborted = true
+        })
+        await new Promise((r) => setTimeout(r, 500))
+        return HttpResponse.json({ status: 'OK', organization: '0306', from: '2026-11-12', to: '2026-11-13', items: [] })
+      }),
+    )
+    await toLogin()
+    fillLogin()
+    fireEvent.click(button('불러오기'))
+    expect(await screen.findByRole('heading', { name: '불러오는 중' })).toBeTruthy()
+    fireEvent.click(button('취소'))
+    expect(await screen.findByLabelText('아이디')).toBeTruthy()
+    await waitFor(() => expect(aborted).toBe(true))
+    await new Promise((r) => setTimeout(r, 600))
+    // 늦은 응답(0건)으로 화면이 바뀌지 않는다
+    expect(screen.queryByText('이 기간에 승인 내역이 없어요')).toBeNull()
+    expect(screen.getByLabelText('아이디')).toBeTruthy()
+  })
+
+  it('never sends credentials without a valid consent — back to WF-51', async () => {
+    const sent = vi.fn()
+    server.events.on('request:start', ({ request }) => {
+      if (request.url.endsWith('/api/card-import/fetch')) sent()
+    })
+    const { router, queryClient } = await toLogin()
+    fillLogin()
+    // 그사이 다른 기기에서 철회 → config를 다시 받으면 동의 없음 → 자격 증명을 받지 않고 WF-51로
+    db.cardImportState.consentAgreedAt = null
+    db.cardImportState.consentVersion = null
+    await queryClient.invalidateQueries({ queryKey: cardImportKeys.config })
+    await waitFor(() => expect(router.state.location.pathname).toBe('/wallet/import'))
+    expect(await screen.findByRole('checkbox', { name: /카드 내역 조회 동의/ })).toBeTruthy()
+    expect(sent).not.toHaveBeenCalled()
+    server.events.removeAllListeners('request:start')
   })
 
   it('shows 54b when the 2-way timer runs out, and "다시 하기" returns to WF-53 with the password emptied', async () => {
@@ -285,6 +352,21 @@ describe('동의 관리(WF-30 · 58 · 58b) — 기능 플래그와 무관, 유�
     db.cardImport = false
     resetCardImportMock({ consented: true })
     renderApp('/me')
+    fireEvent.click(await screen.findByRole('link', { name: '동의 관리' }))
+    fireEvent.click(await screen.findByRole('button', { name: '카드 내역 조회 동의 철회' }))
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: '철회' }))
+    expect(await screen.findByText('철회했어요')).toBeTruthy()
+    expect(db.cardImportState.consentAgreedAt).toBeNull()
+  })
+
+  it('works even when the production build has no public key pin (pinPolicy blocked): entry hidden, consents still manageable', async () => {
+    vi.stubEnv('VITE_CODEF_PUBKEY_SHA256', '')
+    vi.stubEnv('PROD', true)
+    resetCardImportMock({ consented: true })
+    const { router } = renderApp('/wallet')
+    await screen.findByText('이번 달')
+    expect(screen.queryByRole('button', { name: '불러오기' })).toBeNull()
+    await router.navigate('/me')
     fireEvent.click(await screen.findByRole('link', { name: '동의 관리' }))
     fireEvent.click(await screen.findByRole('button', { name: '카드 내역 조회 동의 철회' }))
     fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: '철회' }))

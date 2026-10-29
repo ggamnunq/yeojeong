@@ -14,7 +14,7 @@ import { cardImportKeys } from '../api'
 import { ImportErrorScreen } from '../components'
 import { COPY } from '../copy'
 import { useFlowNav, type CardImportFlowState } from '../flow'
-import { useCardImportConfig, useFetchCardApprovals, useImportWalletEntries } from '../hooks'
+import { buildFetchRequest, useCardImportConfig, useFetchCardApprovals, useImportWalletEntries } from '../hooks'
 import {
   classifyFetchError,
   clipRange,
@@ -41,6 +41,10 @@ type Range = { from: string; to: string }
 export default function FlowPage() {
   const { issuer = '' } = useParams()
   const flow = useFlowNav()
+  const flowGo = useRef(flow.go)
+  useEffect(() => {
+    flowGo.current = flow.go
+  })
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const config = useCardImportConfig()
@@ -92,7 +96,9 @@ export default function FlowPage() {
       document.removeEventListener('visibilitychange', release)
     }
   }, [cooldownUntil])
-  const remainingMs = twoWay ? twoWay.deadline - now : 0
+  // 남은 시간은 제한 시간(160초)을 넘지 않는다(now가 단계 전환 직후 한 번 늦게 바뀌어도)
+  const twoWayLimitMs = (config.data?.twoWayTimeoutSeconds ?? 160) * 1000
+  const remainingMs = twoWay ? Math.min(twoWay.deadline - now, twoWayLimitMs) : 0
   // 남은 시간 0 → WF-54b
   useEffect(() => {
     if (step !== 'two-way' || !twoWay || twoWayExpired) return
@@ -104,15 +110,55 @@ export default function FlowPage() {
     return () => window.clearTimeout(id)
   }, [step, twoWay, twoWayExpired])
 
-  // 화면을 떠나면 암호문·결과를 버리고 늦은 응답을 무시한다(reset은 바뀌지 않는 함수)
+  // 진행 중 조회를 끊는다(취소·이탈). 서버 쪽 CODEF 호출은 계속될 수 있고, 화면은 응답을 버린다(세대 번호)
+  const abort = useRef<AbortController | null>(null)
+  const cancelRequest = useCallback(() => {
+    generation.current += 1
+    abort.current?.abort()
+    abort.current = null
+  }, [])
+
+  // 화면을 떠나면 진행 중 요청을 끊고 암호문을 버린다(reset은 바뀌지 않는 함수). 결과 state는 컴포넌트와 함께 사라진다
   const resetFetcher = fetcher.reset
   useEffect(
     () => () => {
-      generation.current += 1
+      cancelRequest()
       resetFetcher()
     },
-    [resetFetcher],
+    [cancelRequest, resetFetcher],
   )
+
+  // bfcache: 페이지를 떠날 때(pagehide) 메모리의 아이디·비밀번호·결과·itemToken을 비우고,
+  // 뒤로 가기로 복원되면(pageshow persisted) 처음(로그인 전)부터 다시 시작한다
+  useEffect(() => {
+    const wipe = () => {
+      cancelRequest()
+      resetFetcher()
+      setLoginId('')
+      setPassword('')
+      setTwoWay(null)
+      setCode('')
+      setResult(null)
+      setSelected(new Set())
+      setFailure(null)
+      setLeaveOpen(false)
+      setExpiredOpen(false)
+      setExpiredDialog(false)
+      setStep('login')
+    }
+    const onShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        wipe()
+        flowGo.current(paths.walletImport())
+      }
+    }
+    window.addEventListener('pagehide', wipe)
+    window.addEventListener('pageshow', onShow)
+    return () => {
+      window.removeEventListener('pagehide', wipe)
+      window.removeEventListener('pageshow', onShow)
+    }
+  }, [cancelRequest, resetFetcher])
 
   // WF-53이 다시 보일 때마다 남은 횟수(remainingToday)를 새로 받는다
   const prevStep = useRef<Step>(step)
@@ -128,7 +174,7 @@ export default function FlowPage() {
 
   /** 처음 입력으로(아이디·기간 유지, 비밀번호·암호문·결과는 버림) */
   const backToLogin = (options: { openRange?: boolean } = {}) => {
-    generation.current += 1
+    cancelRequest()
     fetcher.reset()
     setPassword('')
     setTwoWay(null)
@@ -212,11 +258,17 @@ export default function FlowPage() {
     }
   }
 
-  const run = async (request: () => Promise<FetchCardApprovalsResponse>) => {
-    const gen = ++generation.current
+  /** 로딩 단계로 바꾸고 새 세대·AbortController를 연다 */
+  const beginRequest = () => {
+    cancelRequest()
+    const controller = new AbortController()
+    abort.current = controller
     setStep('loading')
+    return { gen: generation.current, signal: controller.signal }
+  }
+  const settle = async (gen: number, request: Promise<FetchCardApprovalsResponse>) => {
     try {
-      const res = await request()
+      const res = await request
       if (gen === generation.current) onResponse(res)
     } catch (error) {
       if (gen === generation.current) onFailure(error)
@@ -225,22 +277,31 @@ export default function FlowPage() {
 
   const submit = () => {
     if (!org || !range || !config.data || locked || step !== 'login') return
+    // 동의가 없으면 자격 증명을 보내지 않고 WF-51로
+    if (!config.data.consent.valid) return flow.go(paths.walletImport())
     const id = loginId.trim()
     if (!id || !password) return
-    // 원문은 여기서 바로 비운다. start가 암호화하고 암호문만 뮤테이션 변수로 보낸다
+    // 원문은 입력 state에서 바로 비우고, 먼저 암호화한 뒤 암호문 요청만 보낸다(원문은 이 함수의 지역 변수로 암호화까지만 산다)
     const secret = password
     setPassword('')
     setLoginError(null)
     setRangeError(null)
-    const { publicKey } = config.data
-    void run(() => fetcher.start({ publicKey, organization: org.code, loginId: id, password: secret, from: range.from, to: range.to }))
+    const { gen, signal } = beginRequest()
+    const input = { publicKey: config.data.publicKey, organization: org.code, loginId: id, password: secret, from: range.from, to: range.to }
+    void buildFetchRequest(input).then(
+      (request) => settle(gen, fetcher.start(request, signal)),
+      (error: unknown) => {
+        if (gen === generation.current) onFailure(error)
+      },
+    )
   }
 
   const submitCode = () => {
     if (!twoWay || !code || twoWayExpired) return
     setCodeError(false)
     const twoWayInput = { token: twoWay.token, code }
-    void run(() => fetcher.continueTwoWay(twoWayInput))
+    const { gen, signal } = beginRequest()
+    void settle(gen, fetcher.continueTwoWay(twoWayInput, signal))
   }
 
   const add = () => {
@@ -290,6 +351,10 @@ export default function FlowPage() {
   }
 
   if (isApiError(config.error) && config.error.code === 'NOT_FOUND') return <Navigate replace to={paths.wallet()} />
+  // 동의가 없으면(철회·재동의 필요) 자격 증명을 받지 않고 WF-51로
+  if (config.data && !config.data.consent.valid) {
+    return <Navigate replace to={paths.walletImport()} state={{ cardImportFlow: true } satisfies CardImportFlowState} />
+  }
   if (config.data && !org) {
     return <Navigate replace to={paths.walletImportIssuer()} state={{ cardImportFlow: true } satisfies CardImportFlowState} />
   }
