@@ -54,6 +54,8 @@ export default function PaymentsPage() {
   const expiredConnection = methods.data?.connections.find((connection) => connection.status === 'EXPIRED')
   const connect = useTossConnect()
   const touchStart = useRef<number | null>(null)
+  // 놓을 때는 마지막 touchmove 값을 읽는다(touchmove 렌더가 끝나기 전에 touchend가 와도 같은 판정)
+  const pulled = useRef(0)
   const [pullDistance, setPullDistance] = useState(0)
   const queryClient = useQueryClient()
   // 당겨서 새로고침 = 수동 동기화(진행 중만). 202면 끝날 때까지 스피너 → 목록·배너(여정 상세) 재조회. 429는 토스트 없이 재조회만
@@ -112,11 +114,13 @@ export default function PaymentsPage() {
       }}
       onTouchMove={(event) => {
         if (touchStart.current === null) return
-        setPullDistance(Math.min(80, Math.max(0, (event.touches[0]?.clientY ?? touchStart.current) - touchStart.current)))
+        pulled.current = Math.min(80, Math.max(0, (event.touches[0]?.clientY ?? touchStart.current) - touchStart.current))
+        setPullDistance(pulled.current)
       }}
       onTouchEnd={() => {
-        if (ongoing && pullDistance >= 56 && !sync.isPending) sync.mutate()
+        if (ongoing && pulled.current >= 56 && !sync.isPending) sync.mutate()
         touchStart.current = null
+        pulled.current = 0
         setPullDistance(0)
       }}
     >
