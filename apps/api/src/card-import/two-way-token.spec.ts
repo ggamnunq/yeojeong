@@ -49,7 +49,10 @@ describe('TwoWayTokenSealer', () => {
     expect(code(() => sealer.open('user-1', token, now + 160_000))).toBe(
       'CARD_TWO_WAY_EXPIRED',
     );
-    const tampered = token.slice(0, -2) + (token.endsWith('A') ? 'BB' : 'AA');
+    // 끝자리 base64url 문자는 남는 비트만 바뀌어 디코드 결과가 같을 수 있다. 바이트를 직접 뒤집는다
+    const raw = Buffer.from(token.slice(4), 'base64url');
+    raw[raw.length - 1] ^= 0xff;
+    const tampered = `tw1.${raw.toString('base64url')}`;
     expect(code(() => sealer.open('user-1', tampered, now))).toBe(
       'CARD_TWO_WAY_EXPIRED',
     );
