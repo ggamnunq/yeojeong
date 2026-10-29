@@ -18,7 +18,7 @@ const SEVERITY: Record<string, string> = {
 };
 
 // 헤더는 기본으로 기록하지 않지만, 실수로 객체째 남겨도 인증 정보는 가린다
-const REDACT_PATHS = [
+const HEADER_REDACT_PATHS = [
   'authorization',
   'cookie',
   'set-cookie',
@@ -29,6 +29,45 @@ const REDACT_PATHS = [
   `req.headers["${name}"]`,
   `res.headers["${name}"]`,
 ]);
+
+/**
+ * 금융기관 로그인 정보·CODEF 연결 값(S8 카드 승인내역 불러오기). 요청 본문은 원래 남기지 않지만(req 직렬화는 method·id만),
+ * 실수로 본문·DTO·에러 객체째 남겨도 이 키는 깊이 3단계까지 가린다. 키 이름은 우리 DTO와 CODEF 요청·응답 필드 이름이다.
+ */
+export const SENSITIVE_BODY_KEYS = [
+  'loginId',
+  'password',
+  'encryptedPassword',
+  'connectedId',
+  'twoWay',
+  'twoWayToken',
+  'twoWayInfo',
+  'smsAuthNo',
+  'secureNo',
+  'secureNoRefresh',
+  'simpleAuth',
+  'cardNo',
+  'cardPassword',
+  'birthDate',
+  'identity',
+  'access_token',
+  'accessToken',
+  'client_secret',
+] as const;
+
+const BODY_REDACT_PATHS = [
+  'body',
+  'req.body',
+  'request.body',
+  ...SENSITIVE_BODY_KEYS.flatMap((key) => [
+    key,
+    `*.${key}`,
+    `*.*.${key}`,
+    `*.*.*.${key}`,
+  ]),
+];
+
+const REDACT_PATHS = [...HEADER_REDACT_PATHS, ...BODY_REDACT_PATHS];
 
 export function createLogger(
   config: ConfigService,
