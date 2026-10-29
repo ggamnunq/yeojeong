@@ -19,7 +19,8 @@ import {
 } from './expenses-fixtures.js';
 
 // 여정 통화 외 외화의 원화 환산(S7c, 디자인 결정 C-32) 실제 DB e2e.
-// KRW·여정 통화는 여정 정책(고정 환율·카드사 원화) 그대로, 그 밖의 외화는 결제 시점 시장 환율(SPOT_AT_PAYMENT).
+// KRW·여정 통화는 여정 정책 그대로. 그 밖의 외화는 고정 환율 여정에서 결제 시점 시장 환율(SPOT_AT_PAYMENT),
+// 카드사 원화 여정에서는 카드사 원화가 있으면 그 값, 없을 때만 시장 환율(CARD_BILLED 임시값).
 // 경로: 지갑 → 여정 자동 연결(MANUAL), 계좌·카드 인입(AUTO), 환율 기준 변경 재계산, 정산 합계.
 const databaseUrl = await reachableDatabaseUrl();
 
@@ -225,6 +226,19 @@ describe.skipIf(!databaseUrl)('Foreign currency fx (S7c e2e, real DB)', () => {
     });
   });
 
+  it('converts a wallet USD entry in a card-billed JPY trip with the market rate (no card amount)', async () => {
+    const seed = await seedJpyTrip({ policy: 'CARD_BILLED' });
+    const usd = (
+      await addEntry(seed, '준용', { amount: '25.5', currency: 'USD' }).expect(
+        201,
+      )
+    ).body as WalletEntryMutationResponse;
+    expect(usd.linkedExpense).toMatchObject({
+      krwAmount: 35_200,
+      fx: { rate: '1380.5', source: RATE_SOURCE, policy: 'CARD_BILLED' },
+    });
+  });
+
   it('re-converts a USD wallet entry with the market rate when it is edited', async () => {
     const seed = await seedJpyTrip({ policy: 'FIXED' });
     const created = (
@@ -248,7 +262,7 @@ describe.skipIf(!databaseUrl)('Foreign currency fx (S7c e2e, real DB)', () => {
     });
   });
 
-  it('imports a USD card payment into fixed-rate and card-billed JPY trips with the market rate (AUTO)', async () => {
+  it('imports a USD card payment: market rate in a fixed-rate trip, card amount first in a card-billed trip (AUTO)', async () => {
     const fixed = await seedJpyTrip({
       policy: 'FIXED',
       withPaymentMethod: true,
@@ -284,7 +298,7 @@ describe.skipIf(!databaseUrl)('Foreign currency fx (S7c e2e, real DB)', () => {
       fxRateSource: '고정 환율',
     });
 
-    // 카드사 원화 여정: 여정 통화(JPY)는 기존대로 제공자 원화, 제3통화(USD)는 시장 환율
+    // 카드사 원화 여정: 여정 통화(JPY)·제3통화(USD) 모두 제공자 원화가 있으면 그 값, 없으면 시장 환율(임시)
     const billed = await seedJpyTrip({
       policy: 'CARD_BILLED',
       withPaymentMethod: true,
@@ -297,6 +311,12 @@ describe.skipIf(!databaseUrl)('Foreign currency fx (S7c e2e, real DB)', () => {
       currency: 'USD',
       providerKrw: 36_000,
     });
+    const usd3 = await fx.addTransaction(her, {
+      at: PAID_AT,
+      merchant: 'GATE SHOP',
+      amount: '25.5',
+      currency: 'USD',
+    });
     const jpy2 = await fx.addTransaction(her, {
       at: PAID_AT,
       merchant: '로손',
@@ -304,14 +324,24 @@ describe.skipIf(!databaseUrl)('Foreign currency fx (S7c e2e, real DB)', () => {
       currency: 'JPY',
       providerKrw: 26_500,
     });
-    expect(await runImport(billed, '민지')).toBe(2);
+    expect(await runImport(billed, '민지')).toBe(3);
     expect(
       await snapshot((await importedOf(billed, usd2.id))!.id),
     ).toMatchObject({
-      krwAmount: 35_200,
-      fxPolicyApplied: 'SPOT_AT_PAYMENT',
-      fxRateSource: RATE_SOURCE,
+      krwAmount: 36_000,
+      fxPolicyApplied: 'CARD_BILLED',
+      fxRate: null,
+      fxRateSource: '카드사 청구 환율',
     });
+    const usdMarket = await snapshot((await importedOf(billed, usd3.id))!.id);
+    expect(usdMarket).toMatchObject({
+      krwAmount: 35_200,
+      fxPolicyApplied: 'CARD_BILLED',
+      fxRateUnit: 1,
+      fxRateSource: RATE_SOURCE,
+      fxRateAt: RATE_AT,
+    });
+    expect(usdMarket.fxRate?.toFixed(6)).toBe('1380.500000');
     expect(
       await snapshot((await importedOf(billed, jpy2.id))!.id),
     ).toMatchObject({

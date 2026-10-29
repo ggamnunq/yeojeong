@@ -188,7 +188,7 @@ describe('KRW conversion for out-of-period expenses', () => {
     );
   });
 
-  it('uses the market rate for a currency that is neither KRW nor the trip currency (C-32)', () => {
+  it('replaces the fixed rate with the market rate for a currency that is neither KRW nor the trip currency (C-32)', () => {
     const usd = source({
       originalAmount: D('25.5'),
       originalCurrency: 'USD',
@@ -217,9 +217,26 @@ describe('KRW conversion for out-of-period expenses', () => {
       fxFixedRate: D('919.20'),
     };
     expect(resolveKrw(usd, fixed, usdSpot)).toMatchObject(expected);
-    // 카드사 청구 원화 여정: 제3통화는 청구 원화 대신 시장 환율
+    // 카드사 청구 원화 여정: 제3통화도 카드사 원화가 있으면 그 값, 없을 때만 시장 환율
     const billed = { ...trip, fxPolicy: 'CARD_BILLED' as const };
-    expect(resolveKrw(usd, billed, usdSpot)).toMatchObject(expected);
+    expect(resolveKrw(usd, billed, usdSpot)).toMatchObject({
+      krwAmount: 36000,
+      fx: { fxPolicyApplied: 'CARD_BILLED', fxRate: null },
+    });
+    expect(
+      resolveKrw(
+        { ...usd, billedKrwAmount: null, providerKrwAmount: null },
+        billed,
+        usdSpot,
+      ),
+    ).toMatchObject({
+      krwAmount: 35200,
+      fx: {
+        fxPolicyApplied: 'CARD_BILLED',
+        fxRateUnit: 1,
+        fxRateSource: '한국수출입은행',
+      },
+    });
     // 여정 통화는 그대로 여정 정책
     expect(
       resolveKrw(source({ billedKrwAmount: 55000 }), billed, spot)?.fx

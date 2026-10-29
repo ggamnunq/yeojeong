@@ -4,7 +4,7 @@ import { Prisma } from '../generated/prisma/client.js';
 
 // 기간 외 결제를 장부에 넣을 때의 원화 환산(기능명세 4-5). 환율 모듈(fx, S2C)이 생기면 그 서비스로 바꾼다.
 // 정책: KRW는 그대로, FIXED는 고정 환율(여행 통화일 때), CARD_BILLED는 청구 확정 원화, 그 밖은 결제 시점 매매기준율.
-// 여정 통화도 KRW도 아닌 외화는 여정 정책과 무관하게 결제 시점 매매기준율(C-32, fx/convert.ts effectiveFxPolicy).
+// 여정 통화도 KRW도 아닌 외화는 고정 환율 대신 결제 시점 매매기준율(C-32, fx/convert.ts effectiveFxPolicy). CARD_BILLED는 통화와 무관하게 같다.
 
 /** 고시 단위가 100인 통화(100엔 = 919.20원) */
 const HUNDRED_UNIT_CURRENCIES = new Set(['JPY', 'IDR', 'VND']);

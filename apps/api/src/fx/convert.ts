@@ -111,7 +111,10 @@ export function normalizeFixedRate(input: string): string | null {
 /**
  * 결제 한 건에 실제로 적용할 환율 기준(디자인 결정 C-32).
  * KRW·여정 통화 결제는 여정 정책(Trip.fxPolicy) 그대로. 여정 통화도 KRW도 아닌 외화(예: 일본 여정의 USD 결제)는
- * 여정 정책(고정 환율·카드사 청구 원화)과 무관하게 결제 시점 시장 환율(SPOT_AT_PAYMENT: 수출입은행 우선, 보조 소스 포함)로 환산한다.
+ * 여정 고정 환율을 쓰지 않는다:
+ * - FIXED 여정 → 결제 시점 시장 환율(SPOT_AT_PAYMENT: 수출입은행 우선, 보조 소스 포함).
+ * - CARD_BILLED 여정 → 그대로 CARD_BILLED. 카드사 원화(청구 확정 → 제공자)가 있으면 그 값, 없을 때만 시장 환율(임시).
+ * - SPOT_AT_PAYMENT 여정 → 그대로.
  * effectiveFxPolicy('FIXED', 'JPY', 'USD') === 'SPOT_AT_PAYMENT'
  */
 export function effectiveFxPolicy(
@@ -119,6 +122,7 @@ export function effectiveFxPolicy(
   tripCurrency: string,
   currency: string,
 ): FxPolicy {
+  if (tripPolicy !== 'FIXED') return tripPolicy;
   const code = currency.toUpperCase();
   if (code === KRW || code === tripCurrency.toUpperCase()) return tripPolicy;
   return 'SPOT_AT_PAYMENT';

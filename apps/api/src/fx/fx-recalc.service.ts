@@ -13,7 +13,7 @@ import { FxRatesService, type SpotRateTable } from './fx-rates.service.js';
 export interface RecalcTrip {
   id: string;
   groupId: string;
-  /** 여정 통화. 이 통화도 KRW도 아닌 결제는 정책과 무관하게 시장 환율(C-32) */
+  /** 여정 통화. FIXED 여정에서 이 통화도 KRW도 아닌 결제는 시장 환율(C-32, effectiveFxPolicy) */
   currency: string;
   fxPolicy: FxPolicy;
   fxFixedRate: Prisma.Decimal | null;

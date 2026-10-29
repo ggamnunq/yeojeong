@@ -139,10 +139,10 @@ describe('FxRatesService.convertForTrip currency branch (C-32)', () => {
     );
   });
 
-  it('uses the market rate instead of the card billed amount for a third currency', async () => {
-    const { service } = setup();
+  it('uses the card amount for a third currency in a card-billed trip, and the market rate only without it', async () => {
+    const { service, findFirst } = setup();
     const billedTrip = jpyTrip({ policy: 'CARD_BILLED' });
-    const usd = await service.convertForTrip(billedTrip, {
+    const billed = await service.convertForTrip(billedTrip, {
       amount: '25.5',
       currency: 'USD',
       occurredAt: PAID_AT,
@@ -150,13 +150,45 @@ describe('FxRatesService.convertForTrip currency branch (C-32)', () => {
       billedAt: PAID_AT,
       providerKrwAmount: 35_500,
     });
-    expect(usd).toMatchObject({
-      krwAmount: 35_200,
-      policyApplied: 'SPOT_AT_PAYMENT',
-      rateSource: SOURCE,
+    expect(billed).toMatchObject({
+      krwAmount: 36_000,
+      policyApplied: 'CARD_BILLED',
+      rate: null,
+      rateSource: CARD_BILLED_SOURCE,
+      rateAt: PAID_AT,
       provisional: false,
     });
-    // 여정 통화는 그대로 카드사 원화(토스 연동 인입 동작 유지)
+    const provider = await service.convertForTrip(billedTrip, {
+      amount: '25.5',
+      currency: 'USD',
+      occurredAt: PAID_AT,
+      providerKrwAmount: 35_500,
+    });
+    expect(provider).toMatchObject({
+      krwAmount: 35_500,
+      policyApplied: 'CARD_BILLED',
+      provisional: true,
+    });
+    expect(findFirst).not.toHaveBeenCalled();
+
+    // 카드사 원화가 없으면(직접 입력·지갑 연결) 시장 환율, 청구 확정 전 임시값
+    const market = await service.convertForTrip(billedTrip, {
+      amount: '25.5',
+      currency: 'USD',
+      occurredAt: PAID_AT,
+    });
+    expect(market).toMatchObject({
+      krwAmount: 35_200,
+      policyApplied: 'CARD_BILLED',
+      rate: '1380.500000',
+      rateUnit: 1,
+      rateSource: SOURCE,
+      rateAt: USD_AT,
+      provisional: true,
+      spotRateId: 'usd-1',
+    });
+
+    // 여정 통화도 같다(토스 연동 인입 동작 유지)
     const jpy = await service.convertForTrip(billedTrip, {
       amount: '2860',
       currency: 'JPY',

@@ -27,7 +27,7 @@ type Tx = Prisma.TransactionClient;
 
 /** 인입 대상 여정(행 잠금 후 다시 읽은 값) */
 export interface LockedTrip {
-  /** 여정 통화(C-32: 이 통화도 KRW도 아닌 거래는 시장 환율로 환산) */
+  /** 여정 통화(C-32: FIXED 여정에서 이 통화도 KRW도 아닌 거래는 시장 환율로 환산) */
   currency: string;
   fxPolicy: FxPolicy;
   /** 고시 단위당 원(FIXED) */
@@ -441,7 +441,7 @@ export class ImportService {
     for (const t of candidates) {
       const sourceTxHash = hashOf.get(t.id);
       if (sourceTxHash && known.has(sourceTxHash)) continue;
-      // 원화는 S2C fx(FxRatesService.convertForTrip)가 정한다. 여정 통화도 KRW도 아닌 외화는 시장 환율(C-32).
+      // 원화는 S2C fx(FxRatesService.convertForTrip)가 정한다. 여정 통화도 KRW도 아닌 외화는 고정 환율 대신 시장 환율(C-32).
       // 고시가 아직 없으면 다음 동기화에서 다시 시도한다
       let krw;
       try {

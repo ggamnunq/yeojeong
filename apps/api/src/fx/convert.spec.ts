@@ -83,11 +83,14 @@ describe('effectiveFxPolicy (C-32)', () => {
     }
   });
 
-  it('uses the market rate (SPOT_AT_PAYMENT) for any other foreign currency', () => {
-    for (const policy of ['SPOT_AT_PAYMENT', 'CARD_BILLED', 'FIXED'] as const) {
-      expect(effectiveFxPolicy(policy, 'JPY', 'USD')).toBe('SPOT_AT_PAYMENT');
-      expect(effectiveFxPolicy(policy, 'KRW', 'usd')).toBe('SPOT_AT_PAYMENT');
-    }
+  it('replaces only the fixed rate with the market rate for any other foreign currency', () => {
+    expect(effectiveFxPolicy('FIXED', 'JPY', 'USD')).toBe('SPOT_AT_PAYMENT');
+    expect(effectiveFxPolicy('FIXED', 'KRW', 'usd')).toBe('SPOT_AT_PAYMENT');
+    expect(effectiveFxPolicy('SPOT_AT_PAYMENT', 'JPY', 'USD')).toBe(
+      'SPOT_AT_PAYMENT',
+    );
+    // 카드사 원화가 있으면 그 값, 없을 때만 시장 환율(convertToKrw CARD_BILLED)
+    expect(effectiveFxPolicy('CARD_BILLED', 'JPY', 'USD')).toBe('CARD_BILLED');
   });
 });
 

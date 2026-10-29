@@ -60,7 +60,7 @@
 - **동일 사용자 중복 제거**: 계좌 출금 ↔ 그 계좌에 연결된 체크카드 승인(같은 원화·±2분) → 계좌 쪽 `sameUserDuplicateOfId`. 계좌 쪽이 이미 확정됐으면 반대로 카드 쪽을 뺀다.
 - **취소 매칭**: 원 승인 ref → 같은 결제수단·가맹점 키·통화·잔여 금액(정확히 같은 금액 → 최근 순).
 - **장부 반영**(`ImportService.importIntoTrip`, Trip·Membership `FOR SHARE`): ONGOING + 활성 멤버일 때만. 여정 기간 안의 승인 → `Expense(PENDING, AUTO)`(`(tripId, transactionId)` 유니크, `skipDuplicates`). 이번 창이 아니라 여정 기간 전체를 보므로 앞선 실패로 빠진 것도 채운다. 원 결제가 여정에 있는 취소 → 자식 Expense(부모 환율로 계산, 상태·결제자 = 부모), 부모 순액 재계산, 공동이면 같은 부담 인원으로 다시 나눔 + `REFUND_ATTACHED` + 중복 의심 재판정.
-- **원화**: S2C `FxRatesService.convertForTrip`(여정 환율 정책. 여정 통화도 KRW도 아닌 외화는 결제 시점 시장 환율, C-32 — `src/settlements/README.md` 계산 규칙)의 결과를 Expense `krwAmount`·`fxPolicyApplied`·`fxRate`(원통화 1단위당 원)·`fxRateUnit`(고시 단위)·`fxRateSource`·`fxRateAt`에 넣는다. 고시가 아직 없어 `FX_RATE_UNAVAILABLE`이면 그 거래만 미루고 다음 동기화에서 다시 시도한다.
+- **원화**: S2C `FxRatesService.convertForTrip`(여정 환율 정책. 여정 통화도 KRW도 아닌 외화는 고정 환율 대신 결제 시점 시장 환율, 카드사 원화 여정이면 카드사 원화 우선, C-32 — `src/settlements/README.md` 계산 규칙)의 결과를 Expense `krwAmount`·`fxPolicyApplied`·`fxRate`(원통화 1단위당 원)·`fxRateUnit`(고시 단위)·`fxRateSource`·`fxRateAt`에 넣는다. 고시가 아직 없어 `FX_RATE_UNAVAILABLE`이면 그 거래만 미루고 다음 동기화에서 다시 시도한다.
 - **가시성**: 인입은 PENDING만 만들고 결제자 외 응답은 하지 않는다. 결제수단·거래 원본은 본인 API에서만, 로그에는 ID만.
 
 ## 이벤트 (`transactions/trip-events.listener.ts`)
