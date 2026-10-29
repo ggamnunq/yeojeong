@@ -42,7 +42,37 @@ describe('ShellApp', () => {
   })
 })
 
+describe('ShellOnboarding leading (v1.6)', () => {
+  it('leading="close"는 왼쪽 ✕(닫기) — onClose, 없으면 onBack을 부른다', () => {
+    const onClose = vi.fn()
+    const onBack = vi.fn()
+    const { rerender } = render(
+      <ShellOnboarding leading="close" onClose={onClose} onBack={onBack}>
+        인증 대기
+      </ShellOnboarding>,
+    )
+    expect(screen.queryByRole('button', { name: '뒤로 가기' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '닫기' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    rerender(
+      <ShellOnboarding leading="close" onBack={onBack}>
+        인증 대기
+      </ShellOnboarding>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '닫기' }))
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('ShellSub', () => {
+  it('header type="close"(v1.6)면 TopHeader Close(구분선 없음)', () => {
+    const onClose = vi.fn()
+    render(<ShellSub header={{ type: 'close', title: '새 여정', onClose }}>본문</ShellSub>)
+    expect(screen.getByRole('banner').className).not.toContain('border-b')
+    fireEvent.click(screen.getByRole('button', { name: '닫기' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('기본은 TopHeader Back(구분선 없음, action 없음) + 첫 블록 위 16, 내비 없음', () => {
     const onBack = vi.fn()
     render(<ShellSub header={{ title: '지갑', onBack }}>본문</ShellSub>)

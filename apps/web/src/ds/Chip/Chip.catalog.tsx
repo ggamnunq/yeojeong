@@ -25,6 +25,18 @@ export default defineCatalog({
         <Variant name="Style=Tone · State=Selected">
           <Chip style="tone" label="확인 필요 2건" defaultSelected />
         </Variant>
+        <Variant name="Removable · State=Default">
+          <Chip removable label="확인 필요 2건" />
+        </Variant>
+        <Variant name="Removable · State=Selected (필터 해제)">
+          <Chip removable label="확인 필요 2건" aria-label="확인 필요 2건, 미확정만 보기 해제" defaultSelected />
+        </Variant>
+        <Variant name="Removable · Style=Tone · Selected">
+          <Chip removable style="tone" label="Day 2" defaultSelected />
+        </Variant>
+        <Variant name="Removable · State=Disabled">
+          <Chip removable label="확인 필요 2건" disabled />
+        </Variant>
         <Variant name="눌러서 선택">
           <div className="flex gap-2">
             {['준용', '민지', '서준', '태현'].map((n) => (

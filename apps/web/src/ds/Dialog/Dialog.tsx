@@ -1,10 +1,12 @@
 import { clsx } from 'clsx'
 import { useId, type ReactNode } from 'react'
-import { Button } from '../Button/Button'
+import { Button, type ButtonState } from '../Button/Button'
 import { useModalDialog } from '../useModalDialog'
 
 // Figma Dialog(24:8719) · Type=Default/Danger/SharedToPersonal. 되돌리기 어려운 결정 확인.
 // 폭 320, radius/xl, Elevation/3, 패딩 28/24/20/24 · 제목 H3 → 한 줄 Body/S(text/secondary) → 버튼 둘(Secondary M | Primary·Danger M, 간격 8).
+// v1.6: Body(기본 on) — 끄면 제목만(본문 한 줄 기본, 할 말이 제목으로 충분하면 생략). confirm State=Loading — 처리 중이면 confirmState="loading"
+// (스피너 + aria-busy, 누름 무시). 처리 중 취소·ESC를 막을지는 쓰는 쪽이 onCancel에서 정한다.
 export type DialogType = 'default' | 'danger' | 'shared-to-personal'
 
 // SharedToPersonal은 문구까지 정해진 변형이다(spec v1.3.1 C-09)
@@ -14,10 +16,24 @@ const SHARED_TO_PERSONAL = {
   confirmLabel: '바꾸기',
 }
 
-type DialogCopy = { cancelLabel?: ReactNode; className?: string } & (
-  | { type?: 'default' | 'danger'; title: ReactNode; message: ReactNode; confirmLabel: ReactNode }
+type DialogCopy = {
+  cancelLabel?: ReactNode
+  /** Figma Body: 본문 한 줄을 보일지. 기본 true. false거나 message가 없으면 제목만 */
+  body?: boolean
+  /** Figma confirm 노출 인스턴스의 State. loading = 처리 중(스피너, 누름 무시) */
+  confirmState?: ButtonState
+  className?: string
+} & (
+  | { type?: 'default' | 'danger'; title: ReactNode; message?: ReactNode; confirmLabel: ReactNode }
   | { type: 'shared-to-personal'; title?: ReactNode; message?: ReactNode; confirmLabel?: ReactNode }
 )
+
+/** 보일 본문 한 줄(Body off · 빈 문구면 undefined) */
+function messageOf(copy: DialogCopy): ReactNode {
+  if (copy.body === false) return undefined
+  const message = copy.message ?? (copy.type === 'shared-to-personal' ? SHARED_TO_PERSONAL.message : undefined)
+  return message === '' ? undefined : message
+}
 
 export type DialogPanelProps = DialogCopy & {
   onCancel?: () => void
@@ -27,9 +43,20 @@ export type DialogPanelProps = DialogCopy & {
 }
 
 /** 다이얼로그의 겉모습만(모달 동작 없음). Dialog 안에서 쓰고, 카탈로그에서 고정해 보여 줄 때 쓴다. */
-export function DialogPanel({ cancelLabel = '취소', onCancel, onConfirm, titleId, messageId, className, ...copy }: DialogPanelProps) {
+export function DialogPanel({
+  cancelLabel = '취소',
+  body = true,
+  confirmState,
+  onCancel,
+  onConfirm,
+  titleId,
+  messageId,
+  className,
+  ...copy
+}: DialogPanelProps) {
   const type: DialogType = copy.type ?? 'default'
   const preset = type === 'shared-to-personal' ? SHARED_TO_PERSONAL : undefined
+  const message = messageOf({ ...copy, body })
   return (
     <div
       className={clsx(
@@ -40,9 +67,11 @@ export function DialogPanel({ cancelLabel = '취소', onCancel, onConfirm, title
       <h2 id={titleId} className="text-h3 text-primary">
         {copy.title ?? preset?.title}
       </h2>
-      <p id={messageId} className="text-body-s text-secondary">
-        {copy.message ?? preset?.message}
-      </p>
+      {message != null && (
+        <p id={messageId} className="text-body-s text-secondary">
+          {message}
+        </p>
+      )}
       {/* Figma: 문구와 버튼 사이 spacer 12 + 간격 8×2 = 28 */}
       <div className="mt-5 flex gap-2">
         <Button type="secondary" size="m" label={cancelLabel} onClick={onCancel} className="min-w-0 flex-1" />
@@ -50,6 +79,7 @@ export function DialogPanel({ cancelLabel = '취소', onCancel, onConfirm, title
           type={type === 'danger' ? 'danger' : 'primary'}
           size="m"
           label={copy.confirmLabel ?? preset?.confirmLabel}
+          state={confirmState}
           onClick={onConfirm}
           className="min-w-0 flex-1"
         />
@@ -68,6 +98,7 @@ export type DialogProps = DialogCopy & {
 export function Dialog({ open, onCancel, onConfirm, className, ...copy }: DialogProps) {
   const titleId = useId()
   const messageId = useId()
+  const hasMessage = messageOf(copy) != null
   const { dialogProps } = useModalDialog(open, onCancel)
 
   return (
@@ -75,7 +106,7 @@ export function Dialog({ open, onCancel, onConfirm, className, ...copy }: Dialog
       {...dialogProps}
       role="alertdialog"
       aria-labelledby={titleId}
-      aria-describedby={messageId}
+      aria-describedby={hasMessage ? messageId : undefined}
       className={clsx(
         'group/dialog fixed inset-0 m-0 size-full max-h-none max-w-none overflow-hidden bg-transparent p-0 text-primary backdrop:bg-transparent',
         // 닫힐 때 애니메이션이 끝날 때까지 최상위 레이어에 남겨 둔다

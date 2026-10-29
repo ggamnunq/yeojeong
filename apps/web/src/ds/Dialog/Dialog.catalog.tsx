@@ -44,6 +44,19 @@ export default defineCatalog({
             </Variant>
           </div>
         </Sub>
+        <Sub title="v1.6 · body={false}(제목만) · confirmState=&quot;loading&quot;(처리 중)">
+          <div className="flex flex-wrap items-start gap-8 rounded-md bg-dim p-6">
+            <Variant name="body={false}">
+              <DialogPanel title="초대코드를 다시 만들까요?" confirmLabel="다시 만들기" body={false} />
+            </Variant>
+            <Variant name='confirmState="loading"'>
+              <DialogPanel {...COPY.default} confirmState="loading" />
+            </Variant>
+            <Variant name='type="danger" · body={false} · loading'>
+              <DialogPanel type="danger" title="멤버를 내보낼까요?" confirmLabel="내보내기" body={false} confirmState="loading" />
+            </Variant>
+          </div>
+        </Sub>
         <Sub title="동작 · 버튼 콜백 · ESC = 취소 · 딤 탭으로는 닫히지 않음 · 처음 포커스는 취소">
           <Row className="items-center">
             <Button type="secondary" size="m" label="여정 종료" onClick={() => setOpen('default')} />

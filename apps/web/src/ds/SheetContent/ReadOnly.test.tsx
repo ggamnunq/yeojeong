@@ -33,6 +33,28 @@ describe('SheetContentReadOnly', () => {
     expect(screen.getByText('나간 멤버')).toBeTruthy()
   })
 
+  it('type="refund"(v1.6): 결제·취소 톤 블록(취소는 −₩) + 결제자 · 부담 인원 n명 · 1인 ₩0, locked여도 버튼 없음', () => {
+    render(
+      <SheetContentReadOnly
+        type="refund"
+        amount={0}
+        detail="¥0 · 11.13 (금)"
+        locked
+        payment={{ time: '09:40', amount: 121330 }}
+        refunds={[{ time: '12:15', amount: 121330 }]}
+        payer={TAEHYUN}
+        participants={[MINJI, JUNYONG, TAEHYUN, SUBIN]}
+      />,
+    )
+    const block = screen.getByText('09:40').closest('dl')!
+    expect(block.textContent).toBe('결제09:40₩121,330취소12:15−₩121,330')
+    expect(screen.getByText('−₩121,330').className).toContain('text-secondary')
+    expect(screen.getByText('결제자')).toBeTruthy()
+    expect(screen.getByText('부담 인원 4명')).toBeTruthy()
+    expect(screen.getAllByText('₩0')).toHaveLength(2)
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
   it('changed면 상세 줄 끝 "변경됨", locked면 비활성 "변경 불가" 버튼', () => {
     render(<SheetContentReadOnly amount={1000} detail="d" changed locked payer={JUNYONG} participants={[JUNYONG]} perPerson="₩1,000" />)
     expect(screen.getByText('변경됨')).toBeTruthy()

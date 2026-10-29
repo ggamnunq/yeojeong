@@ -80,6 +80,25 @@ export default defineCatalog({
             </Variant>
           </div>
         </Sub>
+        <Sub title='type="close" (v1.6) · 흐름 닫기 — 생성 완료(HF-11) 등'>
+          <div className="flex flex-wrap gap-6">
+            <Variant name='type="close" (Center title off)'>
+              <Frame>
+                <TopHeader type="close" />
+              </Frame>
+            </Variant>
+            <Variant name='type="close" · title (Center title on)'>
+              <Frame>
+                <TopHeader type="close" title="새 여정" />
+              </Frame>
+            </Variant>
+            <Variant name="Shell/Sub 헤더 · divider={false}">
+              <Frame>
+                <TopHeader type="close" title="새 여정" divider={false} />
+              </Frame>
+            </Variant>
+          </div>
+        </Sub>
         <Sub title='type="logo" · 소속 여정 없음'>
           <Variant name='type="logo"'>
             <Frame>

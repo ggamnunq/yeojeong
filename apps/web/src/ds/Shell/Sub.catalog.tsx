@@ -2,7 +2,7 @@ import { defineCatalog } from '../../catalog/catalog'
 import { PhoneFrame } from '../../catalog/PhoneFrame'
 import { Row, SlotScreen, Variant } from '../../catalog/ui'
 import { Button } from '../Button/Button'
-import { IllustEmptyTrip } from '../Illust/Illust'
+import { EmptyState } from '../EmptyState/EmptyState'
 import { Input } from '../Input/Input'
 import { RowAccount } from '../Row/Account'
 import { RowAdd } from '../Row/Add'
@@ -42,18 +42,25 @@ export default defineCatalog({
             </ShellSub>
           </PhoneFrame>
         </Variant>
-        <Variant name="여정 없음 · header={{ type: 'logo' }} (HF-09)">
+        <Variant name="여정 없음 · header={{ type: 'logo' }} + EmptyState type=illust (HF-09)">
           <PhoneFrame>
             <ShellSub header={{ type: 'logo' }}>
               <div className="flex flex-1 flex-col items-center pt-38 pb-4">
-                <div className="flex flex-col items-center gap-7">
-                  <IllustEmptyTrip size={144} />
-                  <h2 className="text-center text-h2 text-primary">아직 참여한 여정이 없어요</h2>
-                </div>
+                <EmptyState type="illust" />
                 <div className="mt-auto flex w-full flex-col gap-2">
                   <Button label="여정 만들기" className="w-full" />
                   <Button type="secondary" label="초대코드로 참여" className="w-full" />
                 </div>
+              </div>
+            </ShellSub>
+          </PhoneFrame>
+        </Variant>
+        <Variant name="생성 완료 · header={{ type: 'close' }} (v1.6 · HF-11)">
+          <PhoneFrame>
+            <ShellSub header={{ type: 'close' }} cta={{ label: '여정으로 가기' }}>
+              <div className="flex flex-col items-center pt-30 text-center">
+                <h1 className="text-h2 text-primary">여정을 만들었어요</h1>
+                <p className="mt-2 text-body-m text-secondary">오사카 3박 4일</p>
               </div>
             </ShellSub>
           </PhoneFrame>

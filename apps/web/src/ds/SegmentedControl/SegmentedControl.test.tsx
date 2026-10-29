@@ -50,4 +50,27 @@ describe('SegmentedControl', () => {
     expect(checked('B')).toBe(true)
     expect(checked('D')).toBe(true)
   })
+
+  it('size="s"(v1.6)는 높이 32 · Label/S · 폭 176(2칸)/240(3칸), 기본 m은 높이 44 · FILL', () => {
+    const { rerender } = render(<SegmentedControl size="s" labels={['리스트', '타임라인']} aria-label="보기" />)
+    const group = screen.getByRole('radiogroup')
+    expect(group.className).toContain('h-8')
+    expect(group.className).toContain('w-44')
+    expect(screen.getByText('리스트').parentElement!.className).toContain('text-label-s')
+    rerender(<SegmentedControl size="s" labels={['전체', '공동', '개인']} aria-label="보기" />)
+    expect(screen.getByRole('radiogroup').className).toContain('w-60')
+    rerender(<SegmentedControl labels={['전체', '공동', '개인']} aria-label="보기" />)
+    expect(screen.getByRole('radiogroup').className).toContain('h-11')
+    expect(screen.getByRole('radiogroup').className).toContain('w-full')
+  })
+
+  it('disabledItems(v1.6 Disabled n)는 그 칸만 비활성 — 눌러도 바뀌지 않고 나머지는 동작한다', () => {
+    const onChange = vi.fn()
+    render(<SegmentedControl labels={['개인', '공동']} disabledItems={['second']} aria-label="구분" onChange={onChange} />)
+    expect((screen.getByRole('radio', { name: '공동' }) as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByRole('radio', { name: '개인' }) as HTMLInputElement).disabled).toBe(false)
+    fireEvent.click(screen.getByText('공동'))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(checked('개인')).toBe(true)
+  })
 })

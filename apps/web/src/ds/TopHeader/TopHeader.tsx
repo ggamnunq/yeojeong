@@ -7,11 +7,12 @@ import { IconButton } from '../IconButton/IconButton'
 import { Logo } from '../Logo/Logo'
 import { focusRing } from '../styles'
 
-// Figma TopHeader(24:7328) · Type=Group/Back/Logo × Dropdown=Closed/Open(v1.4, Group만) × Status badge · Menu.
+// Figma TopHeader(24:7328) · Type=Group/Back/Logo/Close(v1.6) × Dropdown=Closed/Open(v1.4, Group만) × Status badge · Menu · Center title(v1.6).
+// Close = 왼쪽 ✕(흐름 닫기 — 생성 완료 HF-11 등) + 가운데 제목(H3, 선택) + 오른쪽 40 균형 자리.
 // 높이 56(layout/header-height), 아래 1px border/default.
 // divider · groupNameSize는 Figma 세트 속성이 아니라 Shell/App·Sub 인스턴스의 덮어쓰기(구분선 끔 · 그룹명 H2, spec 9-2 미승격 후보)다.
 // 화면에서는 직접 쓰지 말고 Shell* 컴포넌트를 쓴다.
-export type TopHeaderType = 'group' | 'back' | 'logo'
+export type TopHeaderType = 'group' | 'back' | 'logo' | 'close'
 export type TopHeaderDropdown = 'closed' | 'open'
 
 type Click = MouseEventHandler<HTMLButtonElement>
@@ -52,14 +53,23 @@ export type TopHeaderLogoProps = {
   onMyClick?: Click
 }
 
+export type TopHeaderCloseProps = {
+  type: 'close'
+  /** Figma Center title + title: 넘기면 가운데 제목(H3)이 켜진다(Figma 기본 off) */
+  title?: ReactNode
+  onClose?: Click
+  /** ✕의 접근성 이름. 기본 "닫기" */
+  closeLabel?: string
+}
+
 export type TopHeaderProps = {
   /** 아래 1px 구분선. 기본 true, Shell 인스턴스는 false */
   divider?: boolean
   className?: string
-} & (TopHeaderGroupProps | TopHeaderBackProps | TopHeaderLogoProps)
+} & (TopHeaderGroupProps | TopHeaderBackProps | TopHeaderLogoProps | TopHeaderCloseProps)
 
-// Figma 좌우 패딩: Group 8/8 · Back 4/8 · Logo 20/8
-const PADDING = { group: 'pl-2', back: 'pl-1', logo: 'pl-5' } satisfies Record<TopHeaderType, string>
+// Figma 좌우 패딩: Group 8/8 · Back 4/8 · Logo 20/8 · Close 4/8
+const PADDING = { group: 'pl-2', back: 'pl-1', logo: 'pl-5', close: 'pl-1' } satisfies Record<TopHeaderType, string>
 
 export function TopHeader(props: TopHeaderProps) {
   return (
@@ -85,6 +95,22 @@ function Content(props: TopHeaderProps) {
         <h1 className="min-w-0 truncate text-h3 text-primary">{title}</h1>
         <Spacer />
         {action && <IconButton size="m" icon={action.icon ?? 'more'} label={action.label} onClick={action.onClick} />}
+      </>
+    )
+  }
+
+  if (props.type === 'close') {
+    const { title, onClose, closeLabel = '닫기' } = props
+    return (
+      <>
+        <IconButton size="m" icon="close" label={closeLabel} onClick={onClose} />
+        {title != null ? (
+          <h1 className="min-w-0 flex-1 truncate text-center text-h3 text-primary">{title}</h1>
+        ) : (
+          <Spacer />
+        )}
+        {/* Figma balance: 가운데 제목이 화면 가운데에 오도록 ✕와 같은 40 자리 */}
+        <span aria-hidden className="size-10 shrink-0" />
       </>
     )
   }

@@ -68,4 +68,17 @@ describe('TopHeader', () => {
     expect(screen.getByRole('button', { name: '마이페이지' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '그룹 구성원' })).toBeNull()
   })
+
+  it('close(v1.6): 왼쪽 ✕ + (title을 주면) 가운데 제목 H3, 지갑·마이는 없다', () => {
+    const onClose = vi.fn()
+    const { rerender } = render(<TopHeader type="close" onClose={onClose} />)
+    fireEvent.click(screen.getByRole('button', { name: '닫기' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('heading')).toBeNull()
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    rerender(<TopHeader type="close" title="새 여정" onClose={onClose} />)
+    const title = screen.getByRole('heading', { level: 1, name: '새 여정' })
+    expect(title.className).toContain('text-center')
+    expect(title.className).toContain('text-h3')
+  })
 })

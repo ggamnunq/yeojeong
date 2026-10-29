@@ -57,4 +57,21 @@ describe('Input', () => {
     expect(screen.getByText('닉네임').className).toContain('sr-only')
     expect(ref.current).toBe(input)
   })
+
+  it('suffix(v1.6)는 값 오른쪽 단위 "원"(text/secondary)이고 입력의 설명으로 읽힌다', () => {
+    render(<Input label="예산" defaultValue="1,200,000" suffix error helper="1원 이상 입력해 주세요" />)
+    const input = screen.getByLabelText('예산')
+    const suffix = screen.getByText('원')
+    expect(suffix.className).toContain('text-secondary')
+    expect(input.getAttribute('aria-describedby')).toBe(`${suffix.id} ${screen.getByText('1원 이상 입력해 주세요').id}`)
+  })
+
+  it('trailingIcon(v1.6)은 오른쪽 장식 아이콘 슬롯(기본 calendar), 없으면 그리지 않는다', () => {
+    const { container, rerender } = render(<Input label="장소" />)
+    expect(container.querySelectorAll('svg')).toHaveLength(0)
+    rerender(<Input label="장소" trailingIcon icon="marker" />)
+    const icon = container.querySelector('svg')!
+    expect(icon.getAttribute('aria-hidden')).toBe('true')
+    expect(icon.getAttribute('class')).toContain('text-icon-subtle')
+  })
 })
