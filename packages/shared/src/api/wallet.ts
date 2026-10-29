@@ -59,7 +59,19 @@ export interface WalletEntry {
 }
 
 /** GET /api/wallet/entries?cursor=&limit= (최신순) */
-export type WalletEntryListResponse = CursorPage<WalletEntry>;
+export interface WalletEntryListResponse extends CursorPage<WalletEntry> {
+  /**
+   * 이번 달(KST 1일 00:00 ~ 다음 달 1일 00:00, occurredAt 기준) 지갑 항목 원화 합(S7b, Q-51). 취소는 음수로 상계.
+   * 항목 원화는 krwAmount와 같은 규칙이고, krwAmount가 null인 항목은 결제 시점 매매기준율로 추정해 더한다(고시가 없으면 뺀다).
+   * 커서와 무관하게 전체 기준이며 모든 페이지에 같은 값을 준다(요청마다 다시 계산). 화면은 첫 페이지 값을 쓰면 된다
+   */
+  monthTotalKrw: number;
+  /**
+   * 합계에 추정이 섞였는지 → "약 ₩…". 연결 없는 외화 항목의 매매기준율 추정 원화를 썼거나,
+   * krwAmount가 null이라 추정했거나 고시가 없어 뺀 항목이 있으면 true. KRW·여정 결제 원화·카드사·제공자 원화만이면 false
+   */
+  monthTotalEstimated: boolean;
+}
 
 /** POST /api/wallet/entries — 지갑에 결제 직접 추가. 필수는 amount뿐 */
 export interface CreateWalletEntryRequest {

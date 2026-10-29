@@ -157,6 +157,7 @@ describe('Auth (e2e)', () => {
       hasProfileImage: true,
       paymentMethodCount: 0,
       hasExpiredConnection: false,
+      walletEntryCount: 0,
     });
     const session = cookies(created).yj_session;
     expect(session).toMatch(/HttpOnly/);

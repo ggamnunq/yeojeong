@@ -205,6 +205,8 @@ export function createFakeAuthPrisma() {
     ),
     paymentMethod: pick(new Table()),
     paymentConnection: pick(new Table()),
+    // Me.walletEntryCount(S7b)
+    transaction: pick(new Table()),
     membership: pick(new Table()),
     $queryRaw: () => Promise.resolve([]),
     $transaction: <T>(fn: (tx: unknown) => Promise<T>) => fn(db),
