@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router'
 import { keys } from '../../../api'
 import { useAccountLink } from '../../../app/features'
 import { paths } from '../../../app/paths'
+import { appVersionLabel } from '../../../app/version'
 import { useSession } from '../../../app/session'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { Icon, ShellSub, Tag } from '../../../ds'
@@ -146,6 +147,8 @@ function MeContent({
             개인정보처리방침
           </Link>
         </p>
+        {/* 앱 버전(빌드 값). 마이페이지에만 둔다 */}
+        <p className="mt-1 text-center text-caption text-tertiary">{appVersionLabel()}</p>
       </div>
     </>
   )
