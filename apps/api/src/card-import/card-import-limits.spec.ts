@@ -1,4 +1,8 @@
-import { cooldownUntil, lockRiskDecision } from './card-import-limits.js';
+import {
+  cooldownUntil,
+  lockoutAckAvailableAt,
+  lockRiskDecision,
+} from './card-import-limits.js';
 
 // 현대·하나 잠김 위험 카운터(S8c) 판정. 시각은 고정값만 쓴다
 const T = new Date('2026-11-13T06:00:00Z');
@@ -12,6 +16,10 @@ describe('lock-risk counter (Hyundai·Hana, S8c)', () => {
     expect(lockRiskDecision(2, true)).toBe('LOCKED');
     expect(lockRiskDecision(2, false)).toBe('LOCKED');
     expect(lockRiskDecision(5, true)).toBe('LOCKED');
+  });
+
+  it('accepts the lockout ack from 30 minutes after the last failure', () => {
+    expect(lockoutAckAvailableAt(T)).toEqual(at(30));
   });
 
   it('does not change the general 3-in-30-minutes cooldown', () => {

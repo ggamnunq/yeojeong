@@ -18,6 +18,7 @@ import {
   resultMeta,
   selectAllState,
   toggleAll,
+  classifyLockoutAckError,
   visibleOrganizations,
 } from './rules'
 
@@ -165,6 +166,19 @@ describe('조회 실패 → 화면(L-0 표)', () => {
     expect(
       classifyFetchError(apiError('CARD_IMPORT_LOGIN_LOCKED', 429, { failedAttempts: 2, action: 'CHECK_CARD_COMPANY_SITE' }), now),
     ).toEqual({ to: 'login-locked', attempts: 2 })
+  })
+
+  it('tells the two lockout-ack 429s apart by code', () => {
+    expect(classifyLockoutAckError(apiError('CARD_LOCKOUT_ACK_TOO_EARLY', 429, { retryAfter: '2026-11-13T06:42:00Z', retryAfterSec: 720 }), now)).toEqual({
+      to: 'too-early',
+      retryAfter: '2026-11-13T06:42:00Z',
+    })
+    expect(classifyLockoutAckError(apiError('CARD_LOCKOUT_ACK_DAILY_LIMIT', 429, { retryAfter: '2026-11-13T15:00:00Z', retryAfterSec: 30600 }), now)).toEqual({
+      to: 'daily-limit',
+      retryAfter: '2026-11-13T15:00:00Z',
+    })
+    expect(classifyLockoutAckError(apiError('CARD_LOCKOUT_ACK_NOT_NEEDED', 409), now)).toEqual({ to: 'not-needed' })
+    expect(classifyLockoutAckError(new Error('x'), now)).toEqual({ to: 'retry-toast' })
   })
 
   it('maps the rest', () => {

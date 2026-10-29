@@ -7,6 +7,7 @@ import {
   type CardApprovalItem,
   type CardImportConfig,
   type CardImportOrganization,
+  type CardLockoutAckRequest,
   type ConsentStatusResponse,
   type ConsentSubmitRequest,
   type FetchCardApprovalsRequest,
@@ -37,7 +38,11 @@ import { clock } from '../payments/clock'
 //       1회 → 400(CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID { failedAttempts: 1 }),
 //       그 뒤 새 조회는 acknowledgeLockRisk: true가 없으면 409 CARD_LOCK_RISK_CONFIRM_REQUIRED, 확인하고 또 틀리면
 //       429 CARD_IMPORT_LOGIN_LOCKED { failedAttempts, action: 'CHECK_CARD_COMPANY_SITE' }(retryAfter 없음, 이후 계속 잠김).
-//       성공해야만 0으로(서버는 7일 파기 배치로도 풀린다 — 목은 resetCardImportMock으로 되돌린다)
+//       성공해야만 0으로(서버는 7일 파기 배치로도 풀린다 — 목은 resetCardImportMock으로 되돌린다).
+//     잠김 해제 확인 POST /api/card-import/lockout/ack {organization}(현대·하나만, 아니면 400):
+//       카운터 2 미만 → 409 CARD_LOCKOUT_ACK_NOT_NEEDED · 잠긴 직후(목은 lockedAt + 30분 전) → 429 CARD_LOCKOUT_ACK_TOO_EARLY { retryAfter } ·
+//       오늘 2회 넘으면 429 CARD_LOCKOUT_ACK_DAILY_LIMIT { retryAfter } · 그 밖 204(카운터 0).
+//       목 시나리오: resetCardImportMock({ lockedMinutesAgo })로 잠긴 상태(카운터 2, 그만큼 전에 잠김)에서 시작한다
 //   그 밖            → OK(Figma HF-56 샘플: 전액 취소 2행·비슷한 기록·추가됨·부분 취소·기간 밖·원 승인 없는 취소)
 //   하루 10회를 넘기면 429 CARD_IMPORT_RATE_LIMITED. 저장은 itemToken이 결과 그대로일 때만(아니면 410 CARD_IMPORT_RESULT_EXPIRED)
 // 동의: 처음에는 CARD_IMPORT 동의가 없다(config.consent.valid = false). POST /api/consents stage CARD_IMPORT로 동의한다.
@@ -63,14 +68,16 @@ const ORGANIZATIONS: CardImportOrganization[] = [
 ]
 
 /** 테스트에서 처음 상태로(resetMockDb도 같은 값으로 되돌린다) */
-export function resetCardImportMock(options: { consented?: boolean } = {}) {
+export function resetCardImportMock(options: { consented?: boolean; lockedMinutesAgo?: number } = {}) {
   db.cardImportState = {
     consentAgreedAt: options.consented ? new Date().toISOString() : null,
     consentVersion: options.consented ? CONSENT_VERSION : null,
     requiredVersion: CONSENT_VERSION,
     startedToday: 0,
     loginFailures: 0,
-    lockRiskFailures: 0,
+    lockRiskFailures: options.lockedMinutesAgo === undefined ? 0 : 2,
+    lockedAt: options.lockedMinutesAgo === undefined ? undefined : Date.now() - options.lockedMinutesAgo * 60_000,
+    lockoutAcksToday: 0,
     importedKeys: [],
     twoWayTokens: [],
     remaining: null,
@@ -267,7 +274,11 @@ export const handlers: HttpHandler[] = [
     if (org.requiresCardNo) {
       const lockRisk = state().lockRiskFailures ?? 0
       const locked = (failedAttempts: number) =>
-        mockError('CARD_IMPORT_LOGIN_LOCKED', 429, { failedAttempts, action: 'CHECK_CARD_COMPANY_SITE' })
+        mockError('CARD_IMPORT_LOGIN_LOCKED', 429, {
+          failedAttempts,
+          action: 'CHECK_CARD_COMPANY_SITE',
+          ackAvailableAt: new Date((state().lockedAt ?? Date.now()) + 1_800_000).toISOString(),
+        })
       if (lockRisk >= 2) return locked(lockRisk)
       if (lockRisk >= 1 && body.acknowledgeLockRisk !== true) {
         return mockError('CARD_LOCK_RISK_CONFIRM_REQUIRED', 409, { failedAttempts: lockRisk })
@@ -276,7 +287,10 @@ export const handlers: HttpHandler[] = [
       const code = failed[body.loginId as keyof typeof failed]
       if (code) {
         state().lockRiskFailures = lockRisk + 1
-        if (lockRisk + 1 >= 2) return locked(lockRisk + 1)
+        if (lockRisk + 1 >= 2) {
+          state().lockedAt = Date.now()
+          return locked(lockRisk + 1)
+        }
         return mockError(code, 400, { failedAttempts: lockRisk + 1 })
       }
       // 성공(결과를 받는 경우)만 0으로 — 카드사 쪽 문제(locked · down)는 그대로 둔다
@@ -342,6 +356,29 @@ export const handlers: HttpHandler[] = [
     })
     const created = result.filter((r) => r.created).length
     return HttpResponse.json({ items: result, created, skipped: result.length - created, linked: 0 }, { status: 201 })
+  }),
+
+  api.post<NoContent, CardLockoutAckRequest>('/api/card-import/lockout/ack', async ({ request }) => {
+    const denied = denyUnlessAuthenticated()
+    if (denied) return denied
+    const status = consentStatus()
+    if (!status.valid) return mockError('CONSENT_REQUIRED', 403, { missing: status.missing, required: status.required })
+    const { organization } = await request.json()
+    if (!ORGANIZATIONS.some((o) => o.code === organization && o.requiresCardNo)) {
+      return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'organization', code: 'isIn', message: '잠김을 풀 수 없는 카드사예요' }] })
+    }
+    if ((state().lockRiskFailures ?? 0) < 2) return mockError('CARD_LOCKOUT_ACK_NOT_NEEDED')
+    const available = (state().lockedAt ?? 0) + 1_800_000
+    if (available > Date.now()) return mockError('CARD_LOCKOUT_ACK_TOO_EARLY', 429, retryAfter(Math.ceil((available - Date.now()) / 1000)))
+    if ((state().lockoutAcksToday ?? 0) >= 2) {
+      // 다음 KST 자정(기기 시각 기준 — 한도 시각은 기기 시각을 쓴다)
+      const KST = 9 * 3_600_000
+      const midnight = Math.floor((Date.now() + KST) / DAY_MS) * DAY_MS + DAY_MS - KST
+      return mockError('CARD_LOCKOUT_ACK_DAILY_LIMIT', 429, retryAfter(Math.max(1, Math.ceil((midnight - Date.now()) / 1000))))
+    }
+    state().lockoutAcksToday = (state().lockoutAcksToday ?? 0) + 1
+    state().lockRiskFailures = 0
+    return noContent()
   }),
 
   // 동의 저장은 지갑 목(features/wallet/mocks.ts)이 FIN_LINK를 맡는다. 이 핸들러가 파일 순서상 먼저 돌고

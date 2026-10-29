@@ -29,10 +29,27 @@ export const CARD_IMPORT_LOGIN_LIMIT = { FAILURES: 3, WINDOW_SECONDS: 1800, COOL
  * - 1회 실패 뒤 새 조회는 요청에 acknowledgeLockRisk: true가 있어야 한다(없으면 409 CARD_LOCK_RISK_CONFIRM_REQUIRED) —
  *   화면이 "한 번 더 틀리면 잠길 수 있어요"를 확인받고 보낸다. acknowledgeLockRisk는 카운터가 1일 때만 의미가 있다.
  * - FAILURES회째 실패 응답부터 429 CARD_IMPORT_LOGIN_LOCKED(시간 제한 없음, retryAfter 없음). 성공할 때까지 막는다.
- * - 카운터는 로그인에 성공해야만 0이 된다. 다만 행은 마지막 실패 뒤 7일이 지나면 파기 배치(CARD_IMPORT_COUNTERS)가 지우므로
+ * - 카운터는 로그인에 성공하거나, 사용자가 카드사 홈페이지에서 로그인을 확인했다고 밝힐 때(POST /api/card-import/lockout/ack,
+ *   CARD_IMPORT_LOCKOUT_ACK_LIMIT)만 0이 된다. 그 밖에 행은 마지막 실패 뒤 7일이 지나면 파기 배치(CARD_IMPORT_COUNTERS)가 지우므로
  *   그때 풀린다(그 사이 사용자가 카드사에서 직접 확인했다고 본다)
  */
 export const CARD_IMPORT_LOCK_RISK_LIMIT = { FAILURES: 2 } as const;
+/**
+ * POST /api/card-import/lockout/ack(잠김 해제 확인): 마지막 실패 뒤 COOLDOWN_SECONDS가 지나야 받는다(그 전엔 429 CARD_LOCKOUT_ACK_TOO_EARLY
+ * { retryAfter }), 사용자당 KST 하루 DAILY회(넘으면 429 CARD_LOCKOUT_ACK_DAILY_LIMIT { retryAfter = 다음 KST 자정 })
+ */
+export const CARD_IMPORT_LOCKOUT_ACK_LIMIT = { COOLDOWN_SECONDS: 1800, DAILY: 2 } as const;
+
+/**
+ * POST /api/card-import/lockout/ack — 현대·하나(requiresCardNo)에서 CARD_IMPORT_LOGIN_LOCKED가 난 뒤, 사용자가 카드사 홈페이지에서
+ * 로그인을 직접 확인했다고 밝히면 그 카드사 잠김 위험 카운터를 0으로 한다. 204.
+ * 400 VALIDATION_FAILED(현대·하나가 아니거나 CARD_NUMBER_LOGIN 꺼짐) · 409 CARD_LOCKOUT_ACK_NOT_NEEDED(카운터 2 미만) ·
+ * 429 CARD_LOCKOUT_ACK_TOO_EARLY { retryAfter }(마지막 실패 뒤 30분 전) · 429 CARD_LOCKOUT_ACK_DAILY_LIMIT(하루 2회 초과). 동의(CARD_IMPORT)·CSRF 필요
+ */
+export interface CardLockoutAckRequest {
+  /** CardImportOrganization.code(현대 0302 · 하나 0313) */
+  organization: string;
+}
 
 /** 429 CARD_IMPORT_LOGIN_LOCKED의 details. 화면은 action을 보고 안내 문구를 고른다(문구는 화면이 정한다) */
 export interface CardLoginLockedDetails extends Record<string, unknown> {
@@ -40,6 +57,8 @@ export interface CardLoginLockedDetails extends Record<string, unknown> {
   failedAttempts: number;
   /** 사용자가 할 일: 카드사 홈페이지에서 아이디·비밀번호·카드 비밀번호를 확인한다 */
   action: 'CHECK_CARD_COMPANY_SITE';
+  /** 이 시각(ISO 8601 UTC)부터 "확인했어요"(POST /api/card-import/lockout/ack)를 받는다 = 마지막 실패 + 30분. 재시도 시각이 아니다 */
+  ackAvailableAt: string;
 }
 /** "비슷한 기록" 판정: 같은 통화·같은 금액의 직접 입력 지갑 항목이 승인 시각 ±N분 안에 있으면 similarManualEntryId */
 export const CARD_IMPORT_SIMILAR_WINDOW_MINUTES = 30;

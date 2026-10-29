@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpStatus,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import { CardImportConsentGuard } from './card-import-consent.guard.js';
 import { CardImportService } from './card-import.service.js';
 import {
   CardImportConfigDto,
+  CardLockoutAckDto,
   FetchCardApprovalsDto,
   FetchCardApprovalsResponseDto,
 } from './dto/card-import.dto.js';
@@ -88,5 +90,33 @@ export class CardImportController {
     @Body() body: FetchCardApprovalsDto,
   ): Promise<FetchCardApprovalsResponse> {
     return this.cardImport.fetch(user.id, body);
+  }
+
+  @ApiOperation({
+    summary: '현대·하나 잠김 해제 확인',
+    description:
+      'CARD_IMPORT_LOGIN_LOCKED 뒤 사용자가 카드사 홈페이지에서 로그인을 확인했다고 밝히면 그 카드사 잠김 위험 카운터를 0으로 한다. ' +
+      '마지막 실패 30분 뒤부터, 사용자당 하루(KST) 2회. 접근 기록 CARD_LOCKOUT_ACK(기관 코드만).',
+  })
+  @ApiErrorResponse(400, 'VALIDATION_FAILED')
+  @ApiErrorResponse(403, 'CONSENT_REQUIRED', 'CSRF_REJECTED')
+  @ApiErrorResponse(
+    409,
+    'CARD_LOCKOUT_ACK_NOT_NEEDED',
+    'CARD_IMPORT_IN_PROGRESS',
+  )
+  @ApiErrorResponse(
+    429,
+    'CARD_LOCKOUT_ACK_TOO_EARLY',
+    'CARD_LOCKOUT_ACK_DAILY_LIMIT',
+  )
+  @UseGuards(CardImportConsentGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('lockout/ack')
+  ackLockout(
+    @CurrentUser() user: AuthUser,
+    @Body() body: CardLockoutAckDto,
+  ): Promise<void> {
+    return this.cardImport.ackLockout(user.id, body.organization);
   }
 }

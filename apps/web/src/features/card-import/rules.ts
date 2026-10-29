@@ -253,6 +253,28 @@ export function classifyFetchError(error: unknown, now: number): FetchFailure {
   }
 }
 
+/** 잠김 해제 확인(lockout/ack) 실패 → 화면 처리. retryAfter = ISO(UTC) */
+export type LockoutAckFailure =
+  | { to: 'too-early'; retryAfter: string }
+  | { to: 'daily-limit'; retryAfter: string }
+  | { to: 'not-needed' }
+  | { to: 'retry-toast' }
+
+/** POST /card-import/lockout/ack 실패를 나눈다(두 429는 코드로 구분한다). now = 기기 시각(epoch ms) */
+export function classifyLockoutAckError(error: unknown, now: number): LockoutAckFailure {
+  if (!isApiError(error)) return { to: 'retry-toast' }
+  switch (error.code) {
+    case 'CARD_LOCKOUT_ACK_TOO_EARLY':
+      return { to: 'too-early', retryAfter: retryAt(error, now) }
+    case 'CARD_LOCKOUT_ACK_DAILY_LIMIT':
+      return { to: 'daily-limit', retryAfter: retryAt(error, now) }
+    case 'CARD_LOCKOUT_ACK_NOT_NEEDED':
+      return { to: 'not-needed' }
+    default:
+      return { to: 'retry-toast' }
+  }
+}
+
 /** 서버 연속 실패 수(details.failedAttempts), 없으면 1 */
 function failedAttempts(error: unknown): number {
   const attempts = Number(detail(error, 'failedAttempts'))

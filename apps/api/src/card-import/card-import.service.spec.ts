@@ -102,6 +102,7 @@ function setup(
     }),
     closeTwoWay: vi.fn().mockResolvedValue(undefined),
     recordCodefCall: vi.fn().mockResolvedValue(undefined),
+    ackLockout: vi.fn().mockResolvedValue(undefined),
     loginFailed: vi.fn(
       (_user: string, _org: string, _now: Date, code = 'CARD_LOGIN_FAILED') =>
         Promise.reject(
@@ -700,6 +701,32 @@ describe('CardImportService.fetch (direct)', () => {
     });
     await codeOf(service.fetch(USER, hyundaiRequest(), NOW));
     expect(limits.loginFailed).not.toHaveBeenCalled();
+  });
+
+  it('releases the lock only for Hyundai·Hana with CARD_NUMBER_LOGIN on, inside the user lock (S8c lockout ack)', async () => {
+    const { service, limits, release, http } = setup({});
+    await service.ackLockout(USER, '0302', NOW);
+    expect(limits.acquire).toHaveBeenCalledWith(USER, NOW);
+    expect(limits.ackLockout).toHaveBeenCalledWith(USER, '0302', NOW);
+    expect(release).toHaveBeenCalledTimes(1);
+    for (const organization of ['0306', '9999']) {
+      expect(await codeOf(service.ackLockout(USER, organization, NOW))).toBe(
+        'VALIDATION_FAILED',
+      );
+    }
+    limits.ackLockout.mockRejectedValueOnce(
+      AppException.of('CARD_LOCKOUT_ACK_NOT_NEEDED'),
+    );
+    expect(await codeOf(service.ackLockout(USER, '0313', NOW))).toBe(
+      'CARD_LOCKOUT_ACK_NOT_NEEDED',
+    );
+    expect(release).toHaveBeenCalledTimes(2);
+    const off = setup({}, { cardNumberLogin: false });
+    expect(await codeOf(off.service.ackLockout(USER, '0302', NOW))).toBe(
+      'VALIDATION_FAILED',
+    );
+    expect(off.limits.ackLockout).not.toHaveBeenCalled();
+    expect(http.calls).toHaveLength(0);
   });
 
   it('passes the lock-risk acknowledgement to the start check only for Hyundai·Hana (S8c)', async () => {

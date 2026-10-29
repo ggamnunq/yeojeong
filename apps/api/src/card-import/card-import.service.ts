@@ -429,6 +429,35 @@ export class CardImportService {
     }
   }
 
+  // ─── 잠김 해제 확인(현대·하나) ───
+
+  /**
+   * POST /api/card-import/lockout/ack: 사용자가 카드사 홈페이지에서 로그인을 확인했다고 밝히면 그 카드사 잠김 위험 카운터를 0으로.
+   * 현대·하나(CARD_NUMBER_LOGIN 켜짐)만. 조회와 같은 사용자 잠금 안에서 한다(진행 중 조회의 실패 집계와 겹치지 않게)
+   */
+  async ackLockout(
+    userId: string,
+    organization: string,
+    now = new Date(),
+  ): Promise<void> {
+    const org = organizationOf(organization, this.codefConfig.cardNumberLogin);
+    if (!org?.requiresCardNo) {
+      throw new ValidationFailedError([
+        {
+          path: 'organization',
+          code: 'isIn',
+          message: '잠김을 풀 수 없는 카드사예요',
+        },
+      ]);
+    }
+    const release = await this.limits.acquire(userId, now);
+    try {
+      await this.limits.ackLockout(userId, org.code, now);
+    } finally {
+      await release();
+    }
+  }
+
   /**
    * 카드번호 로그인 필드: 지금 받는 카드사가 그것을 요구할 때만(현대·하나 — env CARD_NUMBER_LOGIN이 켜져 있어야 org가 나온다) 받는다. 아니면 400.
    * 카드번호는 숫자 14~19자리 + Luhn(isValidCardNumber)일 때만 받는다. 에러에는 값을 넣지 않는다(경로·코드·고정 문구만).

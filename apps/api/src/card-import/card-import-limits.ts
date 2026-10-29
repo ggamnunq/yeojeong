@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   CARD_IMPORT_FETCH_LIMIT,
   CARD_IMPORT_LOCK_RISK_LIMIT,
+  CARD_IMPORT_LOCKOUT_ACK_LIMIT,
   CARD_IMPORT_LOGIN_LIMIT,
   type CardImportRetryDetails,
   type CardLoginLockedDetails,
@@ -226,11 +227,13 @@ export class CardImportLimits {
   ) {
     const row = await this.prisma.cardImportLoginFailure.findUnique({
       where: { userId_organization: { userId, organization } },
-      select: { lockRiskFailures: true },
+      select: { lockRiskFailures: true, lockRiskLastFailedAt: true },
     });
     const failures = row?.lockRiskFailures ?? 0;
     const decision = lockRiskDecision(failures, acknowledged);
-    if (decision === 'LOCKED') throw lockedError(failures);
+    if (decision === 'LOCKED') {
+      throw lockedError(failures, row?.lockRiskLastFailedAt ?? new Date(0));
+    }
     if (decision === 'CONFIRM') {
       throw AppException.of('CARD_LOCK_RISK_CONFIRM_REQUIRED', {
         details: { failedAttempts: failures },
@@ -300,9 +303,70 @@ export class CardImportLimits {
       RETURNING lock_risk_failures AS failures`;
     const failures = row?.failures ?? 1;
     if (failures >= CARD_IMPORT_LOCK_RISK_LIMIT.FAILURES) {
-      throw lockedError(failures);
+      throw lockedError(failures, now);
     }
     throw AppException.of(code, { details: { failedAttempts: failures } });
+  }
+
+  /**
+   * 잠김 해제 확인(현대·하나, POST /api/card-import/lockout/ack): 사용자가 카드사 홈페이지에서 로그인을 확인했다고 밝히면
+   * 그 카드사 잠김 위험 카운터를 0으로 한다. 순서: 카운터 2 미만이면 409 → 마지막 실패 30분 전이면 429 CARD_LOCKOUT_ACK_TOO_EARLY(retryAfter) →
+   * 오늘(KST) 2회 넘으면 429 CARD_LOCKOUT_ACK_DAILY_LIMIT. 0으로 바꾸기와 접근 기록(CARD_LOCKOUT_ACK, 기관 코드만)은 한 트랜잭션.
+   * 호출하는 쪽이 사용자 잠금(acquire) 안에서 부른다
+   */
+  async ackLockout(
+    userId: string,
+    organization: string,
+    now = new Date(),
+  ): Promise<void> {
+    const row = await this.prisma.cardImportLoginFailure.findUnique({
+      where: { userId_organization: { userId, organization } },
+      select: { lockRiskFailures: true, lockRiskLastFailedAt: true },
+    });
+    if (
+      !row ||
+      row.lockRiskFailures < CARD_IMPORT_LOCK_RISK_LIMIT.FAILURES ||
+      !row.lockRiskLastFailedAt
+    ) {
+      throw AppException.of('CARD_LOCKOUT_ACK_NOT_NEEDED');
+    }
+    const available = lockoutAckAvailableAt(row.lockRiskLastFailedAt);
+    if (available > now) {
+      throw AppException.of('CARD_LOCKOUT_ACK_TOO_EARLY', {
+        details: retryDetails(available, now),
+      });
+    }
+    const acksToday = await this.prisma.accessLog.count({
+      where: {
+        userId,
+        action: 'CARD_LOCKOUT_ACK',
+        at: { gte: new Date(kstDay(now).getTime() - KST_OFFSET_MS) },
+      },
+    });
+    if (acksToday >= CARD_IMPORT_LOCKOUT_ACK_LIMIT.DAILY) {
+      throw AppException.of('CARD_LOCKOUT_ACK_DAILY_LIMIT', {
+        details: retryDetails(nextKstMidnight(now), now),
+      });
+    }
+    await this.prisma.$transaction([
+      this.prisma.cardImportLoginFailure.updateMany({
+        where: {
+          userId,
+          organization,
+          lockRiskFailures: { gte: CARD_IMPORT_LOCK_RISK_LIMIT.FAILURES },
+        },
+        data: { lockRiskFailures: 0 },
+      }),
+      this.prisma.accessLog.create({
+        data: {
+          userId,
+          action: 'CARD_LOCKOUT_ACK',
+          resourceType: 'USER',
+          resourceId: userId,
+          details: { organization },
+        },
+      }),
+    ]);
   }
 
   /** 로그인에 성공하면(결과를 받았거나 추가 인증까지 갔으면) 연속 실패를 지운다(잠김 위험 카운터 포함) */
@@ -539,10 +603,19 @@ export function lockRiskDecision(
   return 'OK';
 }
 
-function lockedError(failures: number): AppException {
+/** 잠김 해제 확인(lockout/ack)을 받기 시작하는 시각 = 마지막 실패 + 30분 */
+export function lockoutAckAvailableAt(lastFailedAt: Date): Date {
+  return new Date(
+    lastFailedAt.getTime() +
+      CARD_IMPORT_LOCKOUT_ACK_LIMIT.COOLDOWN_SECONDS * 1000,
+  );
+}
+
+function lockedError(failures: number, lastFailedAt: Date): AppException {
   const details: CardLoginLockedDetails = {
     failedAttempts: failures,
     action: 'CHECK_CARD_COMPANY_SITE',
+    ackAvailableAt: lockoutAckAvailableAt(lastFailedAt).toISOString(),
   };
   return AppException.of('CARD_IMPORT_LOGIN_LOCKED', { details });
 }

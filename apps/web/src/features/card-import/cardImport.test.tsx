@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiProvider, isApiError } from '../../api'
 import { server } from '../../mocks/server'
 import { createTestQueryClient } from '../../test/render'
-import { cardImportConfigQuery, fetchCardApprovals, importWalletEntries, revocableConsentsQuery, submitCardImportConsent, withdrawConsent } from './api'
+import { db } from '../../mocks/data'
+import { ackCardLockout, cardImportConfigQuery, fetchCardApprovals, importWalletEntries, revocableConsentsQuery, submitCardImportConsent, withdrawConsent } from './api'
 import { CardImportKeyPinError, encryptCardPassword, pinPolicy, publicKeyFingerprint } from './crypto'
 import { CardLoginInputError } from './cardLogin'
 import { buildFetchRequest, cardImportOf, useFetchCardApprovals } from './hooks'
@@ -257,6 +258,27 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     expect(client.getMutationCache().getAll()).toHaveLength(0)
     expect(JSON.stringify(client.getQueryCache().getAll().map((q) => q.state))).not.toContain(PAN)
     expect(JSON.stringify({ ...sessionStorage, ...localStorage }) + window.location.href).not.toContain(PAN)
+  })
+
+  it('covers the lockout ack scenarios: too early, released, not needed, daily limit (S8c)', async () => {
+    const card = { loginCardNo: '5555555555554444', encryptedCardPassword: 'Q0lQSEVSVEVYVA==' }
+    resetCardImportMock({ consented: true, lockedMinutesAgo: 1 })
+    expect(await errorCode(ackCardLockout('0306'))).toBe('VALIDATION_FAILED')
+    const early = await ackCardLockout('0302').catch((e: unknown) => e)
+    expect(early).toMatchObject({ code: 'CARD_LOCKOUT_ACK_TOO_EARLY', details: { retryAfter: expect.any(String) } })
+    resetCardImportMock({ consented: true, lockedMinutesAgo: 31 })
+    const locked = await fetchCardApprovals({ ...body('me'), organization: '0302', ...card }).catch((e: unknown) => e)
+    expect(locked).toMatchObject({ code: 'CARD_IMPORT_LOGIN_LOCKED', details: { ackAvailableAt: expect.any(String) } })
+    await ackCardLockout('0302')
+    expect(await errorCode(ackCardLockout('0302'))).toBe('CARD_LOCKOUT_ACK_NOT_NEEDED')
+    // 풀린 뒤에는 확인 없이 다시 조회할 수 있다
+    expect((await fetchCardApprovals({ ...body('me'), organization: '0302', ...card })).status).toBe('OK')
+    // 하루 2회까지
+    for (const expected of [null, 'CARD_LOCKOUT_ACK_DAILY_LIMIT']) {
+      db.cardImportState.lockRiskFailures = 2
+      db.cardImportState.lockedAt = Date.now() - 31 * 60_000
+      expect(await errorCode(ackCardLockout('0302'))).toBe(expected)
+    }
   })
 
   it('pins the CODEF public key fingerprint when the build provides one (L4)', async () => {

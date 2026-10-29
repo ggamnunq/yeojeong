@@ -331,6 +331,10 @@ export type MockCardImportState = {
   loginFailures: number
   /** 현대·하나 잠김 위험 실패 수(S8c, 없으면 0). 1 이상이면 acknowledgeLockRisk 필요, 2 이상이면 쿨다운 */
   lockRiskFailures?: number
+  /** 잠긴 시각(epoch ms, 잠김 해제 확인은 +30분부터) */
+  lockedAt?: number
+  /** 오늘 잠김 해제 확인 횟수(하루 2회) */
+  lockoutAcksToday?: number
   /** 저장한 importKey */
   importedKeys: string[]
   twoWayTokens: string[]

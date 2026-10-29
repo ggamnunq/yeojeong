@@ -13,6 +13,7 @@ import { handleApiError, type SessionResponse } from '../../api'
 import { sessionQuery } from '../../app/session'
 import { invalidateManual } from '../manual/api'
 import {
+  ackCardLockout,
   cardImportConfigQuery,
   cardImportKeys,
   fetchCardApprovals,
@@ -191,6 +192,20 @@ export function useCardImportConsent() {
 /** HF-58 동의 관리 목록 */
 export function useRevocableConsents() {
   return useQuery(revocableConsentsQuery())
+}
+
+/**
+ * HF-57h "확인했어요": 잠김 해제 확인(POST /card-import/lockout/ack, 변수 = 기관 코드만 — 카드 정보 없음).
+ * 실패 안내(TOO_EARLY · DAILY_LIMIT · NOT_NEEDED)는 화면이 classifyLockoutAckError로 나눠 보인다. 성공하면 남은 횟수 등 config를 다시 받는다
+ */
+export function useAckCardLockout() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (organization: string) => ackCardLockout(organization),
+    meta: { silent: true },
+    gcTime: 0,
+    onSuccess: () => client.invalidateQueries({ queryKey: cardImportKeys.config }),
+  })
 }
 
 /** HF-58 철회 → 목록·config(동의 상태)를 다시 받는다 */

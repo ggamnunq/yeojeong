@@ -18,6 +18,7 @@ import {
   type CardImportRangeBasis,
   type CardImportTwoWayInput,
   type CardImportTwoWayMethod,
+  type CardLockoutAckRequest,
   type FetchCardApprovalsRequest,
   type ImportWalletEntriesRequest,
   type ImportWalletEntriesResponse,
@@ -150,6 +151,16 @@ export class FetchCardApprovalsDto implements FetchCardApprovalsRequest {
   @ValidateNested()
   @Type(() => CardImportTwoWayDto)
   twoWay?: CardImportTwoWayDto;
+}
+
+export class CardLockoutAckDto implements CardLockoutAckRequest {
+  @ApiProperty({
+    enum: ORG_CODES,
+    example: '0302',
+    description: '현대(0302)·하나(0313)만 받는다',
+  })
+  @IsIn(ORG_CODES, { message: '잠김을 풀 수 없는 카드사예요' })
+  organization: string;
 }
 
 export class ImportWalletEntryItemDto implements ImportWalletEntryItem {

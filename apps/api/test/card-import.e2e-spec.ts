@@ -667,6 +667,20 @@ describe.skipIf(!databaseUrl)(
         details: { failedAttempts: 2, action: 'CHECK_CARD_COMPANY_SITE' },
       });
       expect(second.body.details).not.toHaveProperty('retryAfter');
+      // "확인했어요"(lockout/ack)는 마지막 실패 30분 뒤부터 받는다
+      expect(
+        Date.parse(second.body.details.ackAvailableAt) - Date.now(),
+      ).toBeGreaterThan(29 * 60_000);
+      const early = await request(server())
+        .post('/api/card-import/lockout/ack')
+        .set(as(seed, '민지'))
+        .send({ organization: '0302' })
+        .expect(429);
+      expect(early.body.code).toBe('CARD_LOCKOUT_ACK_TOO_EARLY');
+      expect(Date.parse(early.body.details.retryAfter)).toBe(
+        Date.parse(second.body.details.ackAvailableAt),
+      );
+      expect(early.body.details.retryAfterSec).toBeGreaterThan(1700);
       expect(second.headers['retry-after']).toBeUndefined();
       expect(await lockRow(minji)).toMatchObject({
         lockRiskFailures: 2,
@@ -730,6 +744,103 @@ describe.skipIf(!databaseUrl)(
       expect(
         (await fetchAs(seed, '하늘', hyundai()).expect(409)).body.code,
       ).toBe('CARD_LOCK_RISK_CONFIRM_REQUIRED');
+    });
+
+    it('releases a Hyundai·Hana lock when the user confirms on the card company site: 30 min after, 2 per KST day, access log only (S8c lockout ack)', async () => {
+      const seed = await seedOngoing(['지우', '도윤']);
+      const jiwoo = seed.members['지우'].userId;
+      await consent(seed, '지우').expect(201);
+      const ack = (
+        name: string,
+        organization = '0302',
+        headers?: Record<string, string>,
+      ) =>
+        request(server())
+          .post('/api/card-import/lockout/ack')
+          .set(headers ?? as(seed, name))
+          .send({ organization });
+      const lockAgo = (minutes: number) =>
+        prisma.cardImportLoginFailure.upsert({
+          where: {
+            userId_organization: { userId: jiwoo, organization: '0302' },
+          },
+          create: {
+            userId: jiwoo,
+            organization: '0302',
+            failures: 0,
+            lastFailedAt: new Date(Date.now() - minutes * 60_000),
+            lockRiskFailures: 2,
+            lockRiskLastFailedAt: new Date(Date.now() - minutes * 60_000),
+          },
+          update: {
+            lockRiskFailures: 2,
+            lockRiskLastFailedAt: new Date(Date.now() - minutes * 60_000),
+          },
+        });
+      const counter = async () =>
+        (
+          await prisma.cardImportLoginFailure.findUnique({
+            where: {
+              userId_organization: { userId: jiwoo, organization: '0302' },
+            },
+          })
+        )?.lockRiskFailures;
+
+      // 가드: CSRF · 동의 · 현대·하나만
+      const { Origin: _origin, ...noOrigin } = as(seed, '지우');
+      expect((await ack('지우', '0302', noOrigin).expect(403)).body.code).toBe(
+        'CSRF_REJECTED',
+      );
+      expect((await ack('도윤').expect(403)).body.code).toBe(
+        'CONSENT_REQUIRED',
+      );
+      expect((await ack('지우', '0306').expect(400)).body.code).toBe(
+        'VALIDATION_FAILED',
+      );
+      // 잠겨 있지 않으면 필요 없음(409)
+      expect((await ack('지우').expect(409)).body.code).toBe(
+        'CARD_LOCKOUT_ACK_NOT_NEEDED',
+      );
+
+      // 잠김(2회) + 30분 지남 → 204, 카운터 0, 접근 기록은 기관 코드만
+      await lockAgo(31);
+      const locked = await fetchAs(seed, '지우', {
+        organization: '0302',
+        loginCardNo: CARD_NUMBER,
+        encryptedCardPassword: CARD_PASSWORD_CIPHERTEXT,
+      }).expect(429);
+      expect(locked.body.code).toBe('CARD_IMPORT_LOGIN_LOCKED');
+      expect(Date.parse(locked.body.details.ackAvailableAt)).toBeLessThan(
+        Date.now(),
+      );
+      await ack('지우').expect(204);
+      expect(await counter()).toBe(0);
+      const logs = await prisma.accessLog.findMany({
+        where: { userId: jiwoo, action: 'CARD_LOCKOUT_ACK' },
+        select: { details: true, resourceType: true, resourceId: true },
+      });
+      expect(logs).toEqual([
+        {
+          details: { organization: '0302' },
+          resourceType: 'USER',
+          resourceId: jiwoo,
+        },
+      ]);
+      expect((await ack('지우').expect(409)).body.code).toBe(
+        'CARD_LOCKOUT_ACK_NOT_NEEDED',
+      );
+
+      // 하루(KST) 2회까지: 두 번째는 되고 세 번째는 429(다음 KST 자정까지)
+      await lockAgo(40);
+      await ack('지우').expect(204);
+      await lockAgo(50);
+      const limited = await ack('지우').expect(429);
+      expect(limited.body.code).toBe('CARD_LOCKOUT_ACK_DAILY_LIMIT');
+      expect(limited.body.details.retryAfter).toMatch(/T15:00:00\.000Z$/);
+      expect(Number(limited.headers['retry-after'])).toBe(
+        limited.body.details.retryAfterSec,
+      );
+      expect(await counter()).toBe(2);
     });
 
     it('never echoes login values in validation errors, malformed bodies or logs', async () => {
