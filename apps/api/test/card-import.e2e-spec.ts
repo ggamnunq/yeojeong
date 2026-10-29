@@ -713,6 +713,69 @@ describe.skipIf(!databaseUrl)(
       });
     });
 
+    it('refunds the remaining reservation when purging abandoned 2-way rows (review Low 1)', async () => {
+      const seed = await seedOngoing(['준용']);
+      const userId = seed.members['준용'].userId;
+      const day = todayDate();
+      const before =
+        (await prisma.codefDailyUsage.findUnique({ where: { day } }))?.calls ??
+        0;
+      await prisma.codefDailyUsage.upsert({
+        where: { day },
+        create: { day, calls: 10 },
+        update: { calls: 10 },
+      });
+      const expired = new Date(Date.now() - 1000);
+      await prisma.cardImportTwoWaySession.createMany({
+        data: [
+          {
+            nonceHash: 'a'.repeat(64),
+            userId,
+            callsLeft: 3,
+            budgetDay: day,
+            expiresAt: expired,
+          },
+          {
+            nonceHash: 'b'.repeat(64),
+            userId,
+            callsLeft: 3,
+            budgetDay: day,
+            expiresAt: expired,
+          },
+        ],
+      });
+      await app.get(PurgeService).run();
+      expect(
+        await prisma.cardImportTwoWaySession.count({ where: { userId } }),
+      ).toBe(0);
+      // 남은 예약 3 + 3을 그날 예산에 돌려줬다
+      expect(
+        (await prisma.codefDailyUsage.findUnique({ where: { day } }))?.calls,
+      ).toBe(4);
+      // 0 아래로는 내려가지 않는다
+      await prisma.codefDailyUsage.update({
+        where: { day },
+        data: { calls: 1 },
+      });
+      await prisma.cardImportTwoWaySession.create({
+        data: {
+          nonceHash: 'c'.repeat(64),
+          userId,
+          callsLeft: 3,
+          budgetDay: day,
+          expiresAt: expired,
+        },
+      });
+      await app.get(PurgeService).run();
+      expect(
+        (await prisma.codefDailyUsage.findUnique({ where: { day } }))?.calls,
+      ).toBe(0);
+      await prisma.codefDailyUsage.update({
+        where: { day },
+        data: { calls: before },
+      });
+    });
+
     it('drops pending deletions after 30 days and alerts daily (L5)', async () => {
       const purge = app.get(PurgeService);
       const id = randomUUID();

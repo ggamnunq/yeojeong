@@ -24,6 +24,8 @@ export interface CodefCallCounter {
 export interface CodefResponse {
   result: { code: string; message?: string; extraMessage?: string };
   data: unknown;
+  /** 이 요청으로 CODEF API에 실제로 보낸 횟수(토큰 오류로 다시 보내면 2). 예산 계산에 쓴다 */
+  calls?: number;
 }
 
 /**
@@ -103,11 +105,13 @@ export class CodefClient {
     body: Record<string, unknown>,
   ): Promise<CodefResponse> {
     let response = await this.post(path, body, await this.accessToken());
+    let calls = 1;
     if (CODEF_TOKEN_ERRORS.has(response.result.code)) {
       this.token = null;
       response = await this.post(path, body, await this.accessToken());
+      calls = 2;
     }
-    return response;
+    return { ...response, calls };
   }
 
   private async post(

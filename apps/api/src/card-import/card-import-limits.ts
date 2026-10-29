@@ -360,6 +360,39 @@ export class CardImportLimits {
     if (row) await this.refund(row.budget_day, row.calls_left);
   }
 
+  /**
+   * 버려진(만료된) 이어가기 행을 지우고 남은 예약을 그날 예산에 돌려준다(0 아래로는 내려가지 않는다). 파기 배치가 부른다
+   */
+  static async purgeExpiredTwoWays(
+    tx: Pick<PrismaService, '$queryRaw' | '$executeRaw'>,
+    now: Date,
+    dryRun: boolean,
+  ): Promise<number> {
+    if (dryRun) {
+      const [row] = await tx.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*)::bigint AS n FROM card_import_two_way_sessions WHERE expires_at <= ${now}`;
+      return Number(row?.n ?? 0);
+    }
+    const gone = await tx.$queryRaw<{ calls_left: number; budget_day: Date }[]>`
+      DELETE FROM card_import_two_way_sessions WHERE expires_at <= ${now}
+      RETURNING calls_left, budget_day`;
+    const byDay = new Map<string, { day: Date; calls: number }>();
+    for (const row of gone) {
+      const key = row.budget_day.toISOString();
+      const entry = byDay.get(key) ?? { day: row.budget_day, calls: 0 };
+      entry.calls += Math.max(row.calls_left, 0);
+      byDay.set(key, entry);
+    }
+    for (const { day, calls } of byDay.values()) {
+      if (calls <= 0) continue;
+      await tx.$executeRaw`
+        UPDATE codef_daily_usage
+        SET calls = GREATEST(calls - ${calls}, 0), updated_at = now()
+        WHERE day = ${day}::date`;
+    }
+    return gone.length;
+  }
+
   // ─── 접근 기록(사용자 횟수의 기준) ───
 
   /**
@@ -394,7 +427,16 @@ export class CardImportLimits {
     },
   ): Promise<void> {
     await this.prisma.accessLog.update({ where: { id }, data: { details } });
-    this.logger.log({ accessLogId: id, details }, '접근 기록');
+    // 애플리케이션 로그에는 결과 코드·건수만(요청 ID는 요청 로거가 붙인다). 기관 코드는 access_logs에만
+    this.logger.log(
+      {
+        accessLogId: id,
+        result: details.result,
+        count: details.count,
+        step: details.step,
+      },
+      '접근 기록',
+    );
   }
 }
 

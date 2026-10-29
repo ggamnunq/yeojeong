@@ -95,6 +95,7 @@ function setup(
       budgetDay: BUDGET_DAY,
     }),
     closeTwoWay: vi.fn().mockResolvedValue(undefined),
+    recordCodefCall: vi.fn().mockResolvedValue(undefined),
     loginFailed: vi.fn(() =>
       Promise.reject(
         AppException.of('CARD_LOGIN_FAILED', {
@@ -601,6 +602,41 @@ describe('CardImportService.fetch (direct)', () => {
     expect(estimateKrw({ ...item, krwAmount: 26000 }, table)).toBeNull();
     expect(estimateKrw({ ...item, currency: 'KRW' }, table)).toBeNull();
     expect(estimateKrw(item, null)).toBeNull();
+  });
+
+  it('counts a token-retry resend as 2 calls in the reservation and beyond it (review Low 2)', async () => {
+    const { service, limits } = setup({
+      [CODEF_PATHS.CARD_APPROVAL_LIST]: (body, n) =>
+        n === 0 || (body.is2Way && n === 2)
+          ? codefResult('CF-00401', {})
+          : body.is2Way
+            ? codefResult('CF-00000', [])
+            : codefResult('CF-03002', {
+                method: 'smsAuthNo',
+                jobIndex: 0,
+                threadIndex: 0,
+                jti: 'j',
+                twoWayTimestamp: 1,
+              }),
+    });
+    const lotte = request({ organization: '0311' });
+    // 새 조회: 토큰 오류 → 다시 보냄 = 2회. 남은 예약 4 − 2 = 2를 이어가기가 들고 간다
+    const first = await service.fetch(USER, lotte, NOW);
+    if (first.status !== 'TWO_WAY_REQUIRED') throw new Error('expected 2-way');
+    expect(limits.openTwoWay).toHaveBeenCalledWith(
+      USER,
+      { day: BUDGET_DAY, callsLeft: 2 },
+      expect.any(Date),
+    );
+    expect(limits.recordCodefCall).not.toHaveBeenCalled();
+    // 이어가기: 예약 1 + 토큰 재시도 1 → 넘친 1회는 따로 센다
+    const done = await service.fetch(
+      USER,
+      { ...lotte, twoWay: { token: first.twoWayToken, code: '123456' } },
+      NOW,
+    );
+    expect(done.status).toBe('OK');
+    expect(limits.recordCodefCall).toHaveBeenCalledTimes(1);
   });
 
   it('checks the period against the card company limits', () => {

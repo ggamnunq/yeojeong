@@ -7,6 +7,7 @@ import type {
 import { AccountDeletionService } from '../account/account-deletion.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { CardImportLimits } from '../card-import/card-import-limits.js';
 import { RETENTION, cutoff } from './retention-policy.js';
 
 type Tx = Prisma.TransactionClient;
@@ -298,13 +299,12 @@ export class PurgeService {
           const failures = { lastFailedAt: { lte: counters } };
           const usage = { day: { lte: counters } };
           const locks = { expiresAt: { lte: now } };
-          const twoWays = { expiresAt: { lte: now } };
           if (dryRun) {
             const counts = await Promise.all([
               tx.cardImportLoginFailure.count({ where: failures }),
               tx.codefDailyUsage.count({ where: usage }),
               tx.cardImportLock.count({ where: locks }),
-              tx.cardImportTwoWaySession.count({ where: twoWays }),
+              CardImportLimits.purgeExpiredTwoWays(tx, now, true),
             ]);
             return { count: counts.reduce((a, b) => a + b, 0), hasMore: false };
           }
@@ -312,10 +312,15 @@ export class PurgeService {
             tx.cardImportLoginFailure.deleteMany({ where: failures }),
             tx.codefDailyUsage.deleteMany({ where: usage }),
             tx.cardImportLock.deleteMany({ where: locks }),
-            tx.cardImportTwoWaySession.deleteMany({ where: twoWays }),
           ]);
+          // 버려진 이어가기 행: 지우면서 남은 예약을 그날 예산에 돌려준다
+          const twoWays = await CardImportLimits.purgeExpiredTwoWays(
+            tx,
+            now,
+            false,
+          );
           return {
-            count: results.reduce((a, r) => a + r.count, 0),
+            count: results.reduce((a, r) => a + r.count, 0) + twoWays,
             hasMore: false,
           };
         },

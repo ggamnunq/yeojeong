@@ -249,6 +249,8 @@ export class CardImportService {
     let session: TwoWayAttempt | null = null;
     /** 이 요청에서 예약분으로 쓴 CODEF 호출 수(계정 삭제 제외) */
     const used = { calls: 0 };
+    /** 이 요청이 예산에서 미리 확보한 호출 수(새 조회 = 예약 4, 이어가기 = 1) */
+    let budgeted = 0;
     let keepSession = false;
     let outcome: FetchOutcome = 'CARD_IMPORT_FAILED';
     let count = 0;
@@ -256,10 +258,12 @@ export class CardImportService {
       if (twoWay) {
         // 같은 토큰은 3번까지, 예약 범위 안에서만(원자적으로 시도 +1·예약 −1)
         session = await this.limits.consumeTwoWay(userId, twoWay.nonce, now);
+        budgeted = 1;
       } else {
         // 새 조회: 사용자 횟수·쿨다운 → 예산 예약(원자적) → 시도 기록(사용자 횟수의 기준)
         await this.limits.checkStart(userId, org.code, now);
         reservation = await this.limits.reserveFetch(now);
+        budgeted = reservation.calls;
       }
       attemptLogId = await this.limits.recordAttempt(userId, org.code, step);
 
@@ -287,7 +291,7 @@ export class CardImportService {
           keepSession =
             session.attempts < TWO_WAY_MAX_ATTEMPTS && session.callsLeft > 0;
         } else {
-          const callsLeft = (reservation?.calls ?? 0) - used.calls;
+          const callsLeft = Math.max((reservation?.calls ?? 0) - used.calls, 0);
           nonce = await this.limits.openTwoWay(
             userId,
             { day: (reservation as BudgetReservation).day, callsLeft },
@@ -370,10 +374,15 @@ export class CardImportService {
       try {
         if (session && !keepSession)
           await this.limits.closeTwoWay(session.nonceHash);
+        // 예약(새 조회 4, 이어가기 1)을 넘긴 실제 호출(토큰 재시도로 2번 간 경우)은 따로 센다
+        for (let i = budgeted; i < used.calls; i += 1) {
+          await this.limits.recordCodefCall();
+        }
+        // 남은 예약은 돌려준다(추가 인증으로 넘어갔으면 이어가기 행이 들고 있다)
         if (reservation) {
           await this.limits.refund(
             reservation.day,
-            reservation.calls - used.calls,
+            Math.max(reservation.calls - used.calls, 0),
           );
         }
         if (attemptLogId) {
@@ -481,8 +490,19 @@ export class CardImportService {
         smsAuthNo: request.twoWay.code,
       });
     }
+    return this.counted(used, CODEF_PATHS.CARD_APPROVAL_LIST, body);
+  }
+
+  /** 예약분으로 쓰는 CODEF 호출. 보내기 전에 1을 세고(실패해도 쓴 것으로), 토큰 재시도로 2번 갔으면 더 센다 */
+  private async counted(
+    used: { calls: number },
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<CodefResponse> {
     used.calls += 1;
-    return this.codef.request(CODEF_PATHS.CARD_APPROVAL_LIST, body);
+    const response = await this.codef.request(path, body);
+    used.calls += Math.max((response.calls ?? 1) - 1, 0);
+    return response;
   }
 
   /**
@@ -501,8 +521,7 @@ export class CardImportService {
       organization,
       loginType: '1',
     };
-    used.calls += 1;
-    const created = await this.codef.request(CODEF_PATHS.ACCOUNT_CREATE, {
+    const created = await this.counted(used, CODEF_PATHS.ACCOUNT_CREATE, {
       accountList: [
         {
           ...account,
@@ -533,8 +552,8 @@ export class CardImportService {
           data: null,
         };
       }
-      used.calls += 1;
-      return await this.codef.request(
+      return await this.counted(
+        used,
         CODEF_PATHS.CARD_APPROVAL_LIST,
         this.approvalBody(organization, request, { connectedId }),
       );
