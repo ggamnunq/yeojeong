@@ -11,10 +11,10 @@ import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 export const SCRYPT_DEFAULTS = { N: 131_072, r: 8, p: 1 } as const;
 const KEY_LENGTH = 32;
 const SALT_LENGTH = 16;
-// env 값이 잘못돼도 부팅을 무겁게 하거나 요청마다 메모리를 크게 쓰지 않게 비용 범위를 묶는다
-const N_RANGE = { min: 16_384, max: 1_048_576 };
-const R_RANGE = { min: 8, max: 32 };
-const P_RANGE = { min: 1, max: 4 };
+// env 값이 잘못돼도 요청마다 메모리를 크게 쓰지 않게 비용 범위를 묶는다(512Mi 인스턴스: 최대 128MiB)
+const N_RANGE = { min: 16_384, max: 131_072 };
+const R_RANGE = { min: 8, max: 8 };
+const P_RANGE = { min: 1, max: 1 };
 const B64URL = /^[A-Za-z0-9_-]+$/;
 
 export interface ScryptHash {

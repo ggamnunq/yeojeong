@@ -96,6 +96,7 @@ pnpm --silent --filter @yeojeong/api admin:totp '<관리자 아이디>' | gcloud
   - 한도를 넘은 요청의 접근 기록(`RATE_LIMITED`, `scope`)은 **키·창마다 처음 한 번만** 쓰고, 나머지는 카운터(`attempts` — 넘긴 수 = attempts − 한도, 1일 보관)로만 센다(기록 폭주 방지).
   - 성공하면 그 요청의 키(IP·전체 또는 장치)를 지운다. 키는 IP 원문 대신 HMAC(`AUDIT_HMAC_KEY`).
   - 그 위에 전역 Throttler `@StrictThrottle()`(1분 10회)도 걸린다.
+- **비상 해제**: 장치 쿠키가 없는 새 브라우저(새 기기, 쿠키 삭제)는 전체 잠금에 막힐 수 있다. 15분 기다려도 계속 막히면(잠금 공격이 이어지는 경우) 운영자 DB 접속 절차(사유 입력 스크립트, 접속 기록이 남는다)로 `admin_login_throttles`의 행을 지운 뒤 바로 로그인한다. 로그인에 성공하면 그 브라우저는 장치 쿠키를 받아 이후 전체 잠금에서 빠진다.
 - **재인증(step-up)**: 탈퇴 처리처럼 되돌릴 수 없는 조치는 세션이 있어도 관리자 비밀번호 + 지금 TOTP(재사용 금지)를 다시 받는다. 세션마다 15분 5번(`stepup:<세션 ID>`), 넘으면 429 `ADMIN_STEP_UP_RATE_LIMITED`. 실패는 403 `ADMIN_STEP_UP_FAILED` 한 가지 문구.
 - CSRF: 전역 `CsrfGuard`(Origin = `WEB_BASE_URL`)가 로그인·로그아웃·탈퇴 처리(POST)에 그대로 걸리고, 쿠키가 SameSite=Strict다. 운영은 Cloudflare origin lock도 그대로(`/api/admin/`은 예외가 아니다).
 
