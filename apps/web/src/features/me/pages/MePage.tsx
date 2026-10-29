@@ -10,6 +10,7 @@ import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { Avatar, Dialog, Icon, ShellSub, Tag } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { toast } from '../../../notifications'
+import { revocableConsentsQuery } from '../../card-import/api'
 import { entryCountLabel } from '../../manual/rules'
 import { paymentMethodsQuery } from '../../wallet/api'
 import { formatMethodCounts } from '../../wallet/format'
@@ -77,6 +78,9 @@ function MeContent({
     [queryClient],
   )
   const askDeletion = useMutation({ mutationFn: requestDeletion, onSuccess: setDeletion })
+  // "동의 관리 ›"(WF-58)는 철회할 수 있는 유효 동의가 1건 이상일 때만 — 기능 플래그와 무관(디자인 결정, Q-55)
+  const revocable = useQuery({ ...revocableConsentsQuery(), meta: { silent: true } })
+  const hasConsents = (revocable.data?.length ?? 0) > 0
 
   const counts = accountLink
     ? methods.data
@@ -130,6 +134,15 @@ function MeContent({
         >
           탈퇴·삭제 요청
         </button>
+        {hasConsents && (
+          <Link
+            to={paths.meConsents()}
+            className={clsx('mt-2 flex items-center gap-0.5 rounded-sm px-3 py-1.5 text-body-s text-tertiary', focusRing)}
+          >
+            동의 관리
+            <Icon name="chevron-right" size={16} className="text-icon-subtle" />
+          </Link>
+        )}
         <p className="mt-5 text-caption text-tertiary">
           <Link to={paths.terms()} className={clsx('rounded-xs py-1', focusRing)}>
             이용약관

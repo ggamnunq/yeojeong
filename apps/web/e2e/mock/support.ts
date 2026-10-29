@@ -7,6 +7,8 @@ export type MockScenario = {
   wallet?: 'expired' | 'empty' | 'no-consent'
   /** 세션 features.accountLink(토스 연결). 기본 false */
   accountLink?: boolean
+  /** 세션 features.cardImport(카드 내역 불러오기). true = 켜짐, 'low' = 오늘 남은 횟수 2, 'exhausted' = 0. 기본 꺼짐 */
+  cardImport?: boolean | 'low' | 'exhausted'
 }
 
 export async function useMockScenario(page: Page, scenario: MockScenario = {}) {
@@ -18,5 +20,6 @@ export async function useMockScenario(page: Page, scenario: MockScenario = {}) {
     if (s.session) localStorage.setItem('yj:mock:session', s.session)
     if (s.wallet) localStorage.setItem('yj:mock:wallet', s.wallet)
     if (s.accountLink) localStorage.setItem('yj:mock:accountLink', '1')
+    if (s.cardImport) localStorage.setItem('yj:mock:cardImport', s.cardImport === true ? '1' : s.cardImport)
   }, scenario)
 }

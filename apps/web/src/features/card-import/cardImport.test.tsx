@@ -46,10 +46,24 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     const ok = await fetchCardApprovals(body('me'))
     expect(ok.status).toBe('OK')
     if (ok.status !== 'OK') return
-    expect(ok.items.map((i) => i.status)).toEqual(['NEW', 'NEW', 'CANCELLED', 'CANCELLED', 'PARTIAL_CANCEL', 'SIMILAR', 'CANCELLED'])
-    expect(ok.items[0]).toMatchObject({ inTripId: expect.any(String), defaultSelected: true, itemToken: expect.any(String) })
-    expect(ok.items[1]).toMatchObject({ inTripId: null, defaultSelected: false })
+    // Figma HF-56 샘플: 전액 취소 2행 · 비슷한 기록 · 새 결제 · 추가됨 · 부분 취소 · … · 원 승인 없는 취소
+    expect(ok.items.map((i) => i.status)).toEqual([
+      'CANCELLED',
+      'CANCELLED',
+      'SIMILAR',
+      'NEW',
+      'ALREADY_IMPORTED',
+      'PARTIAL_CANCEL',
+      'NEW',
+      'NEW',
+      'NEW',
+      'NEW',
+      'CANCELLED',
+    ])
     expect(ok.items.find((i) => i.similarManualEntryId)).toMatchObject({ selectable: true, defaultSelected: false })
+    expect(ok.items.filter((i) => i.cancelState === 'ORPHAN_CANCEL')).toEqual([
+      expect.objectContaining({ selectable: false, itemToken: null, blockReason: 'ORPHAN_CANCEL' }),
+    ])
   })
 
   it('covers the 2-way and login failure scenarios', async () => {
@@ -78,7 +92,7 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     resetCardImportMock({ consented: true })
     const ok = await fetchCardApprovals(body('me'))
     if (ok.status !== 'OK') throw new Error('expected OK')
-    const [pick] = ok.items
+    const pick = ok.items.find((i) => i.selectable && i.currency === 'JPY' && i.krwAmount !== null)!
     const item = {
       importKey: pick.importKey,
       itemToken: pick.itemToken ?? '',
@@ -93,11 +107,15 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     )
     const saved = await importWalletEntries({ items: [item] })
     expect(saved).toMatchObject({ created: 1, skipped: 0 })
-    expect(saved.items[0]).toMatchObject({ created: true, entry: { source: 'CARD_IMPORT', amount: '2860', currency: 'JPY', krwAmount: 26290 } })
+    expect(saved.items[0]).toMatchObject({ created: true, entry: { source: 'CARD_IMPORT', amount: pick.amount, currency: 'JPY', krwAmount: pick.krwAmount } })
     expect((await importWalletEntries({ items: [item] })).items[0].created).toBe(false)
     const again = await fetchCardApprovals(body('me'))
     if (again.status !== 'OK') throw new Error('expected OK')
-    expect(again.items[0]).toMatchObject({ alreadyImported: true, selectable: false, blockReason: 'ALREADY_IMPORTED' })
+    expect(again.items.find((i) => i.importKey === pick.importKey)).toMatchObject({
+      alreadyImported: true,
+      selectable: false,
+      blockReason: 'ALREADY_IMPORTED',
+    })
   })
 
   it('lists and withdraws the revocable consent (HF-58)', async () => {
@@ -111,7 +129,7 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     expect(await client.fetchQuery({ ...revocableConsentsQuery(), staleTime: 0 })).toEqual([])
   })
 
-  it('encrypts before mutating so the mutation cache only ever holds ciphertext (L3)', async () => {
+  it('keeps loginId, ciphertext and the SMS code out of every TanStack cache (no mutation) and reuses the ciphertext (L3 · M1)', async () => {
     resetCardImportMock({ consented: true })
     const client = createTestQueryClient()
     const wrapper = ({ children }: { children: ReactNode }) => <ApiProvider client={client}>{children}</ApiProvider>
@@ -123,12 +141,19 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     }
     server.events.on('request:start', listener)
     const input = { publicKey: MOCK_CARD_IMPORT_PUBLIC_KEY, organization: '0306', loginId: 'twoway', password, from: today, to: today }
-    const first = await act(() => result.current.start(input))
+    // 화면이 먼저 암호화하고 hook에는 암호문 요청만 넘긴다(hook은 평문을 받지 않는다)
+    const request = await buildFetchRequest(input)
+    expect(JSON.stringify(request)).not.toContain(password)
+    const first = await act(() => result.current.start(request))
     expect(first.status).toBe('TWO_WAY_REQUIRED')
     if (first.status !== 'TWO_WAY_REQUIRED') return
-    const variables = () => JSON.stringify(client.getMutationCache().getAll().map((m) => m.state.variables))
-    expect(variables()).not.toContain(password)
-    expect(variables()).toContain('encryptedPassword')
+    const caches = () =>
+      JSON.stringify([
+        client.getMutationCache().getAll().map((m) => m.state),
+        client.getQueryCache().getAll().map((q) => q.state),
+      ])
+    expect(client.getMutationCache().getAll()).toHaveLength(0)
+    for (const secret of [password, 'twoway', request.encryptedPassword]) expect(caches()).not.toContain(secret)
     // 이어가기는 같은 암호문을 다시 쓴다(다시 암호화하지 않는다)
     const done = await act(() => result.current.continueTwoWay({ token: first.twoWayToken, code: MOCK_TWO_WAY_CODE }))
     expect(done.status).toBe('OK')
@@ -138,7 +163,8 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     expect(a.encryptedPassword).toBe(b.encryptedPassword)
     expect(sent.join()).not.toContain(password)
     expect(a).not.toHaveProperty('password')
-    expect(variables()).not.toContain(password)
+    expect(client.getMutationCache().getAll()).toHaveLength(0)
+    for (const secret of [password, 'twoway', request.encryptedPassword, MOCK_TWO_WAY_CODE]) expect(caches()).not.toContain(secret)
     // 쿼리 캐시에는 조회 결과가 없다
     expect(client.getQueryCache().getAll()).toHaveLength(0)
     act(() => result.current.reset())
