@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import type {
   AuthSessionResponse,
   AuthStatus,
+  FeatureFlags,
   ReconsentRequest,
   SignupDraft,
   SignupRequest,
@@ -61,6 +62,14 @@ export class SignupResponseDto extends MeDto implements SignupResponse {
   returnTo: string | null;
 }
 
+export class FeatureFlagsDto implements FeatureFlags {
+  @ApiProperty({
+    description:
+      '계좌·카드 자동 불러오기(토스 연결). false면 화면이 연결 진입점을 숨긴다(env FEATURE_ACCOUNT_LINK, 기본 false)',
+  })
+  accountLink: boolean;
+}
+
 export class AuthSessionResponseDto implements AuthSessionResponse {
   @ApiProperty({ enum: ['ANONYMOUS', 'SIGNUP_REQUIRED', 'AUTHENTICATED'] })
   status: AuthStatus;
@@ -76,4 +85,10 @@ export class AuthSessionResponseDto implements AuthSessionResponse {
     description: 'AUTHENTICATED일 때만. 비어 있지 않으면 재동의 화면(FR-107)',
   })
   reconsentRequired?: ConsentRequirementDto[];
+
+  @ApiProperty({
+    type: FeatureFlagsDto,
+    description: '기능 플래그. 로그인 여부와 무관하게 항상 온다',
+  })
+  features: FeatureFlagsDto;
 }

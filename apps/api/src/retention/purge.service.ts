@@ -320,8 +320,12 @@ export class PurgeService {
       select: { id: true },
     });
     const tripIds = trips.map((t) => t.id);
+    // 직접 입력한 지갑 항목(source MANUAL)은 여정이 지워져도 사용자 지갑에 남긴다(연결만 끊긴다)
     const linked = await tx.expense.findMany({
-      where: { tripId: { in: tripIds }, transactionId: { not: null } },
+      where: {
+        tripId: { in: tripIds },
+        transaction: { is: { source: 'PROVIDER' } },
+      },
       select: { transactionId: true },
       distinct: ['transactionId'],
     });

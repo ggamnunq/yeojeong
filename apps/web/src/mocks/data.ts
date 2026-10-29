@@ -417,7 +417,7 @@ export function tripDetail(trip: MockTrip, viewerUserId = db.meUserId): TripDeta
   const hasExpired = db.paymentMethods.some((p) => p.userId === viewerUserId && p.status === 'EXPIRED')
   const leader = me.role === 'LEADER'
   const open = trip.status !== 'ENDED'
-  // 서버와 같은 단계별 수정 항목(shared TRIP_EDITABLE_FIELDS — 시작 전에는 통화도)
+  // 서버와 같은 단계별 수정 항목(shared TRIP_EDITABLE_FIELDS — 시작 전에는 통화도, 진행 중에도 장소는 v0.5.8)
   const editableFields = leader ? TRIP_EDITABLE_FIELDS[trip.status] : []
   // 서버 startBlockReason과 같은 순서: 그룹장 → 시작 전 → 종료일이 지나지 않음
   const startBlockReason = !leader

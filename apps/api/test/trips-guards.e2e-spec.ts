@@ -333,12 +333,14 @@ describe('S2A trips·groups guards (e2e)', () => {
       name: '대한민국 원',
       unitName: '원',
       displayUnit: 1,
+      fractionDigits: 0,
     });
     expect(res.body).toContainEqual({
       code: 'JPY',
       name: '일본 엔',
       unitName: '엔',
       displayUnit: 100,
+      fractionDigits: 0,
     });
     expect(
       (res.body as { code: string }[]).filter((c) => c.code === 'KRW'),

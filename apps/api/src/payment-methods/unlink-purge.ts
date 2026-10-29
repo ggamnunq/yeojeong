@@ -31,7 +31,11 @@ async function fillSourceTxHashes(
   hash: (provider: string, externalRef: string) => string | null,
 ): Promise<void> {
   const rows = await tx.expense.findMany({
-    where: { ...where, sourceTxHash: null, transactionId: { not: null } },
+    where: {
+      ...where,
+      sourceTxHash: null,
+      transaction: { is: { source: 'PROVIDER' } },
+    },
     select: {
       id: true,
       transaction: {
@@ -45,7 +49,9 @@ async function fillSourceTxHashes(
     },
   });
   for (const row of rows) {
-    if (!row.transaction) continue;
+    if (!row.transaction?.paymentMethod || !row.transaction.externalRef) {
+      continue;
+    }
     const value = hash(
       row.transaction.paymentMethod.connection.provider,
       row.transaction.externalRef,
@@ -61,6 +67,8 @@ async function fillSourceTxHashes(
 
 /**
  * 결제수단 전부 해제(활성 결제수단 0개) 때의 파기. purgeImported 선택과 무관하다(수집·이용 동의서 2절 "지체 없이 파기").
+ * 대상은 결제수단에서 가져온 데이터뿐이다. 직접 입력한 결제(Transaction.source MANUAL, Expense.origin MANUAL)는
+ * 연동 동의와 무관한 사용자 기록이라 남긴다(S7).
  * - 내 PENDING·PERSONAL 결제를 종료된 여정 것까지 지운다(I-6 예외: 파기가 우선). 취소 자식은 부모와 함께 지워진다.
  * - 거래 원본·결제수단 행을 지운다. SHARED 결제는 장부에 남고 transactionId만 NULL이 된다(FK SET NULL).
  *   지우기 전에 SHARED의 sourceTxHash를 채워, 다시 연결한 뒤 같은 거래가 새 미확정으로 들어오지 않게 한다.
@@ -71,7 +79,10 @@ export async function purgeAllFinancialData(
   userId: string,
   hash: (provider: string, externalRef: string) => string | null,
 ): Promise<PurgedFinancialData> {
-  const mine: Prisma.ExpenseWhereInput = { payer: { userId } };
+  const mine: Prisma.ExpenseWhereInput = {
+    payer: { userId },
+    origin: { not: 'MANUAL' },
+  };
   await fillSourceTxHashes(tx, { ...mine, status: 'SHARED' }, hash);
 
   const unshared: Prisma.ExpenseWhereInput = {
@@ -86,9 +97,14 @@ export async function purgeAllFinancialData(
   await tx.expense.deleteMany({ where: unshared });
 
   const detachedShared = await tx.expense.count({
-    where: { status: 'SHARED', transaction: { userId } },
+    where: {
+      status: 'SHARED',
+      transaction: { is: { userId, source: 'PROVIDER' } },
+    },
   });
-  const transactions = await tx.transaction.deleteMany({ where: { userId } });
+  const transactions = await tx.transaction.deleteMany({
+    where: { userId, source: 'PROVIDER' },
+  });
   const paymentMethods = await tx.paymentMethod.deleteMany({
     where: { userId, status: 'REMOVED' },
   });

@@ -346,7 +346,7 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       shell: { defaultTab: 'EXPENSES', lockedTabs: [] },
       permissions: {
         canEdit: true,
-        editableFields: ['groupName', 'budgetKrw', 'endDate'],
+        editableFields: ['groupName', 'place', 'budgetKrw', 'endDate'],
         startBlockReason: 'NOT_UPCOMING',
         canEnd: true,
         canDeleteGroup: false,
@@ -369,7 +369,7 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       .expect(409)
       .expect((r) => expect(r.body.code).toBe('TRIP_PHASE_INVALID'));
 
-    // 진행 중: 장소·시작일 잠금, 종료일은 오늘 이후로만, 그룹 삭제 불가
+    // 진행 중: 통화·시작일 잠금(장소는 고칠 수 있다, v0.5.8), 종료일은 오늘 이후로만, 그룹 삭제 불가
     const locked = await request(server())
       .patch(`/api/trips/${created.tripId}`)
       .set(ctx.auth.headers(minji))
@@ -381,7 +381,7 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       .expect(409);
     expect(locked.body).toMatchObject({
       code: 'TRIP_PHASE_INVALID',
-      details: { lockedFields: ['place', 'currency'] },
+      details: { lockedFields: ['currency'] },
     });
     await request(server())
       .patch(`/api/trips/${created.tripId}`)

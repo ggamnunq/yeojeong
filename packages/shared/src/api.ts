@@ -68,6 +68,17 @@ export interface AuthSessionResponse {
   signupDraft?: SignupDraft;
   /** AUTHENTICATED일 때만. 비어 있지 않으면 재동의 화면(FR-107)으로 보낸다 */
   reconsentRequired?: ConsentRequirement[];
+  /** 기능 플래그(env). 로그인 여부와 무관하게 서버는 항상 채운다(전환 기간 웹 목 호환을 위해 선택 필드) */
+  features?: FeatureFlags;
+}
+
+/** GET /api/auth/session의 기능 플래그 */
+export interface FeatureFlags {
+  /**
+   * 계좌·카드 자동 불러오기(토스 연결). false면 화면이 연결 진입점(가입 후 연결, 지갑 추가, 재연결)을 숨긴다.
+   * 연결 API 자체는 그대로 동작한다(env FEATURE_ACCOUNT_LINK, 기본 false)
+   */
+  accountLink: boolean;
 }
 
 /** GET /api/consents/documents */
@@ -197,6 +208,8 @@ export interface ExpenseListItem {
   refunds: { id: string; occurredAt: string; krwAmount: number }[];
   origin: ExpenseOrigin;
   version: number;
+  /** 직접 입력한 결제(origin MANUAL)의 작성자 membershipId. 가져온 결제는 null. 서버는 항상 채운다 */
+  createdByMembershipId?: string | null;
 }
 
 export interface ExpenseDetail extends ExpenseListItem {

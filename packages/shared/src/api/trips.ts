@@ -31,13 +31,14 @@ export type TripEditableField = (typeof TRIP_EDITABLE_FIELD_VALUES)[number];
 
 /**
  * 단계별로 그룹장이 고칠 수 있는 항목(FR-302, 미결 Q-14 추천안).
+ * 진행 중에도 장소(자유 텍스트)는 고칠 수 있고(명세 v0.5.8), 통화·시작일은 잠긴다.
  * 진행 중 종료일은 오늘(KST) 이후로만 바꿀 수 있다.
  */
 export const TRIP_EDITABLE_FIELDS: Readonly<
   Record<TripStatus, readonly TripEditableField[]>
 > = {
   UPCOMING: TRIP_EDITABLE_FIELD_VALUES,
-  ONGOING: ['groupName', 'budgetKrw', 'endDate'],
+  ONGOING: ['groupName', 'place', 'budgetKrw', 'endDate'],
   ENDED: [],
 };
 
@@ -64,6 +65,8 @@ export interface SupportedCurrency {
   unitName: string;
   /** 고시 단위(JPY·VND·IDR = 100) */
   displayUnit: number;
+  /** 금액 입력 소수 자리(KRW·JPY·VND·IDR = 0, 그 밖 2). 직접 입력 금액 검증 기준. 서버는 항상 채운다 */
+  fractionDigits?: number;
 }
 
 /** @deprecated GET /api/places. 장소가 자유 입력이 되어 새 화면은 쓰지 않는다 */

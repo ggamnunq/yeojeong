@@ -632,8 +632,8 @@ export class OutOfPeriodLookupService {
         )
         .map((row) => ({
           id: row.id,
-          paymentMethodId: row.paymentMethodId,
-          externalRef: row.externalRef,
+          paymentMethodId: row.paymentMethodId ?? '',
+          externalRef: row.externalRef ?? '',
           kind: 'CANCEL' as const,
           occurredAt: row.occurredAt,
           merchantKey: row.merchantKey,

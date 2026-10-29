@@ -47,6 +47,8 @@ const record = (
   tripId: 't1',
   transactionId: 'tx1',
   payerMembershipId: 'junyong',
+  createdByMembershipId: null,
+  createdBy: null,
   status: 'SHARED',
   origin: 'AUTO',
   occurredAt: new Date('2026-11-13T05:10:00Z'), // 14:10 KST
@@ -204,6 +206,8 @@ describe('toExpenseDetail', () => {
       remainderKrw: 2,
       remainderHolderMembershipId: 'junyong',
       permissions: { canEdit: true, reason: null, isPayer: true },
+      walletEntryId: 'tx1',
+      createdByMembershipId: null,
       fx: {
         rate: '9.192',
         displayUnit: 100,
@@ -239,7 +243,9 @@ describe('toExpenseDetail', () => {
       canEdit: false,
       reason: 'NOT_PAYER',
       isPayer: false,
+      isAuthor: false,
     });
+    expect(detail.walletEntryId).toBeNull();
     expect(detail.participantCandidates).toBeNull();
     expect(detail.defaultParticipantMembershipIds).toBeNull();
   });
@@ -271,6 +277,7 @@ describe('toExpenseDetail', () => {
       canEdit: false,
       reason: 'PAYER_LEFT',
       isPayer: false,
+      isAuthor: false,
     });
     expect(detail.payer.isLeft).toBe(true);
   });

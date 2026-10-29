@@ -7,6 +7,7 @@ import {
   Post,
   Query,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiAcceptedResponse,
@@ -22,6 +23,7 @@ import type {
 import type { Response } from 'express';
 import { CurrentUser, type AuthUser } from '../common/auth/index.js';
 import { ApiErrorResponse, NotFoundError } from '../common/errors/index.js';
+import { AccountLinkGuard, FeatureFlags } from '../common/features.js';
 import {
   ManualSyncResponseDto,
   PaymentMethodsResponseDto,
@@ -34,12 +36,25 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 @ApiTags('payment-methods')
 @Controller('payment-methods')
 export class PaymentMethodsController {
-  constructor(private readonly methods: PaymentMethodsService) {}
+  constructor(
+    private readonly methods: PaymentMethodsService,
+    private readonly features: FeatureFlags,
+  ) {}
 
   @ApiOperation({ summary: '연결된 계좌·카드와 동기화 시각(FR-803)' })
   @ApiOkResponse({ type: PaymentMethodsResponseDto })
   @Get()
   list(@CurrentUser() user: AuthUser): Promise<PaymentMethodsResponse> {
+    // 계좌·카드 연결을 숨긴 동안(FR-006)은 빈 목록
+    if (!this.features.accountLink) {
+      return Promise.resolve({
+        connections: [],
+        methods: [],
+        lastSyncedAt: null,
+        hasExpiredConnection: false,
+        counts: { accounts: 0, cards: 0 },
+      });
+    }
     return this.methods.list(user.id);
   }
 
@@ -55,6 +70,7 @@ export class PaymentMethodsController {
   })
   @ApiErrorResponse(429, 'SYNC_RATE_LIMITED')
   @ApiErrorResponse(409, 'CONNECTION_EXPIRED')
+  @UseGuards(AccountLinkGuard)
   @HttpCode(202)
   @Post('sync')
   async sync(
@@ -74,6 +90,7 @@ export class PaymentMethodsController {
   @ApiNoContentResponse()
   @ApiErrorResponse(404, 'NOT_FOUND')
   @ApiErrorResponse(400, 'BAD_REQUEST', 'VALIDATION_FAILED')
+  @UseGuards(AccountLinkGuard)
   @HttpCode(204)
   @Delete(':paymentMethodId')
   async remove(

@@ -6,6 +6,7 @@ import {
   Post,
   Query,
   Redirect,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
@@ -28,6 +29,7 @@ import {
   type AuthUser,
 } from '../common/auth/index.js';
 import { ApiErrorResponse, NotFoundError } from '../common/errors/index.js';
+import { AccountLinkGuard } from '../common/features.js';
 import { StrictThrottle } from '../common/throttle.js';
 import { ConnectionsService } from './connections.service.js';
 import {
@@ -46,6 +48,7 @@ const attemptIdOf = (value: string) => {
 };
 
 @ApiTags('payment-connections')
+@UseGuards(AccountLinkGuard)
 @Controller('payment-connections')
 export class ConnectionsController {
   constructor(private readonly connections: ConnectionsService) {}

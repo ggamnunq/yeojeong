@@ -2,6 +2,7 @@ import {
   CLASSIFICATION_TRANSITIONS,
   changeSnapshot,
   computePermissions,
+  manualStatusOf,
   computeSplit,
   effectiveStatus,
   expandsSharing,
@@ -66,14 +67,19 @@ describe('permissions (FR-503·512)', () => {
         isPayer: true,
         payerLeft: false,
       }),
-    ).toEqual({ canEdit: true, reason: null, isPayer: true });
+    ).toEqual({ canEdit: true, reason: null, isPayer: true, isAuthor: true });
     expect(
       computePermissions({
         tripStatus: 'ONGOING',
         isPayer: false,
         payerLeft: false,
       }),
-    ).toEqual({ canEdit: false, reason: 'NOT_PAYER', isPayer: false });
+    ).toEqual({
+      canEdit: false,
+      reason: 'NOT_PAYER',
+      isPayer: false,
+      isAuthor: false,
+    });
   });
 
   it('locks everything after the trip ends, before payer checks', () => {
@@ -83,7 +89,12 @@ describe('permissions (FR-503·512)', () => {
         isPayer: true,
         payerLeft: false,
       }),
-    ).toEqual({ canEdit: false, reason: 'TRIP_ENDED', isPayer: true });
+    ).toEqual({
+      canEdit: false,
+      reason: 'TRIP_ENDED',
+      isPayer: true,
+      isAuthor: true,
+    });
     expect(
       computePermissions({
         tripStatus: 'ENDED',
@@ -107,7 +118,50 @@ describe('permissions (FR-503·512)', () => {
         isPayer: false,
         payerLeft: true,
       }),
-    ).toEqual({ canEdit: false, reason: 'PAYER_LEFT', isPayer: false });
+    ).toEqual({
+      canEdit: false,
+      reason: 'PAYER_LEFT',
+      isPayer: false,
+      isAuthor: false,
+    });
+  });
+
+  it('gives manual expenses to the author, also before the trip starts (S7)', () => {
+    // 남(결제자)이 낸 걸 내가 기록했다: 나는 결제자가 아니지만 작성자라 바꿀 수 있다
+    expect(
+      computePermissions({
+        tripStatus: 'UPCOMING',
+        isPayer: false,
+        payerLeft: false,
+        manual: true,
+        isAuthor: true,
+      }),
+    ).toEqual({ canEdit: true, reason: null, isPayer: false, isAuthor: true });
+    // 결제자라도 작성자가 아니면 못 바꾼다
+    expect(
+      computePermissions({
+        tripStatus: 'ONGOING',
+        isPayer: true,
+        payerLeft: false,
+        manual: true,
+        isAuthor: false,
+      }).reason,
+    ).toBe('NOT_AUTHOR');
+    expect(
+      computePermissions({
+        tripStatus: 'ENDED',
+        isPayer: true,
+        payerLeft: false,
+        manual: true,
+        isAuthor: true,
+      }).reason,
+    ).toBe('TRIP_ENDED');
+  });
+
+  it('decides shared/personal from the split of a manual expense (S7)', () => {
+    expect(manualStatusOf(['p', 'a'], 'p')).toBe('SHARED');
+    expect(manualStatusOf(['a'], 'p')).toBe('SHARED');
+    expect(manualStatusOf(['p'], 'p')).toBe('PERSONAL');
   });
 });
 

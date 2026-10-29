@@ -151,11 +151,23 @@ export class ExpenseRowDto implements ExpenseRow {
   @ApiProperty({ type: [ExpenseRefundLineDto] })
   refunds: ExpenseRefundLineDto[];
 
-  @ApiProperty({ enum: EXPENSE_ORIGIN_VALUES })
+  @ApiProperty({
+    enum: EXPENSE_ORIGIN_VALUES,
+    description:
+      'MANUAL = 직접 입력. 여정 전/후 그룹은 origin이 아니라 periodSide로 정한다',
+  })
   origin: ExpenseOrigin;
 
-  @ApiProperty({ description: '분류·중복 해제 요청에 그대로 보낸다' })
+  @ApiProperty({ description: '분류·중복 해제·수정 요청에 그대로 보낸다' })
   version: number;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    format: 'uuid',
+    description: '직접 입력한 결제의 작성자. 가져온 결제는 null',
+  })
+  createdByMembershipId: string | null;
 }
 
 export class ExpenseListPeriodDto implements ExpenseListPeriod {
@@ -227,12 +239,19 @@ export class ExpensePermissionsDto implements ExpensePermissions {
   @ApiProperty({
     enum: EDIT_BLOCK_REASON_VALUES,
     nullable: true,
-    description: 'TRIP_ENDED → LOCKED, PAYER_LEFT·NOT_PAYER → READ_ONLY',
+    description:
+      'TRIP_ENDED → LOCKED, PAYER_LEFT·NOT_PAYER·NOT_AUTHOR → READ_ONLY. 직접 입력한 결제는 예정 여정에서도 바꿀 수 있다',
   })
   reason: EditBlockReason | null;
 
   @ApiProperty()
   isPayer: boolean;
+
+  @ApiProperty({
+    description:
+      '바꿀 수 있는 사람인지: 직접 입력한 결제는 작성자, 가져온 결제는 결제자',
+  })
+  isAuthor: boolean;
 }
 
 export class ExpenseDuplicateDto {
@@ -303,6 +322,14 @@ export class ExpenseDetailResponseDto
       '토글 처음 선택값(canEdit일 때만). SHARED = 지금 부담 인원, 그 밖 = 활성 멤버 전원',
   })
   defaultParticipantMembershipIds: string[] | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    format: 'uuid',
+    description: '내 지갑의 같은 결제(결제자 본인에게만). 없으면 null',
+  })
+  walletEntryId: string | null;
 }
 
 export class OutOfPeriodCandidateDto implements OutOfPeriodCandidate {

@@ -4,6 +4,8 @@
  */
 export const TEST_ENV = {
   WEB_BASE_URL: 'http://localhost:5173',
+  // 연동(토스 연결) e2e는 기능 플래그를 켜고 돈다. 꺼진 동작은 test/manual-entries.e2e-spec.ts가 FeatureFlags를 바꿔 끼워 본다
+  FEATURE_ACCOUNT_LINK: 'true',
   KAKAO_CLIENT_ID: 'test-kakao-client-id',
   KAKAO_CLIENT_SECRET: 'test-kakao-client-secret',
   // 운영 모드로 띄우는 테스트도 있어 https로 둔다

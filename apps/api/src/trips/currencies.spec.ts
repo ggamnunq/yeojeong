@@ -12,6 +12,7 @@ describe('여정 통화 목록(GET /api/currencies)', () => {
       name: '대한민국 원',
       unitName: '원',
       displayUnit: 1,
+      fractionDigits: 0,
     });
     expect(TRIP_CURRENCY_CODES).toEqual([
       'KRW',
@@ -40,6 +41,7 @@ describe('여정 통화 목록(GET /api/currencies)', () => {
       name: '일본 엔',
       unitName: '엔',
       displayUnit: 100,
+      fractionDigits: 0,
     });
     expect(byCode.get('USD')?.displayUnit).toBe(1);
   });

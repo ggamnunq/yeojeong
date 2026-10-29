@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { FxModule } from '../fx/fx.module.js';
 import { TransactionsModule } from '../transactions/transactions.module.js';
 import { ExpenseCommandService } from './expense-command.service.js';
 import { ExpenseLifecycleService } from './expense-lifecycle.service.js';
 import { ExpenseQueryService } from './expense-query.service.js';
 import { ExpenseStatsService } from './expense-stats.service.js';
 import { ExpensesController } from './expenses.controller.js';
+import { ManualExpenseService } from './manual-expense.service.js';
 import { OutOfPeriodService } from './out-of-period.service.js';
 import { TripEndedListener } from './trip-ended.listener.js';
 
@@ -14,7 +16,7 @@ import { TripEndedListener } from './trip-ended.listener.js';
  * trip.ended를 받으려면 앱에 EventEmitterModule.forRoot()가 있어야 한다(S2A가 등록).
  */
 @Module({
-  imports: [TransactionsModule],
+  imports: [TransactionsModule, FxModule],
   controllers: [ExpensesController],
   providers: [
     ExpenseQueryService,
@@ -22,8 +24,14 @@ import { TripEndedListener } from './trip-ended.listener.js';
     ExpenseLifecycleService,
     ExpenseStatsService,
     OutOfPeriodService,
+    ManualExpenseService,
     TripEndedListener,
   ],
-  exports: [ExpenseQueryService, ExpenseStatsService, ExpenseLifecycleService],
+  exports: [
+    ExpenseQueryService,
+    ExpenseStatsService,
+    ExpenseLifecycleService,
+    ManualExpenseService,
+  ],
 })
 export class ExpensesModule {}
