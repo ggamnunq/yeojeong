@@ -402,7 +402,6 @@ describe.skipIf(!databaseUrl)(
         currency: 'KRW',
         krwAmount: 18000,
         merchantName: '이치란 라멘',
-        cardLast4: '1934',
         status: 'NEW',
         cancelState: 'NONE',
         inTripId: seed.tripId,
@@ -410,6 +409,9 @@ describe.skipIf(!databaseUrl)(
         defaultSelected: true,
         alreadyImported: false,
       });
+      expect(result.items[0]).not.toHaveProperty('cardLast4');
+      expect(result.items[0]).not.toHaveProperty('cardName');
+      expect(result.items[0]).not.toHaveProperty('estimatedKrwAmount');
       expect(result.items[1]).toMatchObject({
         status: 'CANCELLED',
         selectable: false,

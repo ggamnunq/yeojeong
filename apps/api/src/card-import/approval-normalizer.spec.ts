@@ -27,12 +27,13 @@ describe('normalizeApprovals (KR_CD_P_002 → 화면 줄)', () => {
       krwAmount: 22000,
       merchantName: '온라인예매',
       overseas: false,
-      cardLast4: '0000',
-      cardName: null,
       cancelState: 'NONE',
       partialCancelAmount: null,
     });
     expect(item.importKey).toMatch(/^[0-9a-f]{64}$/);
+    // 카드 끝 4자리·카드 이름도 내보내지 않는다
+    expect(item).not.toHaveProperty('cardLast4');
+    expect(item).not.toHaveProperty('cardName');
     // 승인번호·카드번호 전체·주소·가맹점 번호는 어디에도 실리지 않는다
     const out = JSON.stringify(items);
     for (const secret of [
@@ -79,8 +80,6 @@ describe('normalizeApprovals (KR_CD_P_002 → 화면 줄)', () => {
         krwAmount: 26290,
         overseas: true,
         cancelState: 'NONE',
-        cardLast4: '1934',
-        cardName: '테스트 체크카드',
       }),
     ]);
     // 전액 취소: CANCELLED

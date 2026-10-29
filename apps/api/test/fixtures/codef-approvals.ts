@@ -75,7 +75,6 @@ export const DOC_SAMPLE_ROW: CodefApprovalRow & Record<string, string> = {
 
 const row = (over: CodefApprovalRow): CodefApprovalRow => ({
   resCardNo: '1234********1934',
-  resCardName: '테스트 체크카드',
   resAccountCurrency: 'KRW',
   resHomeForeignType: '1',
   resCancelYN: '0',

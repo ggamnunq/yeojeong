@@ -166,7 +166,7 @@ export const CARD_IMPORT_ITEM_STATUS_VALUES = [
  */
 export type CardImportItemStatus = (typeof CARD_IMPORT_ITEM_STATUS_VALUES)[number];
 
-/** 조회 결과 한 줄. 승인번호 원문·카드번호 전체·가맹점 주소·사업자번호는 응답에 넣지 않는다 */
+/** 조회 결과 한 줄. 승인번호 원문·카드번호(끝 4자리 포함)·카드 이름·가맹점 주소·사업자번호는 응답에 넣지 않는다 */
 export interface CardApprovalItem {
   /**
    * 중복 방지 키: HMAC-SHA256(서버 키, 사용자 + 카드사 + 승인번호 + 승인일시 + 원 승인금액) hex 64자.
@@ -181,8 +181,11 @@ export interface CardApprovalItem {
   currency: string;
   /** 카드사가 준 원화(있으면, 취소 줄은 음수). 화면은 이 값을 주 금액으로 보여 준다 */
   krwAmount: number | null;
-  /** 카드사 원화가 없는 외화: 승인 시각 직전 매매기준율 추정(고시가 없으면 null). KRW·카드사 원화가 있으면 null */
-  estimatedKrwAmount: number | null;
+  /**
+   * 카드사 원화가 없는 외화의 "약 ₩" 추정: 승인 시각 기준 시장 환율(매매기준율, 4-5 SPOT — 저장 때 여정 통화가 아닌 외화 환산 C-32와 같은 기준).
+   * 승인 시각에 고시가 없으면 그 직전 고시. 직전 고시도 없거나 KRW·카드사 원화가 있으면 필드를 넣지 않는다
+   */
+  estimatedKrwAmount?: number;
   /** 가맹점 이름(정리 뒤 40자까지 = 지갑 메모 규칙). 비었으면 "결제" */
   merchantName: string;
   /** 해외 승인 */
@@ -190,10 +193,6 @@ export interface CardApprovalItem {
   /** 카드사 코드·이름 */
   organization: string;
   organizationName: string;
-  /** 카드 끝 4자리(카드사가 줄 때만, 마스킹 값에서 뽑은 숫자 4개) */
-  cardLast4: string | null;
-  /** 카드 이름(카드사가 줄 때만, 예: "신한 Deep Dream") */
-  cardName: string | null;
   /** 화면 칩 상태(4-12-4) */
   status: CardImportItemStatus;
   cancelState: CardCancelState;

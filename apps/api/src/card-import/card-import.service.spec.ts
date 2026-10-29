@@ -11,7 +11,12 @@ import {
   type CodefRoute,
 } from '../../test/fakes/codef-http.js';
 import { AppException } from '../common/errors/index.js';
-import { CardImportService, periodErrors } from './card-import.service.js';
+import {
+  CardImportService,
+  estimateKrw,
+  periodErrors,
+} from './card-import.service.js';
+import { SpotRateTable } from '../fx/fx-rates.service.js';
 import { CodefAccountRemover } from './codef/codef-account-remover.js';
 import { ImportKeyHasher } from './import-key.js';
 import { ItemTokenSigner } from './item-token.js';
@@ -543,6 +548,59 @@ describe('CardImportService.fetch (direct)', () => {
     expect(await codeOf(service.fetch(USER, next, NOW))).toBe(
       'CARD_TWO_WAY_EXPIRED',
     );
+  });
+
+  it('estimates KRW with the spot rate at approval time (previous notice), else omits it', () => {
+    const at = new Date('2026-11-13T05:10:00Z');
+    const table = new SpotRateTable(
+      new Map([
+        [
+          'JPY',
+          [
+            {
+              rate: '9.000000',
+              source: 't',
+              effectiveAt: new Date('2026-11-12T02:00:00Z'),
+            },
+            {
+              rate: '9.192000',
+              source: 't',
+              effectiveAt: new Date('2026-11-13T02:00:00Z'),
+            },
+            {
+              rate: '9.500000',
+              source: 't',
+              effectiveAt: new Date('2026-11-13T08:00:00Z'),
+            },
+          ],
+        ],
+        [
+          'USD',
+          [
+            {
+              rate: '1380.000000',
+              source: 't',
+              effectiveAt: new Date('2026-11-14T00:00:00Z'),
+            },
+          ],
+        ],
+      ]),
+    );
+    const item = {
+      amount: '2860',
+      currency: 'JPY',
+      krwAmount: null,
+      approvedAt: at,
+    };
+    // 승인 시각 직전 고시(9.192) — 나중 고시(9.5)나 지금 시각이 아니다
+    expect(estimateKrw(item, table)).toBe(26290);
+    // 직전 고시가 없으면(첫 고시가 승인 뒤) 생략
+    expect(
+      estimateKrw({ ...item, currency: 'USD', amount: '18' }, table),
+    ).toBeNull();
+    expect(estimateKrw({ ...item, krwAmount: 26000 }, table)).toBeNull();
+    expect(estimateKrw({ ...item, currency: 'KRW' }, table)).toBeNull();
+    expect(estimateKrw(item, null)).toBeNull();
   });
 
   it('checks the period against the card company limits', () => {

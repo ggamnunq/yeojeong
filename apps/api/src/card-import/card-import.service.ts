@@ -25,9 +25,9 @@ import {
   suggestedTripOf,
   type TripCandidateInput,
 } from '../expenses/manual-input.js';
-import { convertToKrw, type FxSpotRate } from '../fx/convert.js';
+import { convertToKrw } from '../fx/convert.js';
 import { SUPPORTED_CURRENCY_CODES } from '../fx/currencies.js';
-import { FxRatesService } from '../fx/fx-rates.service.js';
+import { FxRatesService, type SpotRateTable } from '../fx/fx-rates.service.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -606,7 +606,7 @@ export class CardImportService {
       }),
     ]);
     const importedKeys = new Set(imported.map((t) => t.externalRef));
-    const spotCache = new Map<string, FxSpotRate | null>();
+    const rates = await this.spotRatesFor(items);
     const trips = await this.tripOptions(userId);
 
     const result: CardApprovalItem[] = [];
@@ -632,22 +632,18 @@ export class CardImportService {
         ? (suggestedTripOf(rankTripCandidates(trips, item.approvedAt))
             ?.tripId ?? null)
         : null;
+      const estimatedKrwAmount = estimateKrw(item, rates);
       result.push({
         importKey: item.importKey,
         approvedAt: toKstIso(item.approvedAt),
         amount: item.amount,
         currency: item.currency,
         krwAmount: item.krwAmount,
-        estimatedKrwAmount:
-          item.krwAmount === null && item.currency !== 'KRW'
-            ? await this.estimate(item, spotCache)
-            : null,
+        ...(estimatedKrwAmount !== null && { estimatedKrwAmount }),
         merchantName: item.merchantName,
         overseas: item.overseas,
         organization: org.code,
         organizationName: org.name,
-        cardLast4: item.cardLast4,
-        cardName: item.cardName,
         status: statusOf(item, alreadyImported, similar),
         cancelState: item.cancelState,
         partialCancelAmount: item.partialCancelAmount,
@@ -677,31 +673,23 @@ export class CardImportService {
     return result;
   }
 
-  /**
-   * 카드사 원화가 없는 외화의 "약 ₩" 추정: 지갑 환산 규칙(4-11-6)과 같이 지금 기준 최신 매매기준율(통화별로 한 번만 찾는다, 이 요청 안에서만 캐시).
-   * 고시가 없거나 지원하지 않는 통화면 null
-   */
-  private async estimate(
-    item: NormalizedApproval,
-    cache: Map<string, FxSpotRate | null>,
-  ): Promise<number | null> {
-    if (!SUPPORTED_CURRENCY_CODES.includes(item.currency)) return null;
-    let spot = cache.get(item.currency);
-    if (spot === undefined) {
-      spot = await this.fx.findSpotRate(item.currency, new Date());
-      cache.set(item.currency, spot);
-    }
-    if (!spot) return null;
-    try {
-      return convertToKrw({
-        amount: item.amount,
-        currency: item.currency,
-        policy: 'SPOT_AT_PAYMENT',
-        spot,
-      }).krwAmount;
-    } catch {
-      return null;
-    }
+  /** 추정이 필요한 외화(카드사 원화 없음)의 고시 표: 승인 시각 구간 + 그 직전 고시(한 번에 읽는다) */
+  private async spotRatesFor(
+    items: NormalizedApproval[],
+  ): Promise<SpotRateTable | null> {
+    const needed = items.filter(
+      (i) =>
+        i.krwAmount === null &&
+        i.currency !== 'KRW' &&
+        SUPPORTED_CURRENCY_CODES.includes(i.currency),
+    );
+    if (needed.length === 0) return null;
+    const times = needed.map((i) => i.approvedAt.getTime());
+    return this.fx.loadSpotTable(
+      needed.map((i) => i.currency),
+      new Date(Math.min(...times)),
+      new Date(Math.max(...times)),
+    );
   }
 
   /** 자동 연결 후보: 내가 활성 멤버인 예정·진행 중 여정(WalletService.tripOptions와 같은 조건) */
@@ -772,4 +760,32 @@ export function statusOf(
   if (similar) return 'SIMILAR';
   if (item.cancelState === 'PARTIAL') return 'PARTIAL_CANCEL';
   return 'NEW';
+}
+
+/**
+ * "약 ₩" 추정: 승인 시각 기준 시장 환율(4-5 SPOT_AT_PAYMENT, 저장 때 여정 통화가 아닌 외화 환산과 같은 기준).
+ * effectiveAt ≤ 승인 시각인 가장 최근 고시만 쓴다(표의 "가장 이른 고시" 대체는 쓰지 않는다). 없으면 null(필드 생략)
+ */
+export function estimateKrw(
+  item: Pick<
+    NormalizedApproval,
+    'amount' | 'currency' | 'krwAmount' | 'approvedAt'
+  >,
+  rates: Pick<SpotRateTable, 'find'> | null,
+): number | null {
+  if (item.krwAmount !== null || item.currency === 'KRW' || !rates) return null;
+  const spot = rates.find(item.currency, item.approvedAt);
+  if (!spot || spot.effectiveAt.getTime() > item.approvedAt.getTime()) {
+    return null;
+  }
+  try {
+    return convertToKrw({
+      amount: item.amount,
+      currency: item.currency,
+      policy: 'SPOT_AT_PAYMENT',
+      spot,
+    }).krwAmount;
+  } catch {
+    return null;
+  }
 }

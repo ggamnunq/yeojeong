@@ -7,7 +7,7 @@ import { formatScaled, krwAmountOf, parseScaled } from '../fx/convert.js';
 // 출력 필드 이름: admin.codef.io/dev-guide-menu/api-output-param/KR_CD_P_002
 //   resUsedDate(yyyyMMdd) · resUsedTime(HHmmss) · resUsedAmount · resAccountCurrency(ISO 4217) · resKRWAmt ·
 //   resCancelYN("0" 정상 · "1" 취소 · "2" 부분취소 · "3" 거절) · resCancelAmount · resHomeForeignType("1" 국내 · "2" 해외) ·
-//   resCardNo(마스킹) · resCardName · resApprovalNo · resMemberStoreName.
+//   resCardNo(마스킹 — 같은 카드 판정·승인번호 없는 줄의 키 재료로만, 응답에 넣지 않음) · resApprovalNo · resMemberStoreName.
 // KB국민카드는 "취소 전표 매입" 줄을 음수 resUsedAmount로 준다(출력부 안내). NH농협 해외 승인은 승인번호가 빌 수 있다.
 // 이 밖의 필드(가맹점 주소·전화·사업자번호·가맹점 번호 등)는 읽지 않고 버린다.
 
@@ -22,7 +22,6 @@ export interface CodefApprovalRow {
   resCancelAmount?: string;
   resHomeForeignType?: string;
   resCardNo?: string;
-  resCardName?: string;
   resApprovalNo?: string;
   resMemberStoreName?: string;
 }
@@ -37,8 +36,6 @@ export interface NormalizedApproval {
   krwAmount: number | null;
   merchantName: string;
   overseas: boolean;
-  cardLast4: string | null;
-  cardName: string | null;
   cancelState: CardCancelState;
   partialCancelAmount: string | null;
 }
@@ -72,8 +69,8 @@ interface ParsedRow {
   cancelAmount: bigint;
   overseas: boolean;
   cardKey: string;
+  /** 승인번호가 없는 줄의 키 재료로만 쓴다(응답에 넣지 않는다) */
   cardLast4: string | null;
-  cardName: string | null;
   approvalNo: string;
   merchantName: string;
 }
@@ -161,7 +158,6 @@ function parseRow(row: CodefApprovalRow, index: number): ParsedRow | null {
     // 같은 카드 판정: 마스킹 번호 그대로(카드사가 같은 형식으로 준다). 응답에는 넣지 않는다
     cardKey: cardNo,
     cardLast4: last4,
-    cardName: text(row.resCardName) || null,
     approvalNo: text(row.resApprovalNo),
     merchantName: merchantNameFor(row.resMemberStoreName),
   };
@@ -230,8 +226,6 @@ export function normalizeApprovals(
     ),
     merchantName: row.merchantName,
     overseas: row.overseas,
-    cardLast4: row.cardLast4,
-    cardName: row.cardName,
     cancelState: state,
     partialCancelAmount: partial === null ? null : formatAmount(partial),
   });

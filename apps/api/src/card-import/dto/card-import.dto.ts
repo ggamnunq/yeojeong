@@ -286,8 +286,12 @@ export class CardApprovalItemDto implements CardApprovalItem {
   @ApiProperty({ type: Number, nullable: true })
   krwAmount: number | null;
 
-  @ApiProperty({ type: Number, nullable: true })
-  estimatedKrwAmount: number | null;
+  @ApiPropertyOptional({
+    type: Number,
+    description:
+      '카드사 원화가 없는 외화만: 승인 시각 기준 시장 환율(직전 고시) 추정. 고시가 없으면 생략',
+  })
+  estimatedKrwAmount?: number;
 
   @ApiProperty({ example: '이치란 라멘' })
   merchantName: string;
@@ -300,12 +304,6 @@ export class CardApprovalItemDto implements CardApprovalItem {
 
   @ApiProperty({ example: '신한카드' })
   organizationName: string;
-
-  @ApiProperty({ type: String, nullable: true, example: '1934' })
-  cardLast4: string | null;
-
-  @ApiProperty({ type: String, nullable: true })
-  cardName: string | null;
 
   @ApiProperty({
     enum: CARD_IMPORT_ITEM_STATUS_VALUES,
