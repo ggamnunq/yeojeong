@@ -513,4 +513,30 @@ describe('공개 법적 페이지', () => {
       expect(router.state.location.search).toBe('')
     },
   )
+
+  const privacy03 = MANIFEST['privacy.md'].find((v) => v.version === '0.3')
+  it.runIf(privacy03)('처리방침 0.3: 시행 전에는 0.2 현행 + "예정 버전 · 0.3(11-07부터)", 시행 뒤에는 0.3 현행 + 이전 0.2·0.1', async () => {
+    const [v01, v02] = MANIFEST['privacy.md']
+    db.session = 'ANONYMOUS'
+    fixClock(kst(privacy03!.effectiveDate, '00:00:00'))
+    vi.setSystemTime(new Date(kst(privacy03!.effectiveDate, '00:00:00').getTime() - 1000))
+    const before = renderApp('/privacy')
+    expect(await screen.findByText(metaLine(v02))).toBeTruthy()
+    expect(screen.getByRole('link', { name: `예정 버전 · 0.3(${privacy03!.effectiveDate.slice(5)}부터)` }).getAttribute('href')).toBe(
+      '/privacy?v=0.3',
+    )
+    before.unmount()
+    const preview = renderApp('/privacy?v=0.3')
+    expect(await screen.findByText(metaLine(privacy03!))).toBeTruthy()
+    expect(screen.getByRole('button', { name: new RegExp(`^예정 버전 0\\.3이에요\\. ${privacy03!.effectiveDate}부터 적용돼요`) })).toBeTruthy()
+    preview.unmount()
+
+    vi.setSystemTime(kst(privacy03!.effectiveDate, '00:00:00'))
+    renderApp('/privacy')
+    expect(await screen.findByText(metaLine(privacy03!))).toBeTruthy()
+    expect(screen.getByRole('link', { name: `이전 버전 · 0.2(${v02.effectiveDate} ~ ${plusDays(privacy03!.effectiveDate, -1).slice(5)})` }).getAttribute('href')).toBe(
+      '/privacy?v=0.2',
+    )
+    expect(screen.getByRole('link', { name: new RegExp(`^이전 버전 · 0\\.1\\(${v01.effectiveDate} ~ `) }).getAttribute('href')).toBe('/privacy?v=0.1')
+  })
 })

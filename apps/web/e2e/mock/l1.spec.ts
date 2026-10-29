@@ -15,7 +15,10 @@ const kst = (date: string, time = '12:00:00') => new Date(`${date}T${time}+09:00
 const ALL_IN_FORCE = new Date(kst(Object.values(MANIFEST).flat().map((v) => v.effectiveDate).sort().at(-1)!).getTime() + 86_400_000)
 const latest = (file: string) => MANIFEST[file].at(-1)!
 const meta = (v: { version: string; effectiveDate: string }) => `버전 ${v.version} · 시행일 ${v.effectiveDate}`
-const NOTICE = `이용약관이 바뀌어요 · ${TERMS_02.effectiveDate.slice(5).replace('-', '.')}부터`
+const PRIVACY_03 = MANIFEST['privacy.md'].find((v) => v.version === '0.3')!
+const mmdd = (date: string) => date.slice(5).replace('-', '.')
+/** 이용약관 0.2·처리방침 0.3 시행 예고를 합친 공지(처리방침 0.3 게시일부터 이용약관 시행 전날까지) */
+const NOTICE = `이용약관(${mmdd(TERMS_02.effectiveDate)})·개인정보처리방침(${mmdd(PRIVACY_03.effectiveDate)})이 바뀌어요`
 const NEXT_NOTICE = '개인정보처리방침을 바로잡고 카드 불러오기 안내를 더했어요'
 
 test.describe('공개 약관 페이지(0.x)', () => {
@@ -101,7 +104,7 @@ test.describe('공지 배너(HF-60·60b)', () => {
     await page.goto('/trips/trip-osaka/payments')
     const banner = page.getByRole('button', { name: NOTICE })
     await expect(banner).toBeVisible()
-    // 한 번에 하나(이용약관 개정 예고가 먼저)
+    // 한 번에 하나(법정 사전 공지 = 합친 공지가 먼저)
     await expect(page.getByRole('button', { name: NEXT_NOTICE })).toBeHidden()
     await page.getByRole('button', { name: '공지 닫기' }).click()
     await expect(banner).toBeHidden()
@@ -114,12 +117,12 @@ test.describe('공지 배너(HF-60·60b)', () => {
     await expect(page.getByRole('button', { name: NOTICE })).toBeHidden()
   })
 
-  test('마이페이지 배너를 누르면 이용약관 예정본(0.2)', async ({ page }) => {
+  test('마이페이지 배너를 누르면 처리방침 예정본(0.3)', async ({ page }) => {
     await useMockScenario(page)
     await page.goto('/me')
     await page.getByRole('button', { name: NOTICE }).click()
-    await expect(page).toHaveURL(/\/terms\?v=0\.2$/)
-    await expect(page.getByText(`예정 버전 0.2이에요. ${TERMS_02.effectiveDate}부터 적용돼요`)).toBeVisible()
+    await expect(page).toHaveURL(/\/privacy\?v=0\.3$/)
+    await expect(page.getByText(`예정 버전 0.3이에요. ${PRIVACY_03.effectiveDate}부터 적용돼요`)).toBeVisible()
   })
 })
 
