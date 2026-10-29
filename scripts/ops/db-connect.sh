@@ -18,20 +18,17 @@
 # 5. 끝나면(정상 종료·오류·창 닫힘·SIGTERM) EXIT trap 한 곳에서 OPERATOR_DB_ACCESS_END(접속 시간·종료 코드)를 남긴다.
 # 접근 기록은 다른 access_logs와 같이 1년 보관 후 파기 배치(ACCESS_LOGS)가 지운다.
 # 기준 기록은 GCP 감사 로그(시크릿 읽기, 400일)다 — 이 기록은 그 보조다(docs/ops/operator-access.md 4절).
+# 운영자 식별·시크릿·비밀번호 파일·접근 기록 INSERT는 scripts/ops/lib/operator-db.sh(access-review.sh와 같이 쓴다).
 set -euo pipefail
 set +o history 2>/dev/null || true
 
-readonly SECRET="yeojeong-direct-url"
-readonly PROJECT="${GCP_PROJECT_ID:-yeojeong-11fb29}"
 readonly MAX_REASON=200
-readonly TOKENINFO_URL="https://oauth2.googleapis.com/tokeninfo"
-repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-readonly CA="$repo_dir/infra/envs/prod/certs/supabase-prod-ca-2021.crt"
-
-die() {
-  echo "db-connect: $*" >&2
-  exit 2
-}
+# shellcheck disable=SC2034 # lib/operator-db.sh가 쓴다
+OPDB_NAME="db-connect"
+# shellcheck disable=SC2034
+OPDB_UA="scripts/ops/db-connect.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/operator-db.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/operator-db.sh"
 
 usage() {
   sed -n '2,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
@@ -73,70 +70,16 @@ case "$reason" in
 esac
 [ "${#reason}" -le "$MAX_REASON" ] || die "사유는 ${MAX_REASON}자 이하로 적어 주세요"
 
-command -v gcloud >/dev/null || die "gcloud가 필요합니다"
-command -v psql >/dev/null || die "psql이 필요합니다(brew install libpq)"
-command -v curl >/dev/null || die "curl이 필요합니다"
+opdb_require_tools
+opdb_identify_operator
+opdb_load_connection
 
-# 운영자 식별: 액세스 토큰 → tokeninfo의 email(토큰의 실제 주체). 토큰은 명령줄 인자에 두지 않고 표준입력으로만 보낸다
-access_token="$(gcloud auth print-access-token 2>/dev/null)" || die "gcloud 인증이 필요합니다(gcloud auth login)"
-tokeninfo="$(printf 'access_token=%s' "$access_token" |
-  curl -fsS --max-time 15 -X POST --data-binary @- "$TOKENINFO_URL" 2>/dev/null)" ||
-  die "액세스 토큰의 주체를 확인하지 못했습니다(tokeninfo)"
-access_token=""
-json_field() {
-  printf '%s' "$tokeninfo" | tr -d '\n' |
-    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",}]*\)\"\{0,1\}.*/\1/p"
-}
-operator="$(json_field email)"
-verified="$(json_field email_verified)"
-tokeninfo=""
-case "$operator" in
-  *@*) ;;
-  *) die "액세스 토큰에 이메일이 없습니다(gcloud auth login으로 사용자 계정에 로그인)" ;;
-esac
-[ "$verified" = "true" ] || die "토큰 주체의 이메일이 확인되지 않았습니다($operator)"
-host_name="$(hostname 2>/dev/null || uname -n)"
-
-# 시크릿 원문은 이 변수에만 둔다(export하지 않는다)
-db_url="$(gcloud secrets versions access latest --secret="$SECRET" --project "$PROJECT" 2>/dev/null)" ||
-  die "Secret Manager $SECRET 을 읽지 못했습니다(권한·프로젝트 확인)"
-
-# postgresql://user:password@host[:port]/database[?query]
-re='^postgres(ql)?://([^:/@]+):([^@]+)@([^:/?]+)(:([0-9]+))?/([^?]+)(\?.*)?$'
-[[ "$db_url" =~ $re ]] || {
-  db_url=""
-  die "$SECRET 형식을 알 수 없습니다"
-}
-pct_decode() {
-  local s="${1//+/ }"
-  printf '%b' "${s//%/\\x}"
-}
-db_user="$(pct_decode "${BASH_REMATCH[2]}")"
-db_password="$(pct_decode "${BASH_REMATCH[3]}")"
-db_host="${BASH_REMATCH[4]}"
-db_port="${BASH_REMATCH[6]:-5432}"
-db_name="$(pct_decode "${BASH_REMATCH[7]}")"
-db_url=""
-
-# 운영은 Supabase CA로 인증서·호스트 이름을 검증한다. 로컬 테스트 DB(localhost)만 TLS를 생략한다
-case "$db_host" in
-  localhost | 127.0.0.1 | ::1) sslmode="disable" sslrootcert="" ;;
-  *)
-    [ -f "$CA" ] || die "Supabase CA 파일이 없습니다: infra/envs/prod/certs/supabase-prod-ca-2021.crt"
-    sslmode="verify-full" sslrootcert="$CA"
-    ;;
-esac
-
-session_id="$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)"
-[ -n "$session_id" ] || session_id="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+opdb_new_session_id
 
 started=0
 ended=0
 started_at="$(date +%s)"
 deleter=""
-passdir=""
-passfile=""
-pass_seq=0
 
 # 종료 기록은 EXIT trap 한 곳에서만 남긴다(신호 trap은 종료 코드만 정하고 exit로 넘긴다)
 # shellcheck disable=SC2329 # trap이 부른다
@@ -148,12 +91,11 @@ finish() {
   if [ -n "$deleter" ]; then kill "$deleter" 2>/dev/null || true; fi
   if [ "$started" -eq 1 ]; then
     local duration=$(($(date +%s) - started_at))
-    if ! log_access OPERATOR_DB_ACCESS_END "{\"durationSec\": ${duration}, \"exitStatus\": ${status}}"; then
+    if ! log_access OPERATOR_DB_ACCESS_END "$reason" "{\"durationSec\": ${duration}, \"exitStatus\": ${status}}"; then
       echo "db-connect: 종료 기록(OPERATOR_DB_ACCESS_END)을 남기지 못했습니다. docs/ops/operator-access.md의 수동 기록 절차를 따르세요(세션 ${session_id})" >&2
     fi
   fi
-  if [ -n "$passdir" ]; then rm -rf "$passdir"; fi
-  db_password=""
+  opdb_cleanup
   exit "$status"
 }
 trap finish EXIT
@@ -161,53 +103,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
-# 비밀번호는 명령줄 인자(다른 사용자의 ps에 보임)·환경변수(psql의 \! 하위 셸이 물려받음)로 넘기지 않는다.
-# 0700 임시 폴더 안 0600 파일(PGPASSFILE). 쓸 때마다 새 파일을 만들고 다 쓰면 지운다
-passdir="$(mktemp -d)"
-chmod 700 "$passdir"
-pgpass_escape() {
-  local v="${1//\\/\\\\}"
-  printf '%s' "${v//:/\\:}"
-}
-new_passfile() {
-  pass_seq=$((pass_seq + 1))
-  passfile="$passdir/pgpass.$pass_seq"
-  (
-    umask 077
-    printf '%s:%s:%s:%s:%s\n' "$(pgpass_escape "$db_host")" "$db_port" "$(pgpass_escape "$db_name")" \
-      "$(pgpass_escape "$db_user")" "$(pgpass_escape "$db_password")" >"$passfile"
-  )
-}
-run_psql() {
-  PGHOST="$db_host" PGPORT="$db_port" PGUSER="$db_user" PGDATABASE="$db_name" PGPASSFILE="$passfile" \
-    PGSSLMODE="$sslmode" PGSSLROOTCERT="$sslrootcert" PGCONNECT_TIMEOUT=15 \
-    PGAPPNAME="yeojeong-operator:${session_id}" PSQL_HISTORY=/dev/null \
-    psql "$@"
-}
+opdb_init_passdir
 
-# 접근 기록 한 행. user_id = 운영자 이메일에서 만든 UUID(users 행 없음), resource_type = DATABASE,
-# request_id = 이 접속의 세션 ID(START·END를 잇는다). 값은 psql 변수(:'name')로만 넣는다(SQL 인젝션 방지)
-log_access() {
-  local action="$1" extra="$2" status=0
-  new_passfile
-  run_psql -X -q -v ON_ERROR_STOP=1 \
-    -v action="$action" -v operator="$operator" -v reason="$reason" -v host="$host_name" \
-    -v sid="opdb:${session_id}" -v extra="$extra" >/dev/null <<'SQL' || status=$?
-INSERT INTO access_logs (user_id, action, resource_type, request_id, ua, details)
-VALUES (
-  md5('operator:' || lower(:'operator'))::uuid,
-  :'action',
-  'DATABASE',
-  :'sid',
-  'scripts/ops/db-connect.sh',
-  jsonb_build_object('operator', :'operator', 'reason', :'reason', 'host', :'host', 'at', now()) || (:'extra')::jsonb
-);
-SQL
-  rm -f "$passfile"
-  return "$status"
-}
-
-log_access OPERATOR_DB_ACCESS_START '{}' || die "시작 기록(OPERATOR_DB_ACCESS_START)을 남기지 못해 접속하지 않습니다"
+log_access OPERATOR_DB_ACCESS_START "$reason" '{}' || die "시작 기록(OPERATOR_DB_ACCESS_START)을 남기지 못해 접속하지 않습니다"
 started=1
 started_at="$(date +%s)"
 

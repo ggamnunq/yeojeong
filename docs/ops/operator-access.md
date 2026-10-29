@@ -31,6 +31,8 @@ scripts/ops/db-connect.sh --reason "결제 동기화 장애 조사(#123)"
 
 **접속지 정보**: 스크립트는 외부 IP 조회 서비스를 부르지 않는다. DB 직접 접속의 접속지 기준은 **GCP 감사 로그의 `callerIp`**(같은 접속에서 한 Secret Manager `yeojeong-direct-url` 읽기, 400일)다 — `access_logs`의 `host`(호스트 이름)·세션 시각과 함께 4절 3번 쿼리로 대조한다. (관리자 페이지 접근 기록은 원 IP를 `access_logs.client_ip`에 1년 남긴다.)
 
+운영자 식별·시크릿 읽기·비밀번호 파일·접근 기록 INSERT는 `scripts/ops/lib/operator-db.sh`에 있고 4절의 `access-review.sh`도 같이 씁니다.
+
 기록 형식(`access_logs`): `user_id` = `md5('operator:' + 이메일)`로 만든 UUID(회원 행 없음), `action` = `OPERATOR_DB_ACCESS_START`·`END`, `resource_type` = `DATABASE`, `ua` = `scripts/ops/db-connect.sh`, `details` = `{ operator, reason, host, at }`(+ END는 `durationSec`, `exitStatus`). 다른 접근 기록과 같이 **1년 보관 후 파기 배치(`ACCESS_LOGS`)**가 지웁니다.
 
 `SIGKILL`이나 전원 차단처럼 trap이 돌 수 없는 종료로 END가 빠지면, 다음 접속 때 같은 세션 ID로 아래처럼 수동 기록을 남기고 월간 점검 메모에 적습니다.
@@ -53,12 +55,30 @@ VALUES (md5('operator:' || lower('<이메일>'))::uuid, 'OPERATOR_DB_ACCESS_END'
 
 | 기록 | 위치 | 보관 |
 |---|---|---|
-| 관리자 페이지 접근 기록(`ADMIN_*`), DB 직접 접속 기록(`OPERATOR_DB_ACCESS_*`) | DB `access_logs` | 1년(파기 배치) |
+| 관리자 페이지 접근 기록(`ADMIN_*`), DB 직접 접속 기록(`OPERATOR_DB_ACCESS_*`), 월간 점검 기록(`OPERATOR_ACCESS_REVIEW`) | DB `access_logs` | 1년(파기 배치) |
 | GCP 감사 로그(Admin Activity, Secret Manager·Cloud Run·IAM·Cloud Storage 등 Data Access) — **기준 기록** | Cloud Logging `_Required`(400일) · 서울 감사 버킷 `yeojeong-audit-logs`(400일, `infra/envs/prod/logging.tf`) | 400일 |
 
 ## 4. 월 1회 접속 기록 점검
 
-매월 첫 주에 지난달 기록을 봅니다. 결과(이상 없음 / 조치)는 운영 메모에 날짜와 함께 남깁니다.
+**매월 첫 주**에 지난 점검 이후의 기록을 보고, 결과를 `access_logs`에 남깁니다. 아래 1·2(DB 기록)는 스크립트가 요약하고, 3(GCP 감사 로그 — 기준 기록)은 스크립트가 출력하는 명령으로 직접 대조합니다.
+
+```bash
+scripts/ops/access-review.sh                    # 또는 pnpm ops:access-review
+# 요약을 보여 준 뒤 묻는다: 1) 이상 없음  2) 이상 있음 → 메모(한 줄, 500자 이하, 개인정보 없이. 이상 있음이면 필수)
+scripts/ops/access-review.sh --since 2026-10-01 # 점검 기간 시작(KST 날짜)을 직접 정할 때
+scripts/ops/access-review.sh --result ok --note "GCP 감사 로그 대조 완료"   # 묻지 않고 기록
+```
+
+| 단계 | 내용 |
+|---|---|
+| 접속 | `db-connect.sh`와 같다 — 점검자 = gcloud 액세스 토큰의 실제 주체(tokeninfo 이메일), 연결 정보는 Secret Manager `yeojeong-direct-url`, 값은 화면·인자·환경변수에 남기지 않음. 이 점검도 DB 직접 접속이므로 `OPERATOR_DB_ACCESS_START`(사유 "월간 접속기록 점검")·`END`를 남깁니다 — 감사 로그의 시크릿 읽기와 짝이 맞습니다 |
+| 점검 기간 | 지난 점검 기록(`OPERATOR_ACCESS_REVIEW`)의 `periodEnd`부터 이번 접속 시작까지. 기록이 없으면 지난달 1일 0시(KST)부터. 점검 세션 자신은 다음 점검 기간에 들어갑니다. 결과를 남기지 않은 실행은 기간을 옮기지 않습니다 |
+| 요약(KST) | 관리자 접근 기록(`ADMIN_*`) 행위·`client_ip`별 건수와 **처음 보는 IP** 표시 · 관리자 로그인 실패 `client_ip`·사유별 · DB 직접 접속 START·END 짝(**END 없음 / START 없음** 표시)과 사유·호스트·시각 · 최근 점검 기록 3건 · 점검 기간을 채운 GCP 감사 로그 대조 명령 |
+| 기록 | `access_logs` 한 행: `action` = `OPERATOR_ACCESS_REVIEW`, `resource_type` = `DATABASE`, `request_id` = 점검 세션(`opdb:<세션 ID>`, START·END와 같음), `ua` = `scripts/ops/access-review.sh`, `details` = `{ operator, host, periodStart, periodEnd, result: OK \| ISSUE, note, summary: { adminEvents, adminLoginFailed, adminClientIps, dbSessions, dbStartWithoutEnd, dbEndWithoutStart }, at }`. 메모 등 값은 psql 변수로만 넣습니다(SQL 인젝션 방지). 결과를 받지 못하면(대화형이 아니고 `--result`도 없음) 기록하지 않고 종료 코드 3 |
+
+스크립트 테스트(가짜 gcloud·tokeninfo + 로컬 임시 DB, `access_logs`의 `ADMIN_*`·`OPERATOR_*` 행을 지우고 씀): `TEST_DATABASE_URL=postgresql://yeojeong:yeojeong@localhost:5432/<이름>_test bash scripts/ops/access-review.test.sh` — 잘못된 결과·메모·기간 인자에서 gcloud를 부르기 전에 멈추는지, 요약(client_ip별·실패 사유별·처음 보는 IP·짝 없는 START/END·기간 밖 제외), 점검 기록(점검자 = 토큰 주체, 메모의 따옴표 그대로), 점검 세션의 START → 점검 → END, 다음 점검 기간이 지난 `periodEnd`에서 이어지는지를 봅니다.
+
+점검 항목(1·2의 SQL은 스크립트 없이 지난달을 직접 볼 때 쓴다):
 
 1. DB 직접 접속: START마다 END가 있는지, 사유가 구체적인지, 근무 외 시간·낯선 호스트가 없는지.
 
@@ -80,8 +100,10 @@ VALUES (md5('operator:' || lower('<이메일>'))::uuid, 'OPERATOR_DB_ACCESS_END'
    WHERE action LIKE 'ADMIN\_%' AND at >= date_trunc('month', now()) - interval '1 month' AND at < date_trunc('month', now())
    GROUP BY action, client_ip ORDER BY action, count(*) DESC;
    ```
-3. GCP 감사 로그(**기준 기록**): DB 비밀번호를 얻을 수 있는 읽기를 모두 대조합니다. 사람 계정의 읽기마다 위 1의 START가 있어야 하고, 서비스 계정의 읽기는 정해진 것(아래)만 있어야 합니다.
-   - Secret Manager `yeojeong-direct-url`(세션 풀러) — 사람: `db-connect.sh` 접속, 배포 서비스 계정: 마이그레이션
+3. GCP 감사 로그(**기준 기록**): DB 비밀번호를 얻을 수 있는 읽기를 모두 대조합니다. 사람 계정의 읽기마다 위 1의 START(`db-connect.sh`·`access-review.sh`)가 비슷한 시각에 있어야 하고, 서비스 계정의 읽기는 정해진 것(아래)만 있어야 합니다.
+   - **callerIp 대조**: 사람 계정 읽기의 `protoPayload.requestMetadata.callerIp`가 운영자가 아는 접속지(집·사무실 회선, 그날 쓴 네트워크)인지 확인하고, 같은 시각 START의 `host`(호스트 이름)와 함께 봅니다. 관리자 페이지 `client_ip`(위 2)와 같은 회선이면 같은 IP로 보입니다. 모르는 IP·START 없는 읽기는 "이상 있음"으로 기록하고 메모에 이슈 번호를 적습니다
+   - `access-review.sh`가 점검 기간(`timestamp>=` · `<`)을 채운 명령을 출력합니다. 기간을 직접 볼 때는 아래처럼 `--freshness`로 봅니다
+   - Secret Manager `yeojeong-direct-url`(세션 풀러) — 사람: `db-connect.sh`·`access-review.sh` 접속, 배포 서비스 계정: 마이그레이션
    - Secret Manager `yeojeong-database-url`(런타임 연결) — Cloud Run 런타임 서비스 계정(인스턴스 시작)만. 사람의 읽기는 없어야 합니다
    - Terraform state 버킷(`yeojeong-11fb29-tfstate`, state에 DB 비밀번호가 있음) 객체 읽기 — `terraform plan/apply`를 한 날과 맞는지
 
@@ -95,4 +117,4 @@ VALUES (md5('operator:' || lower('<이메일>'))::uuid, 'OPERATOR_DB_ACCESS_END'
      --format='table(timestamp, protoPayload.authenticationInfo.principalEmail, protoPayload.requestMetadata.callerIp)'
    ```
 
-4. 이상이 있으면 원인을 확인하고, 필요하면 비밀번호 교체(Terraform `random_password.db` 재생성)와 처리방침 제9조(유출 통지) 절차를 검토합니다.
+4. 이상이 있으면 원인을 확인하고, 필요하면 비밀번호 교체(Terraform `random_password.db` 재생성)와 처리방침 제9조(유출 통지) 절차를 검토합니다. 조치가 끝나면 다음 점검 메모에 결과를 적습니다.
