@@ -7,6 +7,7 @@ import {
   type ConnectionAttemptView,
   type ConnectionCandidate,
   type ConsentDocumentSummary,
+  type ConsentStatusResponse,
   type FinConsentId,
   type ManualSyncResponse,
   type PaymentMethodsResponse,
@@ -72,7 +73,7 @@ export const requestSync = () => apiFetch<ManualSyncResponse>('/payment-methods/
 export const removePaymentMethod = (paymentMethodId: string, purgeImported: boolean) =>
   apiFetch<void>(`/payment-methods/${paymentMethodId}${purgeImported ? '?purgeImported=true' : ''}`, { method: 'DELETE' })
 
-export const saveFinConsents = (body: SaveConsentsRequest) => apiFetch<{ valid: true }>('/consents', { body })
+export const saveFinConsents = (body: SaveConsentsRequest) => apiFetch<ConsentStatusResponse>('/consents', { body })
 
 export const updateFxPolicy = (tripId: string, body: UpdateFxPolicyRequest) =>
   apiFetch<UpdateFxPolicyResponse>(`/trips/${tripId}/fx-policy`, { method: 'PATCH', body })

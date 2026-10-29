@@ -13,9 +13,14 @@ export const WITHDRAWN_NICKNAME = '탈퇴한 멤버'
  * 탈퇴한 멤버인가. 응답에 전용 플래그가 아직 없어 isDeleted·userId null(생기면)과 서버 고정 이름으로 본다.
  * TODO(서버): MemberSummary에 isWithdrawn 같은 플래그가 생기면 그 값만 본다.
  */
-export function isWithdrawn(m: MemberSummary): boolean {
-  const extra = m as MemberSummary & { isDeleted?: boolean; isWithdrawn?: boolean; userId?: string | null }
-  return extra.isWithdrawn === true || extra.isDeleted === true || extra.userId === null || m.nickname === WITHDRAWN_NICKNAME
+export function isWithdrawn(m: Pick<MemberSummary, 'nickname' | 'profileImageUrl'>): boolean {
+  const extra = m as typeof m & { isDeleted?: boolean; isWithdrawn?: boolean; userId?: string | null }
+  return (
+    extra.isWithdrawn === true ||
+    extra.isDeleted === true ||
+    extra.userId === null ||
+    (m.nickname === WITHDRAWN_NICKNAME && m.profileImageUrl === null)
+  )
 }
 
 /**

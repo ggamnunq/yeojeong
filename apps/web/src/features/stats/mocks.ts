@@ -1,13 +1,13 @@
-import { http, HttpResponse, type HttpHandler } from 'msw'
+import { HttpResponse, type HttpHandler } from 'msw'
 import { findTrip, MOCK_NOW, TRIP } from '../../mocks/data'
-import { mockError, requireMember } from '../../mocks/utils'
+import { api, mockError, requireMember } from '../../mocks/utils'
 import { budgetRatio, budgetState, spendingSplit } from '../settlement/mockLedger'
 import { ledgerOf, meFirst, personalTotal, seedJejuSettlement, summaryOf } from '../settlement/mockData'
 import type { TripSummary } from '../settlement/types'
 
 // GET /api/trips/:tripId/summary (FR-601~604). 지금 SHARED 결제로 즉석 계산(기능명세 4-6·4-9). 미확정은 모든 수치에서 뺀다.
 export const handlers: HttpHandler[] = [
-  http.get('/api/trips/:tripId/summary', ({ params }) => {
+  api.get<TripSummary>('/api/trips/:tripId/summary', ({ params }) => {
     const tripId = String(params.tripId)
     if (tripId === TRIP.jeju) seedJejuSettlement()
     const { denied, membership } = requireMember(tripId)

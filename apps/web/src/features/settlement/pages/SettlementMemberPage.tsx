@@ -82,8 +82,9 @@ function MemberContent({ data, left }: { data: SettlementMemberExpenses; left: b
   const sharedId = useId()
   const personalId = useId()
   const s = settlementText(data.direction, data.netKrw)
-  const shared = data.sharedPayments
-  const personal = data.personalPayments
+  const newestFirst = (items: ExpenseListItem[]) => [...items].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+  const shared = newestFirst(data.sharedPayments)
+  const personal = data.personalPayments ? newestFirst(data.personalPayments) : null
 
   return (
     <div className="flex flex-col pb-8">

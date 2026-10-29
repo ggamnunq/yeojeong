@@ -64,6 +64,51 @@ describe('기간 외 결제 추가(HF-43)', () => {
     expect((screen.getByRole('button', { name: '0건 추가' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('후보는 캐시하지 않는다: 탭을 바꿀 때마다 새로 조회하고 그동안 스켈레톤 + 버튼 비활성, 식별자는 매번 새로 발급', async () => {
+    const seen: { side: string | null; ids: string[] }[] = []
+    server.events.on('response:mocked', async ({ request, response }) => {
+      if (!request.url.includes('/out-of-period-candidates')) return
+      const body = (await response.clone().json()) as { candidateId: string }[]
+      seen.push({ side: new URL(request.url).searchParams.get('side'), ids: body.map((c) => c.candidateId) })
+    })
+    renderApp(PAGE)
+    await screen.findByRole('list', { name: '기간 외 결제' })
+    fireEvent.click(rows()[0])
+    expect(screen.getByRole('button', { name: '1건 추가' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio', { name: '여정 후' }))
+    await screen.findByRole('heading', { name: '불러올 결제가 없어요' })
+    fireEvent.click(screen.getByRole('radio', { name: '여정 전' }))
+    // 다시 조회하는 동안 행 스켈레톤, 고른 것은 비워진다
+    expect(screen.getByRole('status', { name: '불러오는 중' })).toBeTruthy()
+    expect((screen.getByRole('button', { name: '0건 추가' }) as HTMLButtonElement).disabled).toBe(true)
+    await screen.findByRole('list', { name: '기간 외 결제' })
+    await waitFor(() => expect(seen.map((s) => s.side)).toEqual(['BEFORE', 'AFTER', 'BEFORE']))
+    expect(seen[2].ids).toHaveLength(4)
+    expect(seen[2].ids.some((id) => seen[0].ids.includes(id))).toBe(false)
+    server.events.removeAllListeners()
+  })
+
+  it('고른 지 오래돼 식별자가 만료되면(400) 선택을 비우고 다시 조회한다', async () => {
+    let calls = 0
+    server.use(
+      // 세기만 하고 기본 목으로 넘긴다
+      http.get('/api/trips/:tripId/out-of-period-candidates', () => {
+        calls += 1
+      }),
+    )
+    renderApp(PAGE)
+    await screen.findByRole('list', { name: '기간 외 결제' })
+    fireEvent.click(rows()[0])
+    const now = Date.now()
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now + 6 * 60_000)
+    fireEvent.click(screen.getByRole('button', { name: '1건 추가' }))
+    expect(await screen.findByText('추가할 수 없는 결제가 있어요')).toBeTruthy()
+    spy.mockRestore()
+    await waitFor(() => expect(calls).toBe(2))
+    await screen.findByRole('list', { name: '기간 외 결제' })
+    expect(screen.getByRole('button', { name: '0건 추가' })).toBeTruthy()
+  })
+
   it('연결 만료면 다시 연결 Callout', async () => {
     server.use(http.get('/api/trips/:tripId/out-of-period-candidates', () => fail('CONNECTION_EXPIRED')))
     renderApp(PAGE)

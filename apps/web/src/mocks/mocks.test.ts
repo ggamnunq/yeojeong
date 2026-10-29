@@ -13,9 +13,19 @@ describe('mockError', () => {
   })
 
   it('도메인 코드는 status·details를 직접 준다', async () => {
-    const res = mockError('CONSENT_REQUIRED', 403, { required: ['TOS'] })
+    const res = mockError('CONSENT_REQUIRED', 403, { missing: ['TOS'], required: [{ id: 'TOS', version: '0.1-draft' }] })
     expect(res.status).toBe(403)
-    expect(await res.json()).toMatchObject({ code: 'CONSENT_REQUIRED', details: { required: ['TOS'] } })
+    expect(await res.json()).toMatchObject({ code: 'CONSENT_REQUIRED', details: { missing: ['TOS'] } })
+  })
+})
+
+describe('목 핸들러 계약', () => {
+  it('features/*/mocks.ts는 http.* 대신 shared 타입을 고정한 api.*만 쓴다', () => {
+    const sources = import.meta.glob<string>('../features/*/mocks.ts', { eager: true, query: '?raw', import: 'default' })
+    expect(Object.keys(sources).length).toBeGreaterThan(0)
+    for (const [file, source] of Object.entries(sources)) {
+      expect(source, file).not.toMatch(/\bhttp\.(get|post|put|patch|delete|all|head|options)\(/)
+    }
   })
 })
 

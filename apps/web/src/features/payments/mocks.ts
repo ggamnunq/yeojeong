@@ -1,5 +1,5 @@
-import type { ErrorCode } from '@yeojeong/shared'
-import { http, HttpResponse, type HttpHandler } from 'msw'
+import type { AddOutOfPeriodExpensesRequest, ClassifyExpenseRequest, DismissDuplicateRequest, ErrorCode } from '@yeojeong/shared'
+import { HttpResponse, type HttpHandler } from 'msw'
 import type { EditBlockReason } from '../../api'
 import { splitEvenly } from '../../ds'
 import {
@@ -13,10 +13,10 @@ import {
   type MockExpense,
   type MockMembership,
 } from '../../mocks/data'
-import { mockError, requireMember } from '../../mocks/utils'
+import { api, mockError, requireMember } from '../../mocks/utils'
 import { seedJejuSettlement } from '../settlement/mockData'
 import { clock } from './clock'
-import type { ExpenseRow, ExpensesPage, OutOfPeriodCandidate, PaymentDetail } from './types'
+import type { ExpenseRow, ExpensesPage, OutOfPeriodAddResponse, OutOfPeriodCandidate, PaymentDetail } from './types'
 
 // 결제 목. 응답 모양은 서버 S2B-2(`packages/shared/src/api/expenses.ts`, `apps/api/src/expenses/README.md`)와 같다.
 // 규칙: 기능명세 6-3 expenses, 4-1-4~4-1-6, 4-3. db를 고치면 테스트마다 resetMockDb()로 되돌아간다.
@@ -191,6 +191,16 @@ const CANDIDATES: Record<string, MockCandidate[]> = {
 
 const addedExpenseId = (candidateId: string) => `exp-oop-${candidateId}`
 
+/** 서버처럼 조회할 때마다 새로 발급하는 5분짜리 임시 식별자("{후보}.{만료 ms}.{순번}") */
+export const OUT_OF_PERIOD_CANDIDATE_TTL_MS = 5 * 60_000
+let issued = 0
+const issueCandidateId = (base: string) => `${base}.${Date.now() + OUT_OF_PERIOD_CANDIDATE_TTL_MS}.${++issued}`
+/** 서명 확인 흉내: 만료됐거나 모양이 아니면 null */
+function verifyCandidateId(id: string): string | null {
+  const [base, exp] = id.split('.')
+  return base && Number(exp) > Date.now() ? base : null
+}
+
 function openCandidates(me: MockMembership, side?: 'BEFORE' | 'AFTER') {
   return (CANDIDATES[me.membershipId] ?? [])
     .filter((c) => (side ? c.side === side : true) && !db.expenses.some((e) => e.id === addedExpenseId(c.candidateId)))
@@ -222,7 +232,7 @@ function visibleExpense(tripId: string, expenseId: string) {
 const sameIds = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id) => b.includes(id))
 
 export const handlers: HttpHandler[] = [
-  http.get('/api/trips/:tripId/expenses', ({ params, request }) => {
+  api.get<ExpensesPage>('/api/trips/:tripId/expenses', ({ params, request }) => {
     const tripId = String(params.tripId)
     const check = requireMember(tripId)
     if (check.denied) return check.denied
@@ -257,22 +267,18 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  http.get('/api/trips/:tripId/expenses/:expenseId', ({ params }) => {
+  api.get<PaymentDetail>('/api/trips/:tripId/expenses/:expenseId', ({ params }) => {
     const found = visibleExpense(String(params.tripId), String(params.expenseId))
     if (found.denied) return found.denied
     return HttpResponse.json(expenseDetail(found.expense, found.me))
   }),
 
-  http.put('/api/trips/:tripId/expenses/:expenseId/classification', async ({ params, request }) => {
+  api.put<PaymentDetail, ClassifyExpenseRequest>('/api/trips/:tripId/expenses/:expenseId/classification', async ({ params, request }) => {
     const found = visibleExpense(String(params.tripId), String(params.expenseId))
     if (found.denied) return found.denied
     const { expense: e, me } = found
-    const body = (await request.json()) as {
-      status?: string
-      participantMembershipIds?: string[]
-      version?: number
-      confirmSharedToPersonal?: boolean
-    }
+    // 잘못된 본문(400 VALIDATION_FAILED)도 흉내 내도록 넓혀 읽는다
+    const body: Partial<Omit<ClassifyExpenseRequest, 'status'>> & { status?: string } = await request.json()
 
     const reason = editBlock(e, me)
     if (reason === 'TRIP_ENDED' || reason === 'TRIP_NOT_STARTED' || reason === 'PAYER_LEFT') return fail('EXPENSE_LOCKED')
@@ -322,11 +328,11 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(expenseDetail(e, me))
   }),
 
-  http.post('/api/trips/:tripId/expenses/:expenseId/duplicate-dismissal', async ({ params, request }) => {
+  api.post<PaymentDetail, DismissDuplicateRequest>('/api/trips/:tripId/expenses/:expenseId/duplicate-dismissal', async ({ params, request }) => {
     const found = visibleExpense(String(params.tripId), String(params.expenseId))
     if (found.denied) return found.denied
     const { expense: e, me } = found
-    const body = (await request.json()) as { version?: number }
+    const body: Partial<DismissDuplicateRequest> = await request.json()
 
     const reason = editBlock(e, me)
     if (reason === 'NOT_PAYER') return fail('NOT_PAYER')
@@ -341,7 +347,7 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(expenseDetail(e, me))
   }),
 
-  http.get('/api/trips/:tripId/out-of-period-candidates', ({ params, request }) => {
+  api.get<OutOfPeriodCandidate[]>('/api/trips/:tripId/out-of-period-candidates', ({ params, request }) => {
     const tripId = String(params.tripId)
     const check = requireMember(tripId)
     if (check.denied) return check.denied
@@ -349,27 +355,28 @@ export const handlers: HttpHandler[] = [
     if (db.paymentMethods.some((p) => p.userId === db.meUserId && p.status === 'EXPIRED')) return fail('CONNECTION_EXPIRED')
     const side = new URL(request.url).searchParams.get('side') === 'AFTER' ? 'AFTER' : 'BEFORE'
     const items: OutOfPeriodCandidate[] = openCandidates(check.membership, side).map(
-      ({ side: _side, paymentMethodId: _pm, ...rest }) => rest,
+      ({ side: _side, paymentMethodId: _pm, candidateId, ...rest }) => ({ candidateId: issueCandidateId(candidateId), ...rest }),
     )
     return HttpResponse.json(items)
   }),
 
-  http.post('/api/trips/:tripId/out-of-period-expenses', async ({ params, request }) => {
+  api.post<OutOfPeriodAddResponse, AddOutOfPeriodExpensesRequest>('/api/trips/:tripId/out-of-period-expenses', async ({ params, request }) => {
     const tripId = String(params.tripId)
     const check = requireMember(tripId)
     if (check.denied) return check.denied
     if (findTrip(tripId)!.status !== 'ONGOING') return fail('TRIP_PHASE_INVALID')
-    const body = (await request.json()) as { candidateIds?: string[] }
+    const body: Partial<AddOutOfPeriodExpensesRequest> = await request.json()
     const ids = [...new Set(body.candidateIds ?? [])]
     if (ids.length < 1 || ids.length > 50) {
       return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'candidateIds', code: 'arrayMaxSize', message: '1~50건을 골라 주세요' }] })
     }
     const open = openCandidates(check.membership)
-    const invalid = ids.filter((id) => !open.some((c) => c.candidateId === id))
+    const bases = ids.map(verifyCandidateId)
+    const invalid = ids.filter((_id, i) => !open.some((c) => c.candidateId === bases[i]))
     if (invalid.length > 0) return fail('OUT_OF_PERIOD_CANDIDATE_INVALID', { invalidCandidateIds: invalid })
 
     const created = open
-      .filter((c) => ids.includes(c.candidateId))
+      .filter((c) => bases.includes(c.candidateId))
       .map((c): MockExpense => ({
         id: addedExpenseId(c.candidateId),
         tripId,

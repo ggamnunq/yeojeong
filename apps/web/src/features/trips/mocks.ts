@@ -1,5 +1,5 @@
-import { INVITE_CODE_ALPHABET, normalizeInviteCode } from '@yeojeong/shared'
-import { http, HttpResponse, type HttpHandler } from 'msw'
+import { INVITE_CODE_ALPHABET, normalizeInviteCode, type TripVersionRequest } from '@yeojeong/shared'
+import { HttpResponse, type HttpHandler } from 'msw'
 import {
   activeMembership,
   db,
@@ -11,7 +11,7 @@ import {
   type MockMembership,
   type MockTrip,
 } from '../../mocks/data'
-import { denyUnlessAuthenticated, mockError, requireMember } from '../../mocks/utils'
+import { api, denyUnlessAuthenticated, mockError, noContent, requireMember, type NoContent } from '../../mocks/utils'
 import {
   addDays,
   daysBetween,
@@ -246,7 +246,7 @@ function checkInvite(raw: string): { denied: Response; trip?: undefined } | { de
 // ── 핸들러 ────────────────────────────────────────────────────────
 
 export const handlers: HttpHandler[] = [
-  http.get('/api/places', ({ request }) => {
+  api.get<Place[]>('/api/places', ({ request }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const query = (new URL(request.url).searchParams.get('query') ?? '').trim()
@@ -256,10 +256,10 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(items.slice(0, 20))
   }),
 
-  http.post('/api/trips', async ({ request }) => {
+  api.post<CreateTripResponse, CreateTripRequest>('/api/trips', async ({ request }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
-    const body = (await request.json()) as Partial<CreateTripRequest>
+    const body: Partial<CreateTripRequest> = await request.json()
     const fields: FieldError[] = []
     validateGroupName(body.groupName, fields)
     validatePlace(body.place, fields)
@@ -290,11 +290,11 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(result, { status: 201 })
   }),
 
-  http.patch('/api/trips/:tripId', async ({ params, request }) => {
+  api.patch<TripInfo, UpdateTripRequest>('/api/trips/:tripId', async ({ params, request }) => {
     const { denied, trip } = requireLeader(String(params.tripId))
     if (denied) return denied
     if (trip.status === 'ENDED') return domainError.phase()
-    const body = (await request.json()) as UpdateTripRequest
+    const body = await request.json()
     if (body.version !== trip.version) return domainError.versionConflict(trip)
 
     const editable = TRIP_EDITABLE_FIELDS[trip.status]
@@ -335,19 +335,19 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(tripResponse(trip))
   }),
 
-  http.post('/api/trips/:tripId/start', async ({ params, request }) => {
+  api.post<TripInfo, TripVersionRequest>('/api/trips/:tripId/start', async ({ params, request }) => {
     const { denied, trip } = requireLeader(String(params.tripId))
     if (denied) return denied
     // Q-26: 종료일이 지난 시작 전 여정은 시작할 수 없다(기간을 고쳐서 시작)
     if (trip.status !== 'UPCOMING' || trip.endDate < MOCK_TODAY) return domainError.phase()
-    const { version } = (await request.json()) as { version: number }
+    const { version } = await request.json()
     if (version !== trip.version) return domainError.versionConflict(trip)
     trip.status = 'ONGOING'
     trip.version += 1
     return HttpResponse.json(tripResponse(trip))
   }),
 
-  http.get('/api/trips/:tripId/end-preview', ({ params }) => {
+  api.get<EndPreviewResponse>('/api/trips/:tripId/end-preview', ({ params }) => {
     const { denied, trip } = requireLeader(String(params.tripId))
     if (denied) return denied
     if (trip.status !== 'ONGOING') return domainError.phase()
@@ -358,11 +358,11 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  http.post('/api/trips/:tripId/end', async ({ params, request }) => {
+  api.post<EndTripResponse, TripVersionRequest>('/api/trips/:tripId/end', async ({ params, request }) => {
     const { denied, trip } = requireLeader(String(params.tripId))
     if (denied) return denied
     if (trip.status !== 'ONGOING') return domainError.phase()
-    const { version } = (await request.json()) as { version: number }
+    const { version } = await request.json()
     if (version !== trip.version) return domainError.versionConflict(trip)
     const pending = db.expenses.filter((e) => e.tripId === trip.tripId && e.status === 'PENDING')
     for (const e of pending) e.status = 'PERSONAL'
@@ -372,7 +372,7 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  http.delete('/api/groups/:groupId', ({ params }) => {
+  api.delete<NoContent>('/api/groups/:groupId', ({ params }) => {
     const trip = db.trips.find((t) => t.groupId === String(params.groupId))
     if (!trip) return denyUnlessAuthenticated() ?? mockError('NOT_FOUND', 404)
     const { denied } = requireLeader(trip.tripId)
@@ -382,10 +382,10 @@ export const handlers: HttpHandler[] = [
     deletedIn().add(trip.groupId)
     db.trips.splice(db.trips.indexOf(trip), 1)
     db.memberships = db.memberships.filter((m) => m.tripId !== trip.tripId)
-    return new HttpResponse(null, { status: 204 })
+    return noContent()
   }),
 
-  http.get('/api/invites/:code', ({ params }) => {
+  api.get<InvitePreview>('/api/invites/:code', ({ params }) => {
     const { denied, trip } = checkInvite(String(params.code))
     if (denied) return denied
     const members = db.memberships
@@ -409,7 +409,7 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  http.post('/api/invites/:code/join', ({ params }) => {
+  api.post<JoinTripResponse>('/api/invites/:code/join', ({ params }) => {
     const { denied, trip } = checkInvite(String(params.code))
     if (denied) return denied
     if (activeMembership(trip.tripId, db.meUserId)) return domainError.alreadyMember()

@@ -75,11 +75,6 @@ function TossAuth({ attemptId, returnTo, callbackError }: TossAuthProps) {
     }
   }, [status, failed, callbackError, attemptId, returnTo, origin, navigate])
 
-  // 만료는 안내하고 「다시 연결」로 새 시도를 만든다(확정 명세)
-  useEffect(() => {
-    if (expired) toast.error('연결 시간이 지났어요')
-  }, [expired])
-
   const reconnect = () =>
     connect.start({
       purpose: purpose ?? 'WALLET_ADD',

@@ -142,7 +142,13 @@ describe('권한·단계(spec README §5 · 기능명세 4-8)', () => {
   it('시작 전 그룹장: 전 항목 수정·시작·삭제. 종료일이 지났으면 시작 불가(Q-26)', () => {
     asLeader(TRIP.busan)
     expect(tripPermissions(detail(TRIP.busan), TODAY)).toMatchObject({ canEdit: true, canStart: true, canDeleteGroup: true })
-    const expired = { ...detail(TRIP.busan), startDate: '2026-11-01', endDate: '2026-11-02' }
+    const upcoming = detail(TRIP.busan)
+    const expired = {
+      ...upcoming,
+      startDate: '2026-11-01',
+      endDate: '2026-11-02',
+      permissions: { ...upcoming.permissions, canStart: false },
+    }
     expect(isStartPeriodOver(expired, TODAY)).toBe(true)
     expect(tripPermissions(expired, TODAY)).toMatchObject({ canStart: false, canDeleteGroup: true })
   })
@@ -173,6 +179,6 @@ describe('영웅 카드', () => {
   })
 
   it('메타 한 줄 "일본 오사카 · 예산 ₩1,200,000"', () => {
-    expect(tripMetaLine(detail(TRIP.osaka))).toBe('일본 오사카 · 예산 ₩1,200,000')
+    expect(tripMetaLine(detail(TRIP.osaka))).toBe('일본 오사카 · 3박 4일 · 예산 ₩1,200,000')
   })
 })

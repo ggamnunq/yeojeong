@@ -83,10 +83,10 @@ describe('토스 연결 흐름(HF-28 → 06 → 07 → 08)', () => {
       polls: 2,
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
       candidates: [
-        { candidateId: 'cand-toss-account', type: 'ACCOUNT', institutionName: '토스뱅크', productName: '토스뱅크 통장', maskedNumber: '1000-12**-**21', last4: '21', preselected: true },
+        { candidateId: 'cand-toss-account', type: 'ACCOUNT', institutionName: '토스뱅크', productName: '토스뱅크 통장', maskedNumber: '1000-**-****321', last4: '321', preselected: true },
         { candidateId: 'cand-kakao-safebox', type: 'ACCOUNT', institutionName: '카카오뱅크', productName: '카카오뱅크 세이프박스', maskedNumber: '3333-**-****821', last4: '821', preselected: false },
-        { candidateId: 'cand-toss-check', type: 'CARD', institutionName: '토스뱅크', productName: '토스뱅크 체크카드', maskedNumber: '5365-****-****-1934', last4: '1934', preselected: true },
-        { candidateId: 'cand-shinhan', type: 'CARD', institutionName: '신한카드', productName: '신한카드 Deep Dream', maskedNumber: '4518-****-****-1102', last4: '1102', preselected: true },
+        { candidateId: 'cand-toss-check', type: 'CARD', institutionName: '토스뱅크', productName: '토스뱅크 체크카드', maskedNumber: '**** **** **** 1934', last4: '1934', preselected: true },
+        { candidateId: 'cand-shinhan', type: 'CARD', institutionName: '신한카드', productName: '신한카드 Deep Dream', maskedNumber: '**** **** **** 1102', last4: '1102', preselected: true },
       ],
     }
     const { router } = renderApp('/wallet/connect/select?attempt=attempt-9&returnTo=%2Ftrips')
@@ -193,8 +193,8 @@ describe('토스 인증 대기(HF-06)', () => {
     server.use(http.get('/api/payment-connections/attempts/attempt-7', () => mockError('ATTEMPT_EXPIRED', 410)))
     writeAttemptContext('attempt-7', { purpose: 'WALLET_ADD', from: '/wallet', opened: true })
     const { router } = renderApp('/wallet/connect/toss?attempt=attempt-7')
-    expect(await screen.findByRole('alert')).toBeTruthy()
-    expect(screen.getAllByText('연결 시간이 지났어요').length).toBeGreaterThan(0)
+    expect(await screen.findByRole('heading', { name: '연결 시간이 지났어요' })).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '다시 연결' }))
     await waitFor(() => expect(where(router)).toBe('/wallet/connect/toss?attempt=attempt-1'))
     expect(go).toHaveBeenCalledWith('about:blank')

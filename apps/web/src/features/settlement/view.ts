@@ -10,15 +10,13 @@ import {
   type SettlementRowNet,
 } from '../../ds'
 import type { SettlementDirection } from './types'
+import { isWithdrawn, WITHDRAWN_NICKNAME } from '../payments/rules'
 
 // 현황·정산 화면의 표시 규칙(화면명세 0-5). 서버 값을 글자로만 바꾸고 다시 계산하지 않는다.
 
 /** 탈퇴(FR-109)로 사용자가 없어진 멤버의 표시 이름. 서버(S2C views.ts)가 nickname을 이 값으로, 프사를 null로 준다 */
-export const WITHDRAWN_MEMBER_NAME = '탈퇴한 멤버'
-
-// TODO(서버): MemberSummary에 isWithdrawn 같은 명시 필드가 생기면 이름 비교 대신 그것을 쓴다
-export const isWithdrawn = (member: Pick<MemberSummary, 'nickname' | 'profileImageUrl'>) =>
-  member.nickname === WITHDRAWN_MEMBER_NAME && member.profileImageUrl === null
+export const WITHDRAWN_MEMBER_NAME = WITHDRAWN_NICKNAME
+export { isWithdrawn }
 
 /**
  * 표시 상태(명세 확정): 탈퇴한 멤버 = 회색 기본 아바타 + "탈퇴한 멤버", 태그 없음, 탭 불가.

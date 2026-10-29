@@ -1,19 +1,26 @@
-import { http, HttpResponse, type HttpHandler } from 'msw'
+import { HttpResponse, type HttpHandler } from 'msw'
 import { activeMembership, db, findTrip, type MockPaymentMethod } from '../../mocks/data'
-import { denyUnlessAuthenticated, mockError, requireMember } from '../../mocks/utils'
+import { api, denyUnlessAuthenticated, mockError, noContent, requireMember, type NoContent } from '../../mocks/utils'
 import type {
   AttemptPurpose,
   AttemptStatus,
+  ConfirmConnectionRequest,
+  ConfirmConnectionResponse,
+  ConnectionAttemptView,
   ConnectionCandidate,
   ConnectionStatus,
+  ConsentStatusResponse,
   FinConsentId,
   FxRateView,
+  ManualSyncResponse,
   PaymentMethodsResponse,
   PaymentMethodType,
   SaveConsentsRequest,
   StartConnectionRequest,
+  StartConnectionResponse,
   TripFxView,
   UpdateFxPolicyRequest,
+  UpdateFxPolicyResponse,
 } from './types'
 
 // 지갑·토스 연결·환율 목(데모 어댑터처럼 외부 인증은 바로 끝난다).
@@ -70,16 +77,13 @@ export type WalletMockState = {
   seq: number
 }
 
-/** 서버 규칙(계좌 앞 4·끝 3)대로 마스킹한 토스뱅크 통장. 공용 샘플(db)의 "1000-12**-**21"은 끝 2자리라 응답에서 바꿔 준다 */
-const TOSS_ACCOUNT_MASK = '1000-****-*321'
-const serverMask = (p: MockPaymentMethod) => (p.id === 'pm-toss-account' ? TOSS_ACCOUNT_MASK : p.maskedNumber)
 
 /** 데모 페르소나(준용)의 토스 후보 — HF-07 */
 const DEMO_CANDIDATES: MockCandidate[] = [
-  { candidateId: 'cand-toss-account', type: 'ACCOUNT', institutionName: '토스뱅크', productName: '토스뱅크 통장', shortLabel: '토스뱅크 통장', maskedNumber: TOSS_ACCOUNT_MASK, last4: '321' },
+  { candidateId: 'cand-toss-account', type: 'ACCOUNT', institutionName: '토스뱅크', productName: '토스뱅크 통장', shortLabel: '토스뱅크 통장', maskedNumber: '1000-**-****321', last4: '321' },
   { candidateId: 'cand-kakao-safebox', type: 'ACCOUNT', institutionName: '카카오뱅크', productName: '카카오뱅크 세이프박스', shortLabel: '카카오뱅크 통장', maskedNumber: '3333-**-****821', last4: '821' },
-  { candidateId: 'cand-toss-check', type: 'CARD', institutionName: '토스뱅크', productName: '토스뱅크 체크카드', shortLabel: '토스뱅크 체크카드', maskedNumber: '5365-****-****-1934', last4: '1934' },
-  { candidateId: 'cand-shinhan', type: 'CARD', institutionName: '신한카드', productName: '신한카드 Deep Dream', shortLabel: '신한카드', maskedNumber: '4518-****-****-1102', last4: '1102' },
+  { candidateId: 'cand-toss-check', type: 'CARD', institutionName: '토스뱅크', productName: '토스뱅크 체크카드', shortLabel: '토스뱅크 체크카드', maskedNumber: '**** **** **** 1934', last4: '1934' },
+  { candidateId: 'cand-shinhan', type: 'CARD', institutionName: '신한카드', productName: '신한카드 Deep Dream', shortLabel: '신한카드', maskedNumber: '**** **** **** 1102', last4: '1102' },
 ]
 
 /** 통화별 최신 매매기준율(샘플 100엔 = 919.20원) */
@@ -145,9 +149,13 @@ export function expireConnections(state: WalletMockState = walletMock()) {
 
 const myMethods = () => db.paymentMethods.filter((p) => p.userId === db.meUserId && p.status !== 'REMOVED')
 
+/** 서버 last4: 카드 끝 4자리, 계좌 끝 3자리 */
+const lastDigitsOf = (p: Pick<MockPaymentMethod, 'type' | 'maskedNumber'>) =>
+  p.maskedNumber.replace(/\D/g, '').slice(p.type === 'ACCOUNT' ? -3 : -4)
+
 function shortLabelOf(p: MockPaymentMethod) {
-  const last4 = p.maskedNumber.replace(/\D/g, '').slice(-4)
-  return p.label.endsWith(last4) ? p.label.slice(0, -last4.length).trim() : p.label
+  const last = lastDigitsOf(p)
+  return p.label.endsWith(last) ? p.label.slice(0, -last.length).trim() : p.label
 }
 
 function methodsResponse(): PaymentMethodsResponse {
@@ -173,8 +181,8 @@ function methodsResponse(): PaymentMethodsResponse {
         institutionName: p.institutionName,
         productName: p.productName,
         shortLabel: shortLabelOf(p),
-        maskedNumber: serverMask(p),
-        last4: serverMask(p).replace(/\D/g, '').slice(-4),
+        maskedNumber: p.maskedNumber,
+        last4: lastDigitsOf(p),
         status: p.status === 'EXPIRED' ? 'EXPIRED' : 'ACTIVE',
         lastSyncedAt: state.connections.find((c) => c.id === connectionId)?.lastSyncedAt ?? null,
       }
@@ -188,12 +196,12 @@ function methodsResponse(): PaymentMethodsResponse {
   }
 }
 
-function attemptView(a: MockAttempt) {
+function attemptView(a: MockAttempt): ConnectionAttemptView {
   return { attemptId: a.id, status: a.status, purpose: a.purpose, expiresAt: a.expiresAt }
 }
 
 function candidatesFor(purpose: AttemptPurpose): ConnectionCandidate[] {
-  const connected = new Set(myMethods().map(serverMask))
+  const connected = new Set(myMethods().map((p) => p.maskedNumber))
   return DEMO_CANDIDATES.filter((c) => purpose === 'RECONNECT' || !connected.has(c.maskedNumber)).map(
     ({ shortLabel: _shortLabel, ...c }) => ({ ...c, preselected: purpose === 'RECONNECT' ? connected.has(c.maskedNumber) : true }),
   )
@@ -256,9 +264,9 @@ function signupAttempt(attemptId: string): MockAttempt | undefined {
 // ── 핸들러 ────────────────────────────────────────────────────────
 
 export const handlers: HttpHandler[] = [
-  http.get('/api/payment-methods', () => denyUnlessAuthenticated() ?? HttpResponse.json(methodsResponse())),
+  api.get<PaymentMethodsResponse>('/api/payment-methods', () => denyUnlessAuthenticated() ?? HttpResponse.json(methodsResponse())),
 
-  http.post('/api/payment-methods/sync', () => {
+  api.post<ManualSyncResponse>('/api/payment-methods/sync', () => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const state = walletMock()
@@ -270,12 +278,13 @@ export const handlers: HttpHandler[] = [
     state.lastManualSyncAt = Date.now()
     const startedAt = nowKst()
     const ongoing = db.trips.some((t) => t.status === 'ONGOING' && activeMembership(t.tripId, db.meUserId))
-    if (!ongoing) return HttpResponse.json({ syncRunIds: [], startedAt, skipped: 'NO_ACTIVE_TRIP' }, { status: 202 })
+    // 진행 중 여정이 없으면 제공자를 부르지 않는다: 200 + skipped, 동기화 시각 그대로(FR-402)
+    if (!ongoing) return HttpResponse.json({ syncRunIds: [], startedAt, skipped: 'NO_ACTIVE_TRIP' })
     for (const c of mine) c.lastSyncedAt = startedAt
-    return HttpResponse.json({ syncRunIds: mine.map((c) => `sync-${c.id}`), startedAt }, { status: 202 })
+    return HttpResponse.json({ syncRunIds: mine.map((c) => `sync-${c.id}`), startedAt, skipped: null }, { status: 202 })
   }),
 
-  http.delete('/api/payment-methods/:paymentMethodId', ({ params, request }) => {
+  api.delete<NoContent>('/api/payment-methods/:paymentMethodId', ({ params, request }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const state = walletMock()
@@ -291,19 +300,23 @@ export const handlers: HttpHandler[] = [
       if (conn) conn.status = 'REVOKED'
       state.finConsent = false
     }
-    return new HttpResponse(null, { status: 204 })
+    return noContent()
   }),
 
-  http.post('/api/payment-connections', async ({ request }) => {
+  api.post<StartConnectionResponse, StartConnectionRequest>('/api/payment-connections', async ({ request }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const state = walletMock()
     if (!state.finConsent) {
       const missing: FinConsentId[] = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
-      // TODO(서버): 실제 응답의 required는 { id, version }[]. src/api consentRequiredIds가 문자열만 읽어 목은 문자열로 준다
-      return mockError('CONSENT_REQUIRED', 403, { missing, required: missing }, '금융정보 연동 동의가 필요해요')
+      return mockError(
+        'CONSENT_REQUIRED',
+        403,
+        { missing, required: missing.map((id) => ({ id, version: '0.1-draft' })) },
+        '금융정보 연동 동의가 필요해요',
+      )
     }
-    const body = (await request.json()) as StartConnectionRequest
+    const body = await request.json()
     if (body.purpose === 'RECONNECT' && !state.connections.some((c) => c.id === body.reconnectConnectionId)) {
       return mockError('NOT_FOUND', 404)
     }
@@ -323,7 +336,7 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json({ attemptId: id, authUrl: 'about:blank', expiresAt: attempt.expiresAt }, { status: 201 })
   }),
 
-  http.get('/api/payment-connections/attempts/:attemptId', ({ params }) => {
+  api.get<ConnectionAttemptView>('/api/payment-connections/attempts/:attemptId', ({ params }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const attempt = signupAttempt(String(params.attemptId)) ?? walletMock().attempts[String(params.attemptId)]
@@ -335,7 +348,7 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(attemptView(attempt))
   }),
 
-  http.get('/api/payment-connections/attempts/:attemptId/candidates', ({ params }) => {
+  api.get<ConnectionCandidate[]>('/api/payment-connections/attempts/:attemptId/candidates', ({ params }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const attempt = signupAttempt(String(params.attemptId)) ?? walletMock().attempts[String(params.attemptId)]
@@ -345,14 +358,14 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(attempt.candidates)
   }),
 
-  http.post('/api/payment-connections/attempts/:attemptId/confirm', async ({ params, request }) => {
+  api.post<ConfirmConnectionResponse, ConfirmConnectionRequest>('/api/payment-connections/attempts/:attemptId/confirm', async ({ params, request }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     const state = walletMock()
     const attempt = signupAttempt(String(params.attemptId)) ?? state.attempts[String(params.attemptId)]
     if (!attempt || attempt.userId !== db.meUserId) return mockError('NOT_FOUND', 404)
     if (attempt.status === 'EXPIRED') return mockError('ATTEMPT_EXPIRED', 410)
-    const { candidateIds } = (await request.json()) as { candidateIds: string[] }
+    const { candidateIds } = await request.json()
     const picked = DEMO_CANDIDATES.filter((c) => candidateIds.includes(c.candidateId))
     if (picked.length === 0) return mockError('VALIDATION_FAILED', 400)
 
@@ -370,11 +383,11 @@ export const handlers: HttpHandler[] = [
     if (attempt.purpose === 'RECONNECT') {
       for (const p of myMethods()) {
         if (state.methodConnection[p.id] !== connId) continue
-        p.status = picked.some((c) => c.maskedNumber === serverMask(p)) ? 'ACTIVE' : 'REMOVED'
+        p.status = picked.some((c) => c.maskedNumber === p.maskedNumber) ? 'ACTIVE' : 'REMOVED'
       }
     }
     for (const c of picked) {
-      const existing = myMethods().find((p) => serverMask(p) === c.maskedNumber)
+      const existing = myMethods().find((p) => p.maskedNumber === c.maskedNumber)
       if (existing) continue
       const id = `pm-${c.candidateId}-${state.seq}`
       db.paymentMethods.push({
@@ -396,20 +409,20 @@ export const handlers: HttpHandler[] = [
     })
   }),
 
-  // 금융정보 연동 동의 저장(지갑 WF-28·42). 가입(WF-05)과 문서 목록은 auth 목이 받는다
-  http.post('/api/consents', async ({ request }) => {
+  // 금융정보 연동 동의 저장(WF-05·28·42). 한 경로는 한 핸들러만 소유한다.
+  api.post<ConsentStatusResponse, SaveConsentsRequest>('/api/consents', async ({ request }) => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
-    const body = (await request.json()) as SaveConsentsRequest
+    const body = await request.json()
     const fin: FinConsentId[] = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
     const ok = fin.every((id) => body.agreements?.some((a) => a.consentId === id && a.agreed && a.version))
     if (!ok) return mockError('TERMS_REQUIRED', 400, undefined, '필수 항목에 동의해 주세요')
     walletMock().finConsent = true
-    return HttpResponse.json({ valid: true }, { status: 201 })
+    return HttpResponse.json({ valid: true, missing: [], required: [] }, { status: 201 })
   }),
 
   // 환율(S2C 계약: GET /api/fx · GET/PATCH /api/trips/:tripId/fx-policy)
-  http.get('/api/fx', ({ request }) => {
+  api.get<FxRateView>('/api/fx', ({ request }) => {
     const base = new URL(request.url).searchParams.get('base')?.toUpperCase() ?? ''
     const rate = RATES[base]
     if (!rate) return mockError('FX_RATE_UNAVAILABLE', 503)
@@ -428,7 +441,7 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  http.get('/api/trips/:tripId/fx-policy', ({ params }) => {
+  api.get<TripFxView>('/api/trips/:tripId/fx-policy', ({ params }) => {
     const tripId = String(params.tripId)
     const { denied } = requireMember(tripId)
     if (denied) return denied
@@ -436,14 +449,14 @@ export const handlers: HttpHandler[] = [
     return view ? HttpResponse.json(view) : mockError('NOT_FOUND', 404)
   }),
 
-  http.patch('/api/trips/:tripId/fx-policy', async ({ params, request }) => {
+  api.patch<UpdateFxPolicyResponse, UpdateFxPolicyRequest>('/api/trips/:tripId/fx-policy', async ({ params, request }) => {
     const tripId = String(params.tripId)
     const { denied, membership } = requireMember(tripId)
     if (denied) return denied
     const trip = findTrip(tripId)!
     if (membership.role !== 'LEADER') return mockError('NOT_LEADER', 403, undefined, '그룹장만 바꿀 수 있어요')
     if (trip.status === 'ENDED') return mockError('FX_POLICY_LOCKED', 409)
-    const body = (await request.json()) as UpdateFxPolicyRequest
+    const body = await request.json()
     if (body.version !== trip.version) return mockError('VERSION_CONFLICT', 409, { current: tripFxView(tripId) })
     if (body.policy === 'FIXED') {
       if (!body.fixedRate || !/^\d{1,12}(\.\d{1,2})?$/.test(body.fixedRate) || Number(body.fixedRate) <= 0) {
@@ -456,6 +469,6 @@ export const handlers: HttpHandler[] = [
     trip.fxPolicy = body.policy
     trip.version += 1
     const recalculatedCount = db.expenses.filter((e) => e.tripId === tripId && e.originalCurrency !== 'KRW').length
-    return HttpResponse.json({ fx: tripFxView(tripId), recalculatedCount })
+    return HttpResponse.json({ fx: tripFxView(tripId)!, recalculatedCount })
   }),
 ]

@@ -1,6 +1,9 @@
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { http } from 'msw'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { db, TRIP, USER } from '../../mocks/data'
+import { server } from '../../mocks/server'
+import { mockError } from '../../mocks/utils'
 import { renderApp } from '../../test/render'
 
 const PAYMENTS = `/trips/${TRIP.osaka}/payments`
@@ -80,7 +83,7 @@ describe('결제내역 · 리스트(WF-18)', () => {
       '551 호라이 난바본점',
       '패밀리마트 난바역점',
     ])
-    fireEvent.click(screen.getByRole('button', { name: '미확정만 보기 해제' }))
+    fireEvent.click(screen.getByRole('button', { name: /미확정만 보기 해제/ }))
     expect(await screen.findByRole('button', { name: /우메다/ })).toBeTruthy()
     expect(router.state.location.search).toBe('')
   })
@@ -143,6 +146,61 @@ describe('결제내역 · 리스트(WF-18)', () => {
     fail = false
     fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
     expect(await screen.findByRole('region', { name: /Day 2/ })).toBeTruthy()
+  })
+})
+
+describe('결제내역 · 당겨서 새로고침(FR-402)', () => {
+  /** 동기화 요청·목록 요청 수를 센다(응답은 기본 목) */
+  function countRequests(syncResponse?: () => Response) {
+    const count = { sync: 0, list: 0 }
+    server.use(
+      http.post('/api/payment-methods/sync', () => {
+        count.sync += 1
+        return syncResponse?.()
+      }),
+      http.get('/api/trips/:tripId/expenses', () => {
+        count.list += 1
+      }),
+    )
+    return count
+  }
+  const pull = (target: HTMLElement) => {
+    fireEvent.touchStart(target, { touches: [{ clientY: 0 }] })
+    fireEvent.touchMove(target, { touches: [{ clientY: 70 }] })
+    fireEvent.touchEnd(target)
+  }
+
+  it('진행 중이면 수동 동기화 → 끝날 때까지 스피너 → 목록을 다시 받는다', async () => {
+    const count = countRequests()
+    renderApp(PAYMENTS)
+    const day2 = await screen.findByRole('region', { name: '11.13 (금) Day 2' })
+    const listedBefore = count.list
+    pull(day2)
+    expect(await screen.findByText('새로고침 중')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText('새로고침 중')).toBeNull())
+    expect(count.sync).toBe(1)
+    expect(count.list).toBeGreaterThan(listedBefore)
+  })
+
+  it('60초 제한(429)이면 토스트 없이 목록만 다시 받는다', async () => {
+    const count = countRequests(() => mockError('SYNC_RATE_LIMITED', 429))
+    renderApp(PAYMENTS)
+    const day2 = await screen.findByRole('region', { name: '11.13 (금) Day 2' })
+    const listedBefore = count.list
+    pull(day2)
+    await waitFor(() => expect(count.list).toBeGreaterThan(listedBefore))
+    expect(count.sync).toBe(1)
+    expect(screen.queryByText('잠시 후 다시 시도해 주세요')).toBeNull()
+  })
+
+  it('종료된 여정은 당겨도 동기화하지 않는다', async () => {
+    const count = countRequests()
+    renderApp(`/trips/${TRIP.jeju}/payments`)
+    const rows = await screen.findAllByRole('region')
+    pull(rows[0])
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(count.sync).toBe(0)
+    expect(screen.queryByText('새로고침 중')).toBeNull()
   })
 })
 

@@ -9,7 +9,6 @@ import { consentDocumentsQuery, postLogout, postReconsent, visibleConsents } fro
 import { ConsentList } from '../components/ConsentList'
 import { useConsentChecks } from '../consent'
 import { COPY } from '../copy'
-import type { SessionWithReconsent } from '../types'
 
 /**
  * 재동의(부록 C-14, FR-107). WF-04 틀을 다시 쓰되 ‹·진행 막대 없음, 다시 받아야 할 항목만.
@@ -28,12 +27,10 @@ export default function ReconsentPage() {
   const required = new Set([
     ...(params.get('required') ?? '').split(',').filter(Boolean),
     ...(session.reconsentRequired ?? []),
-    ...((session.data as SessionWithReconsent | undefined)?.reconsentRequired ?? []).map((r) => r.id),
   ])
   const signupDocs = visibleConsents(documents.data)
   const matched = signupDocs.filter((d) => required.has(d.consentId))
   const docs = matched.length > 0 ? matched : signupDocs.filter((d) => d.required)
-  const summary = docs.find((d) => d.summary)?.summary
   const consent = useConsentChecks(docs)
 
   const agree = useMutation({
@@ -72,7 +69,6 @@ export default function ReconsentPage() {
       }}
     >
       <h1 className="text-h1 text-primary">{COPY.reconsentTitle}</h1>
-      {summary && <p className="pt-2 text-body-m text-secondary">{summary}</p>}
       <ConsentList
         className="pt-8"
         docs={docs}

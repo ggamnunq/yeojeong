@@ -1,24 +1,20 @@
 import {
   CONSENT_DEFINITIONS,
   CONSENT_ID_VALUES,
-  FIN_LINK_REQUIRED_CONSENTS,
+  normalizeNickname,
   SIGNUP_REQUIRED_CONSENTS,
   type ConsentId,
 } from '@yeojeong/shared'
-import { http, HttpResponse, type HttpHandler } from 'msw'
+import { HttpResponse, type HttpHandler } from 'msw'
 import type { Me } from '../../api'
 import { db, findUser } from '../../mocks/data'
-import { denyUnlessAuthenticated, mockError } from '../../mocks/utils'
-import { graphemeLength, NICKNAME_MAX_LENGTH } from './nickname'
+import { api, mockError, noContent, type NoContent } from '../../mocks/utils'
 import type {
   ConsentAgreement,
   ConsentDocument,
-  FinConsentRequest,
   MockKakaoResponse,
   ReconsentRequest,
   SignupRequest,
-  StartConnectionRequest,
-  StartConnectionResponse,
 } from './types'
 
 // 인증·동의 목. 세션 단계: ANONYMOUS → (카카오) SIGNUP_REQUIRED(닉네임 WF-03 → 약관 WF-04는 화면 상태) → (가입) AUTHENTICATED.
@@ -64,7 +60,11 @@ function persistSession() {
 
 try {
   const reconsent = localStorage.getItem('yj:mock:reconsent')
-  if (reconsent) db.consentRequired = reconsent.split(',').filter(Boolean)
+  if (reconsent) {
+    db.consentRequired = reconsent
+      .split(',')
+      .filter((id): id is ConsentId => (CONSENT_ID_VALUES as readonly string[]).includes(id))
+  }
 } catch {
   // 저장소가 없는 환경
 }
@@ -79,11 +79,17 @@ function agreedAll(agreements: ConsentAgreement[] | undefined, ids: readonly str
 /** 서버 normalizeNickname과 같은 규칙(FR-103) */
 function nicknameProblem(input: unknown) {
   if (typeof input !== 'string') return { code: 'EMPTY', message: '닉네임을 입력해 주세요' }
-  const value = input.trim()
-  if (/[\p{Cc}\u2028\u2029]/u.test(value)) return { code: 'INVALID_CHARACTER', message: '닉네임에 쓸 수 없는 문자가 있어요' }
-  if (value.length === 0) return { code: 'EMPTY', message: '닉네임을 입력해 주세요' }
-  if (graphemeLength(value) > NICKNAME_MAX_LENGTH) return { code: 'TOO_LONG', message: '닉네임은 10자까지 쓸 수 있어요' }
-  return null
+  const result = normalizeNickname(input)
+  if (result.ok) return null
+  return {
+    code: result.reason,
+    message:
+      result.reason === 'INVALID_CHARACTER'
+        ? '닉네임에 쓸 수 없는 문자가 있어요'
+        : result.reason === 'TOO_LONG'
+          ? '닉네임은 10자까지 쓸 수 있어요'
+          : '닉네임을 입력해 주세요',
+  }
 }
 
 function meOf(userId: string): Me {
@@ -93,15 +99,14 @@ function meOf(userId: string): Me {
     id: user.id,
     nickname: user.nickname,
     profileImageUrl: user.profileImageUrl,
+    hasProfileImage: user.profileImageUrl !== null,
     paymentMethodCount: methods.length,
     hasExpiredConnection: methods.some((p) => p.status === 'EXPIRED'),
   }
 }
 
-let attemptSeq = 0
-
 export const handlers: HttpHandler[] = [
-  http.get('/api/consents/documents', ({ request }) => {
+  api.get<ConsentDocument[]>('/api/consents/documents', ({ request }) => {
     const stage = new URL(request.url).searchParams.get('stage')
     if (stage !== 'SIGNUP' && stage !== 'FIN_LINK') {
       return mockError('VALIDATION_FAILED', 400, {
@@ -112,7 +117,7 @@ export const handlers: HttpHandler[] = [
   }),
 
   // 실제 서버는 302로 카카오 인가 페이지에 보낸다. 목 모드 화면은 fetch로 불러 로그인 + 콜백 결과만 받는다
-  http.get('/api/auth/kakao', ({ request }) => {
+  api.get<MockKakaoResponse>('/api/auth/kakao', ({ request }) => {
     let existing = false
     try {
       existing = localStorage.getItem('yj:mock:kakao') === 'existing'
@@ -126,11 +131,11 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  http.post('/api/auth/signup', async ({ request }) => {
+  api.post<Me, SignupRequest>('/api/auth/signup', async ({ request }) => {
     if (db.session !== 'SIGNUP_REQUIRED') {
       return mockError('UNAUTHENTICATED', 401, undefined, '가입 시간이 지났어요. 다시 로그인해 주세요')
     }
-    const body = (await request.json()) as Partial<SignupRequest>
+    const body: Partial<SignupRequest> = await request.json()
     const problem = nicknameProblem(body.nickname)
     if (problem) return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'nickname', ...problem }] })
     if (!agreedAll(body.agreements, SIGNUP_REQUIRED_CONSENTS)) return mockError('TERMS_REQUIRED', 400)
@@ -144,9 +149,9 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(meOf(id), { status: 201 })
   }),
 
-  http.post('/api/auth/reconsent', async ({ request }) => {
+  api.post<NoContent, ReconsentRequest>('/api/auth/reconsent', async ({ request }) => {
     if (db.session !== 'AUTHENTICATED') return mockError('UNAUTHENTICATED', 401)
-    const body = (await request.json()) as Partial<ReconsentRequest>
+    const body: Partial<ReconsentRequest> = await request.json()
     const required = db.consentRequired?.length ? db.consentRequired : SIGNUP_REQUIRED_CONSENTS
     if (!agreedAll(body.agreements, required)) return mockError('TERMS_REQUIRED', 400)
     db.consentRequired = null
@@ -155,40 +160,14 @@ export const handlers: HttpHandler[] = [
     } catch {
       // 저장소가 없는 환경
     }
-    return new HttpResponse(null, { status: 204 })
+    return noContent()
   }),
 
-  http.post('/api/auth/logout', () => {
+  api.post<NoContent>('/api/auth/logout', () => {
     db.session = 'ANONYMOUS'
     db.consentRequired = null
     persistSession()
-    return new HttpResponse(null, { status: 204 })
+    return noContent()
   }),
 
-  // 연동 동의 저장(FR-809). 가입 직후 시트(screen WF-05)만 여기서 받고, 지갑(WF-28·42)은 지갑 목으로 넘긴다
-  http.post('/api/consents', async ({ request }) => {
-    const body = (await request.clone().json()) as Partial<FinConsentRequest>
-    if (body.screen !== 'WF-05') return
-    const denied = denyUnlessAuthenticated()
-    if (denied) return denied
-    if (body.stage !== 'FIN_LINK' || !agreedAll(body.agreements, FIN_LINK_REQUIRED_CONSENTS)) {
-      return mockError('TERMS_REQUIRED', 400)
-    }
-    return HttpResponse.json({ valid: true, missing: [], required: [] }, { status: 201 })
-  }),
-
-  // 토스 연결 시작(FR-801). 가입 흐름(purpose SIGNUP)만 여기서 받고 나머지는 지갑 목으로 넘긴다
-  http.post('/api/payment-connections', async ({ request }) => {
-    const body = (await request.clone().json()) as Partial<StartConnectionRequest>
-    if (body.purpose !== 'SIGNUP') return
-    const denied = denyUnlessAuthenticated()
-    if (denied) return denied
-    attemptSeq += 1
-    const response: StartConnectionResponse = {
-      attemptId: `attempt-signup-${attemptSeq}`,
-      authUrl: 'about:blank',
-      expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-    }
-    return HttpResponse.json(response, { status: 201 })
-  }),
 ]

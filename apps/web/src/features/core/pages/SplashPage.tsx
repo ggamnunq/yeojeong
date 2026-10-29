@@ -23,9 +23,9 @@ export default function SplashPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-screen-width items-center justify-center bg-canvas">
+    <main className="mx-auto flex min-h-svh w-full max-w-screen-width items-center justify-center bg-brand">
       <h1>
-        <Logo height={40} />
+        <Logo variant="inverse" height={104} />
       </h1>
     </main>
   )

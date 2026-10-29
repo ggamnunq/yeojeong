@@ -27,7 +27,6 @@ export { GROUP_NAME_MAX_LENGTH, TRIP_BUDGET_MAX_KRW, TRIP_EDITABLE_FIELDS, TRIP_
 export const COPY = {
   copied: '복사했어요',
   saved: '저장했어요',
-  changedElsewhere: '다른 곳에서 바뀌었어요',
   retryLater: '잠시 후 다시 시도해 주세요',
   inviteInvalid: '초대코드를 다시 확인해 주세요',
   inviteUnavailable: '참여할 수 없는 여정이에요',
@@ -185,26 +184,9 @@ export function tripUpdateBody(
 
 // ── 여정 정보 ─────────────────────────────────────────────────────
 
-/**
- * 버튼 노출 권한. 서버가 permissions를 주면 그대로 쓰고, 없으면(부록 B 응답·현재 목) 같은 규칙으로 계산한다.
- * 그룹장만 수정·시작·종료·삭제(spec README §5), 단계별 가능 여부는 기능명세 4-8.
- */
-export function tripPermissions(trip: TripInfo, today: string): TripPermissions {
-  if (trip.permissions) return trip.permissions
-  const leader = trip.me.role === 'LEADER'
-  const editableFields = leader ? [...TRIP_EDITABLE_FIELDS[trip.status]] : []
-  const open = trip.status !== 'ENDED'
-  return {
-    canEdit: editableFields.length > 0,
-    editableFields,
-    canStart: leader && trip.status === 'UPCOMING' && !isStartPeriodOver(trip, today),
-    canEnd: leader && trip.status === 'ONGOING',
-    canDeleteGroup: leader && trip.status === 'UPCOMING',
-    canKick: leader && open,
-    canInvite: open,
-    canLeave: true,
-    canChangeFx: leader && open,
-  }
+/** 버튼 노출 권한은 서버가 계산한 값을 그대로 쓴다. */
+export function tripPermissions(trip: TripInfo, _today?: string): TripPermissions {
+  return trip.permissions
 }
 
 /** 시작하지 않은 채 종료일이 지났는가(Q-26 확정: 그룹장은 「기간 수정」, 멤버는 비활성 「여정 시작」, 서버는 시작 409) */
@@ -212,11 +194,9 @@ export function isStartPeriodOver(trip: Pick<TripInfo, 'status' | 'endDate'>, to
   return trip.status === 'UPCOMING' && trip.endDate < today
 }
 
-/** 진행 중 오늘이 몇째 날인지(1 ~ days). 서버 todayDayIndex가 먼저 */
-export function tripDayIndex(trip: TripInfo, today: string): number {
-  const fromServer = trip.todayDayIndex
-  const day = fromServer ?? daysBetween(trip.startDate, today) + 1
-  return Math.min(trip.days, Math.max(1, day))
+/** 진행 중 오늘이 몇째 날인지(1 ~ days). 서버 계산값만 사용한다. */
+export function tripDayIndex(trip: TripInfo, _today?: string): number {
+  return trip.todayDayIndex ?? 1
 }
 
 export type TripHero = { label: string; value: string; suffix?: string }
@@ -226,14 +206,14 @@ export function tripHero(trip: TripInfo, today: string): TripHero {
   if (trip.status === 'UPCOMING') {
     // 서버 dDay는 시작일이 지났으면 null
     if (trip.startDate < today || trip.dDay === null) return { label: '', value: '시작 전' }
-    const dDay = trip.dDay ?? daysBetween(today, trip.startDate)
-    return { label: '출발까지', value: dDay <= 0 ? 'D-day' : `D-${dDay}` }
+    return { label: '출발까지', value: trip.dDay <= 0 ? 'D-day' : `D-${trip.dDay}` }
   }
   if (trip.status === 'ONGOING') return { label: '여행 중', value: `Day ${tripDayIndex(trip, today)}`, suffix: `/ ${trip.days}` }
   return { label: '종료', value: trip.nights > 0 ? `${trip.nights}박 ${trip.days}일` : '당일' }
 }
 
-/** 영웅 카드 메타 한 줄 "일본 오사카 · 예산 ₩1,200,000" */
-export function tripMetaLine(trip: Pick<TripInfo, 'placeLabel' | 'budgetKrw'>): string {
-  return `${trip.placeLabel} · 예산 ${formatKrw(trip.budgetKrw)}`
+/** 영웅 카드 메타 한 줄 "일본 오사카 · 3박 4일 · 예산 ₩1,200,000" */
+export function tripMetaLine(trip: Pick<TripInfo, 'placeLabel' | 'nights' | 'days' | 'budgetKrw'>): string {
+  const duration = trip.nights > 0 ? `${trip.nights}박 ${trip.days}일` : '당일'
+  return `${trip.placeLabel} · ${duration} · 예산 ${formatKrw(trip.budgetKrw)}`
 }

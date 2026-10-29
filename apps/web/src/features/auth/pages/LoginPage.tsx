@@ -54,8 +54,8 @@ export default function LoginPage() {
   return (
     <ShellOnboarding back={false} gutter={false}>
       <h1 className="sr-only">로그인</h1>
-      {/* Figma: 내용 위 164(셸 24 + 140) · 왼쪽 32 · 워드마크 104 → 20 → 가치 제안 한 줄 */}
-      <div className="flex flex-col gap-5 px-8 pt-35">
+      {/* Figma: 내용 위 164(셸 24 + 140) · 워드마크 104 → 20 → 가치 제안 한 줄, 앱 컬럼 중앙 */}
+      <div className="flex flex-col items-center gap-5 px-8 pt-35 text-center">
         <Logo height={104} />
         <p className="text-body-l text-secondary">{COPY.tagline}</p>
       </div>

@@ -3,6 +3,7 @@ import { apiFetch, keys, type ConsentStage, type Me } from '../../api'
 import { safeReturnTo } from '../../app/paths'
 import type {
   ConsentDocument,
+  ConsentStatusResponse,
   FinConsentRequest,
   MockKakaoResponse,
   ReconsentRequest,
@@ -31,7 +32,7 @@ export const postReconsent = (body: ReconsentRequest) => apiFetch<void>('/auth/r
 
 export const postLogout = () => apiFetch<void>('/auth/logout', { method: 'POST' })
 
-export const postFinConsent = (body: FinConsentRequest) => apiFetch<{ valid: boolean }>('/consents', { body })
+export const postFinConsent = (body: FinConsentRequest) => apiFetch<ConsentStatusResponse>('/consents', { body })
 
 export const postConnection = (body: StartConnectionRequest) =>
   apiFetch<StartConnectionResponse>('/payment-connections', { body })

@@ -1,6 +1,6 @@
-import { http, HttpResponse, type HttpHandler } from 'msw'
+import { HttpResponse, type HttpHandler } from 'msw'
 import { findTrip, TRIP, type MockTrip } from '../../mocks/data'
-import { mockError, requireMember } from '../../mocks/utils'
+import { api, mockError, requireMember } from '../../mocks/utils'
 import { direction, expenseItems, ledgerOf, meFirst, myMembershipId, seedJejuSettlement, summaryOf } from './mockData'
 import type { SettlementMemberExpenses, SettlementMemberView, SettlementView } from './types'
 
@@ -40,7 +40,7 @@ function memberViews(tripId: string) {
 }
 
 export const handlers: HttpHandler[] = [
-  http.get('/api/trips/:tripId/settlement', ({ params }) => {
+  api.get<SettlementView>('/api/trips/:tripId/settlement', ({ params }) => {
     const tripId = String(params.tripId)
     const { denied, trip } = endedTrip(tripId)
     if (denied) return denied
@@ -65,7 +65,7 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(body)
   }),
 
-  http.get('/api/trips/:tripId/settlement/members/:membershipId/expenses', ({ params }) => {
+  api.get<SettlementMemberExpenses>('/api/trips/:tripId/settlement/members/:membershipId/expenses', ({ params }) => {
     const tripId = String(params.tripId)
     const membershipId = String(params.membershipId)
     const { denied } = endedTrip(tripId)

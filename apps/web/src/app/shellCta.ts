@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useLayoutEffect, useRef } from 'r
 import type { ScreenCta } from '../ds'
 
 /** 셸 하단 CTA(Button Primary L FILL, 탭 위). 라벨은 문자열만(렌더마다 바뀌는 JSX면 매번 다시 단다) */
-export type ShellCta = Omit<ScreenCta, 'label'> & { label: string }
+export type ShellCta = Omit<ScreenCta, 'label'> & { label: string; secondary?: { label: string; onClick: () => void } }
 
 export const ShellCtaContext = createContext<(cta: ShellCta | null) => void>(() => {})
 
@@ -13,15 +13,18 @@ export const ShellCtaContext = createContext<(cta: ShellCta | null) => void>(() 
 export function useShellCta(cta: ShellCta | null | undefined) {
   const setCta = useContext(ShellCtaContext)
   const onClick = useRef(cta?.onClick)
+  const secondaryClick = useRef(cta?.secondary?.onClick)
   useLayoutEffect(() => {
     onClick.current = cta?.onClick
+    secondaryClick.current = cta?.secondary?.onClick
   })
   const visible = cta != null
   const { label, disabled, htmlType, form } = cta ?? {}
+  const secondaryLabel = cta?.secondary?.label
 
   useEffect(() => {
     if (!visible || label === undefined) return
-    setCta({ label, disabled, htmlType, form, onClick: (event) => onClick.current?.(event) })
+    setCta({ label, disabled, htmlType, form, onClick: (event) => onClick.current?.(event), ...(secondaryLabel && { secondary: { label: secondaryLabel, onClick: () => secondaryClick.current?.() } }) })
     return () => setCta(null)
-  }, [setCta, visible, label, disabled, htmlType, form])
+  }, [setCta, visible, label, disabled, htmlType, form, secondaryLabel])
 }

@@ -24,12 +24,12 @@ describe('HF-16 시작 전 여정 정보', () => {
     expect(screen.getByText('D-44')).toBeTruthy()
     expect(screen.getByRole('img', { name: '출발 전' })).toBeTruthy()
     expect(screen.getByText('12.27 (일)')).toBeTruthy()
-    expect(screen.getByText('부산 · 예산 ₩600,000')).toBeTruthy()
+    expect(screen.getByText('부산 · 1박 2일 · 예산 ₩600,000')).toBeTruthy()
     expect(screen.getByRole('heading', { name: '그룹원 3명' })).toBeTruthy()
     expect(main().getByText('B8N-4RT')).toBeTruthy()
     expect(button('여정 정보 수정')).toBeTruthy()
-    expect(button('여정 시작')).toBeTruthy()
-    expect(button('그룹 삭제')).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '여정 시작' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '그룹 삭제' })).toBeTruthy()
     // 시작 전에는 프사 줄 「추가」가 없다(HF-16)
     expect(button('추가')).toBeNull()
   })
@@ -112,11 +112,11 @@ describe('Q-26 종료일이 지난 시작 전 여정', () => {
     await waitFor(() => expect(path(router)).toBe('/trips/trip-busan/edit'))
   })
 
-  it('멤버: 비활성 「여정 시작」(설명 문구 없음)', async () => {
+  it('멤버: 「여정 시작」과 「기간 수정」을 숨긴다', async () => {
     expirebusan()
     renderApp('/trips/trip-busan/info')
-    const start = (await screen.findByRole('button', { name: '여정 시작' })) as HTMLButtonElement
-    expect(start.disabled).toBe(true)
+    await screen.findByText('부산 연말 모임')
+    expect(button('여정 시작')).toBeNull()
     expect(button('기간 수정')).toBeNull()
   })
 

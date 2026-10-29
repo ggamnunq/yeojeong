@@ -48,7 +48,7 @@ export function formatMethodCounts(accounts: number, cards: number): string {
 
 /**
  * 결제수단 번호 표시(확정 규칙 · HF-07·27·42): 계좌는 앞 4·끝 3자리 "1000-****-***-321", 카드는 끝 4자리 "**** **** **** 1934".
- * 서버 마스킹 값(카드 "5365-****-****-1934", 계좌 "3333-**-****821")에서 보일 숫자만 골라 같은 꼴로 그린다.
+ * 서버 마스킹 값(카드 "**** **** **** 1934", 계좌 "3333-**-****821")에서 보일 숫자만 골라 같은 꼴로 그린다.
  */
 export function displayMaskedNumber(type: 'ACCOUNT' | 'CARD', masked: string): string {
   const slots = [...masked].filter((ch) => /[\d*]/.test(ch))

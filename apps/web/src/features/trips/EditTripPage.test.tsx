@@ -56,7 +56,7 @@ describe('여정 정보 수정 /trips/:tripId/edit', () => {
     Object.assign(findTrip(TRIP.osaka)!, { groupName: '민지가 고친 이름', version: 9 })
     fireEvent.click(saveButton())
 
-    await waitFor(() => expect(toastMessages()).toContain('다른 곳에서 바뀌었어요'))
+    await waitFor(() => expect(toastMessages()).toContain('최신 내용으로 바뀌었어요'))
     await waitFor(() => expect((screen.getByLabelText('그룹명') as HTMLInputElement).value).toBe('민지가 고친 이름'))
     expect(path(router)).toBe('/trips/trip-osaka/edit')
   })

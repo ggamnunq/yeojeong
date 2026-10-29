@@ -45,15 +45,27 @@ export const expenseQuery = (tripId: string, expenseId: string) =>
     queryFn: ({ signal }) => apiFetch<PaymentDetail>(`/trips/${tripId}/expenses/${expenseId}`, { signal }),
   })
 
-/** GET /trips/:tripId/out-of-period-candidates?side= */
+/**
+ * GET /trips/:tripId/out-of-period-candidates?side= — 서버가 그때그때 제공자에서 조회한다(저장 안 함, I-11).
+ * candidateId는 5분짜리 서명된 임시 식별자라 캐시하지 않는다: 화면을 열 때·탭을 바꿀 때마다 새로 받고(gcTime 0),
+ * 화면에 있는 동안에는 저절로 다시 받지 않는다(고른 것이 바뀌지 않게). 실패는 화면이 「다시 시도」로 보여 준다.
+ */
 export const outOfPeriodQuery = (tripId: string, side: OutOfPeriodSide) =>
   queryOptions({
     queryKey: keys.trips.outOfPeriod(tripId, side),
     queryFn: ({ signal }) =>
       apiFetch<OutOfPeriodCandidate[]>(`/trips/${tripId}/out-of-period-candidates${search({ side })}`, { signal }),
-    // 연결 만료(409 CONNECTION_EXPIRED)는 화면이 Callout으로 보여 준다
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    // 연결 만료(409 CONNECTION_EXPIRED)는 Callout, 그 밖은 「다시 시도」를 화면이 보여 준다
     meta: { silent: true },
   })
+
+/** 기간 외 후보 쿼리 키인가(여정 전체 무효화에서 빼서 제공자를 다시 부르지 않게) */
+export const isOutOfPeriodKey = (queryKey: readonly unknown[]) => queryKey[2] === 'out-of-period'
 
 export const classifyExpense = (tripId: string, expenseId: string, input: ClassificationInput) =>
   apiFetch<PaymentDetail>(`/trips/${tripId}/expenses/${expenseId}/classification`, { method: 'PUT', body: input })
