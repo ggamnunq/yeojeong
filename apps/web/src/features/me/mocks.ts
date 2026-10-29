@@ -4,7 +4,7 @@ import { api, mockError } from '../../mocks/utils'
 import type { DeletionRequestResponse } from './types'
 
 // 탈퇴·삭제 요청 코드(FR-108). GET /users/me는 core 목, POST /auth/logout은 auth 목이 준다.
-// 고객센터 주소는 미정(미결 Q-35) — 서버 env SUPPORT_EMAIL 임시값과 같게 둔다.
+// 고객센터 주소 — 서버 env SUPPORT_EMAIL(infra var.support_email, Cloudflare Email Routing으로 수신)과 같게 둔다.
 const SUPPORT_EMAIL = 'support@jinyeojeong.com'
 
 export const handlers: HttpHandler[] = [

@@ -54,7 +54,7 @@
 - "하위 기록 일체" = ExpenseChangeLog → Expense(ExpenseShare·취소 자식 CASCADE) → Settlement(멤버·송금안 CASCADE) → TripEvent → Trip → Membership → Group. 이 여정의 결제에만 쓰인 거래 원본과, 그 거래를 가리키는 동일 사용자 중복 행(결제가 없는 것)도 지운다. 겹치는 다른 여정이 쓰는 거래는 남긴다.
 - 상한에 걸리면 `hasMore: true`이고 다음 실행이 이어서 지운다.
 - `CONSENT_IP_PLAINTEXT`는 파기가 아니라 동의 기록 IP 평문 → HMAC 이관이다(`consent-ip-backfill` 잡과 같은 함수). 배포 중 옛 리비전이 남긴 평문도 다음 날 잡힌다. `AUDIT_HMAC_KEY`가 없으면 평문을 지우지 않고 `skipped: 'NO_KEY'`. 평문 컬럼을 지우는 contract 마이그레이션과 함께 이 단계도 지운다(`prisma/README.md` "동의 기록 IP").
-- 운영 로그(Cloud Logging)는 버킷 보존 정책(서울 `yeojeong-app-logs`, 93일, `infra/envs/prod/logging.tf`)이 지운다.
+- 운영 로그(Cloud Logging)는 버킷 보존 정책(서울 `yeojeong-app-logs` 93일, 감사 로그 사본 서울 `yeojeong-audit-logs` 400일, `infra/envs/prod/logging.tf`)이 지운다.
 
 ### 호출
 
