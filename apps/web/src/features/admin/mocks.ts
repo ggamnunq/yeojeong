@@ -45,7 +45,7 @@ function fixtureUsers(): AdminUserDetail[] {
       '민지',
       {
         status: 'DELETION_REQUESTED',
-        deletionRequest: { requestedAt: kstIso(BASE - 3_600_000), expiresAt: kstIso(BASE + 20 * 3_600_000) },
+        deletionRequest: { requestedAt: kstIso(BASE - 3_600_000) },
       },
     ],
     ['태현', {}],

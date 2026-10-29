@@ -19,7 +19,8 @@ type Inline = (text: string) => ReactNode[]
 /** 주소는 resolveLink가 앱 경로로 바꾸고, 못 바꾸면 http(s)만 바깥 링크, 나머지는 글자만 */
 function renderInline(text: string, resolveLink: LinkResolver = () => null): ReactNode[] {
   const out: ReactNode[] = []
-  const pattern = /\*\*(.+?)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g
+  // 맨 주소(https://…)도 링크로. 닫는 괄호·쉼표·마침표·」는 주소에 넣지 않는다
+  const pattern = /\*\*(.+?)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s)<>」,]*[^\s)<>」,.])/g
   let last = 0
   for (const match of text.matchAll(pattern)) {
     if (match.index > last) out.push(text.slice(last, match.index))
@@ -27,7 +28,7 @@ function renderInline(text: string, resolveLink: LinkResolver = () => null): Rea
     if (match[1] !== undefined) out.push(<strong key={key}>{renderInline(match[1], resolveLink)}</strong>)
     else if (match[2] !== undefined) out.push(<code key={key}>{match[2]}</code>)
     else {
-      const [label, href] = [match[3], match[4]]
+      const [label, href] = match[5] !== undefined ? [match[5], match[5]] : [match[3], match[4]]
       const internal = resolveLink(href)
       if (internal)
         out.push(
@@ -75,7 +76,11 @@ export function LegalBody({ source, resolveLink, emphasis = 'default' }: LegalBo
     >
       {(doc.effectiveDate || doc.intro.length > 0) && (
         <div className="flex flex-col gap-3">
-          {doc.effectiveDate && <p className="text-caption text-tertiary">시행일 {doc.effectiveDate}</p>}
+          {doc.effectiveDate && (
+            <p className="text-caption text-tertiary">
+              {doc.version && `버전 ${doc.version} · `}시행일 {doc.effectiveDate}
+            </p>
+          )}
           <Blocks blocks={doc.intro} inline={inline} />
         </div>
       )}
@@ -84,6 +89,16 @@ export function LegalBody({ source, resolveLink, emphasis = 'default' }: LegalBo
       ))}
     </div>
   )
+}
+
+/** 표 칸 안의 `<br>`(수탁자 이름과 문의처 줄바꿈)만 줄바꿈으로 그린다. 다른 HTML은 글자 그대로 */
+function Cell({ text, inline }: { text: string; inline: Inline }) {
+  const lines = text.split(/<br\s*\/?>/i)
+  return lines.map((line, i) => (
+    <span key={i} className={i > 0 ? 'block' : undefined}>
+      {inline(line.trim())}
+    </span>
+  ))
 }
 
 const HEADING_TAG = ['h2', 'h3', 'h4'] as const
@@ -159,7 +174,7 @@ function Block({ block, inline }: { block: LegalBlock; inline: Inline }) {
                 <tr key={r}>
                   {row.map((c, j) => (
                     <td key={j} className="border border-default px-2 py-1.5 align-top">
-                      {inline(c)}
+                      <Cell text={c} inline={inline} />
                     </td>
                   ))}
                 </tr>

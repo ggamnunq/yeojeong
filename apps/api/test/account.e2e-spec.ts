@@ -164,14 +164,12 @@ describeWithDb('DELETE /api/users/me 서비스 내 탈퇴 (e2e, 실제 DB)', () 
     });
     groupIds.push(ended.group.id, ongoing.group.id, solo.group.id);
 
-    // 고객센터 요청 코드(FR-108)로 먼저 요청해 둔 상태
+    // 이메일로 먼저 요청해 둔 상태(운영자가 관리자 페이지로 처리하기 전)
     const supportRequest = await db.accountDeletion.create({
       data: {
         userId: junyong.id,
         userRefHash,
         channel: 'SUPPORT',
-        requestCodeHash: randomHex(),
-        expiresAt: new Date(Date.now() + 86_400_000),
       },
     });
     const s1 = await createSession(db, junyong.id);
@@ -496,9 +494,3 @@ describeWithDb('DELETE /api/users/me 서비스 내 탈퇴 (e2e, 실제 DB)', () 
     ).toBe(1);
   });
 });
-
-function randomHex() {
-  return Array.from({ length: 64 }, () =>
-    Math.floor(Math.random() * 16).toString(16),
-  ).join('');
-}

@@ -16,6 +16,7 @@ export {
 export { AuthCoreModule } from './auth-core.module.js';
 export {
   CONSENT_DOCUMENT_VERSIONS,
+  V1_EFFECTIVE_AT,
   ConsentCatalog,
   currentConsentVersion,
   isConsentSatisfied,

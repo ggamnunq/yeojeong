@@ -41,6 +41,7 @@ export { BUDGET_CAUTION_RATIO, budgetPercent, budgetRatio, budgetState, type Bud
 export { Button, type ButtonProps, type ButtonSize, type ButtonState, type ButtonType } from './Button/Button'
 export { CardHeroTone, type CardHeroToneAction, type CardHeroToneProps } from './Card/HeroTone'
 export { Callout, type CalloutProps, type CalloutStyle, type CalloutTone } from './Callout/Callout'
+export { BannerNotice, type BannerNoticeProps } from './Banner/Notice'
 export { Checkbox, CheckboxBox, type CheckboxBoxProps, type CheckboxProps } from './Checkbox/Checkbox'
 export { Chip, type ChipProps, type ChipStyle } from './Chip/Chip'
 export { DateHeader, type DateHeaderProps, type DateHeaderStyle } from './DateHeader/DateHeader'

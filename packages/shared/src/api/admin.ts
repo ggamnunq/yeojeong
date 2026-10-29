@@ -56,7 +56,7 @@ export type AdminUserSort = (typeof ADMIN_USER_SORT_VALUES)[number];
 export const AdminUserSort = enumObject(ADMIN_USER_SORT_VALUES);
 
 export const ADMIN_USER_STATUS_VALUES = ['ACTIVE', 'DELETION_REQUESTED'] as const;
-/** 회원 상태: 활성 · 탈퇴 요청 대기(고객센터 요청 코드 FR-108이 만료 전이고 아직 처리되지 않음) */
+/** 회원 상태: 활성 · 탈퇴 요청 대기(처리 전 탈퇴 요청이 남아 있음) */
 export type AdminUserStatus = (typeof ADMIN_USER_STATUS_VALUES)[number];
 export const AdminUserStatus = enumObject(ADMIN_USER_STATUS_VALUES);
 
@@ -133,8 +133,8 @@ export interface AdminUserTrip {
  */
 export interface AdminUserDetail extends AdminUserListItem {
   kakaoIdLast4: string | null;
-  /** 처리 전 탈퇴 요청(FR-108). 없으면 null */
-  deletionRequest: { requestedAt: string; expiresAt: string | null } | null;
+  /** 처리 전 탈퇴 요청. 없으면 null */
+  deletionRequest: { requestedAt: string } | null;
   consents: AdminUserConsent[];
   trips: AdminUserTrip[];
   counts: {

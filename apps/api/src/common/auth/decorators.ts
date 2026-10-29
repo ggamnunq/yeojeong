@@ -70,7 +70,7 @@ export const RequireTripStatus = (
 export const RequireConsents = (consentIds: readonly ConsentId[]) =>
   SetMetadata(REQUIRED_CONSENTS_KEY, consentIds);
 
-/** 재동의 전에도 부를 수 있어야 하는 라우트(재동의, 탈퇴·삭제 요청). 로그인은 여전히 필요하다 */
+/** 재동의 전에도 부를 수 있어야 하는 라우트(재동의, 탈퇴 DELETE /api/users/me). 로그인은 여전히 필요하다 */
 export const SkipConsentCheck = () => SetMetadata(SKIP_CONSENT_CHECK_KEY, true);
 
 /**

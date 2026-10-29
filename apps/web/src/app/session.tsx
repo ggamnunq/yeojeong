@@ -69,14 +69,19 @@ function SessionGate({ children }: { children: (session: Session) => ReactNode }
   return children(session)
 }
 
-/** 로그인 필수. 미로그인 → /login?returnTo, 가입 중 → /signup/nickname, 재동의 필요 → /reconsent */
+/** 재동의 전에도 열리는 화면: 탈퇴(약관 제3조⑤ — 개정 약관에 동의하지 않아도 로그아웃·탈퇴는 할 수 있다) */
+const RECONSENT_FREE_PATHS: readonly string[] = [paths.meWithdraw()]
+
+/** 로그인 필수. 미로그인 → /login?returnTo, 가입 중 → /signup/nickname, 재동의 필요 → /reconsent(탈퇴 화면은 예외) */
 export function RequireAuth() {
   const location = useLocation()
   return (
     <SessionGate>
       {(session) => {
         const here = currentPath(location)
-        if (session.reconsentRequired) return <Navigate replace to={paths.reconsent(session.reconsentRequired, here)} />
+        if (session.reconsentRequired && !RECONSENT_FREE_PATHS.includes(location.pathname)) {
+          return <Navigate replace to={paths.reconsent(session.reconsentRequired, here)} />
+        }
         if (session.signupRequired) return <Navigate replace to={paths.signupNickname()} />
         if (!session.isAuthenticated) return <Navigate replace to={paths.login(here)} />
         return <Outlet />
@@ -151,7 +156,8 @@ export function SessionBridge() {
         connectPrompt.open(required)
         return
       }
-      if (latest.current.location.pathname === '/reconsent') return
+      const path = latest.current.location.pathname
+      if (path === '/reconsent' || RECONSENT_FREE_PATHS.includes(path)) return
       latest.current.navigate(paths.reconsent(required, here()))
     })
     return () => {

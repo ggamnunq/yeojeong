@@ -158,15 +158,6 @@ export interface RevocableConsent {
   docUrl: string | null;
 }
 
-/** POST /api/users/me/deletion-request (FR-108). 메일은 화면이 mailto로 연다(서버는 보내지 않는다) */
-export interface DeletionRequestResponse {
-  /** YJD-XXXX-XXXX-XXXX. 본인 확인 수단이라 화면 밖에 남기지 않는다 */
-  code: string;
-  expiresAt: string;
-  mail: { to: string; subject: string; body: string };
-  mailto: string;
-}
-
 export interface CursorPage<T> {
   items: T[];
   nextCursor: string | null;

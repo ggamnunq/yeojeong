@@ -58,7 +58,7 @@ function UserDetail({ user }: { user: AdminUserDetail }) {
           {
             label: '탈퇴 요청',
             value: user.deletionRequest
-              ? `${formatDateTime(user.deletionRequest.requestedAt)} 요청 · ${formatDateTime(user.deletionRequest.expiresAt)} 만료`
+              ? `${formatDateTime(user.deletionRequest.requestedAt)} 요청`
               : '없음',
           },
         ]}

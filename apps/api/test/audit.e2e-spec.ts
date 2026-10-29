@@ -107,9 +107,12 @@ describeWithDb('감사 로그 @Audited() (e2e, 실제 DB)', () => {
     expect(row.at).toBeInstanceOf(Date);
     // 행에는 ID·행위·시각·IP 해시 칸(+ 숫자 요약 details)만 있고 응답 내용(가맹점·금액·카드번호)·IP 원문·닉네임은 없다
     expect(row.details).toBeNull();
+    // 원 IP 칸(client_ip)은 관리자 기록 전용이라 일반 사용자 행에서는 늘 비어 있다
+    expect(row.clientIp).toBeNull();
     expect(Object.keys(row).sort()).toEqual([
       'action',
       'at',
+      'clientIp',
       'createdAt',
       'details',
       'id',

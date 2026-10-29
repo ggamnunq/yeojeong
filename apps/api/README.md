@@ -81,7 +81,7 @@ documents() {}
 - **여정·그룹 ID 파라미터 이름은 `:tripId`, `:groupId`로 고정한다.** 이 이름이어야 멤버십 검사가 자동으로 걸린다. `:id`로 받지 않는다.
 - 남의 리소스는 403이 아니라 404로 숨긴다. 결제처럼 여정 안의 리소스는 서비스에서 `tripId` 조건을 함께 걸어 조회한다(ID만으로 조회하지 않는다).
 - 가드는 요청 시점의 값으로 막는 1차 관문이다. 상태를 바꾸는 서비스는 트랜잭션 안에서 Trip 행을 잠그고(`FOR SHARE`/`FOR UPDATE`) 단계와 멤버십을 다시 확인한다(기능명세 8-3).
-- `@SkipConsentCheck()`는 재동의 전에도 열려야 하는 라우트(재동의, 탈퇴·삭제 요청)에만 쓴다.
+- `@SkipConsentCheck()`는 재동의 전에도 열려야 하는 라우트(재동의, 탈퇴 `DELETE /api/users/me`)에만 쓴다(약관 제3조⑤ — 개정 약관에 동의하지 않아도 로그아웃·탈퇴는 할 수 있다).
 - 관리자 라우트(`/api/admin/*`)는 사용자 세션과 섞지 않는다. `src/admin`의 `@AdminOnly()`·`@AdminPublic()`이 `AuthGuard`·`ConsentGuard`를 건너뛰고 관리자 쿠키(`__Host-yj_admin`)만 보는 `AdminSessionGuard`를 붙인다. 다른 모듈은 이 데코레이터를 쓰지 않는다(`src/admin/README.md`).
 
 ### 로그인·가입 (auth, users, consents 모듈)
@@ -95,7 +95,8 @@ documents() {}
 | POST   | `/api/auth/logout`                                 | 공개             | 이 기기 세션 폐기, 204                                                                           |
 | POST   | `/api/auth/reconsent`                              | 로그인           | 빠진 가입 필수 동의를 현재 버전으로, 204                                                        |
 | GET    | `/api/users/me`                                    | 로그인           | `Me`(`hasProfileImage`, 결제수단 수, 만료 연결 여부)                                             |
-| POST   | `/api/users/me/deletion-request`                   | 로그인, Strict   | 탈퇴·삭제 요청 코드(24시간) + 고객센터 메일 초안. 재동의 전에도 허용                             |
+| DELETE | `/api/users/me`                                    | 로그인           | 앱 안 탈퇴(FR-109, HF-59) `{ confirm: true }` → 204, 세션 쿠키 삭제. 재동의 전에도 허용          |
+| GET    | `/api/notices/active`                              | 공개             | 게시 중인 공지(Q-57) `{ items: [{ id, title, url, startsAt, endsAt }] }`, 최신부터. `Cache-Control: private, max-age=300`(세션 연장 Set-Cookie가 실릴 수 있어 공유 캐시 금지) |
 | GET    | `/api/consents/documents?stage=SIGNUP\|FIN_LINK`    | 공개             | 동의 문서 현재 버전(`hidden`이면 화면에 그리지 않음)                                            |
 | GET    | `/api/consents/status?stage=FIN_LINK`              | 로그인           | 연동 동의 유효 여부                                                                              |
 | POST   | `/api/consents`                                    | 로그인           | 연동 동의(FIN_LINK·FIN_PRIVACY·THIRD_PARTY) 저장. 성공해야 결제수단 연결을 시작한다              |
@@ -115,15 +116,15 @@ documents() {}
 
 - 기준은 `consent_documents` 테이블이다(1분 캐시). 새 버전은 **마이그레이션으로 행을 추가**한다(지우지 않는다). 동의 이력(`user_consents`)은 append-only이고 수정할 수 있는 값은 철회 시각·경로뿐이다.
 - 유효 동의 = 그 항목의 시행 중인 **정식본(`is_draft = false`)** 중 가장 최근 MAJOR 버전과 그 이후 버전에 `agreed`한 행이 있고 철회되지 않음. MINOR 개정은 기존 동의를 유지한다.
-- **초안 동의는 법적 유효 동의가 아니다.** 지금은 시행일이 정해지지 않아 `0.1-draft`(초안)만 있으므로, 정식본이 하나도 없을 때만 초안 동의를 임시로 인정한다. 정식본을 넣는 순간 초안에 동의한 회원 모두에게 `403 CONSENT_REQUIRED`가 나가 재동의(`POST /api/auth/reconsent`)를 받는다(출시 전 필수 작업).
+- **초안 동의는 법적 유효 동의가 아니다.** 정식본이 하나도 없을 때만 초안 동의를 임시로 인정한다. 정식 약관 v1.0(`TOS`·`PRIVACY`·`AGE14`, `version = '1.0'`, 시행일 2026-10-30 00:00 KST = `effective_at`, 마이그레이션 `20261030010000_consent_documents_v1_0`)이 시행되는 순간 초안에 동의한 회원 모두에게 `403 CONSENT_REQUIRED`가 나가 재동의(`POST /api/auth/reconsent`)를 받는다. 나머지 동의(MARKETING·FIN_*·THIRD_PARTY·CARD_IMPORT)는 아직 초안만 있다.
+- `version`은 문서 버전(1.0 → 1.1 MINOR · 2.0 MAJOR), 시행일은 `effective_at`에 따로 둔다. `doc_hash`는 게시본(`apps/web/src/features/legal/content/*.md` = `docs/legal/v1.0` 원문) SHA-256 — 원문을 고치면 `pnpm --filter @yeojeong/web legal:sync`가 시행일을 채워 복사하고 해시를 출력한다. `consent-catalog.spec.ts`가 파일로 다시 계산해 마이그레이션 값과 대조한다.
 - 판정 함수와 테스트: `src/common/auth/consent-catalog.ts`, `consent-catalog.spec.ts`(초안만 / 정식 발행 후 초안 동의자 / 정식 동의자 / 더 새 정식본 MAJOR·MINOR).
 - 동의 기록에는 서버가 `ipHash`(origin lock이 넘긴 클라이언트 IP의 HMAC-SHA256, 키 `AUDIT_HMAC_KEY`. 평문 `ip`는 더 쓰지 않는다), `ua`(512자), `screen`, `method`, `docHash`, `userRefHash = HMAC-SHA256(userId, USER_REF_HMAC_KEY)`를 채운다. `USER_REF_HMAC_KEY`는 바꾸지 않는다.
 
-### 탈퇴·삭제 요청 (FR-108)
+### 탈퇴 (FR-109)
 
-- 요청 코드 `YJD-XXXX-XXXX-XXXX`는 원문을 저장하지 않고 `account_deletions.request_code_hash`(HMAC)만 저장한다. 운영자가 메일로 받은 코드는 `AuthConfig.deletionCodeHash(code)`로 찾는다(검증 도구는 아직 없음).
-- 받는 주소 `SUPPORT_EMAIL`은 임시값 `support@jinyeojeong.com`이다. 이 도메인은 메일을 받지 않으니 출시 전에 바꾼다.
-- 서비스 내 탈퇴(FR-109, `DELETE /api/users/me`)는 `account` 모듈이 맡는다. 운영자가 메일 요청을 처리할 때도 같은 파이프라인(`AccountDeletionService`)을 쓴다.
+- 앱 안 탈퇴(`DELETE /api/users/me`, 화면 HF-59)는 `account` 모듈이 맡는다. 재동의 전에도 부를 수 있다.
+- 이메일 탈퇴는 로그인할 수 없는 회원의 보조 경로다. 문의처는 약관·개인정보처리방침(docs/legal/v1.0)에 게시한 `rlawnsdyd530@gmail.com`이고, 운영자가 관리자 페이지에서 같은 파이프라인(`AccountDeletionService`, channel `SUPPORT`)으로 처리한다. 예전의 요청 코드 발급(`POST /api/users/me/deletion-request`, FR-108)과 `SUPPORT_EMAIL` env는 L-1에서 없앴다(`account_deletions.request_code_hash`·`expires_at`도 마이그레이션 `20261030010001`로 지움).
 
 ### 비밀값
 
@@ -136,7 +137,6 @@ documents() {}
 | `SESSION_SECRET`                          | Secret Manager(random_password)        | 32자 이상                               |
 | `TOKEN_ENCRYPTION_KEY`                    | Secret Manager(random_bytes 32)        | `*_enc` 컬럼 AES-256-GCM(`TokenCipher`) |
 | `USER_REF_HMAC_KEY`                       | Secret Manager(random_password)        | 교체 금지(prevent_destroy)              |
-| `SUPPORT_EMAIL`                           | Cloud Run 일반 env                     | 임시 주소                               |
 | `KAKAO_ADMIN_KEY`                         | Secret Manager(사용자가 gcloud로 생성, `yeojeong-kakao-admin-key`) | 선택. 없으면 연결 끊기 알림 404. Terraform `enable_kakao_unlink` |
 | `KAKAO_APP_ID`                            | Cloud Run 일반 env(`kakao_app_id`)     | 선택. 연결 끊기 알림 app_id 확인         |
 | `EXIM_API_KEY`                            | Secret Manager(사용자가 gcloud로 생성, `yeojeong-exim-api-key`) | 선택. 있으면 환율 소스 koreaexim+erapi(미고시 통화 TWD·VND·PHP는 ExchangeRate-API, 키 없음). Terraform `enable_exim_fx` |

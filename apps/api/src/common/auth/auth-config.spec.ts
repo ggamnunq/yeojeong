@@ -10,7 +10,6 @@ describe('AuthConfig', () => {
   it('loads valid settings', () => {
     const auth = new AuthConfig(config());
     expect(auth.kakao.redirectUri).toBe(TEST_ENV.KAKAO_REDIRECT_URI);
-    expect(auth.supportEmail).toBe('support@jinyeojeong.com');
   });
 
   it.each([
@@ -20,7 +19,6 @@ describe('AuthConfig', () => {
     'SESSION_SECRET',
     'TOKEN_ENCRYPTION_KEY',
     'USER_REF_HMAC_KEY',
-    'SUPPORT_EMAIL',
   ])('refuses to start without %s', (name) => {
     expect(() => new AuthConfig(config({ [name]: '' }))).toThrow(name);
   });
@@ -29,7 +27,6 @@ describe('AuthConfig', () => {
     ['SESSION_SECRET', 'short'],
     ['USER_REF_HMAC_KEY', 'short'],
     ['TOKEN_ENCRYPTION_KEY', Buffer.alloc(16).toString('base64')],
-    ['SUPPORT_EMAIL', 'not-an-email'],
     ['KAKAO_REDIRECT_URI', 'not a url'],
   ])('rejects a bad %s', (name, value) => {
     expect(() => new AuthConfig(config({ [name]: value }))).toThrow(name);
@@ -45,12 +42,11 @@ describe('AuthConfig', () => {
     ).toThrow('https');
   });
 
-  it('hashes user references and deletion codes with separate keys', () => {
+  it('hashes user references with USER_REF_HMAC_KEY', () => {
     const auth = new AuthConfig(config());
     const ref = auth.userRefHash('user-1');
     expect(ref).toMatch(/^[0-9a-f]{64}$/);
     expect(ref).toBe(auth.userRefHash('user-1'));
-    expect(auth.deletionCodeHash('user-1')).not.toBe(ref);
     expect(
       new AuthConfig(config({ USER_REF_HMAC_KEY: 'z'.repeat(32) })).userRefHash(
         'user-1',

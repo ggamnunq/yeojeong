@@ -1,5 +1,6 @@
 import { ERRORS, type ApiErrorBody, type ConsentRequiredDetails, type ErrorCode } from '@yeojeong/shared'
 import { http, HttpResponse, type DefaultBodyType, type HttpHandler, type HttpResponseResolver, type PathParams } from 'msw'
+import { mockConsentVersion } from './consentVersions'
 import { activeMembership, db, type MockMembership } from './data'
 
 /**
@@ -62,7 +63,7 @@ export function denyUnlessAuthenticated(): MockErrorResponse | null {
   if (db.consentRequired) {
     const details: ConsentRequiredDetails = {
       missing: db.consentRequired,
-      required: db.consentRequired.map((id) => ({ id, version: '0.1-draft' })),
+      required: db.consentRequired.map((id) => ({ id, version: mockConsentVersion(id) })),
     }
     return mockError('CONSENT_REQUIRED', 403, details, '약관 동의가 필요해요')
   }

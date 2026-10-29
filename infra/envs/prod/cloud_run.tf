@@ -76,11 +76,6 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       env {
-        name  = "SUPPORT_EMAIL"
-        value = var.support_email
-      }
-
-      env {
         name  = "PAYMENT_PROVIDER"
         value = var.payment_provider
       }

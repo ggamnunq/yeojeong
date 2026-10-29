@@ -35,6 +35,8 @@ export const paths = {
   me: () => '/me',
   /** 동의 관리(WF-58) */
   meConsents: () => '/me/consents',
+  /** 탈퇴(HF-59) */
+  meWithdraw: () => '/me/withdraw',
 
   trips: () => '/trips',
   tripNew: () => '/trips/new',
@@ -64,9 +66,12 @@ export const paths = {
 
   terms: () => '/terms',
   privacy: () => '/privacy',
+  /** 개인정보 처리위탁 고지(처리방침 제5조④) */
+  privacyProcessors: () => '/privacy/processors',
   finLinkTerms: () => '/terms/fin-link',
   consent: (consentId: string) => `/consents/${consentId}`,
-  licenses: () => '/licenses',
+  /** 오픈소스 및 라이선스 고지(약관 제27조②). 예전 주소 /licenses는 /oss로 보낸다 */
+  licenses: () => '/oss',
 } as const
 
 /**

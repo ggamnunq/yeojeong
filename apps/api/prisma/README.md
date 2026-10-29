@@ -79,6 +79,7 @@ Prisma 스키마로 표현할 수 없는 제약은 마이그레이션 SQL 끝에
 | `expenses_source_tx_hash_check`        | `source_tx_hash`는 hex 64자(HMAC). 결제수단 전부 해제 뒤 재인입 방지 키 |
 | `transactions_source_check`            | `source = PROVIDER`면 `payment_method_id`·`external_ref` 필수, `source = MANUAL`(지갑 직접 입력, S7)이면 `payment_method_id`·`raw_payload_enc`가 NULL. 유니크 `(payment_method_id, external_ref)`는 NULL끼리 겹치지 않아 MANUAL 행에 걸리지 않는다 |
 | `user_consents_*_check`, `consent_documents_*_check`, `account_deletions_channel_check` | screen·method·withdraw_channel·change_type·channel 허용 값, doc_hash·ip_hash 형식 |
+| `access_logs_client_ip_admin_only_check` | 원 IP(`client_ip`)는 관리자 접근 기록(`action LIKE 'ADMIN\_%'`)에만. 일반 사용자 행은 `ip_hash`만(마이그레이션 `20261030010002`) |
 
 ## 배포 흐름
 

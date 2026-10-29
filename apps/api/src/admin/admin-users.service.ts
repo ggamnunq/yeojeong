@@ -66,7 +66,7 @@ export function decodeUserCursor(
   }
 }
 
-const listSelect = (now: Date) =>
+const listSelect = () =>
   ({
     id: true,
     nickname: true,
@@ -80,13 +80,10 @@ const listSelect = (now: Date) =>
         transactions: { where: { sameUserDuplicateOfId: null } },
       },
     },
-    // 처리 전이고 만료 전인 탈퇴 요청(FR-108 요청 코드)
+    // 처리 전인 탈퇴 요청(이메일 요청을 운영자가 기록해 둔 것 등, completedAt 없음). 요청 코드·만료는 L-1에서 없앴다
     accountDeletions: {
-      where: {
-        completedAt: null,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      },
-      select: { requestedAt: true, expiresAt: true },
+      where: { completedAt: null },
+      select: { requestedAt: true },
       orderBy: { requestedAt: 'desc' },
       take: 1,
     },
@@ -113,15 +110,12 @@ export class AdminUsersService {
     );
   }
 
-  async list(
-    query: {
-      q?: string;
-      sort?: AdminUserSort;
-      cursor?: string;
-      limit?: number;
-    },
-    now = new Date(),
-  ): Promise<{ response: AdminUserListResponse; kind: AdminUserQueryKind }> {
+  async list(query: {
+    q?: string;
+    sort?: AdminUserSort;
+    cursor?: string;
+    limit?: number;
+  }): Promise<{ response: AdminUserListResponse; kind: AdminUserQueryKind }> {
     const sort = query.sort ?? 'createdAt';
     const limit = query.limit ?? ADMIN_USER_PAGE_SIZE.DEFAULT;
     const q = query.q?.trim() ?? '';
@@ -162,7 +156,7 @@ export class AdminUsersService {
       where: { AND: and },
       orderBy: [{ [sort]: 'desc' }, { id: 'desc' }],
       take: limit + 1,
-      select: listSelect(now),
+      select: listSelect(),
     });
     const page = rows.slice(0, limit);
     const last = page.at(-1);
@@ -187,7 +181,7 @@ export class AdminUsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
-        ...listSelect(now),
+        ...listSelect(),
         kakaoId: true,
         consents: {
           select: {
@@ -243,10 +237,7 @@ export class AdminUsersService {
       ...item,
       kakaoIdLast4: user.kakaoId.length >= 4 ? user.kakaoId.slice(-4) : null,
       deletionRequest: pending
-        ? {
-            requestedAt: toKstIso(pending.requestedAt),
-            expiresAt: pending.expiresAt ? toKstIso(pending.expiresAt) : null,
-          }
+        ? { requestedAt: toKstIso(pending.requestedAt) }
         : null,
       consents: user.consents.map((c) => ({
         consentId: c.consentId,

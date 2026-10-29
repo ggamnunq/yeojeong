@@ -35,6 +35,7 @@ describe('Swagger (e2e)', () => {
     expect(body.components.schemas.FieldErrorDto).toBeDefined();
 
     // 인증·회원·동의 엔드포인트와 DTO
+    expect(body.paths['/api/users/me/deletion-request']).toBeUndefined();
     for (const [path, method] of [
       ['/api/auth/kakao/start', 'get'],
       ['/api/auth/kakao', 'get'],
@@ -44,7 +45,8 @@ describe('Swagger (e2e)', () => {
       ['/api/auth/logout', 'post'],
       ['/api/auth/reconsent', 'post'],
       ['/api/users/me', 'get'],
-      ['/api/users/me/deletion-request', 'post'],
+      ['/api/users/me', 'delete'],
+      ['/api/notices/active', 'get'],
       ['/api/consents/documents', 'get'],
       ['/api/consents/status', 'get'],
       ['/api/consents', 'post'],

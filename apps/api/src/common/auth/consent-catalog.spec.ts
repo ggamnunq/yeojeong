@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CONSENT_ID_VALUES } from '@yeojeong/shared';
@@ -5,6 +6,7 @@ import {
   CONSENT_DOCUMENT_VERSIONS,
   currentConsentVersion,
   isConsentSatisfied,
+  V1_EFFECTIVE_AT,
   type ConsentDocumentVersion,
 } from './consent-catalog.js';
 
@@ -120,18 +122,93 @@ describe('consent validity', () => {
         ),
         'utf8',
       );
-    // 가입·연동 초안 + 카드 승인내역 불러오기(S8) 초안
+    // 가입·연동 초안 + 카드 승인내역 불러오기(S8) 초안 + 정식 v1.0(L-1)
     const sql =
       migration('20261028101853_add_consent_documents_is_draft') +
-      migration('20261029160001_card_import_constraints');
-    expect(CONSENT_DOCUMENT_VERSIONS.map((d) => d.consentId)).toEqual(
-      CONSENT_ID_VALUES,
-    );
+      migration('20261029160001_card_import_constraints') +
+      migration('20261030010000_consent_documents_v1_0');
+    expect([
+      ...new Set(CONSENT_DOCUMENT_VERSIONS.map((d) => d.consentId)),
+    ]).toEqual(CONSENT_ID_VALUES);
     for (const doc of CONSENT_DOCUMENT_VERSIONS) {
       expect(sql).toContain(
         `('${doc.consentId}', '${doc.version}', '${doc.title}', ${doc.required}, '${doc.docPath}', '${doc.docHash}'`,
       );
     }
+  });
+
+  describe('formal v1.0 (L-1)', () => {
+    const repoFile = (path: string) =>
+      readFileSync(
+        fileURLToPath(new URL(`../../../../../${path}`, import.meta.url)),
+        'utf8',
+      );
+    const sha256 = (text: string) =>
+      createHash('sha256').update(text, 'utf8').digest('hex');
+    const v1 = CONSENT_DOCUMENT_VERSIONS.filter((d) => d.version === '1.0');
+
+    it('publishes TOS·PRIVACY·AGE14 as version 1.0 with a separate effective date (2026-10-30 KST)', () => {
+      expect(v1.map((d) => d.consentId)).toEqual(['TOS', 'PRIVACY', 'AGE14']);
+      for (const doc of v1) {
+        expect(doc).toMatchObject({ isDraft: false, changeType: 'MAJOR' });
+        expect(doc.effectiveAt.toISOString()).toBe('2026-10-29T15:00:00.000Z');
+      }
+      expect(V1_EFFECTIVE_AT).toEqual(new Date('2026-10-30T00:00:00+09:00'));
+    });
+
+    it('hashes the published files byte for byte (AGE14 = terms file)', () => {
+      // 게시본(웹 content) = docs/legal/v1.0 원문. sync-legal.mjs가 둘을 같게 만든다
+      const published: Record<string, string> = {
+        TOS: 'apps/web/src/features/legal/content/terms.md',
+        PRIVACY: 'apps/web/src/features/legal/content/consent-collection.md',
+        AGE14: 'apps/web/src/features/legal/content/terms.md',
+      };
+      for (const doc of v1) {
+        const content = repoFile(published[doc.consentId]);
+        expect(sha256(content), doc.consentId).toBe(doc.docHash);
+        expect(repoFile(doc.docPath), doc.docPath).toBe(content);
+        // docs/legal/v1.0/consents.md 1절 표의 doc_hash 칸도 같은 값
+        expect(repoFile('docs/legal/v1.0/consents.md')).toMatch(
+          new RegExp(`^\\| \`${doc.consentId}\` \\|.*\`${doc.docHash}\``, 'm'),
+        );
+      }
+    });
+
+    it('asks draft signers to agree again from the effective date (MAJOR)', () => {
+      const catalog = CONSENT_DOCUMENT_VERSIONS;
+      const before = new Date('2026-10-29T23:59:59+09:00');
+      const after = new Date('2026-10-30T00:00:00+09:00');
+      for (const id of ['TOS', 'PRIVACY', 'AGE14'] as const) {
+        expect(currentConsentVersion(id, catalog, before).version).toBe(
+          '0.1-draft',
+        );
+        expect(isConsentSatisfied(id, ['0.1-draft'], catalog, before)).toBe(
+          true,
+        );
+        expect(currentConsentVersion(id, catalog, after).version).toBe('1.0');
+        expect(isConsentSatisfied(id, ['0.1-draft'], catalog, after)).toBe(
+          false,
+        );
+        expect(
+          isConsentSatisfied(id, ['0.1-draft', '1.0'], catalog, after),
+        ).toBe(true);
+      }
+      // v1.0에 없는 동의는 초안이 그대로 현재 버전이다
+      for (const id of [
+        'MARKETING',
+        'FIN_LINK',
+        'FIN_PRIVACY',
+        'THIRD_PARTY',
+        'CARD_IMPORT',
+      ] as const) {
+        expect(currentConsentVersion(id, catalog, after).version).toBe(
+          '0.1-draft',
+        );
+        expect(isConsentSatisfied(id, ['0.1-draft'], catalog, after)).toBe(
+          true,
+        );
+      }
+    });
   });
 
   it('fails loudly when no document is in effect', () => {

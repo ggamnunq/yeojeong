@@ -39,6 +39,8 @@ const SPEC_PATHS = [
   '/privacy',
   '/terms/fin-link',
   '/consents/:consentId',
+  '/privacy/processors',
+  '/oss',
   '/licenses',
 ]
 

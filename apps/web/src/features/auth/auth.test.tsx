@@ -235,9 +235,9 @@ describe('WF-04 약관 동의', () => {
       nickname: '준용',
       method: 'ALL',
       agreements: [
-        { consentId: 'TOS', version: '0.1-draft', agreed: true },
-        { consentId: 'PRIVACY', version: '0.1-draft', agreed: true },
-        { consentId: 'AGE14', version: '0.1-draft', agreed: true },
+        { consentId: 'TOS', version: '1.0', agreed: true },
+        { consentId: 'PRIVACY', version: '1.0', agreed: true },
+        { consentId: 'AGE14', version: '1.0', agreed: true },
       ],
     })
     expect(queryClient.getQueryData<SessionResponse>(keys.session)?.status).toBe('AUTHENTICATED')
@@ -477,9 +477,34 @@ describe('재동의', () => {
     await waitFor(() => expect(where(router)).toBe('/me'))
     expect(reconsent[0]).toEqual({
       method: 'INDIVIDUAL',
-      agreements: [{ consentId: 'TOS', version: '0.1-draft', agreed: true }],
+      agreements: [{ consentId: 'TOS', version: '1.0', agreed: true }],
     })
     expect(db.consentRequired).toBeNull()
+  })
+
+  it('정식 약관 v1.0 시행: 초안 동의자는 3항목 모두 1.0으로 다시 동의하고 전문 링크는 v1.0 공개 주소다', async () => {
+    db.consentRequired = ['TOS', 'PRIVACY', 'AGE14']
+    const reconsent = record('post', '/api/auth/reconsent')
+    const { router } = renderApp('/me')
+    await waitFor(() => expect(where(router)).toBe('/reconsent?required=TOS%2CPRIVACY%2CAGE14&returnTo=%2Fme'))
+    expect((await screen.findAllByRole('listitem')).map((li) => li.textContent)).toEqual([
+      '[필수] 서비스 이용약관',
+      '[필수] 개인정보 수집·이용',
+      '[필수] 만 14세 이상입니다',
+    ])
+    expect(screen.getByRole('link', { name: '서비스 이용약관 전문' }).getAttribute('href')).toBe('/terms')
+    expect(screen.getByRole('link', { name: '개인정보 수집·이용 전문' }).getAttribute('href')).toBe('/consents/PRIVACY')
+    for (const name of ['[필수] 서비스 이용약관', '[필수] 개인정보 수집·이용', '[필수] 만 14세 이상입니다']) {
+      fireEvent.click(checkbox(name))
+    }
+    const agree = button('동의') as HTMLButtonElement
+    await waitFor(() => expect(agree.disabled).toBe(false))
+    fireEvent.click(agree)
+    await waitFor(() => expect(where(router)).toBe('/me'))
+    expect(reconsent[0]).toEqual({
+      method: 'INDIVIDUAL',
+      agreements: ['TOS', 'PRIVACY', 'AGE14'].map((consentId) => ({ consentId, version: '1.0', agreed: true })),
+    })
   })
 
   it('로그아웃하면 로그인으로', async () => {

@@ -76,7 +76,7 @@ variable "kakao_client_secret" {
 }
 
 variable "support_email" {
-  description = "고객센터 주소. Cloud Run env SUPPORT_EMAIL(탈퇴·삭제 요청 메일 초안의 받는 주소)이자 Cloudflare Email Routing이 support_forward_to로 전달하는 주소(cloudflare.tf)"
+  description = "Cloudflare Email Routing으로 받는 도메인 별칭(cloudflare.tf). 여기로 온 메일을 support_forward_to로 전달한다. 약관·처리방침에 게시한 문의처는 운영자 Gmail(docs/legal/v1.0)이고 이 별칭은 싣지 않는다"
   type        = string
   default     = "support@jinyeojeong.com"
 }

@@ -1,6 +1,5 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiFetch, keys, type Me } from '../../api'
-import type { DeletionRequestResponse } from './types'
 
 export const meQuery = () =>
   queryOptions({
@@ -11,4 +10,5 @@ export const meQuery = () =>
 /** POST /api/auth/logout (204) */
 export const logout = () => apiFetch<void>('/auth/logout', { method: 'POST' })
 
-export const requestDeletion = () => apiFetch<DeletionRequestResponse>('/users/me/deletion-request', { method: 'POST' })
+/** DELETE /api/users/me { confirm: true } — 204. 서버가 세션 쿠키를 지운다(FR-109) */
+export const deleteAccount = () => apiFetch<void>('/users/me', { method: 'DELETE', body: { confirm: true } })

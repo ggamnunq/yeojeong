@@ -264,9 +264,10 @@ model Session {
   @@map("sessions")
 }
 
-/// 동의 문서 버전(서버가 현재 시행 버전을 판단하는 기준). version = 시행일 YYYY-MM-DD(같은 날 두 번이면 .2).
-/// 새 버전은 지우지 말고 마이그레이션으로 행을 추가한다. 시행일이 정해지기 전이라 지금은 초안(0.1-draft, isDraft)만 있다.
-/// 초안 동의는 법적 유효 동의가 아니다: 정식본이 하나도 없을 때만 임시로 인정하고, 정식본이 발행되면 모두 재동의(FR-107).
+/// 동의 문서 버전(서버가 현재 시행 버전을 판단하는 기준). version = 문서 버전("1.0", 다음 개정은 1.1 MINOR · 2.0 MAJOR), 시행일은 effectiveAt.
+/// 새 버전은 지우지 말고 마이그레이션으로 행을 추가한다. TOS·PRIVACY·AGE14는 정식 v1.0(2026-10-30 시행, docs/legal/v1.0),
+/// 나머지(MARKETING·FIN_*·THIRD_PARTY·CARD_IMPORT)는 아직 초안(0.1-draft, isDraft)만 있다.
+/// 초안 동의는 법적 유효 동의가 아니다: 정식본이 하나도 없을 때만 임시로 인정하고, 정식본이 시행되면 모두 재동의(FR-107).
 model ConsentDocument {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   consentId   ConsentId @map("consent_id")
@@ -330,18 +331,15 @@ model UserConsent {
 }
 
 /// 탈퇴·삭제 요청과 처리 기록. 처리 완료일부터 3년 보관.
-/// 요청 코드(FR-108)는 원문을 저장하지 않고 HMAC만 저장한다.
+/// 요청 코드 발급(FR-108)은 L-1에서 없앴다(마이그레이션 20261030010001이 칸을 지움).
 model AccountDeletion {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// 처리 전까지 요청자를 찾는 데 쓴다. User 삭제 후 NULL
   userId          String?   @map("user_id") @db.Uuid
   user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   userRefHash     String    @map("user_ref_hash") @db.Char(64)
-  /// SUPPORT(요청 코드 메일, P0) | IN_APP(P1) | KAKAO_UNLINK | INACTIVE
+  /// SUPPORT(이메일 요청 — 로그인할 수 없는 회원, 운영자가 관리자 페이지로 처리) | IN_APP(앱 안 탈퇴 HF-59) | KAKAO_UNLINK | INACTIVE
   channel         String    @db.VarChar(16)
-  requestCodeHash String?   @unique @map("request_code_hash") @db.Char(64)
-  /// 요청 코드 만료(24시간)
-  expiresAt       DateTime? @map("expires_at") @db.Timestamptz
   requestedAt     DateTime  @default(now()) @map("requested_at") @db.Timestamptz
   completedAt     DateTime? @map("completed_at") @db.Timestamptz
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
@@ -951,8 +949,9 @@ model SyncRun {
   @@map("sync_runs")
 }
 
-/// 금융 데이터 접근 로그(누가·무엇을·언제, 내용 없음). 1년 보존.
+/// 금융 데이터 접근 로그(누가·무엇을·언제, 내용 없음). 1년 보존(파기 배치 ACCESS_LOGS).
 /// 감사 기록이라 User FK를 걸지 않는다(탈퇴해도 행을 고치지 않는다).
+/// 운영자 DB 직접 접속(OPERATOR_DB_ACCESS_START·END, scripts/ops/db-connect.sh)도 여기 남는다 — userId는 운영자 이메일에서 만든 UUID.
 model AccessLog {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId       String   @map("user_id") @db.Uuid
@@ -961,9 +960,13 @@ model AccessLog {
   resourceType String   @map("resource_type") @db.VarChar(32)
   resourceId   String?  @map("resource_id") @db.Uuid
   ipHash       String?  @map("ip_hash") @db.Char(64)
+  /// 원 IP(접속지 정보). 관리자 접근 기록(ADMIN_*, 로그인 실패 포함)에만 — 운영자 본인의 접속이라 1년 보관한다.
+  /// 일반 사용자 행은 ipHash만 쓴다(CHECK access_logs_client_ip_admin_only_check, 마이그레이션 20261030010002)
+  clientIp     String?  @map("client_ip") @db.Inet
   requestId    String?  @map("request_id") @db.VarChar(128)
   ua           String?  @db.VarChar(512)
-  /// 숫자 요약만(예: 파기 건수 { expenses, transactions }). 금액·가맹점·개인정보는 넣지 않는다
+  /// 숫자 요약만(예: 파기 건수 { expenses, transactions }). 금액·가맹점·회원 개인정보는 넣지 않는다.
+  /// 예외: 운영자 접속 기록은 개인정보취급자 접속 기록이라 { operator(운영자 이메일), reason, host }를 넣는다
   details      Json?
   at           DateTime @default(now()) @db.Timestamptz
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz

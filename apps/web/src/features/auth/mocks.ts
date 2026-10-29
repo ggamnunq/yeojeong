@@ -8,6 +8,7 @@ import {
 import { HttpResponse, type HttpHandler } from 'msw'
 import type { SignupResponse } from '@yeojeong/shared'
 import { safeReturnTo } from '../../app/paths'
+import { MOCK_DRAFT_VERSION, mockConsentVersion } from '../../mocks/consentVersions'
 import { db, meOf } from '../../mocks/data'
 import { api, mockError, noContent, type NoContent } from '../../mocks/utils'
 import type {
@@ -24,8 +25,6 @@ import type {
 //   localStorage.setItem('yj:mock:kakao', 'existing') → 카카오 로그인이 기존 회원(바로 AUTHENTICATED)
 //   localStorage.setItem('yj:mock:reconsent', 'TOS,PRIVACY') 후 새로고침 → 세션이 403 CONSENT_REQUIRED(재동의 화면)
 
-export const MOCK_CONSENT_VERSION = '0.1-draft'
-
 /** consents.md 1절 "한 줄 요약"(재동의 화면 제목 아래 한 줄로 쓰는 ConsentDocument.summary) */
 const SUMMARY: Partial<Record<ConsentId, string>> = {
   TOS: '서비스 이용 조건, 송금 없음, 정산은 참고 정보',
@@ -39,12 +38,12 @@ export function mockConsentDocuments(stage: 'SIGNUP' | 'FIN_LINK'): ConsentDocum
       consentId: id,
       title: def.title,
       required: def.required,
-      version: MOCK_CONSENT_VERSION,
+      version: mockConsentVersion(id),
       docUrl: def.docUrl,
       hasDetail: def.docUrl !== null,
       hidden: def.hidden,
       summary: SUMMARY[id] ?? null,
-      isDraft: true,
+      isDraft: mockConsentVersion(id) === MOCK_DRAFT_VERSION,
     }
   })
 }
@@ -76,7 +75,7 @@ try {
 /** 필수 항목이 모두 현재 버전으로 agreed=true인가 */
 function agreedAll(agreements: ConsentAgreement[] | undefined, ids: readonly string[]) {
   return ids.every((id) =>
-    agreements?.some((a) => a.consentId === id && a.agreed === true && a.version === MOCK_CONSENT_VERSION),
+    agreements?.some((a) => a.consentId === id && a.agreed === true && a.version === mockConsentVersion(id as ConsentId)),
   )
 }
 

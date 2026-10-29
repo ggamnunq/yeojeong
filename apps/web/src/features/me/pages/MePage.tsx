@@ -1,25 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { keys } from '../../../api'
 import { useAccountLink } from '../../../app/features'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
-import { Avatar, Dialog, Icon, ShellSub, Tag } from '../../../ds'
+import { Avatar, Icon, ShellSub, Tag } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
-import { toast } from '../../../notifications'
 import { revocableConsentsQuery } from '../../card-import/api'
 import { entryCountLabel } from '../../manual/rules'
 import { paymentMethodsQuery } from '../../wallet/api'
 import { formatMethodCounts } from '../../wallet/format'
 import { useBack } from '../../wallet/useBack'
-import { logout, meQuery, requestDeletion } from '../api'
-import { mailto } from '../mailto'
-import type { DeletionRequestResponse } from '../types'
+import { NoticeBanner } from '../../notices/NoticeBanner'
+import { logout, meQuery } from '../api'
 
-/** WF-30 마이페이지: 프사·닉네임 → 내 지갑 → (아래) 로그아웃 · 탈퇴·삭제 요청 · 푸터 링크(C-03 사용자 결정) */
+/** WF-30 마이페이지: (공지 배너 HF-60b) → 프사·닉네임 → 내 지갑 → (아래) 로그아웃 · 탈퇴(HF-59) · 동의 관리 · 푸터 링크(C-03 사용자 결정) */
 export default function MePage() {
   const back = useBack(paths.splash())
   const session = useSession()
@@ -53,7 +51,6 @@ function MeContent({
   // 토스 연결이 꺼져 있으면(FR-006) 지갑 요약은 "결제 n건"(서버 Me.walletEntryCount — 목록을 세지 않는다), 연결 만료 태그 없음
   const accountLink = useAccountLink()
   const methods = useQuery({ ...paymentMethodsQuery(), enabled: accountLink })
-  const [deletion, setDeletion] = useState<DeletionRequestResponse | null>(null)
 
   const signedOut = useRef(false)
 
@@ -77,7 +74,6 @@ function MeContent({
     },
     [queryClient],
   )
-  const askDeletion = useMutation({ mutationFn: requestDeletion, onSuccess: setDeletion })
   // "동의 관리 ›"(WF-58)는 철회할 수 있는 유효 동의가 1건 이상일 때만 — 기능 플래그와 무관(디자인 결정, Q-55)
   const revocable = useQuery({ ...revocableConsentsQuery(), meta: { silent: true } })
   const hasConsents = (revocable.data?.length ?? 0) > 0
@@ -92,6 +88,7 @@ function MeContent({
 
   return (
     <>
+      <NoticeBanner className="mb-4" />
       <div className="flex items-center gap-4">
         <Avatar size="xl" me name={nickname} src={profileImageUrl} alt="" />
         <h2 className="min-w-0 truncate text-h1 text-primary">{nickname}</h2>
@@ -126,14 +123,10 @@ function MeContent({
           <Icon name="logout" size={20} className="text-icon-subtle" />
           로그아웃
         </button>
-        <button
-          type="button"
-          disabled={askDeletion.isPending}
-          onClick={() => askDeletion.mutate()}
-          className={clsx('rounded-sm px-3 pt-1.5 pb-2.5 text-body-s text-secondary', focusRing)}
-        >
-          탈퇴·삭제 요청
-        </button>
+        {/* HF-30: 작은 행 "탈퇴"(같은 톤, › 없음) → HF-59 */}
+        <Link to={paths.meWithdraw()} className={clsx('rounded-sm px-3 pt-1.5 pb-2.5 text-body-s text-secondary', focusRing)}>
+          탈퇴
+        </Link>
         {hasConsents && (
           <Link
             to={paths.meConsents()}
@@ -153,31 +146,6 @@ function MeContent({
           </Link>
         </p>
       </div>
-
-      <Dialog
-        open={deletion !== null}
-        title="탈퇴·삭제 요청"
-        message={
-          <button
-            type="button"
-            className={clsx('rounded-sm px-1 py-0.5 text-body-m text-secondary', focusRing)}
-            aria-label={`요청 코드 ${deletion?.code ?? ''} 복사`}
-            onClick={() => {
-              if (!deletion) return
-              void navigator.clipboard.writeText(deletion.code).then(() => toast.success('복사했어요'))
-            }}
-          >
-            요청 코드 <span className="font-amount font-medium text-primary">{deletion?.code}</span>
-          </button>
-        }
-        cancelLabel="닫기"
-        confirmLabel="메일 보내기"
-        onCancel={() => setDeletion(null)}
-        onConfirm={() => {
-          if (deletion) mailto.open(deletion.mailto)
-          setDeletion(null)
-        }}
-      />
     </>
   )
 }
