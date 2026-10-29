@@ -128,6 +128,8 @@ enum TxKind {
 enum TxSource {
   PROVIDER
   MANUAL
+  /// 카드 승인내역 불러오기(S8, 일회성): 사용자가 고른 승인 건. externalRef = importKey(HMAC), 결제수단·원문 없음
+  CARD_IMPORT
 
   @@map("tx_source")
 }
@@ -141,6 +143,8 @@ enum ConsentId {
   FIN_LINK
   FIN_PRIVACY
   THIRD_PARTY
+  /// 카드 승인내역 불러오기(S8). 동의 관리(HF-58)에서 철회할 수 있다
+  CARD_IMPORT
 
   @@map("consent_id")
 }
@@ -592,7 +596,9 @@ model Transaction {
   /// PROVIDER만. MANUAL은 NULL
   paymentMethodId       String?        @map("payment_method_id") @db.Uuid
   paymentMethod         PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
-  /// 제공자 거래 ID. 멱등 upsert 키. MANUAL은 NULL(유니크 (paymentMethodId, externalRef)는 NULL끼리 겹치지 않는다)
+  /// 제공자 거래 ID. 멱등 upsert 키. MANUAL은 NULL(유니크 (paymentMethodId, externalRef)는 NULL끼리 겹치지 않는다).
+  /// CARD_IMPORT는 importKey(HMAC-SHA256 hex 64자, 승인번호 원문 아님). 부분 유니크 transactions_card_import_ref_key
+  /// (user_id, external_ref) WHERE source = 'CARD_IMPORT'가 중복 저장을 막는다. Prisma 스키마로 표현할 수 없어 마이그레이션 SQL(20261029160001_card_import_constraints)에만 있다
   externalRef           String?        @map("external_ref") @db.VarChar(128)
   /// MANUAL 중복 제출 방지 키(화면이 만든 UUID). 사용자마다 유일
   clientRequestId       String?        @map("client_request_id") @db.Uuid
@@ -636,6 +642,26 @@ model Transaction {
   @@unique([userId, clientRequestId])
   @@index([userId, occurredAt])
   @@map("transactions")
+}
+
+/// CODEF 계정 삭제 대기(S8 카드 승인내역 불러오기, CODEF_LOGIN_MODE=account일 때만 생긴다).
+/// 요청 안에서 계정 삭제(account/delete)를 3번 재시도해도 실패한 connectedId만 AES-256-GCM으로 암호화해 둔다(AAD = 행 id).
+/// 삭제 재시도(내부 잡 POST /api/internal/jobs/codef-cleanup)에만 쓰고 조회에는 절대 쓰지 않는다. 지우면 행도 지운다. 사용자 ID는 두지 않는다
+model CodefPendingDeletion {
+  /// 앱이 만든 UUID(암호문 AAD로 쓴다)
+  id             String    @id @db.Uuid
+  connectedIdEnc Bytes     @map("connected_id_enc")
+  /// CODEF 기관 코드(삭제 요청 accountList에 필요)
+  organization   String    @db.Char(4)
+  attempts       Int       @default(0)
+  /// 마지막 CODEF 결과 코드(예: CF-12202) 또는 NETWORK
+  lastErrorCode  String?   @map("last_error_code") @db.VarChar(16)
+  lastTriedAt    DateTime? @map("last_tried_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([createdAt])
+  @@map("codef_pending_deletions")
 }
 
 // ─── 여정 장부 ───

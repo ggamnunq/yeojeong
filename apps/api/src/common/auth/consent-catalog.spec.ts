@@ -110,15 +110,20 @@ describe('consent validity', () => {
   });
 
   it('keeps the seed constant equal to the draft rows in the migration', () => {
-    const sql = readFileSync(
-      fileURLToPath(
-        new URL(
-          '../../../prisma/migrations/20261028101853_add_consent_documents_is_draft/migration.sql',
-          import.meta.url,
+    const migration = (name: string) =>
+      readFileSync(
+        fileURLToPath(
+          new URL(
+            `../../../prisma/migrations/${name}/migration.sql`,
+            import.meta.url,
+          ),
         ),
-      ),
-      'utf8',
-    );
+        'utf8',
+      );
+    // 가입·연동 초안 + 카드 승인내역 불러오기(S8) 초안
+    const sql =
+      migration('20261028101853_add_consent_documents_is_draft') +
+      migration('20261029160001_card_import_constraints');
     expect(CONSENT_DOCUMENT_VERSIONS.map((d) => d.consentId)).toEqual(
       CONSENT_ID_VALUES,
     );

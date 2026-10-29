@@ -96,6 +96,19 @@ export const CONSENT_DOCUMENT_VERSIONS: Catalog = [
     'docs/legal/개인정보 제3자 제공 동의서.md',
     '3139434ccc3e99aaa30efcbe7941f4fc1eeef295d355e720de43dfda1b065ff9',
   ),
+  // 마이그레이션 20261029160001_card_import_constraints(S8). 전문이 아직 없어 docHash는 summary의 SHA-256
+  {
+    ...draft(
+      'CARD_IMPORT',
+      '카드 승인내역 불러오기',
+      true,
+      'docs/legal/카드 승인내역 불러오기 동의서.md',
+      'b21259dea64a8caaf60564f52967c940214eb12c4fa2aff947447c3c89e041a8',
+    ),
+    effectiveAt: new Date('2026-10-29T00:00:00+09:00'),
+    summary:
+      '카드사 로그인 정보로 승인내역을 한 번 조회하고, 고른 결제만 지갑에 저장해요. 로그인 정보와 조회 결과는 저장하지 않아요.',
+  },
 ];
 
 function effective(id: ConsentId, catalog: Catalog, now: Date) {
