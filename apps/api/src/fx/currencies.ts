@@ -32,6 +32,10 @@ const CURRENCIES: Record<string, Omit<CurrencyMeta, 'code'>> = {
   MYR: { nameKo: '링깃', displayUnit: 1 },
 };
 
+/** 여정 통화로 고를 수 있는 통화(표 순서 그대로, KRW가 맨 앞). 화면 목록은 src/trips/currencies.ts */
+export const SUPPORTED_CURRENCY_CODES: readonly string[] =
+  Object.keys(CURRENCIES);
+
 /** 환율 수집 잡이 진행 중 여정 통화와 함께 늘 모으는 통화 */
 export const DEFAULT_FX_CURRENCIES: readonly string[] = Object.keys(
   CURRENCIES,

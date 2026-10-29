@@ -35,7 +35,8 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       .set(ctx.auth.headers(leader))
       .send({
         groupName: '오사카 3박 4일',
-        place: { countryCode: 'JP', city: '오사카', label: '일본 오사카' },
+        place: { label: '일본 오사카' },
+        currency: 'JPY',
         startDate: today,
         endDate: addDays(today, 3),
         budgetKrw: 1_200_000,
@@ -65,13 +66,16 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
     const taehyun = await ctx.addUser('태현');
     const subin = await ctx.addUser('수빈');
 
-    // 만들기: 그룹장 joinOrder 1, 통화는 국가로
+    // 만들기: 그룹장 joinOrder 1, 장소는 자유 입력, 통화는 고른 값
     const created = await createTrip(junyong);
     expect(created.inviteCode).toMatch(/^[2-9A-HJKMNP-Z]{6}$/);
     const trip = await ctx.prisma.trip.findUniqueOrThrow({
       where: { id: created.tripId },
     });
     expect(trip).toMatchObject({
+      placeLabel: '일본 오사카',
+      countryCode: null,
+      city: null,
       currency: 'JPY',
       status: 'UPCOMING',
       version: 0,
@@ -99,6 +103,9 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
     let mine = await detail(junyong, created.tripId);
     expect(mine).toMatchObject({
       groupName: '오사카 3박 4일',
+      placeLabel: '일본 오사카',
+      countryCode: null,
+      city: null,
       currency: 'JPY',
       nights: 3,
       days: 4,
@@ -114,6 +121,7 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       permissions: {
         canEdit: true,
         canStart: true,
+        startBlockReason: null,
         canEnd: false,
         canDeleteGroup: true,
         canKick: true,
@@ -199,6 +207,7 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       canEdit: false,
       editableFields: [],
       canStart: false,
+      startBlockReason: 'NOT_LEADER',
       canKick: false,
       canInvite: true,
     });
@@ -311,7 +320,7 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
         .set(ctx.auth.headers(minji))
         .send({
           groupName: '교토 먹방',
-          place: { countryCode: 'JP', city: '교토', label: '일본 교토' },
+          place: { label: '일본 교토' },
           budgetKrw: 1_500_000,
           version: leaderView.version,
         })
@@ -338,6 +347,7 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       permissions: {
         canEdit: true,
         editableFields: ['groupName', 'budgetKrw', 'endDate'],
+        startBlockReason: 'NOT_UPCOMING',
         canEnd: true,
         canDeleteGroup: false,
       },
@@ -364,13 +374,14 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       .patch(`/api/trips/${created.tripId}`)
       .set(ctx.auth.headers(minji))
       .send({
-        place: { countryCode: 'KR', label: '부산', city: '부산' },
+        place: { label: '부산' },
+        currency: 'KRW',
         version: started.body.version,
       })
       .expect(409);
     expect(locked.body).toMatchObject({
       code: 'TRIP_PHASE_INVALID',
-      details: { lockedFields: ['place'] },
+      details: { lockedFields: ['place', 'currency'] },
     });
     await request(server())
       .patch(`/api/trips/${created.tripId}`)
@@ -481,6 +492,152 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
     expect(ctx.events.every((e) => e.payload.occurredAt instanceof Date)).toBe(
       true,
     );
+  });
+
+  it('creates a free-text domestic trip in KRW and changes the currency only before the start', async () => {
+    const leader = await ctx.addUser('준용');
+    const created = await createTrip(leader, {
+      groupName: '남해안 일주',
+      place: { label: '  제주 + 부산  ' },
+      currency: 'KRW',
+    });
+    let view = await detail(leader, created.tripId);
+    expect(view).toMatchObject({
+      placeLabel: '제주 + 부산',
+      countryCode: null,
+      city: null,
+      currency: 'KRW',
+      fx: null,
+    });
+
+    // 고정 환율을 건 외화 여정의 통화를 바꾸면 결제 시점 환율로 돌아간다
+    view = (
+      await request(server())
+        .patch(`/api/trips/${created.tripId}`)
+        .set(ctx.auth.headers(leader))
+        .send({ currency: 'JPY', version: view.version })
+        .expect(200)
+    ).body;
+    expect(view).toMatchObject({
+      currency: 'JPY',
+      placeLabel: '제주 + 부산',
+      fx: { policy: 'SPOT_AT_PAYMENT', tripCurrency: 'JPY' },
+    });
+    await ctx.prisma.trip.update({
+      where: { id: created.tripId },
+      data: { fxPolicy: 'FIXED', fxFixedRate: '919.2' },
+    });
+    view = (
+      await request(server())
+        .patch(`/api/trips/${created.tripId}`)
+        .set(ctx.auth.headers(leader))
+        .send({ currency: 'usd', version: view.version })
+        .expect(200)
+    ).body;
+    expect(view).toMatchObject({
+      currency: 'USD',
+      fx: { policy: 'SPOT_AT_PAYMENT', tripCurrency: 'USD' },
+    });
+    expect(
+      await ctx.prisma.trip.findUniqueOrThrow({
+        where: { id: created.tripId },
+        select: { fxFixedRate: true },
+      }),
+    ).toEqual({ fxFixedRate: null });
+
+    // 지원하지 않는 통화는 400, 그대로면 바뀐 것이 없다
+    await request(server())
+      .patch(`/api/trips/${created.tripId}`)
+      .set(ctx.auth.headers(leader))
+      .send({ currency: 'AED', version: view.version })
+      .expect(400)
+      .expect((r) =>
+        expect(r.body.details.fields).toEqual([
+          { path: 'currency', code: 'isIn', message: '지원하지 않는 통화예요' },
+        ]),
+      );
+    const same = await request(server())
+      .patch(`/api/trips/${created.tripId}`)
+      .set(ctx.auth.headers(leader))
+      .send({
+        currency: 'USD',
+        place: { label: '제주 + 부산' },
+        version: view.version,
+      })
+      .expect(200);
+    expect(same.body.version).toBe(view.version);
+
+    // 시작 뒤에는 통화를 바꿀 수 없다
+    const started = await request(server())
+      .post(`/api/trips/${created.tripId}/start`)
+      .set(ctx.auth.headers(leader))
+      .send({ version: view.version })
+      .expect(200);
+    await request(server())
+      .patch(`/api/trips/${created.tripId}`)
+      .set(ctx.auth.headers(leader))
+      .send({ currency: 'KRW', version: started.body.version })
+      .expect(409)
+      .expect((r) =>
+        expect(r.body).toMatchObject({
+          code: 'TRIP_PHASE_INVALID',
+          details: { lockedFields: ['currency'] },
+        }),
+      );
+  });
+
+  it('keeps legacy trips readable and accepts the old place shape', async () => {
+    const leader = await ctx.addUser('준용');
+    // 옛 화면: 장소 목록 값(countryCode·city)을 함께 보내면 저장만 한다. 통화는 여전히 필수
+    await request(server())
+      .post('/api/trips')
+      .set(ctx.auth.headers(leader))
+      .send({
+        groupName: '오사카 3박 4일',
+        place: { countryCode: 'JP', city: '오사카', label: '일본 오사카' },
+        startDate: today,
+        endDate: addDays(today, 3),
+        budgetKrw: 1_200_000,
+      })
+      .expect(400)
+      .expect((r) =>
+        expect(r.body.details.fields).toEqual([
+          { path: 'currency', code: 'isIn', message: '통화를 골라 주세요' },
+        ]),
+      );
+    const created = await createTrip(leader, {
+      place: { countryCode: 'JP', city: '오사카', label: '일본 오사카' },
+    });
+    const view = await detail(leader, created.tripId);
+    expect(view).toMatchObject({
+      placeLabel: '일본 오사카',
+      countryCode: 'JP',
+      city: '오사카',
+      currency: 'JPY',
+    });
+
+    // 새 화면이 같은 label만 보내면 바뀐 것이 없고 옛 값은 남는다. label을 바꾸면 옛 목록 값은 비운다
+    const unchanged = await request(server())
+      .patch(`/api/trips/${created.tripId}`)
+      .set(ctx.auth.headers(leader))
+      .send({ place: { label: '일본 오사카' }, version: view.version })
+      .expect(200);
+    expect(unchanged.body).toMatchObject({
+      countryCode: 'JP',
+      city: '오사카',
+      version: view.version,
+    });
+    const moved = await request(server())
+      .patch(`/api/trips/${created.tripId}`)
+      .set(ctx.auth.headers(leader))
+      .send({ place: { label: '오사카 + 교토' }, version: view.version })
+      .expect(200);
+    expect(moved.body).toMatchObject({
+      placeLabel: '오사카 + 교토',
+      countryCode: null,
+      city: null,
+      currency: 'JPY',
+    });
   });
 
   it('gives distinct joinOrders to concurrent joins', async () => {
@@ -662,7 +819,10 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
     await ctx.prisma.$executeRaw`
       UPDATE trips SET start_at = now() - interval '2 days', auto_end_at = now() - interval '1 minute' WHERE id = ${tripId}::uuid`;
     const view = await detail(leader, tripId);
-    expect(view.permissions.canStart).toBe(false);
+    expect(view.permissions).toMatchObject({
+      canStart: false,
+      startBlockReason: 'PERIOD_OVER',
+    });
     await request(server())
       .post(`/api/trips/${tripId}/start`)
       .set(ctx.auth.headers(leader))

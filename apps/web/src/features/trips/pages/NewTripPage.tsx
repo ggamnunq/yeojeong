@@ -19,6 +19,7 @@ export default function NewTripPage() {
       {
         groupName: values.groupName,
         place: values.place!,
+        currency: values.currency!,
         startDate: values.startDate,
         endDate: values.endDate,
         budgetKrw: Number(values.budget),

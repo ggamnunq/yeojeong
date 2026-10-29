@@ -10,7 +10,8 @@
 
 | 메서드 | 경로 | 권한·단계 | 응답 | 주요 에러 | FR |
 | --- | --- | --- | --- | --- | --- |
-| GET | `/api/places?query=` | 로그인 | `Place[]`(최대 20) | — | 201 |
+| GET | `/api/currencies` | 로그인 | `SupportedCurrency[]`(KRW 맨 앞, 나머지는 `fx/currencies.ts` 표 순서) | — | 201·302 |
+| GET | `/api/places?query=` | 로그인 · deprecated | `Place[]`(최대 20). 장소가 자유 입력이 되어 새 화면은 쓰지 않는다 | — | 201 |
 | POST | `/api/trips` | 로그인 | 201 `CreateTripResponse` | 400 `VALIDATION_FAILED` | 201 |
 | GET | `/api/me/trips` | 로그인 | `MyTripsResponse` | — | 102·205 |
 | GET | `/api/trips/:tripId` | 멤버 | `TripDetailResponse`(lastViewedTripId 갱신) | 404 | 001·301 |
@@ -34,9 +35,10 @@
 | 항목 | 구현 |
 | --- | --- |
 | 기간(Q-29) | 종료일 ≥ 시작일, 최대 31일, 시작일은 오늘(KST) − 30일 이후. 수정 때 과거 시작일 규칙은 시작일을 바꿀 때만 |
-| 통화 | 국가 → 통화(`places.ts` `COUNTRIES`). 표에 없는 국가는 400 `place.countryCode:unsupportedCountry`. 시작 전 국가를 바꿔 통화가 바뀌면 `FIXED` 환율 기준은 `SPOT_AT_PAYMENT`로 되돌린다 |
+| 장소(S5) | 자유 입력 `place.label`(앞뒤 공백 제거, 1~40자). 빈 값 400 `place.label:isLength` '여행 장소를 입력해 주세요'. `place.countryCode`·`city`는 옛 화면 호환으로 받으면 저장만 한다(통화 판단에 쓰지 않음). 수정 때 label만 보내면 같은 label이면 옛 값을 두고, 바뀌면 비운다. `trips.country_code`는 NULL 허용(옛 행은 값 유지) |
+| 통화(S5) | 만들 때 `currency` 필수, 기본값 없음. 빠지면 400 `currency:isIn` '통화를 골라 주세요', 목록 밖이면 '지원하지 않는 통화예요'. 목록은 `currencies.ts`(KRW + `fx/currencies.ts` 표). 장소를 바꿔도 통화는 그대로. 통화 수정은 장소처럼 시작 전에만(진행 중 409 `lockedFields: ['currency']`), 바뀌면 `FIXED` 환율 기준은 `SPOT_AT_PAYMENT`로 되돌린다 |
 | 수정 범위(Q-14) | 시작 전 전 항목, 진행 중 그룹명·예산·종료일(오늘 이후), 종료 후 불가. 잠긴 항목도 지금 값과 같으면 받아 준다 |
-| 시작(Q-26) | 종료일 23:59:59 KST가 지난 시작 전 여정은 409(`permissions.canStart = false`). 기간을 고쳐서 시작한다 |
+| 시작(Q-26) | 종료일 23:59:59 KST가 지난 시작 전 여정은 409(`permissions.canStart = false`). 기간을 고쳐서 시작한다. `permissions.startBlockReason`이 서버 시계로 이유를 준다: 시작 API 순서대로 `NOT_LEADER`(403) → `NOT_UPCOMING`(409) → `PERIOD_OVER`(409), 시작할 수 있으면 null. 화면은 기기 시계로 다시 계산하지 않는다 |
 | 초대코드 | CSPRNG 6자, 삭제되지 않은 그룹 안에서 유일(부분 유니크 인덱스). 충돌하면 5번까지 다시 뽑는다. 그룹이 삭제되면 같은 코드를 다시 쓸 수 있다. 종료 후 상세의 `inviteCode`는 null |
 | 참여(Q-09·Q-16) | 승인 없음, 시작 전·진행 중만. 활성 20명 한도. 강퇴자는 재참여 불가(403 `MEMBER_KICKED`). 자진 이탈자는 같은 행을 되살려 이전 결제·부담 기록을 잇되, `joinOrder`는 재참여 시각 기준 맨 뒤(`max + 1`)로 다시 매기고 `joinedAt`도 갱신한다(Q-09 확정, 역할 MEMBER). 그래서 승계·멤버 목록 순서·이니셜 색은 새 가입 순서를 따른다. 새 멤버는 참여 전 1회성 이벤트를 보지 않는다 |
 | 승계(4-7) | 그룹장이 나가면 활성 멤버 중 joinOrder 최소가 LEADER, 같은 트랜잭션에서 TripEvent `LEADER_CHANGED { newLeaderMembershipId, nickname }`(actor = 나간 그룹장). 나간 사람의 역할은 MEMBER로 내린다 |

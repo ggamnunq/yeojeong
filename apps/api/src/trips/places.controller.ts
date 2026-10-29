@@ -8,7 +8,12 @@ import { searchPlaces } from './places.js';
 @ApiTags('trips')
 @Controller('places')
 export class PlacesController {
-  @ApiOperation({ summary: '여행 장소 검색(최대 20)', description: 'FR-201' })
+  @ApiOperation({
+    summary: '여행 장소 검색(최대 20)',
+    description:
+      'FR-201. 장소가 자유 입력이 되어 새 화면은 쓰지 않는다(옛 화면 호환용, 제거 예정)',
+    deprecated: true,
+  })
   @ApiOkResponse({ type: [PlaceDto] })
   @Get()
   search(@Query() query: PlaceQueryDto): Place[] {

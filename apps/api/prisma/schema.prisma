@@ -360,12 +360,13 @@ model Trip {
   /// MVP 1:1. 1:N 확장 시 @unique 제거
   groupId               String      @unique @map("group_id") @db.Uuid
   group                 Group       @relation(fields: [groupId], references: [id])
-  /// 표시용 장소 "일본 오사카"
+  /// 사용자가 적은 여행 장소 "제주 + 부산"(자유 입력, 1~40자)
   placeLabel            String      @map("place_label") @db.VarChar(40)
-  /// ISO 3166-1. 국내 KR
-  countryCode           String      @map("country_code") @db.Char(2)
+  /// ISO 3166-1. 옛 장소 목록으로 만든 여정만 값이 있다(새 여정은 NULL, 통화 판단에 쓰지 않는다)
+  countryCode           String?     @map("country_code") @db.Char(2)
+  /// 옛 장소 목록으로 만든 여정만 값이 있다
   city                  String?     @db.VarChar(40)
-  /// ISO 4217. 국가에서 자동으로 정한다
+  /// ISO 4217. 만들 때 사용자가 고른다(GET /api/currencies), 시작 전에만 바꿀 수 있다
   currency              String      @db.Char(3)
   /// KST 달력 날짜. endDate ≥ startDate(CHECK)
   startDate             DateTime    @map("start_date") @db.Date

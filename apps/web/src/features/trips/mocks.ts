@@ -244,7 +244,7 @@ export const handlers: HttpHandler[] = [
     if (body.version !== trip.version) return domainError.versionConflict(trip)
 
     const editable = TRIP_EDITABLE_FIELDS[trip.status]
-    const current = { groupName: trip.groupName, startDate: trip.startDate, endDate: trip.endDate, budgetKrw: trip.budgetKrw }
+    const current = { groupName: trip.groupName, currency: trip.currency, startDate: trip.startDate, endDate: trip.endDate, budgetKrw: trip.budgetKrw }
     const changed = (field: TripEditableField) => {
       if (body[field] === undefined) return false
       if (field === 'place') return body.place!.label !== trip.placeLabel || body.place!.countryCode !== trip.countryCode

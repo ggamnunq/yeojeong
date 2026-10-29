@@ -23,6 +23,8 @@ export type { EndTripResponse } from '@yeojeong/shared'
 export interface TripFormValues {
   groupName: string
   place: PlaceInput | null
+  /** 임시: 장소 목록에서 고른 장소의 통화(서버 S5에서 만들기 currency 필수). 자유 입력·통화 고르기 화면이 들어오면 바꾼다 */
+  currency?: string
   startDate: string
   endDate: string
   budget: string

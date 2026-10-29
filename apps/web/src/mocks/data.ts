@@ -396,6 +396,14 @@ export function tripDetail(trip: MockTrip, viewerUserId = db.meUserId): TripDeta
         ? (['groupName', 'budgetKrw', 'endDate'] as const)
         : []
     : []
+  // 서버 startBlockReason과 같은 순서: 그룹장 → 시작 전 → 종료일이 지나지 않음
+  const startBlockReason = !leader
+    ? ('NOT_LEADER' as const)
+    : trip.status !== 'UPCOMING'
+      ? ('NOT_UPCOMING' as const)
+      : trip.endDate < today
+        ? ('PERIOD_OVER' as const)
+        : null
   const shell =
     trip.status === 'UPCOMING'
       ? { defaultTab: 'INFO' as const, secondTab: 'SUMMARY' as const, lockedTabs: ['EXPENSES', 'SUMMARY'] as const }
@@ -437,7 +445,8 @@ export function tripDetail(trip: MockTrip, viewerUserId = db.meUserId): TripDeta
     permissions: {
       canEdit: editableFields.length > 0,
       editableFields: [...editableFields],
-      canStart: leader && trip.status === 'UPCOMING' && trip.endDate >= today,
+      canStart: startBlockReason === null,
+      startBlockReason,
       canEnd: leader && trip.status === 'ONGOING',
       canDeleteGroup: leader && trip.status === 'UPCOMING',
       canKick: leader && open,
