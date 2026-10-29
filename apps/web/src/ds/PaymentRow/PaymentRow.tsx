@@ -12,15 +12,30 @@ import { Tag } from '../Tag/Tag'
 // Figma PaymentRow(24:8257) · Type × State(Pressed = :active) + Changed. 결제 내역 한 줄(누르면 결제 상세).
 // Shared = 부담 인원 스택 · Personal/Duplicate/Refund = 메타 줄 앞 Tag · Pending = 메타 줄 끝 회색 "미확정" + 금액 보조색.
 // Changed(v1.4) = 메타 줄 끝 중립 회색 "변경됨" 칩(Tag Type=Changed).
+// Avatar#88:2 off(v1.6.3) = leading="none"(HF-49 내 지갑) — 왼쪽 프사 없음. 메타 "HH:mm · {여정 이름}"(walletMeta) + 오른쪽 원통화 보조 줄. 행 높이 70.
 export type PaymentRowType = 'shared' | 'personal' | 'pending' | 'refund' | 'duplicate'
+/** 왼쪽 자리: avatar = 결제자 프사(기본), none = 없음(내 지갑 HF-49) */
+export type PaymentRowLeading = 'avatar' | 'none'
 
-export type PaymentRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'children'> & {
+type PaymentRowLeadingProps =
+  | {
+      /** Figma Leading. 기본 avatar */
+      leading?: 'avatar'
+      /** Figma payer avatar (Avatar M). 메타에 결제자 이름이 있으니 화면리더에는 숨긴다 */
+      payer: AvatarPerson
+    }
+  | {
+      /** Figma Leading=None(DS18): 프사 없이 내용·메타·금액만 — 내 지갑 행(HF-49) */
+      leading: 'none'
+      payer?: never
+    }
+
+export type PaymentRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'children'> &
+  PaymentRowLeadingProps & {
   type?: PaymentRowType
-  /** Figma payer avatar (Avatar M). 메타에 결제자 이름이 있으니 화면리더에는 숨긴다 */
-  payer: AvatarPerson
   /** Figma merchant */
   merchant: ReactNode
-  /** Figma meta: "12:40 · 민지" / "14:05 · 내 결제". Refund는 "원 결제 10.28 12:40 · 취소" */
+  /** Figma meta: "12:40 · 민지" / "14:05 · 내 결제"(paymentMeta). Refund는 "원 결제 10.28 12:40 · 취소". 지갑 행은 "08:50 · 오사카"(walletMeta) */
   meta: ReactNode
   /** 원화 금액. Refund는 부호와 상관없이 −로 보여 준다 */
   amount: number
@@ -38,6 +53,7 @@ const TAG = { personal: 'personal', refund: 'refund', duplicate: 'duplicate' } a
 
 export function PaymentRow({
   type = 'shared',
+  leading = 'avatar',
   payer,
   merchant,
   meta,
@@ -62,7 +78,7 @@ export function PaymentRow({
       )}
       {...rest}
     >
-      <Avatar {...payer} size="m" alt="" />
+      {leading === 'avatar' && payer && <Avatar {...payer} size="m" alt="" />}
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="truncate text-body-m-strong text-primary">{merchant}</span>
         <span className="flex min-w-0 items-center gap-1.5">

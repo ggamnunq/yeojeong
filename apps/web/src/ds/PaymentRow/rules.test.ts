@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { orderMembers } from '../AvatarStack/rules'
-import { paymentMeta, payerLabel } from './rules'
+import { paymentMeta, payerLabel, walletMeta } from './rules'
 
 describe('결제자 표기 (spec C-06)', () => {
   it('내 결제는 "HH:mm · 내 결제", 다른 멤버는 "HH:mm · 닉네임"(접미사 없음)', () => {
@@ -38,5 +38,14 @@ describe('orderMembers (spec C-05)', () => {
     const before = people.map((p) => p.name)
     expect(orderMembers(people).map((p) => p.name)).toEqual(['B', 'A', 'C'])
     expect(people.map((p) => p.name)).toEqual(before)
+  })
+})
+
+describe('walletMeta (DS18 · HF-49 내 지갑 행)', () => {
+  it('"HH:mm · 여정 이름", 연결이 없으면 시각만', () => {
+    expect(walletMeta('08:50', '오사카 3박 4일')).toBe('08:50 · 오사카 3박 4일')
+    expect(walletMeta('08:50')).toBe('08:50')
+    expect(walletMeta('08:50', null)).toBe('08:50')
+    expect(walletMeta('08:50', '  ')).toBe('08:50')
   })
 })

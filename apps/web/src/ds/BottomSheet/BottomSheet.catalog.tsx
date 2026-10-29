@@ -76,6 +76,32 @@ export default defineCatalog({
           </Row>
         </Sub>
 
+        <Sub title='DS18 헤더 · leading="back"(시트 안 단계, ✕ 기본 숨김) · action(제목 오른쪽 텍스트 버튼)'>
+          <Row>
+            <Variant name='leading="back" · onBack (HF-47 나누기)'>
+              <div className="w-[390px]">
+                <BottomSheetPanel title="나누기" leading="back" cta={{ label: '완료' }}>
+                  <Placeholder />
+                </BottomSheetPanel>
+              </div>
+            </Variant>
+            <Variant name='action={{ label: "수정" }} (HF-20b)'>
+              <div className="w-[390px]">
+                <BottomSheetPanel title="타코야키" action={{ label: '수정' }} cta={{ label: '저장', state: 'disabled' }}>
+                  <PaymentSummary />
+                </BottomSheetPanel>
+              </div>
+            </Variant>
+            <Variant name='leading="back" · close · action="완료"'>
+              <div className="w-[390px]">
+                <BottomSheetPanel title="여정" leading="back" close action={{ label: '완료' }}>
+                  <Placeholder />
+                </BottomSheetPanel>
+              </div>
+            </Variant>
+          </Row>
+        </Sub>
+
         <Sub title="열린 상태 (화면 위 · bg/dim)">
           <PhoneFrame
             overlay={

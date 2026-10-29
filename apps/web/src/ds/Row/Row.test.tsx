@@ -95,4 +95,13 @@ describe('RowOption', () => {
     fireEvent.click(radio)
     expect(onChange).toHaveBeenCalledTimes(1)
   })
+
+  it('logo={false}(v1.6.3 · HF-48b)면 원 아이콘 없이 제목·부제만', () => {
+    const { container } = render(
+      <RowOption name="trip" value="osaka" logo={false} title="오사카 3박 4일" subtitle="진행 중 · 11.12 – 11.15" selected readOnly />,
+    )
+    expect(container.querySelector('.size-10')).toBeNull()
+    expect(screen.getByRole('radio', { name: /오사카 3박 4일/ })).toBeTruthy()
+  })
 })
+

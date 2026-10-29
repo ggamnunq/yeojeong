@@ -1,3 +1,5 @@
+import { formatKrw } from '../format'
+
 /**
  * 공동 결제를 부담 인원으로 나눈다(docs/spec 용어: perPersonKrw · remainderKrw).
  * 1인 = 금액 ÷ 인원을 원 단위로 내림, 나머지는 결제자가 부담한다("결제자 +N원").
@@ -8,6 +10,19 @@ export function splitEvenly(amount: number, count: number) {
   if (count <= 0) return { perPerson: 0, remainder: 0 }
   const perPerson = Math.floor(won / count)
   return { perPerson, remainder: won - perPerson * count }
+}
+
+/**
+ * SheetContent/SplitPick 요약 글자(DS18 · WF-47): "1인 ₩3,676" + 나머지가 있으면 "결제자 +2원".
+ * amountKrw는 원화 환산 금액(외화면 toKrw 결과). 0명이면 둘 다 null.
+ */
+export function splitPickSummary(amountKrw: number, count: number) {
+  if (count <= 0) return { perPerson: null, remainder: null }
+  const split = splitEvenly(amountKrw, count)
+  return {
+    perPerson: `1인 ${formatKrw(split.perPerson)}`,
+    remainder: split.remainder > 0 ? `결제자 +${split.remainder}원` : null,
+  }
 }
 
 type ConsentCheck = { checked: boolean; required?: boolean }

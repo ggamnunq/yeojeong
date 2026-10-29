@@ -1,7 +1,7 @@
 import { clsx } from 'clsx'
 import type { MouseEventHandler, ReactNode } from 'react'
 import { IconButton } from '../IconButton/IconButton'
-import { ProgressSteps, type ProgressStepsStep } from '../Progress/Steps'
+import { ProgressSteps, type ProgressStepsStep, type ProgressStepsTotal } from '../Progress/Steps'
 import { Screen, type ScreenCtaValue } from '../Screen/Screen'
 import { focusRing, touchTarget } from '../styles'
 
@@ -23,6 +23,8 @@ export type ShellOnboardingProps = {
   onClose?: MouseEventHandler<HTMLButtonElement>
   /** Figma Progress + 중첩 Progress/Steps의 Step. 단계를 주면 켜진다 */
   progress?: ProgressStepsStep
+  /** Progress/Steps 전체 단계 수(DS18). 기본 4, 토스 연결을 숨긴 가입(accountLink=false)은 2 */
+  progressTotal?: ProgressStepsTotal
   /** Figma CTA: 하단 BottomCTA(Primary L, state로 Loading). 객체를 주면 켜진다 */
   cta?: ScreenCtaValue
   /** Figma Skip: 헤더 오른쪽 텍스트 버튼. 기본 false */
@@ -44,6 +46,7 @@ export function ShellOnboarding({
   onBack,
   onClose,
   progress,
+  progressTotal,
   cta,
   skip = false,
   skipLabel = '건너뛰기',
@@ -66,7 +69,7 @@ export function ShellOnboarding({
             ) : (
               <IconButton size="m" icon="chevron-left" label="뒤로 가기" onClick={onBack} />
             ))}
-          {progress && <ProgressSteps step={progress} className="absolute top-1/2 left-1/2 -translate-1/2" />}
+          {progress && <ProgressSteps step={progress} total={progressTotal} className="absolute top-1/2 left-1/2 -translate-1/2" />}
           {skip && (
             <button
               type="button"

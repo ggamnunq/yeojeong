@@ -19,4 +19,13 @@ describe('DateHeader', () => {
     expect(total.className).toContain('text-caption')
     expect(total.className).toContain('text-tertiary')
   })
+
+  it('Day 끔(DS18 · HF-49): day를 생략하거나 false면 날짜만 그린다(빈 span 없음)', () => {
+    const { rerender } = render(<DateHeader style="plain" date="11.13 (금)" day={false} />)
+    const heading = screen.getByRole('heading', { level: 3 })
+    expect(heading.textContent).toBe('11.13 (금)')
+    expect(heading.children).toHaveLength(1)
+    rerender(<DateHeader style="plain" date="11.13 (금)" />)
+    expect(screen.getByRole('heading', { level: 3 }).children).toHaveLength(1)
+  })
 })
