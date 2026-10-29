@@ -29,6 +29,10 @@ import {
   MembershipLookup,
   SessionResolver,
 } from './../src/common/auth/index.js';
+import {
+  CONSENT_DOCUMENT_VERSIONS,
+  currentConsentVersion,
+} from './../src/common/auth/consent-catalog.js';
 import { PrismaConsentChecker } from './../src/common/auth/consent-checker.js';
 import { PrismaMembershipLookup } from './../src/common/auth/membership-lookup.js';
 import { FeatureFlags } from './../src/common/features.js';
@@ -38,6 +42,10 @@ import type { PrismaClient } from './../src/generated/prisma/client.js';
 import type { PrismaService } from './../src/prisma/prisma.service.js';
 import { APP_OPTIONS, setupApp } from './../src/setup-app.js';
 import { createTestAuth } from './auth-helpers.js';
+
+/** 지금 받는 카드 내역 조회 동의 버전(정식 0.1 — 약관 0.2 판 게시일부터, 그 전에는 초안) */
+const cardImportVersion = () =>
+  currentConsentVersion('CARD_IMPORT', CONSENT_DOCUMENT_VERSIONS).version;
 import {
   createFixturePrisma,
   ExpenseFixtures,
@@ -203,7 +211,11 @@ describe.skipIf(!databaseUrl)(
           screen: 'HF-51',
           method: 'INDIVIDUAL',
           agreements: [
-            { consentId: 'CARD_IMPORT', version: '0.1-draft', agreed: true },
+            {
+              consentId: 'CARD_IMPORT',
+              version: cardImportVersion(),
+              agreed: true,
+            },
           ],
         });
     const fetchBody = (over: object = {}) => ({
@@ -1056,7 +1068,7 @@ describe.skipIf(!databaseUrl)(
         expect.objectContaining({
           consentId: 'CARD_IMPORT',
           title: '카드 승인내역 불러오기',
-          version: '0.1-draft',
+          version: cardImportVersion(),
         }),
       ]);
       const stored = await prisma.userConsent.findFirstOrThrow({
@@ -1129,7 +1141,11 @@ describe.skipIf(!databaseUrl)(
           screen: 'WF-05',
           method: 'ALL',
           agreements: [
-            { consentId: 'CARD_IMPORT', version: '0.1-draft', agreed: true },
+            {
+              consentId: 'CARD_IMPORT',
+              version: cardImportVersion(),
+              agreed: true,
+            },
           ],
         })
         .expect(400);

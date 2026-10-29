@@ -266,9 +266,10 @@ model Session {
   @@map("sessions")
 }
 
-/// 동의 문서 버전(서버가 현재 시행 버전을 판단하는 기준). version = 문서 버전("1.0", 다음 개정은 1.1 MINOR · 2.0 MAJOR), 시행일은 effectiveAt.
-/// 새 버전은 지우지 말고 마이그레이션으로 행을 추가한다. TOS·PRIVACY·AGE14는 정식 v1.0(2026-10-30 시행, docs/legal/v1.0),
-/// 나머지(MARKETING·FIN_*·THIRD_PARTY·CARD_IMPORT)는 아직 초안(0.1-draft, isDraft)만 있다.
+/// 동의 문서 버전(서버가 현재 시행 버전을 판단하는 기준). version = 문서 버전(MVP 기간 0.x: "0.1", "0.2" …), 시행일은 effectiveAt.
+/// 새 버전은 지우지 말고 마이그레이션으로 행을 추가한다(0.x 행은 apps/web/scripts/sync-legal.mjs가 만든다, docs/ops/legal-publishing.md).
+/// TOS·PRIVACY·AGE14 정식 0.1 = 게시 당시 표기 1.0(2026-10-30 시행) — 1.0 행은 기록으로 남고 0.1 행이 replacesVersion으로 대신한다.
+/// 정식본이 없는 동의(MARKETING·FIN_*·THIRD_PARTY)는 초안(0.1-draft, isDraft)만 있다.
 /// 초안 동의는 법적 유효 동의가 아니다: 정식본이 하나도 없을 때만 임시로 인정하고, 정식본이 시행되면 모두 재동의(FR-107).
 model ConsentDocument {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -280,8 +281,12 @@ model ConsentDocument {
   /// 게시한 전문의 SHA-256
   docHash     String    @map("doc_hash") @db.Char(64)
   effectiveAt DateTime  @map("effective_at") @db.Timestamptz
-  /// MAJOR(재동의) | MINOR(고지만)
+  /// MAJOR | MINOR — 기록용. 재동의 판정은 reconsentRequired(0.x는 MAJOR가 늘 0이라 번호로 판단하지 않는다)
   changeType  String    @map("change_type") @db.VarChar(8)
+  /// true면 이 버전 시행부터 이전 버전 동의로는 부족하다(재동의). 마이그레이션 20261030020000
+  reconsentRequired Boolean @map("reconsent_required")
+  /// 같은 문서의 구 표기(0.1 = 구 1.0). 그 표기로 받은 동의(user_consents.version)를 이 버전 동의로 본다
+  replacesVersion   String? @map("replaces_version") @db.VarChar(16)
   /// 재동의 화면 제목 아래 한 줄
   summary     String?
   /// 시행 전 초안. 법적 유효 동의로 보지 않는다

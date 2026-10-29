@@ -7,3 +7,6 @@ interface ImportMetaEnv {
    */
   readonly VITE_CODEF_PUBKEY_SHA256?: string
 }
+
+/** apps/web package.json version(vite.config.ts define). src/app/version.ts로만 읽는다 */
+declare const __APP_VERSION__: string

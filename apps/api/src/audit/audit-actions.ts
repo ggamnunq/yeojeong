@@ -6,13 +6,18 @@ import { ACCESS_ACTION_VALUES } from '@yeojeong/shared';
  */
 export const AUDIT_ACTION_VALUES = [
   ...ACCESS_ACTION_VALUES,
-  // ─ 운영자 DB 직접 접속(scripts/ops/db-connect.sh가 psql로 직접 쓴다, docs/ops/operator-access.md). 서버 코드는 쓰지 않는다 ─
+  // ─ 운영자 DB 직접 접속(scripts/ops/db-connect.sh · access-review.sh가 psql로 직접 쓴다, docs/ops/operator-access.md). 서버 코드는 쓰지 않는다 ─
   // user_id = md5('operator:' + 운영자 gcloud 이메일)로 만든 UUID(users 행 없음), resource_type = DATABASE,
   // request_id = 'opdb:<세션 ID>'(START·END를 잇는다), details = { operator, reason, host, at } (+ END는 durationSec·exitStatus)
   /** 운영자가 운영 DB에 직접 접속하기 시작했다 */
   'OPERATOR_DB_ACCESS_START',
   /** 운영자의 DB 직접 접속이 끝났다(정상·비정상 모두) */
   'OPERATOR_DB_ACCESS_END',
+  /**
+   * 월 1회 접속기록 점검 결과(scripts/ops/access-review.sh, 점검 세션의 START·END와 같은 request_id).
+   * details = { operator, host, periodStart, periodEnd(ISO UTC), result: OK | ISSUE, note, summary(건수만), at }
+   */
+  'OPERATOR_ACCESS_REVIEW',
   /** 활성 결제수단이 0개가 되어 연동 동의(FIN_LINK·FIN_PRIVACY)를 철회하고 개인·미확정 결제를 파기했다. details = 파기 건수 */
   'PURGE_FINANCIAL_DATA',
   /** 카카오 쪽 "연결 끊기" 알림을 받아 세션을 폐기했다(기능명세 7-1, 미결 Q-32 기본안) */

@@ -54,6 +54,13 @@ describe('마이페이지(HF-30)', () => {
     expect(screen.queryByRole('button', { name: '탈퇴·삭제 요청' })).toBeNull()
     expect(screen.getByRole('link', { name: '이용약관' }).getAttribute('href')).toBe('/terms')
     expect(screen.getByRole('link', { name: '개인정보처리방침' }).getAttribute('href')).toBe('/privacy')
+    // 앱 버전: 푸터 바로 아래 한 줄(빌드 값 = apps/web package.json version)
+    const version = screen.getByText('베타 v0.1.0')
+    expect(version.tagName).toBe('P')
+    expect(version.className).toContain('text-caption')
+    expect(version.className).toContain('text-tertiary')
+    expect(version.className).toContain('text-center')
+    expect(version.previousElementSibling?.textContent).toBe('이용약관 · 개인정보처리방침')
     // MVP에서 뺀 항목
     expect(screen.queryByText('닉네임 변경')).toBeNull()
     expect(screen.queryByText(/버전/)).toBeNull()

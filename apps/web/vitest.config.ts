@@ -1,8 +1,10 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
+import { APP_VERSION_DEFINE } from './vite.config.ts'
 
 export default defineConfig({
   plugins: [react()],
+  define: APP_VERSION_DEFINE,
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.mjs', 'worker/**/*.test.ts'],

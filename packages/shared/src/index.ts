@@ -24,6 +24,7 @@ export type { HealthResponse } from './health.js';
 export { enumObject } from './enum.js';
 export * from './domain.js';
 export * from './consents.js';
+export * from './legal-manifest.js';
 export * from './money.js';
 export * from './invite-code.js';
 export * from './nickname.js';

@@ -115,16 +115,17 @@ documents() {}
 ### 동의 판정
 
 - 기준은 `consent_documents` 테이블이다(1분 캐시). 새 버전은 **마이그레이션으로 행을 추가**한다(지우지 않는다). 동의 이력(`user_consents`)은 append-only이고 수정할 수 있는 값은 철회 시각·경로뿐이다.
-- 유효 동의 = 그 항목의 시행 중인 **정식본(`is_draft = false`)** 중 가장 최근 MAJOR 버전과 그 이후 버전에 `agreed`한 행이 있고 철회되지 않음. MINOR 개정은 기존 동의를 유지한다.
-- **초안 동의는 법적 유효 동의가 아니다.** 정식본이 하나도 없을 때만 초안 동의를 임시로 인정한다. 정식 약관 v1.0(`TOS`·`PRIVACY`·`AGE14`, `version = '1.0'`, 시행일 2026-10-30 00:00 KST = `effective_at`, 마이그레이션 `20261030010000_consent_documents_v1_0`)이 시행되는 순간 초안에 동의한 회원 모두에게 `403 CONSENT_REQUIRED`가 나가 재동의(`POST /api/auth/reconsent`)를 받는다. 나머지 동의(MARKETING·FIN_*·THIRD_PARTY·CARD_IMPORT)는 아직 초안만 있다.
-- `version`은 문서 버전(1.0 → 1.1 MINOR · 2.0 MAJOR), 시행일은 `effective_at`에 따로 둔다. `doc_hash`는 게시본(`apps/web/src/features/legal/content/*.md` = `docs/legal/v1.0` 원문) SHA-256 — 원문을 고치면 `pnpm --filter @yeojeong/web legal:sync`가 시행일을 채워 복사하고 해시를 출력한다. `consent-catalog.spec.ts`가 파일로 다시 계산해 마이그레이션 값과 대조한다.
-- 판정 함수와 테스트: `src/common/auth/consent-catalog.ts`, `consent-catalog.spec.ts`(초안만 / 정식 발행 후 초안 동의자 / 정식 동의자 / 더 새 정식본 MAJOR·MINOR).
+- 유효 동의 = 그 항목의 시행 중인 **정식본(`is_draft = false`)** 중 **재동의가 필요한(`reconsent_required`) 가장 최근 버전**과 그 이후 버전에 `agreed`한 행이 있고 철회되지 않음. 재동의가 필요 없는 개정은 기존 동의를 유지한다. MVP 기간 0.x는 MAJOR가 늘 0이라 버전 번호로 판단하지 않는다. 버전 비교는 문자열 정확히 일치(`0.1-draft` ≠ `0.1`).
+- 구 표기: `replaces_version`(예: 0.1 행의 `'1.0'`). 그 표기로 받은 동의(`user_consents.version = '1.0'`)를 대신한 버전의 동의로 보고, 구 표기 행은 판정에서 뺀다. 동의 기록은 고치지 않는다.
+- **초안 동의는 법적 유효 동의가 아니다.** 정식본이 하나도 없을 때만 초안 동의를 임시로 인정한다. 정식 약관(`TOS`·`PRIVACY`·`AGE14`, 게시 당시 `version = '1.0'` = 지금 `0.1`, 시행일 2026-10-30 00:00 KST = `effective_at`, 마이그레이션 `20261030010000_consent_documents_v1_0`·`20261030020000_consent_documents_v0_x`)이 시행되는 순간 초안에 동의한 회원 모두에게 `403 CONSENT_REQUIRED`가 나가 재동의(`POST /api/auth/reconsent`)를 받는다. `CARD_IMPORT`는 0.2 판(게시일 시행)에서 정식 0.1이 생긴다. 나머지 동의(MARKETING·FIN_*·THIRD_PARTY)는 초안만 있다.
+- `version`은 문서 버전(0.1 → 0.2 …, 문서마다 따로), 시행일은 `effective_at`에 따로 둔다. `doc_hash`는 게시본(`apps/web/src/features/legal/content/v<판>/*.md`, 게시일을 채운 것) SHA-256. 0.x 행과 그 마이그레이션은 `pnpm --filter @yeojeong/web legal:sync`가 만든다(`docs/ops/legal-publishing.md`). `consent-catalog.spec.ts`가 파일로 다시 계산해 마이그레이션 값과 대조한다.
+- 판정 함수와 테스트: `src/common/auth/consent-catalog.ts`, `consent-catalog.spec.ts`(초안만 / 정식 발행 후 초안 동의자 / 재동의 필요·불필요 개정 / 구 표기 1.0 = 0.1 / 정확히 일치 비교).
 - 동의 기록에는 서버가 `ipHash`(origin lock이 넘긴 클라이언트 IP의 HMAC-SHA256, 키 `AUDIT_HMAC_KEY`. 평문 `ip`는 더 쓰지 않는다), `ua`(512자), `screen`, `method`, `docHash`, `userRefHash = HMAC-SHA256(userId, USER_REF_HMAC_KEY)`를 채운다. `USER_REF_HMAC_KEY`는 바꾸지 않는다.
 
 ### 탈퇴 (FR-109)
 
 - 앱 안 탈퇴(`DELETE /api/users/me`, 화면 HF-59)는 `account` 모듈이 맡는다. 재동의 전에도 부를 수 있다.
-- 이메일 탈퇴는 로그인할 수 없는 회원의 보조 경로다. 문의처는 약관·개인정보처리방침(docs/legal/v1.0)에 게시한 `rlawnsdyd530@gmail.com`이고, 운영자가 관리자 페이지에서 같은 파이프라인(`AccountDeletionService`, channel `SUPPORT`)으로 처리한다. 예전의 요청 코드 발급(`POST /api/users/me/deletion-request`, FR-108)과 `SUPPORT_EMAIL` env는 L-1에서 없앴다(`account_deletions.request_code_hash`·`expires_at`도 마이그레이션 `20261030010001`로 지움).
+- 이메일 탈퇴는 로그인할 수 없는 회원의 보조 경로다. 문의처는 약관·개인정보처리방침(docs/legal/v0.1 · v0.2)에 게시한 `rlawnsdyd530@gmail.com`이고, 운영자가 관리자 페이지에서 같은 파이프라인(`AccountDeletionService`, channel `SUPPORT`)으로 처리한다. 예전의 요청 코드 발급(`POST /api/users/me/deletion-request`, FR-108)과 `SUPPORT_EMAIL` env는 L-1에서 없앴다(`account_deletions.request_code_hash`·`expires_at`도 마이그레이션 `20261030010001`로 지움).
 
 ### 비밀값
 

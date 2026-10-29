@@ -1,11 +1,32 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../mocks/data'
 import { renderApp } from '../../test/render'
 import { consentDoc, LEGAL_DOCS, resolveLegalLink } from './docs'
 import { LegalBody } from './markdown'
 import { fillPlaceholders, parseLegal } from './parse'
+import { LEGAL_DOCUMENT_VERSIONS, LEGAL_RELEASES } from '@yeojeong/shared'
+import { effectiveAt, resolveLegalVersion, versionLinkLabel, versionNotice } from './versions'
+
+/** 시계 고정(Date만). 시행일 전후 전환은 이 시각으로만 본다 — 실제 날짜와 무관 */
+const fixClock = (when: Date) => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(when)
+}
+const kst = (date: string, time = '12:00:00') => new Date(`${date}T${time}+09:00`)
+const plusDays = (date: string, days: number) => {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+// 0.2 게시일(머지하는 날)은 docs/legal/releases.json → manifest. 기대값은 manifest로 계산한다
+const MANIFEST = LEGAL_DOCUMENT_VERSIONS
+const PUBLISHED_02 = LEGAL_RELEASES.find((r) => r.dir === 'v0.2')!.published
+/** 모든 판이 시행된 뒤(가장 늦은 시행일 다음 날 낮) */
+const ALL_IN_FORCE = kst(plusDays(Object.values(MANIFEST).flat().map((v) => v.effectiveDate).sort().at(-1)!, 1))
+const latestOf = (file: string) => MANIFEST[file].at(-1)!
+const metaLine = (v: { version: string; effectiveDate: string }) => `버전 ${v.version} · 시행일 ${v.effectiveDate}`
 
 const SAMPLE = [
   '# 「여정」 서비스 이용약관',
@@ -258,8 +279,9 @@ describe('문서 표', () => {
     expect(consentDoc('THIRD_PARTY')).toBe('consent-third-party')
     expect(consentDoc('AGE14')).toBe('terms')
     expect(consentDoc('PRIVACY')).toBe('consent-collection')
-    // v1.0에 정식 전문이 없는 동의는 수집·이용 동의서(v1.0)로 보내지 않고 준비 중 안내로
-    expect(consentDoc('CARD_IMPORT')).toBe('pending')
+    // 카드 승인내역 불러오기 = 카드 내역 조회 동의서(0.2 판에서 게시)
+    expect(consentDoc('CARD_IMPORT')).toBe('consent-card-import')
+    // 정식 전문이 없는 동의는 수집·이용 동의서로 보내지 않고 준비 중 안내로
     expect(consentDoc('MARKETING')).toBe('pending')
     expect(consentDoc('FIN_PRIVACY')).toBe('pending')
     expect(consentDoc('NOPE')).toBeNull()
@@ -270,7 +292,8 @@ describe('문서 표', () => {
     expect(resolveLegalLink('서비스%20이용약관.md')).toBe('/terms')
     expect(resolveLegalLink('개인정보%20처리위탁%20고지.md')).toBe('/privacy/processors')
     expect(resolveLegalLink('오픈소스%20및%20라이선스%20고지.md')).toBe('/oss')
-    // 초안 파일(v1.0 밖)은 게시하지 않으므로 링크가 없다
+    expect(resolveLegalLink('카드%20내역%20조회%20동의서.md')).toBe('/consents/CARD_IMPORT')
+    // 초안 파일(판 폴더 밖)은 게시하지 않으므로 링크가 없다
     expect(resolveLegalLink('금융정보%20연동%20이용약관(부속약관).md#제3조')).toBeNull()
     expect(resolveLegalLink('/licenses')).toBe('/licenses')
     expect(resolveLegalLink('https://jinyeojeong.com/oss')).toBe('/oss')
@@ -279,44 +302,135 @@ describe('문서 표', () => {
     expect(resolveLegalLink('//evil.com')).toBeNull()
   })
 
-  it('content/에 문서 파일이 모두 있다', () => {
-    const files = Object.keys(import.meta.glob('./content/*.md')).map((p) => p.replace('./content/', ''))
-    for (const doc of Object.values(LEGAL_DOCS)) expect(files).toContain(doc.file)
+  it('게시 문서마다 판이 있고, 판 없는 안내 문서는 content/ 바로 아래에 있다', () => {
+    const files = Object.keys(import.meta.glob('./content/**/*.md')).map((p) => p.replace('./content/', ''))
+    for (const doc of Object.values(LEGAL_DOCS)) {
+      if (doc.source === null) expect(files).toContain(doc.file)
+      else expect(MANIFEST[doc.file]?.length, doc.file).toBeGreaterThan(0)
+    }
   })
 
-  it('게시 문서는 정식 발행본(v1.0) 본문이고 자리표시가 남지 않았다', () => {
-    const contents = import.meta.glob<string>('./content/*.md', { query: '?raw', import: 'default', eager: true })
-    for (const [id, doc] of Object.entries(LEGAL_DOCS)) {
-      const text = contents[`./content/${doc.file}`]
-      expect(text, doc.file).not.toContain('{{')
-      expect(text, doc.file).not.toContain('본문 준비 중')
-      if (doc.source === null) continue
-      expect(parseLegal(text), id).toMatchObject({ version: '1.0', effectiveDate: '2026-10-30' })
+  it('판 목록(manifest)과 content/v<판> 파일이 같다: 머리 줄의 버전·시행일, 자리표시 없음', () => {
+    const contents = import.meta.glob<string>('./content/**/*.md', { query: '?raw', import: 'default', eager: true })
+    const versioned = Object.keys(contents).filter((p) => /^\.\/content\/v[^/]+\//.test(p))
+    const listed = Object.values(MANIFEST).flat()
+    expect(versioned.sort()).toEqual(listed.map((v) => `./content/${v.path}`).sort())
+    for (const v of listed) {
+      const text = contents[`./content/${v.path}`]
+      expect(text, v.path).not.toContain('{{')
+      expect(text, v.path).not.toContain('본문 준비 중')
+      expect(parseLegal(text), v.path).toMatchObject({ version: v.version, effectiveDate: v.effectiveDate })
     }
+    // 판 폴더는 게시일 순서, 문서의 판은 오래된 것부터
+    for (const versions of Object.values(MANIFEST)) {
+      expect(versions.map((v) => v.effectiveDate)).toEqual(versions.map((v) => v.effectiveDate).sort())
+    }
+    for (const doc of Object.values(LEGAL_DOCS).filter((d) => d.source === null)) {
+      expect(contents[`./content/${doc.file}`], doc.file).not.toContain('{{')
+    }
+  })
+
+  it('0.1 = 게시 당시 1.0(2026-10-30). 오픈소스 고지는 0.1 그대로', () => {
+    for (const file of ['terms.md', 'privacy.md', 'consent-collection.md', 'processors.md', 'licenses.md']) {
+      expect(MANIFEST[file][0], file).toMatchObject({ version: '0.1', effectiveDate: '2026-10-30', path: `v0.1/${file}` })
+    }
+    expect(MANIFEST['licenses.md'].map((v) => v.version)).toEqual(['0.1'])
+  })
+})
+
+describe('판 고르기(versions.ts)', () => {
+  const manifest = {
+    'privacy.md': [
+      { version: '0.1', effectiveDate: '2026-10-30', path: 'v0.1/privacy.md', sha256: '' },
+      { version: '0.2', effectiveDate: '2026-11-06', path: 'v0.2/privacy.md', sha256: '' },
+    ],
+    'terms.md': [{ version: '0.1', effectiveDate: '2026-10-30', path: 'v0.1/terms.md', sha256: '' }],
+    'same-day.md': [
+      { version: '0.1', effectiveDate: '2026-10-30', path: 'v0.1/same-day.md', sha256: '' },
+      { version: '0.2', effectiveDate: '2026-10-30', path: 'v0.2/same-day.md', sha256: '' },
+    ],
+  }
+  const pick = (file: string, v: string | null, when: string) => resolveLegalVersion(file, v, new Date(`${when}+09:00`), manifest)
+
+  it('시행일 0시(KST)에 현행이 0.1 → 0.2로 바뀐다', () => {
+    expect(pick('privacy.md', null, '2026-11-05T23:59:59')?.shown).toMatchObject({ version: '0.1', status: 'current' })
+    expect(pick('privacy.md', null, '2026-11-06T00:00:00')?.shown).toMatchObject({ version: '0.2', status: 'current' })
+    expect(effectiveAt('2026-11-06').toISOString()).toBe('2026-11-05T15:00:00.000Z')
+  })
+
+  it('시행 전 ?v=0.2는 예정 버전, 시행 후 ?v=0.1은 이전 버전, 없는 v는 현행', () => {
+    const before = pick('privacy.md', '0.2', '2026-10-30T12:00:00')!
+    expect(before.shown).toMatchObject({ version: '0.2', status: 'upcoming', path: 'v0.2/privacy.md' })
+    expect(before.current.version).toBe('0.1')
+    expect(versionNotice(before.shown)).toBe('예정 버전 0.2이에요. 2026-11-06부터 적용돼요')
+    expect(versionLinkLabel(before.shown, before.current)).toBe('예정 버전 · 0.2(11-06부터)')
+    expect(versionLinkLabel(before.current, before.current)).toBe('현행 버전 · 0.1(2026-10-30 ~ 11-05)')
+
+    const after = pick('privacy.md', '0.1', '2026-11-06T00:00:00')!
+    expect(after.shown).toMatchObject({ version: '0.1', status: 'previous', lastDate: '2026-11-05' })
+    expect(versionNotice(after.shown)).toBe('이전 버전 0.1이에요. 2026-10-30 ~ 2026-11-05에 적용됐어요')
+    expect(versionLinkLabel(after.shown, after.current)).toBe('이전 버전 · 0.1(2026-10-30 ~ 11-05)')
+    expect(versionLinkLabel(after.current, after.current)).toBe('현행 버전 · 0.2(2026-11-06부터)')
+
+    // 정확히 같은 버전만 고른다(앞부분 비교 없음): 0.1-draft · 0. · 0.10은 0.1이 아니다
+    for (const v of ['9.9', '', 'x', null, '0.1-draft', '0.', '0.10', ' 0.1']) {
+      expect(pick('privacy.md', v, '2026-11-06T00:00:00')?.shown.version, String(v)).toBe('0.2')
+    }
+  })
+
+  it('옛 표기 ?v=1.0 · ?v=1.1은 0.1 · 0.2로 연다(하위 호환)', () => {
+    expect(pick('privacy.md', '1.0', '2026-11-07T00:00:00')?.shown).toMatchObject({ version: '0.1', status: 'previous' })
+    expect(pick('privacy.md', '1.1', '2026-10-31T00:00:00')?.shown).toMatchObject({ version: '0.2', status: 'upcoming' })
+  })
+
+  it('개정하지 않은 문서는 판이 하나뿐이라 ?v=0.2도 0.1(현행), 판 없는 문서는 null', () => {
+    const terms = pick('terms.md', '0.2', '2026-11-07T00:00:00')!
+    expect(terms.versions.map((v) => v.version)).toEqual(['0.1'])
+    expect(terms.shown).toMatchObject({ version: '0.1', status: 'current', lastDate: null })
+    expect(pick('pending.md', null, '2026-11-07T00:00:00')).toBeNull()
+  })
+
+  it('같은 날 바뀐 판: 뒤 판이 현행, 앞 판 기간은 그날 하루', () => {
+    const r = pick('same-day.md', '0.1', '2026-10-30T12:00:00')!
+    expect(r.current.version).toBe('0.2')
+    expect(r.shown).toMatchObject({ version: '0.1', status: 'previous', lastDate: '2026-10-30' })
+    expect(versionLinkLabel(r.shown, r.current)).toBe('이전 버전 · 0.1(2026-10-30 ~ 10-30)')
   })
 })
 
 describe('공개 법적 페이지', () => {
+  // 모든 판이 시행된 뒤로 고정 — 실제 날짜가 지나도 결과가 같다
+  beforeEach(() => fixClock(ALL_IN_FORCE))
+  afterEach(() => vi.useRealTimers())
+
   it.each([
-    ['/terms', '서비스 이용약관', '버전 1.0 · 시행일 2026-10-30'],
-    ['/privacy', '개인정보처리방침', '버전 1.0 · 시행일 2026-10-30'],
-    ['/privacy/processors', '개인정보 처리위탁', '버전 1.0 · 시행일 2026-10-30'],
-    ['/consents/PRIVACY', '개인정보 수집·이용', '버전 1.0 · 시행일 2026-10-30'],
-    ['/consents/TOS', '서비스 이용약관', '버전 1.0 · 시행일 2026-10-30'],
-    ['/oss', '오픈소스 라이선스', '버전 1.0 · 시행일 2026-10-30'],
+    ['/terms', '서비스 이용약관', 'terms.md'],
+    ['/privacy', '개인정보처리방침', 'privacy.md'],
+    ['/privacy/processors', '개인정보 처리위탁', 'processors.md'],
+    ['/consents/PRIVACY', '개인정보 수집·이용', 'consent-collection.md'],
+    ['/consents/TOS', '서비스 이용약관', 'terms.md'],
+    ['/consents/CARD_IMPORT', '카드 승인내역 불러오기', 'consent-card-import.md'],
+    ['/oss', '오픈소스 라이선스', 'licenses.md'],
     ['/terms/fin-link', '금융정보 연동 약관', null],
     ['/consents/THIRD_PARTY', '공동 결제 그룹 공개', null],
     ['/consents/FIN_PRIVACY', '금융정보 수집·이용', null],
-    ['/consents/CARD_IMPORT', '카드 승인내역 불러오기', null],
-  ])('%s는 로그인 없이 열린다', async (url, title, meta) => {
+  ])('%s는 로그인 없이 현행 판으로 열린다', async (url, title, file) => {
     db.session = 'ANONYMOUS'
     const { router } = renderApp(url)
     expect(await screen.findByRole('heading', { level: 1, name: title })).toBeTruthy()
     await waitFor(() => expect(document.querySelector('[data-legal-body]')).toBeTruthy())
-    if (meta) expect(screen.getByText(meta)).toBeTruthy()
+    if (file) expect(screen.getByText(metaLine(latestOf(file)))).toBeTruthy()
     else expect(screen.getByText(/해당 기능을 정식으로 제공할 때 게시합니다/)).toBeTruthy()
     expect(document.body.textContent).not.toContain('{{')
     expect(router.state.location.pathname).toBe(url)
+    // 판이 여럿이면 이전 판 링크(현행 주소 + ?v=), 하나면 다른 버전 목록이 없다
+    const versions = file ? MANIFEST[file] : []
+    if (versions.length > 1) {
+      const previous = versions.at(-2)!
+      const link = screen.getByRole('link', { name: new RegExp(`^이전 버전 · ${previous.version.replace('.', '\\.')}\\(${previous.effectiveDate} ~ `) })
+      expect(link.getAttribute('href')).toBe(`${url}?v=${previous.version}`)
+    } else expect(screen.queryByRole('navigation', { name: '다른 버전' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /예정 버전|이전 버전/ })).toBeNull()
   })
 
   it('처리방침의 처리위탁 고지 주소를 누르면 앱 안에서 연다', async () => {
@@ -347,4 +461,56 @@ describe('공개 법적 페이지', () => {
     renderApp('/consents/NOPE')
     expect(await screen.findByText('페이지를 찾을 수 없어요')).toBeTruthy()
   })
+
+  it('?v=0.1은 이전 버전(안내 + 현행 링크) · 옛 표기 ?v=1.0도 같은 판 · 없는 v와 판이 하나인 문서의 ?v=0.2는 현행', async () => {
+    db.session = 'ANONYMOUS'
+    const current = latestOf('privacy.md')
+    for (const v of ['0.1', '1.0']) {
+      const view = renderApp(`/privacy?v=${v}`)
+      expect(await screen.findByText(metaLine(MANIFEST['privacy.md'][0]))).toBeTruthy()
+      expect(screen.getByRole('button', { name: /^이전 버전 0\.1이에요\. 2026-10-30 ~ / })).toBeTruthy()
+      expect(screen.getByRole('link', { name: new RegExp(`^현행 버전 · ${current.version.replace('.', '\\.')}\\(`) }).getAttribute('href')).toBe(
+        '/privacy',
+      )
+      view.unmount()
+    }
+    for (const [url, meta] of [
+      ['/privacy?v=9.9', metaLine(current)],
+      ['/oss?v=0.2', metaLine(latestOf('licenses.md'))],
+    ] as const) {
+      const view = renderApp(url)
+      expect(await screen.findByText(meta)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /예정 버전|이전 버전/ })).toBeNull()
+      view.unmount()
+    }
+  })
+
+  const terms02 = MANIFEST['terms.md'].find((v) => v.version === '0.2')
+  it.runIf(terms02 && terms02.effectiveDate > PUBLISHED_02)(
+    '이용약관 0.2 시행 전(게시일): /terms는 0.1 + "예정 버전 · 0.2(MM-DD부터) ›" → ?v=0.2 예정본(안내) → 현행으로',
+    async () => {
+      fixClock(kst(PUBLISHED_02))
+      db.session = 'ANONYMOUS'
+      const { router } = renderApp('/terms')
+      expect(await screen.findByText(metaLine(MANIFEST['terms.md'][0]))).toBeTruthy()
+      const link = screen.getByRole('link', { name: `예정 버전 · 0.2(${terms02!.effectiveDate.slice(5)}부터)` })
+      expect(link.getAttribute('href')).toBe('/terms?v=0.2')
+      link.click()
+      expect(await screen.findByText(metaLine(terms02!))).toBeTruthy()
+      expect(router.state.location.search).toBe('?v=0.2')
+      // 개정 공지(이용약관이 바뀌어요)로 온 화면: 같은 판에서 함께 바뀐 문서(처리방침 정정·카드 불러오기 안내)
+      const companions = screen.getByRole('region', { name: '함께 바뀐 문서' })
+      expect(within(companions).getByText('개인정보처리방침을 바로잡고 카드 불러오기 안내를 더했어요')).toBeTruthy()
+      expect(within(companions).getByRole('link', { name: `개인정보처리방침 0.2(${PUBLISHED_02}부터)` }).getAttribute('href')).toBe(
+        '/privacy?v=0.2',
+      )
+      expect(within(companions).getByRole('link', { name: `카드 승인내역 불러오기 0.1(${PUBLISHED_02}부터)` }).getAttribute('href')).toBe(
+        '/consents/CARD_IMPORT?v=0.1',
+      )
+      const notice = screen.getByRole('button', { name: new RegExp(`^예정 버전 0\\.2이에요\\. ${terms02!.effectiveDate}부터 적용돼요`) })
+      notice.click()
+      expect(await screen.findByText(metaLine(MANIFEST['terms.md'][0]))).toBeTruthy()
+      expect(router.state.location.search).toBe('')
+    },
+  )
 })

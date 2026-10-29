@@ -43,8 +43,9 @@ docs/design/context/
 # 비공개: 디자인·명세 문서는 로컬에만 둔다 (공개 레포에는 코드만)
 docs/design/
 docs/spec/
-# 약관 초안(docs/legal/*.md)은 로컬에만 둔다. 게시본(정식 발행본 v1.0 등)만 레포에 올린다
+# 약관 초안(docs/legal/*.md)은 로컬에만 둔다. 게시본(정식 발행본 v0.1·v0.2 …)과 게시 날짜(releases.json)만 레포에 올린다
 docs/legal/*
-!docs/legal/v1.0/
+!docs/legal/v0.*/
+!docs/legal/releases.json
 # 게시본 폴더의 README(내부 법률 검토 메모)는 비공개. 공개해도 되는 게시 절차는 docs/ops/legal-publishing.md
-docs/legal/v1.0/README.md
+docs/legal/v*/README.md
