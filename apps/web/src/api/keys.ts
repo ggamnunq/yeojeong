@@ -48,7 +48,7 @@ export const keys = {
     members: (groupId: string, includeLeft = false) => ['groups', groupId, 'members', { includeLeft }] as const,
   },
 
-  /** GET /invites/:code */
+  /** POST /invites/preview { code } — 코드는 메모리 캐시 키에만 쓰고 주소에는 넣지 않는다 */
   invite: (code: string) => ['invites', code] as const,
   /** GET /currencies(여정 통화로 고를 수 있는 통화, 서버 고정 목록) */
   currencies: ['currencies'] as const,

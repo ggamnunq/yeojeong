@@ -189,6 +189,18 @@ describe('HF-15 그룹원 패널', () => {
     expect(writeText).toHaveBeenCalledWith('K7M-2QX')
   })
 
+  it('초대코드 [초대 QR](복사 왼쪽) → HF-61 초대 QR 시트(W8)', async () => {
+    renderApp('/trips/trip-osaka/payments')
+    const panel = await openPanel()
+    const qr = within(panel).getByRole('button', { name: '초대 QR' })
+    const copy = within(panel).getByRole('button', { name: '초대코드 복사' })
+    expect(qr.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(qr)
+    const sheet = await screen.findByRole('dialog', { name: '초대 QR' })
+    expect(within(sheet).getByRole('img', { name: '오사카 3박 4일 참여 QR 코드' })).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: '링크 복사' })).toBeTruthy()
+  })
+
   it('그룹장이 나가면 다음 멤버가 승계하고, 나는 진입 라우팅으로 간다', async () => {
     const { router } = renderApp('/trips/trip-osaka/payments')
     const panel = await openPanel()

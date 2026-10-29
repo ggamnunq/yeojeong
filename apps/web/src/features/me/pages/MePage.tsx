@@ -15,6 +15,7 @@ import { paymentMethodsQuery } from '../../wallet/api'
 import { formatMethodCounts } from '../../wallet/format'
 import { useBack } from '../../wallet/useBack'
 import { NoticeBanner } from '../../notices/NoticeBanner'
+import { forgetInvites } from '../../trips/pendingInvite'
 import { logout, meQuery } from '../api'
 
 /** WF-30 마이페이지: (공지 배너 HF-60b) → 프사·닉네임 → 내 지갑 → (아래) 로그아웃 · 탈퇴(HF-59) · 동의 관리 · 푸터 링크(C-03 사용자 결정) */
@@ -61,6 +62,8 @@ function MeContent({
       // - 세션을 ANONYMOUS로 덮으면 이동(transition)이 끝나기 전에 RequireAuth가 먼저 /login?returnTo=/me로 보낸다
       // - 이 화면이 붙어 있을 때 queryClient.clear()를 부르면 이 화면 쿼리가 401로 다시 불려 같은 일이 생긴다
       signedOut.current = true
+      // 보관·응답 중 초대도 버린다(같은 탭의 다른 계정에 이전 초대 시트가 뜨지 않게, W8 L2)
+      forgetInvites()
       queryClient.removeQueries({ queryKey: keys.session, exact: true })
       await navigate(paths.login(), { replace: true })
     },

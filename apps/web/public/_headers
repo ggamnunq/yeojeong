@@ -16,3 +16,9 @@
 /admin/*
   X-Robots-Tag: noindex, nofollow
   Cache-Control: no-store
+
+# 초대 링크 진입(/join, W8 보안 리뷰 L1): 코드는 fragment(#code=)라 원래 Referer에 실리지 않지만, 예전 ?code= 링크도
+# 받으므로 이 문서에서 나가는 요청에는 Referer를 보내지 않는다. 같은 헤더가 /*와 겹치면 쉼표로 이어지고(/* 다음),
+# 브라우저는 목록의 마지막 정책(no-referrer)을 쓴다. 앱은 시작 즉시 주소에서 코드를 지운다(pendingInvite.captureInviteLink)
+/join
+  Referrer-Policy: no-referrer

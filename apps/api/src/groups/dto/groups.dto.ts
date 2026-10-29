@@ -1,13 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  INVITE_CODE_INPUT_MAX_LENGTH,
   TRIP_STATUS_VALUES,
+  type InviteCodeRequest,
   type InvitePreview,
   type JoinTripResponse,
   type LeaveGroupResponse,
   type TripStatus,
 } from '@yeojeong/shared';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 import {
   MemberSummaryDto,
   ProfileDto,
@@ -38,6 +40,18 @@ export class LeaveGroupResponseDto implements LeaveGroupResponse {
   groupDeleted: boolean;
 }
 
+/** 초대코드는 본문으로만 받는다(경로·쿼리는 요청 로그에 남는다). 형식 검사는 서비스(normalizeInviteCode → 404) */
+export class InviteCodeDto implements InviteCodeRequest {
+  @ApiProperty({
+    example: 'K7M-2QX',
+    maxLength: INVITE_CODE_INPUT_MAX_LENGTH,
+    description: '대소문자·하이픈·공백 무시',
+  })
+  @IsString()
+  @MaxLength(INVITE_CODE_INPUT_MAX_LENGTH)
+  code: string;
+}
+
 export class InvitePreviewDto implements InvitePreview {
   @ApiProperty({ example: '오사카 3박 4일' })
   groupName: string;
@@ -59,6 +73,13 @@ export class InvitePreviewDto implements InvitePreview {
 
   @ApiProperty({ type: [ProfileDto], description: '가입 순 최대 4명' })
   membersPreview: ProfileDto[];
+
+  @ApiProperty({
+    type: ProfileDto,
+    nullable: true,
+    description: '지금 그룹장(활성 멤버 중 LEADER)',
+  })
+  leader: ProfileDto | null;
 
   @ApiProperty()
   alreadyMember: boolean;

@@ -5,6 +5,7 @@ export type {
   CreateTripRequest,
   CreateTripResponse,
   EndPreviewResponse,
+  InviteCodeRequest,
   InvitePreview,
   JoinTripResponse,
   PlaceInput,

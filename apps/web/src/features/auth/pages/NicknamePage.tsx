@@ -6,6 +6,7 @@ import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { rememberSignupReturnTo } from '../../../app/signupReturnTo'
 import { Input, ShellOnboarding } from '../../../ds'
+import { forgetInvites } from '../../trips/pendingInvite'
 import { postLogout } from '../api'
 import { COPY } from '../copy'
 import { useFlowState } from '../historyState'
@@ -59,6 +60,7 @@ export default function NicknamePage() {
     setLeaving(true)
     try {
       await postLogout()
+      forgetInvites()
       // 세션이 ANONYMOUS가 되면 RequireSignup이 /login으로 보낸다
       await queryClient.invalidateQueries({ queryKey: keys.session })
     } catch (e) {

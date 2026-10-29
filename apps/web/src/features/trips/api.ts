@@ -5,6 +5,7 @@ import type {
   CreateTripResponse,
   EndPreviewResponse,
   EndTripResponse,
+  InviteCodeRequest,
   InvitePreview,
   JoinTripResponse,
   SupportedCurrency,
@@ -22,11 +23,14 @@ export const currenciesQuery = () =>
     staleTime: 60 * 60_000,
   })
 
-/** GET /invites/:code. 오류 문구는 화면이 입력란에 보여 준다(silent) */
+/**
+ * POST /invites/preview { code }. 초대코드는 참여 권한이라 주소(경로·쿼리)에 넣지 않고 본문으로만 보낸다(서버 요청 로그에 남지 않게).
+ * 오류 문구는 화면이 직접 보여 준다(silent)
+ */
 export const invitePreviewQuery = (code: string) =>
   queryOptions({
     queryKey: keys.invite(code),
-    queryFn: ({ signal }) => apiFetch<InvitePreview>(`/invites/${code}`, { signal }),
+    queryFn: ({ signal }) => apiFetch<InvitePreview>('/invites/preview', { body: { code } satisfies InviteCodeRequest, signal }),
     meta: { silent: true },
     retry: false,
     staleTime: 0,
@@ -49,11 +53,11 @@ export function useCreateTrip() {
   })
 }
 
-/** POST /invites/:code/join. 오류는 화면이 입력란에 보여 준다 */
+/** POST /invites/join { code }(코드는 본문으로만). 오류는 화면이 직접 안내한다 */
 export function useJoinTrip() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (code: string) => apiFetch<JoinTripResponse>(`/invites/${code}/join`, { method: 'POST' }),
+    mutationFn: (code: string) => apiFetch<JoinTripResponse>('/invites/join', { body: { code } satisfies InviteCodeRequest }),
     meta: { silent: true },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.trips.list }),
   })

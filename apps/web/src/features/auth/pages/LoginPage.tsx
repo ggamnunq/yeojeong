@@ -5,6 +5,7 @@ import { handleApiError, keys } from '../../../api'
 import { paths } from '../../../app/paths'
 import { KakaoLoginButton, Logo, ShellOnboarding } from '../../../ds'
 import { toast } from '../../../notifications'
+import { hasPendingInvite } from '../../trips/pendingInvite'
 import { isMockApi, kakaoStartUrl, mockKakaoLogin } from '../api'
 import { browser } from '../browser'
 import { COPY } from '../copy'
@@ -16,6 +17,8 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [pending, setPending] = useState(false)
+  // QR·공유 링크로 들어와 초대가 보관돼 있으면 카카오 버튼 위 한 줄(HF-62b). 그룹 이름은 로그인 전에 보이지 않는다
+  const [invited] = useState(() => hasPendingInvite())
   const returnTo = params.get('returnTo')
   const error = params.get('error')
 
@@ -61,6 +64,7 @@ export default function LoginPage() {
       </div>
       <div className="flex-1" />
       <div className="flex flex-col items-center gap-3 px-gutter pt-3 pb-4">
+        {invited && <p className="text-caption text-secondary">{COPY.invited}</p>}
         <KakaoLoginButton size="l" disabled={pending} aria-busy={pending || undefined} onClick={() => void login()} />
         <Link to={paths.privacy()} className="rounded-sm px-2 py-1 text-caption text-tertiary focus-visible:shadow-focus-ring focus-visible:outline-hidden">
           {COPY.privacyLink}

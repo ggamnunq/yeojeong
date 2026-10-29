@@ -5,6 +5,8 @@ import { paths } from '../../app/paths'
 import { toPerson } from '../../app/person'
 import { rememberTripId } from '../../app/trip'
 import { Dialog, Icon, orderMembers, PanelSide, RowMember, RowTone } from '../../ds'
+import { InviteQrButton } from '../trips/components/InviteQrButton'
+import { InviteQrSheet } from '../trips/components/InviteQrSheet'
 import { toast } from '../../notifications'
 import { useKickMember, useLeaveGroup } from './api'
 import { canKick, formatInviteCode, leaveMessage } from './rules'
@@ -15,11 +17,12 @@ export type MemberPanelProps = {
   trip: TripDetail
 }
 
-/** HF-15 그룹원 패널(FR-206·207·208·202): 멤버(나 먼저 → 가입 순) · 강퇴(그룹장) · 초대코드 복사 · 그룹 나가기 */
+/** HF-15 그룹원 패널(FR-206·207·208·202): 멤버(나 먼저 → 가입 순) · 강퇴(그룹장) · 초대코드 [초대 QR](W8 → HF-61) · 복사 · 그룹 나가기 */
 export function MemberPanel({ open, onClose, trip }: MemberPanelProps) {
   const navigate = useNavigate()
   const [kickTarget, setKickTarget] = useState<MemberSummary | null>(null)
   const [leaving, setLeaving] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
   const kick = useKickMember(trip)
   const leave = useLeaveGroup(trip)
   const members = orderMembers(trip.members.filter((m) => !m.isLeft).map((m) => ({ ...toPerson(m), member: m })))
@@ -73,6 +76,7 @@ export function MemberPanel({ open, onClose, trip }: MemberPanelProps) {
             <RowTone
               label="초대코드"
               value={formatInviteCode(trip.inviteCode)}
+              accessory={<InviteQrButton size="s" onClick={() => setQrOpen(true)} />}
               action={{
                 label: '복사',
                 icon: 'copy',
@@ -93,6 +97,9 @@ export function MemberPanel({ open, onClose, trip }: MemberPanelProps) {
         </button>
       </PanelSide>
 
+      {trip.inviteCode && (
+        <InviteQrSheet open={qrOpen} onClose={() => setQrOpen(false)} groupName={trip.groupName} code={trip.inviteCode} />
+      )}
       <Dialog
         open={kickTarget !== null}
         type="danger"

@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { TripStatus } from '@yeojeong/shared';
+import { getStorageToken, type ThrottlerStorage } from '@nestjs/throttler';
 import request from 'supertest';
+import { INVITE_USER_LIMIT } from './../src/groups/invite-user-throttle.guard.js';
 import { addDays, kstDate } from './../src/trips/kst.js';
 import { createTestAuth, TEST_ORIGIN, type TestAuth } from './auth-helpers.js';
 import { createTestApp } from './create-test-app.js';
@@ -52,7 +54,11 @@ describe('S2A trips·groups guards (e2e)', () => {
       .set(auth.headers())
       .send(validTrip)
       .expect(401);
-    await request(server()).get('/api/invites/K7M2QX').expect(401);
+    await request(server())
+      .post('/api/invites/preview')
+      .set(auth.headers())
+      .send({ code: 'K7M2QX' })
+      .expect(401);
   });
 
   describe('POST /api/trips validation', () => {
@@ -313,12 +319,70 @@ describe('S2A trips·groups guards (e2e)', () => {
     const h = auth.headers(auth.addUser());
     for (const code of ['ABC', 'K7M2QXX', 'O0I1LZ']) {
       await request(server())
-        .get(`/api/invites/${code}`)
+        .post('/api/invites/preview')
         .set(h)
+        .send({ code })
         .expect(404)
         .expect((r) => expect(r.body.code).toBe('INVITE_CODE_INVALID'));
     }
-    await request(server()).post('/api/invites/ABC/join').set(h).expect(404);
+    await request(server())
+      .post('/api/invites/join')
+      .set(h)
+      .send({ code: 'ABC' })
+      .expect(404);
+  });
+
+  it('takes invite codes only in the body (W8 — no code in paths or queries)', async () => {
+    const h = auth.headers(auth.addUser());
+    // 예전 경로형(/invites/:code)은 없다 — 코드가 요청 로그의 path에 남지 않게
+    await request(server()).get('/api/invites/K7M2QX').set(h).expect(404);
+    await request(server()).post('/api/invites/K7M2QX/join').set(h).expect(404);
+    for (const body of [
+      {},
+      { code: 123 },
+      { code: 'K'.repeat(17) },
+      { code: 'K7M2QX', extra: 1 },
+    ]) {
+      await request(server())
+        .post('/api/invites/preview')
+        .set(h)
+        .send(body)
+        .expect(400)
+        .expect((r) => expect(r.body.code).toBe('VALIDATION_FAILED'));
+    }
+  });
+
+  it('rate-limits invite lookups per user across preview and join', async () => {
+    const user = auth.addUser();
+    const h = auth.headers(user);
+    const storage = app.get<ThrottlerStorage>(getStorageToken());
+    // IP 한도(1분 10회)에 먼저 닿지 않게 사용자 카운터만 한도까지 채운다
+    for (let i = 0; i < INVITE_USER_LIMIT.COUNT; i++) {
+      await storage.increment(
+        `invite-user:${user.id}`,
+        INVITE_USER_LIMIT.WINDOW_MS,
+        INVITE_USER_LIMIT.COUNT,
+        INVITE_USER_LIMIT.WINDOW_MS,
+        'invite-user',
+      );
+    }
+    for (const path of ['/api/invites/preview', '/api/invites/join']) {
+      await request(server())
+        .post(path)
+        .set(h)
+        .send({ code: 'K7M2QX' })
+        .expect(429)
+        .expect((r) => expect(r.body.code).toBe('RATE_LIMITED'))
+        .expect((r) =>
+          expect(Number(r.headers['retry-after'])).toBeGreaterThan(0),
+        );
+    }
+    // 다른 사용자는 그대로(형식이 틀린 코드라 DB 전에 404)
+    await request(server())
+      .post('/api/invites/preview')
+      .set(auth.headers(auth.addUser()))
+      .send({ code: 'ABC' })
+      .expect(404);
   });
 
   it('lists the supported currencies with KRW first', async () => {

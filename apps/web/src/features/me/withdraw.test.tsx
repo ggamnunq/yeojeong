@@ -5,6 +5,7 @@ import { keys, type MyTripsResponse } from '../../api'
 import { db } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { renderApp } from '../../test/render'
+import { hasPendingInvite, rememberPendingInvite } from '../trips/pendingInvite'
 import { withdrawFacts } from './rules'
 
 configure({ asyncUtilTimeout: 3000 })
@@ -116,6 +117,7 @@ describe('탈퇴(HF-59)', () => {
         return new HttpResponse(null, { status: 204 })
       }),
     )
+    rememberPendingInvite('T4K9YP')
     const { router, queryClient } = renderApp('/me/withdraw')
     fireEvent.click(await screen.findByRole('checkbox', { name: '위 내용을 확인했어요' }))
     await waitFor(() => expect(cta().disabled).toBe(false))
@@ -124,6 +126,7 @@ describe('탈퇴(HF-59)', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: '탈퇴' }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/login'))
     expect(calls).toEqual([{ confirm: true }])
+    expect(hasPendingInvite()).toBe(false)
     expect(await screen.findByText('탈퇴했어요')).toBeTruthy()
     await waitFor(() => expect(queryClient.getQueryData(keys.session)).toMatchObject({ status: 'ANONYMOUS' }))
     await waitFor(() => {

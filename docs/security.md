@@ -30,6 +30,8 @@
 - `public/_headers`: Cloudflare가 응답에 아래 헤더를 붙인다.
   - CSP(`default-src 'self'`, `frame-ancestors 'none'` 등)
   - `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, HSTS
+  - `/join`(초대 링크 진입)은 `Referrer-Policy: no-referrer`를 더한다.
+- **초대코드**(그룹 참여 권한): 링크는 fragment(`/join#code=…`)라 문서 요청·Referer에 실리지 않는다. 앱은 시작 즉시 코드를 탭 sessionStorage(30분)로 옮기고 주소에서 지운다. API는 본문 `{ code }`로만 받고(경로·쿼리 금지), IP당 1분 10회 + 사용자당 10분 20회로 제한한다. 로그아웃·401이면 보관한 초대를 버린다.
 - 화면은 API를 같은 origin의 `/api`로 부르므로 CSP `connect-src 'self'`로 충분하다.
 - **CSP를 바꿔야 할 때**
   - API를 다른 origin에 두면 `connect-src`에 그 origin을 추가한다.

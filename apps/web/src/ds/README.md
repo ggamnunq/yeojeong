@@ -107,7 +107,7 @@ W5 화면 통합에서는 아래 임시 조합을 지우고 오른쪽 DS 공개 
 | `features/stats/pages/StatsPage`의 공동/개인 지표 막대               | `MetricBar`                                                           | `type="single" total` / `type="split" shared personal` |
 | `features/settlement/pages/SettlementPage`의 정산 영웅 section       | `CardHeroTone`                                                        | `sub` + `route={{ phase: 'ended', … }}`                |
 | `features/settlement/pages/SettlementMemberPage`의 멤버 영웅 section | `CardHeroTone`                                                        | `aside={<Avatar … />}` + 금액 톤                       |
-| 초대코드·토스 연결 상태의 톤 행 조합                                 | `RowTone`                                                             | `label` · `value` · `action`                           |
+| 초대코드·토스 연결 상태의 톤 행 조합                                 | `RowTone`                                                             | `label` · `value` · `action` · `accessory`(W8 초대 QR 버튼) |
 | 탈퇴한 멤버 정산 행의 `disabled` + CSS chevron 숨김                  | `SettlementRow`                                                       | `tappable={false}`                                     |
 
 ## v1.6 추가분 → 화면 교체 대응표 (spec §11)

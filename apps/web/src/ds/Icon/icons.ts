@@ -32,6 +32,7 @@ import {
   Pencil,
   PlaneTakeoff,
   Plus,
+  QrCode,
   ReceiptText,
   RefreshCw,
   Route,
@@ -48,7 +49,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-// Figma `Icon/<이름>`(Icons8 Fluency Systems Regular) → lucide 아이콘. 키는 Figma 이름 그대로. v1.4에 chevron-up·crown, v1.7에 eye·eye-off 추가(46종).
+// Figma `Icon/<이름>`(Icons8 Fluency Systems Regular) → lucide 아이콘. 키는 Figma 이름 그대로. v1.4에 chevron-up·crown, v1.7에 eye·eye-off, W8에 qr-code 추가(47종).
 export const ICONS = {
   'chevron-down': ChevronDown,
   'chevron-right': ChevronRight,
@@ -98,6 +99,8 @@ export const ICONS = {
   // v1.7: 비밀번호 보기 토글(Input Type=Password) — 가려진 상태 eye · 보이는 상태 eye-off
   eye: Eye,
   'eye-off': EyeOff,
+  // W8: 초대 QR 시트를 여는 버튼(HF-11·16·23 초대코드 「복사」 옆). Figma 아이콘 세트에 추가 예정
+  'qr-code': QrCode,
 } as const satisfies Record<string, LucideIcon>
 
 export type IconName = keyof typeof ICONS
@@ -162,6 +165,8 @@ export const ICON_VIEWBOX: Record<IconName, readonly [x: number, y: number, size
   // v1.7 Icon/eye(114:15059) · eye-off(114:15073): Figma 자체 벡터 bbox(선 포함) 20.5×14.5 · 20.5×18.5, 중심 (12.5, 12.5) · (12.5, 12)
   eye: [-1.16, -1.16, 25.26],
   'eye-off': [-1.16, -0.63, 25.26],
+  // lucide qr-code 그림 18×18(3~21) → copy와 같은 Icons8 긴 변 19(획 포함)에 맞춤: s = 17.5/18, 중심 (12, 12)
+  'qr-code': [-0.34, -0.34, 24.69],
 }
 
 /**

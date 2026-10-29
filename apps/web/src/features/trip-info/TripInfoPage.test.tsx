@@ -189,7 +189,7 @@ describe('HF-23 진행 중 여정 정보', () => {
     renderApp('/trips/trip-osaka/info')
     fireEvent.click(await screen.findByRole('button', { name: '추가' }))
     await waitFor(() => expect(toastMessages()).toContain('복사했어요'))
-    expect(nav.writeText).toHaveBeenCalledWith(`오사카 3박 4일 초대코드 K7M-2QX\n${window.location.origin}/join?code=K7M2QX`)
+    expect(nav.writeText).toHaveBeenCalledWith(`오사카 3박 4일 초대코드 K7M-2QX\n${window.location.origin}/join#code=K7M2QX`)
   })
 
   it('HF-24 「여정 종료하기」 → end-preview 미확정 건수 → 종료 → 정산 탭, 미확정은 개인으로', async () => {

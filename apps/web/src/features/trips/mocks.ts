@@ -29,6 +29,7 @@ import type {
   CreateTripResponse,
   EndPreviewResponse,
   EndTripResponse,
+  InviteCodeRequest,
   InvitePreview,
   JoinTripResponse,
   PlaceInput,
@@ -156,6 +157,12 @@ function findByInvite(raw: string) {
   ensureDemoTrips()
   const code = normalizeInviteCode(raw)
   return code ? db.trips.find((t) => t.inviteCode === code) : undefined
+}
+
+/** 본문 { code }(InviteCodeRequest). 문자열이 아니면 빈 값 → INVITE_CODE_INVALID */
+async function inviteCodeFrom(request: Request): Promise<string> {
+  const body = (await request.json().catch(() => null)) as Partial<InviteCodeRequest> | null
+  return typeof body?.code === 'string' ? body.code : ''
 }
 
 /** 초대코드 조회·참여 공통 검사. 통과면 여정 */
@@ -318,8 +325,9 @@ export const handlers: HttpHandler[] = [
     return noContent()
   }),
 
-  api.get<InvitePreview>('/api/invites/:code', ({ params }) => {
-    const { denied, trip } = checkInvite(String(params.code))
+  // 초대코드는 본문으로만(W8). 주소에 넣으면 실제 서버처럼 404
+  api.post<InvitePreview>('/api/invites/preview', async ({ request }) => {
+    const { denied, trip } = checkInvite(await inviteCodeFrom(request))
     if (denied) return denied
     const members = db.memberships
       .filter((m) => m.tripId === trip.tripId && m.leftAt === null)
@@ -336,14 +344,20 @@ export const handlers: HttpHandler[] = [
         const { nickname, profileImageUrl } = memberSummary(m)
         return { nickname, profileImageUrl }
       }),
+      leader: (() => {
+        const leader = members.find((m) => m.role === 'LEADER')
+        if (!leader) return null
+        const { nickname, profileImageUrl } = memberSummary(leader)
+        return { nickname, profileImageUrl }
+      })(),
       alreadyMember: Boolean(mine),
       tripId: mine ? trip.tripId : null,
     }
     return HttpResponse.json(body)
   }),
 
-  api.post<JoinTripResponse>('/api/invites/:code/join', ({ params }) => {
-    const { denied, trip } = checkInvite(String(params.code))
+  api.post<JoinTripResponse>('/api/invites/join', async ({ request }) => {
+    const { denied, trip } = checkInvite(await inviteCodeFrom(request))
     if (denied) return denied
     if (activeMembership(trip.tripId, db.meUserId)) return domainError.alreadyMember()
     const members = db.memberships.filter((m) => m.tripId === trip.tripId)

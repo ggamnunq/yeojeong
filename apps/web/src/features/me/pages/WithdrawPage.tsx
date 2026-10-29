@@ -7,6 +7,7 @@ import { useSession } from '../../../app/session'
 import { myTripsQuery } from '../../../app/trip'
 import { Checkbox, Dialog, Icon, ShellSub, type IconName } from '../../../ds'
 import { toast } from '../../../notifications'
+import { forgetInvites } from '../../trips/pendingInvite'
 import { useBack } from '../../wallet/useBack'
 import { deleteAccount } from '../api'
 import { withdrawFacts } from '../rules'
@@ -43,6 +44,7 @@ export default function WithdrawPage() {
       // 로그아웃과 같은 순서: 세션 쿼리를 지우고 로그인으로 → 이 화면이 떨어지면 남은 캐시를 비운다(아래 effect)
       done.current = true
       setConfirming(false)
+      forgetInvites()
       queryClient.removeQueries({ queryKey: keys.session, exact: true })
       await navigate(paths.login(), { replace: true })
       toast.success('탈퇴했어요')

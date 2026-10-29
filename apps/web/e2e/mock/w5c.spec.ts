@@ -3,12 +3,15 @@ import { useMockScenario } from './support'
 
 // W5C(웹 통합 3차): 여행 장소 자유 입력 · 현지 통화 · returnTo(신규 회원) · HF-08 뒤로 · HF-26 시트 · HF-25 딥링크 · 토스트 자리 · 목 시점 전환.
 
-const JOIN = '/join?code=T4K9YP'
+const JOIN = '/join#code=T4K9YP'
 
-/** 비로그인으로 공유 링크를 열고 카카오(목: 신규 회원) → 닉네임 → 약관 → 토스 연결 안내까지. 시나리오는 ANONYMOUS로 먼저 건다 */
+/**
+ * 비로그인으로 공유 링크를 열고 카카오(목: 신규 회원) → 닉네임 → 약관 → 토스 연결 안내까지. 시나리오는 ANONYMOUS로 먼저 건다.
+ * W8부터 링크의 코드는 앱 시작 때 이 탭에 보관되고 주소(로그인 returnTo 포함)에서 빠진다 — 가입을 마치면 첫 화면 위 초대 시트(HF-62)
+ */
 async function signupFromInviteLink(page: Page) {
   await page.goto(JOIN)
-  await expect(page).toHaveURL(`/login?returnTo=${encodeURIComponent(JOIN)}`)
+  await expect(page).toHaveURL('/login')
   await page.getByRole('button', { name: '카카오 로그인' }).click()
   await expect(page).toHaveURL('/signup/nickname')
   await page.getByRole('button', { name: '다음' }).click()
@@ -18,14 +21,15 @@ async function signupFromInviteLink(page: Page) {
   await expect(page.getByRole('heading', { name: '토스 지갑을 연결해 주세요' })).toBeVisible()
 }
 
-test.describe('returnTo — 신규 회원도 가입 단계를 마치면 초대 링크로(QA ③ HF-12, 토스 연결 켬)', () => {
-  test('닉네임 → 약관 → 토스 안내 「나중에」 → /join?code= 미리보기', async ({ page }) => {
+test.describe('신규 회원도 가입 단계를 마치면 초대 응답 시트(QA ③ HF-12 → W8 HF-62, 토스 연결 켬)', () => {
+  test('닉네임 → 약관 → 토스 안내 「나중에」 → 첫 화면 위 「도쿄 먹방 여행에 참여할까요?」', async ({ page }) => {
     await useMockScenario(page, { session: 'ANONYMOUS', accountLink: true })
     await signupFromInviteLink(page)
     await page.getByRole('button', { name: '나중에' }).click()
-    await expect(page).toHaveURL(JOIN)
-    await expect(page.getByRole('region', { name: '여정 미리보기' })).toContainText('도쿄 먹방 여행')
-    await expect(page.getByRole('button', { name: '참여하기' })).toBeEnabled()
+    await expect(page).toHaveURL('/trips')
+    const sheet = page.getByRole('dialog', { name: '도쿄 먹방 여행에 참여할까요?' })
+    await expect(sheet.getByRole('region', { name: '여정 미리보기' })).toContainText('도쿄')
+    await expect(sheet.getByRole('button', { name: '참여하기' })).toBeEnabled()
   })
 
   test('토스 연결 → WF-08에서 브라우저 뒤로 가기 = 「여정으로 가기」(토스 안내로 돌아가지 않음, HF-08)', async ({ page }) => {
@@ -40,7 +44,8 @@ test.describe('returnTo — 신규 회원도 가입 단계를 마치면 초대 �
     await page.getByRole('button', { name: /개 연결$/ }).click()
     await expect(page.getByRole('heading', { name: '연결 완료' })).toBeVisible()
     await page.goBack()
-    await expect(page).toHaveURL(JOIN)
+    await expect(page).toHaveURL('/trips')
+    await expect(page.getByRole('dialog', { name: '도쿄 먹방 여행에 참여할까요?' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '토스 지갑을 연결해 주세요' })).toHaveCount(0)
   })
 })

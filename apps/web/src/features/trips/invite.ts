@@ -1,3 +1,4 @@
+import { isApiError } from '../../api'
 import { paths } from '../../app/paths'
 import { toast } from '../../notifications'
 import { COPY, formatInviteCode } from './rules'
@@ -38,7 +39,18 @@ export async function copyInviteCode(code: string): Promise<boolean> {
   return ok
 }
 
-/** 참여 링크(같은 origin) "https://jinyeojeong.com/join?code=K7M2QX" */
+const INVALID_CODES = new Set(['INVITE_CODE_INVALID', 'NOT_FOUND'])
+const UNAVAILABLE_CODES = new Set(['INVITE_TRIP_ENDED', 'MEMBER_KICKED', 'MEMBER_LIMIT_EXCEEDED'])
+
+/** 초대코드 오류 → 안내 문구(HF-12 입력란 · HF-62 토스트 공통). 따로 안내하지 않는 오류(429·연결 실패 등)면 null */
+export function inviteErrorText(error: unknown): string | null {
+  if (!isApiError(error)) return null
+  if (INVALID_CODES.has(error.code)) return COPY.inviteInvalid
+  if (UNAVAILABLE_CODES.has(error.code)) return COPY.inviteUnavailable
+  return null
+}
+
+/** 참여 링크(같은 origin) "https://jinyeojeong.com/join#code=K7M2QX" — 코드는 fragment(서버로 가지 않는다) */
 export function joinUrl(code: string): string {
   return `${window.location.origin}${paths.join(code)}`
 }
@@ -46,6 +58,15 @@ export function joinUrl(code: string): string {
 /** 공유 내용: 문구 "{그룹명} 초대코드 K7M-2QX" + 참여 링크(코드는 하이픈 없음) */
 export function inviteShareData({ groupName, code }: { groupName: string; code: string }) {
   return { text: `${groupName} 초대코드 ${formatInviteCode(code)}`, url: joinUrl(code) } satisfies ShareData
+}
+
+/** 공유 내용을 그대로 "{문구}\n{링크}"로 복사하고 "복사했어요"(HF-61 「링크 복사」) */
+export async function copyInviteLink(invite: { groupName: string; code: string }): Promise<boolean> {
+  const data = inviteShareData(invite)
+  const ok = await copyText(`${data.text}\n${data.url}`)
+  if (ok) toast.success(COPY.copied)
+  else toast.error(COPY.retryLater)
+  return ok
 }
 
 /**
@@ -62,7 +83,5 @@ export async function shareInvite(invite: { groupName: string; code: string }): 
       if (error instanceof DOMException && error.name === 'AbortError') return
     }
   }
-  const ok = await copyText(`${data.text}\n${data.url}`)
-  if (ok) toast.success(COPY.copied)
-  else toast.error(COPY.retryLater)
+  await copyInviteLink(invite)
 }

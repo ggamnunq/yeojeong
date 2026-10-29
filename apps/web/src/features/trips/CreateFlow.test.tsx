@@ -170,7 +170,7 @@ describe('HF-11 생성 완료 /trips/:tripId/created', () => {
     await waitFor(() => expect(nav.share).toHaveBeenCalled())
     expect(nav.share.mock.calls[0][0]).toEqual({
       text: '오사카 3박 4일 초대코드 K7M-2QX',
-      url: `${window.location.origin}/join?code=K7M2QX`,
+      url: `${window.location.origin}/join#code=K7M2QX`,
     })
   })
 
@@ -179,7 +179,7 @@ describe('HF-11 생성 완료 /trips/:tripId/created', () => {
     renderApp('/trips/trip-osaka/created')
     fireEvent.click(await screen.findByRole('button', { name: '공유' }))
     await waitFor(() => expect(toastMessages()).toContain('복사했어요'))
-    expect(nav.writeText).toHaveBeenCalledWith(`오사카 3박 4일 초대코드 K7M-2QX\n${window.location.origin}/join?code=K7M2QX`)
+    expect(nav.writeText).toHaveBeenCalledWith(`오사카 3박 4일 초대코드 K7M-2QX\n${window.location.origin}/join#code=K7M2QX`)
   })
 
   it('주소로 바로 들어와도 「여정으로 가기」 · ✕는 여정 정보로', async () => {

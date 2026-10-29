@@ -228,7 +228,19 @@ export interface LeaveGroupResponse {
   groupDeleted: boolean;
 }
 
-/** GET /api/invites/:code (FR-203) */
+/**
+ * POST /api/invites/preview · POST /api/invites/join 본문(FR-203·204).
+ * 초대코드는 그룹 참여 권한이라 주소(경로·쿼리)에 넣지 않고 본문으로만 보낸다(요청 로그·프록시 기록에 남지 않게).
+ * 대소문자·하이픈·공백은 무시한다. 형식이 틀리면 404 INVITE_CODE_INVALID
+ */
+export interface InviteCodeRequest {
+  code: string;
+}
+
+/** InviteCodeRequest.code 최대 길이(하이픈·공백 포함 입력을 받되 그보다 긴 값은 400) */
+export const INVITE_CODE_INPUT_MAX_LENGTH = 16;
+
+/** POST /api/invites/preview 200 (FR-203) */
 export interface InvitePreview {
   groupName: string;
   placeLabel: string;
@@ -238,12 +250,14 @@ export interface InvitePreview {
   memberCount: number;
   /** 가입 순 최대 4명 */
   membersPreview: Profile[];
+  /** 지금 그룹장(활성 멤버 중 LEADER). 없으면 null */
+  leader: Profile | null;
   alreadyMember: boolean;
   /** 이미 멤버일 때만 그 여정 ID */
   tripId: string | null;
 }
 
-/** POST /api/invites/:code/join 201 (FR-204) */
+/** POST /api/invites/join 201 (FR-204) */
 export interface JoinTripResponse {
   tripId: string;
   groupId: string;

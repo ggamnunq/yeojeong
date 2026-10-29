@@ -56,8 +56,9 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
 
   function join(user: AuthUser, code: string) {
     return request(server())
-      .post(`/api/invites/${code}/join`)
-      .set(ctx.auth.headers(user));
+      .post('/api/invites/join')
+      .set(ctx.auth.headers(user))
+      .send({ code });
   }
 
   it('runs create → list → detail → join → kick → leave·succession → start → end → lock', async () => {
@@ -138,8 +139,9 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
 
     // 미리보기(대소문자·하이픈 무시) → 참여
     const preview = await request(server())
-      .get(`/api/invites/${formatInviteCode(created.inviteCode).toLowerCase()}`)
+      .post('/api/invites/preview')
       .set(ctx.auth.headers(minji))
+      .send({ code: formatInviteCode(created.inviteCode).toLowerCase() })
       .expect(200);
     expect(preview.body).toEqual({
       groupName: '오사카 3박 4일',
@@ -149,6 +151,7 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       status: 'UPCOMING',
       memberCount: 1,
       membersPreview: [{ nickname: '준용', profileImageUrl: null }],
+      leader: { nickname: '준용', profileImageUrl: null },
       alreadyMember: false,
       tripId: null,
     });
@@ -163,8 +166,9 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       .expect(409)
       .expect((r) => expect(r.body.code).toBe('ALREADY_MEMBER'));
     const again = await request(server())
-      .get(`/api/invites/${created.inviteCode}`)
+      .post('/api/invites/preview')
       .set(ctx.auth.headers(minji))
+      .send({ code: created.inviteCode })
       .expect(200);
     expect(again.body).toMatchObject({
       alreadyMember: true,
@@ -233,8 +237,9 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       .set(ctx.auth.headers(subin))
       .expect(404);
     await request(server())
-      .get(`/api/invites/${created.inviteCode}`)
+      .post('/api/invites/preview')
       .set(ctx.auth.headers(subin))
+      .send({ code: created.inviteCode })
       .expect(403)
       .expect((r) => expect(r.body.code).toBe('MEMBER_KICKED'));
     await join(subin, created.inviteCode).expect(403);
@@ -778,8 +783,9 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       .set(ctx.auth.headers(member))
       .expect(404);
     await request(server())
-      .get(`/api/invites/${first.inviteCode}`)
+      .post('/api/invites/preview')
       .set(ctx.auth.headers(member))
+      .send({ code: first.inviteCode })
       .expect(404)
       .expect((r) => expect(r.body.code).toBe('INVITE_CODE_INVALID'));
     const deleted = ctx.events.filter((e) => e.name === 'membership.left');
@@ -808,8 +814,9 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
     expect(trip.deletedAt).not.toBeNull();
     const other = await ctx.addUser('다른 사람');
     await request(server())
-      .get(`/api/invites/${inviteCode}`)
+      .post('/api/invites/preview')
       .set(ctx.auth.headers(other))
+      .send({ code: inviteCode })
       .expect(404);
   });
 
