@@ -5,7 +5,7 @@ import { ApiProvider, isApiError } from '../../api'
 import { server } from '../../mocks/server'
 import { createTestQueryClient } from '../../test/render'
 import { cardImportConfigQuery, fetchCardApprovals, importWalletEntries, revocableConsentsQuery, submitCardImportConsent, withdrawConsent } from './api'
-import { CardImportKeyPinError, pinPolicy, publicKeyFingerprint } from './crypto'
+import { CardImportKeyPinError, encryptCardPassword, pinPolicy, publicKeyFingerprint } from './crypto'
 import { buildFetchRequest, cardImportOf, useFetchCardApprovals } from './hooks'
 import { MOCK_CARD_IMPORT_PUBLIC_KEY, MOCK_TWO_WAY_CODE, resetCardImportMock } from './mocks'
 
@@ -155,6 +155,8 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
 
     vi.stubEnv('VITE_CODEF_PUBKEY_SHA256', 'f'.repeat(64))
     await expect(buildFetchRequest(input)).rejects.toBeInstanceOf(CardImportKeyPinError)
+    // 암호화 함수를 바로 불러도 고정 키 검사를 건너뛸 수 없다
+    await expect(encryptCardPassword(MOCK_CARD_IMPORT_PUBLIC_KEY, 'pw')).rejects.toBeInstanceOf(CardImportKeyPinError)
 
     // 운영 빌드에 고정값이 없으면 진입·암호화를 막는다(개발·목은 허용)
     vi.stubEnv('VITE_CODEF_PUBKEY_SHA256', '')
@@ -162,6 +164,7 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     vi.stubEnv('PROD', true)
     expect(pinPolicy()).toBe('blocked')
     await expect(buildFetchRequest(input)).rejects.toBeInstanceOf(CardImportKeyPinError)
+    await expect(encryptCardPassword(MOCK_CARD_IMPORT_PUBLIC_KEY, 'pw')).rejects.toBeInstanceOf(CardImportKeyPinError)
     vi.unstubAllEnvs()
   })
 })

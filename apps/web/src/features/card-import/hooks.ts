@@ -20,7 +20,7 @@ import {
   submitCardImportConsent,
   withdrawConsent,
 } from './api'
-import { assertPinnedKey, encryptCardPassword, pinPolicy } from './crypto'
+import { encryptCardPassword, pinPolicy } from './crypto'
 
 // 카드 승인내역 불러오기(S8) TanStack Query hooks. 화면 없이 데이터 계층만 둔다.
 
@@ -60,7 +60,7 @@ export interface CardLoginInput {
  * 화면은 이 함수가 끝나면 비밀번호 입력 상태를 바로 비운다
  */
 export async function buildFetchRequest({ publicKey, password, ...rest }: CardLoginInput): Promise<FetchCardApprovalsRequest> {
-  await assertPinnedKey(publicKey)
+  // 공개키 지문 확인은 encryptCardPassword 안에서 한다(우회 불가)
   const encryptedPassword = await encryptCardPassword(publicKey, password)
   return { ...rest, encryptedPassword }
 }

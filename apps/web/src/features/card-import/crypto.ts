@@ -50,10 +50,12 @@ export async function rsaPublicKey(publicKey: string): Promise<{ n: bigint; e: b
 
 /**
  * 비밀번호 → CODEF 형식 암호문(RSA PKCS#1 v1.5, base64). FetchCardApprovalsRequest.encryptedPassword에 넣는다.
- * 같은 비밀번호도 매번 다른 암호문이 나온다(패딩 난수).
+ * 같은 비밀번호도 매번 다른 암호문이 나온다(패딩 난수). 공개키 지문 확인(assertPinnedKey)을 여기서 먼저 해서
+ * 어떤 호출 경로로도 고정 키 검사를 건너뛸 수 없다(다르면 CardImportKeyPinError, 운영 빌드에 고정값이 없으면 거부).
  */
 export async function encryptCardPassword(publicKey: string, password: string): Promise<string> {
   if (password.length === 0) throw new Error('비밀번호를 입력해 주세요')
+  await assertPinnedKey(publicKey)
   const [key, { PKCS1_KEM }] = await Promise.all([rsaPublicKey(publicKey), import('micro-rsa-dsa-dh/rsa.js')])
   return toBase64(PKCS1_KEM.encrypt(key, new TextEncoder().encode(password)))
 }
