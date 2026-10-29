@@ -41,7 +41,8 @@
 | `SettlementSnapshotService.preview(tripId)` | `settlement-snapshot.service.ts` | trips `end-preview`(저장 안 함) |
 | `SettlementSnapshotService.ensureSettlement(tripId)` | 〃 | 종료 응답에 settlementId가 필요할 때(커밋 후 호출) |
 | `convertToKrw(input)` | `../fx/convert.ts` | 결제 한 건 환산(KRW·SPOT·CARD_BILLED·FIXED). 순수 |
-| `FxRatesService.convertForTrip(tripPolicy, expense, tx?)` | `../fx/fx-rates.service.ts` | 인입(S2B): 직전 고시를 찾아 환산. 고시가 없으면 503 |
+| `effectiveFxPolicy(tripPolicy, tripCurrency, currency)` | `../fx/convert.ts` | 결제 한 건에 실제로 적용할 기준(C-32: FIXED 여정의 제3통화만 `SPOT_AT_PAYMENT`, 그 밖은 여정 정책). 순수 |
+| `FxRatesService.convertForTrip(tripPolicy, expense, tx?)` | `../fx/fx-rates.service.ts` | 인입(S2B)·직접 입력·지갑 자동 연결: 직전 고시를 찾아 환산. `tripPolicy.currency`(여정 통화) 필수. 고시가 없으면 503 |
 | `FxRecalcService.recalculateTrip(tx, trip, actor)` | `../fx/fx-recalc.service.ts` | Trip 행을 잠근 트랜잭션에서 여정 전체 재환산 |
 | `fxRateLabel`·`displayRate` | `../fx/convert.ts` | "100엔 = 919.20원" |
 
@@ -53,6 +54,7 @@
 - SPOT: `effectiveAt ≤ occurredAt`인 가장 최근 고시. 고시를 모으기 전 결제는 가장 이른 고시.
 - CARD_BILLED: 청구 확정 원화 → 제공자 원화 → 매매기준율(임시, `provisional`).
 - FIXED: 금액 × 고정 환율 ÷ 고시 단위. 고정 환율은 고시 단위당 원, 소수 둘째 자리까지.
+- **여정 통화 외 외화(C-32, S7c)**: 여정 통화도 KRW도 아닌 외화(일본 여정의 USD 결제 등)에는 여정 고정 환율을 쓰지 않는다(`effectiveFxPolicy`). FIXED 여정 → 결제 시점 시장 환율(SPOT: 수출입은행 우선, 고시하지 않는 통화는 보조 소스 ExchangeRate-API), 스냅샷 `fxPolicyApplied = SPOT_AT_PAYMENT`·`fxRate` = 고시 1단위당 원·`fxRateUnit` = 그 통화 고시 단위·`fxRateSource` = 고시 출처명(`ExchangeRate.source`)·`fxRateAt` = 고시 시각. 고정 환율 여정에서 `fxPolicyApplied`가 `SPOT_AT_PAYMENT`이면 시장 환율로 계산한 결제다. CARD_BILLED 여정 → 여정 통화와 같다: 카드사 원화(청구 확정 → 제공자)가 있으면 그 값, 없을 때만 시장 환율(임시, `fxPolicyApplied = CARD_BILLED`에 고시 값). SPOT 여정 → 그대로. 고시가 하나도 없으면 기존대로 `FX_RATE_UNAVAILABLE`(인입은 다음 동기화로 미룸). 적용 경로: 계좌·카드 인입(AUTO, 카드 불러오기 포함), 지갑 → 여정 자동 연결, 기간 외 추가(`expenses/krw.ts`), 환율 기준 변경 재계산(`FxRecalcService`). 여정에서 직접 추가하는 화면은 KRW·여정 통화만 고르게 하지만 서버는 지원 통화를 모두 받는다(카드 불러오기로 임의 통화가 들어오므로 통화 제한을 두지 않는다).
 - 재계산은 원화가 바뀐 결제만 쓰고 version을 올린다. 부모 순액 = max(0, 부모 + Σ자식), SHARED는 같은 부담 인원으로 `splitEvenly` 재분할, 이력 `FX_RECALCULATED`, `changedAfterShared`는 그대로.
 - 예산 상태는 정수 비교(`spent × 10 < budget × 8` → NORMAL, `spent ≤ budget` → CAUTION, 그 위 OVER). `budgetRatio`는 표시용 소수 넷째 자리.
 - N빵 1인 = round_half_up(total / N). 송금 권장안은 명세 4-4 그리디(재정렬 없음, 최대 N−1건).

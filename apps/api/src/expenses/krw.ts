@@ -1,8 +1,10 @@
 import { toKrw, type FxPolicy } from '@yeojeong/shared';
+import { effectiveFxPolicy } from '../fx/convert.js';
 import { Prisma } from '../generated/prisma/client.js';
 
 // 기간 외 결제를 장부에 넣을 때의 원화 환산(기능명세 4-5). 환율 모듈(fx, S2C)이 생기면 그 서비스로 바꾼다.
 // 정책: KRW는 그대로, FIXED는 고정 환율(여행 통화일 때), CARD_BILLED는 청구 확정 원화, 그 밖은 결제 시점 매매기준율.
+// 여정 통화도 KRW도 아닌 외화는 고정 환율 대신 결제 시점 매매기준율(C-32, fx/convert.ts effectiveFxPolicy). CARD_BILLED는 통화와 무관하게 같다.
 
 /** 고시 단위가 100인 통화(100엔 = 919.20원) */
 const HUNDRED_UNIT_CURRENCIES = new Set(['JPY', 'IDR', 'VND']);
@@ -71,9 +73,14 @@ export function resolveKrw(
     };
   }
   const amount = amountString(source.originalAmount);
+  const tripPolicy = effectiveFxPolicy(
+    trip.fxPolicy,
+    trip.currency,
+    source.originalCurrency,
+  );
 
   if (
-    trip.fxPolicy === 'FIXED' &&
+    tripPolicy === 'FIXED' &&
     trip.fxFixedRate &&
     source.originalCurrency === trip.currency
   ) {
@@ -91,7 +98,7 @@ export function resolveKrw(
     };
   }
 
-  if (trip.fxPolicy === 'CARD_BILLED') {
+  if (tripPolicy === 'CARD_BILLED') {
     const billed = source.billedKrwAmount ?? source.providerKrwAmount;
     if (billed !== null) {
       return {
@@ -109,7 +116,7 @@ export function resolveKrw(
 
   // 결제 시점 매매기준율(CARD_BILLED 청구 전 임시값 포함)
   const policy: FxPolicy =
-    trip.fxPolicy === 'CARD_BILLED' ? 'CARD_BILLED' : 'SPOT_AT_PAYMENT';
+    tripPolicy === 'CARD_BILLED' ? 'CARD_BILLED' : 'SPOT_AT_PAYMENT';
   const quote = source.spotRate ?? rateQuote;
   if (quote) {
     return {

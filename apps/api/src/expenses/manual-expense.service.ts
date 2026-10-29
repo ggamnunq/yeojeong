@@ -483,6 +483,7 @@ export class ManualExpenseService {
 
   /**
    * 금액 검사 + 여정 환율 기준으로 원화 환산(가져온 결제와 같은 FxRatesService.convertForTrip).
+   * 여정 통화도 KRW도 아닌 외화(지갑 → 여정 자동 연결 등)는 여정 고정 환율 대신 시장 환율(C-32).
    * @throws 400 VALIDATION_FAILED(금액·10억 상한) · 503 FX_RATE_UNAVAILABLE(고시 없음)
    */
   async convert(
@@ -497,6 +498,7 @@ export class ManualExpenseService {
     const krw = await this.fx.convertForTrip(
       {
         policy: trip.fxPolicy,
+        currency: trip.currency,
         fixedRate: trip.fxFixedRate,
         fixedAt: trip.fxPolicyChangedAt,
       },

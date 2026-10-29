@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import {
   convertToKrw,
   displayRate,
+  effectiveFxPolicy,
   FxRateMissingError,
   fxRateLabel,
   type ConvertResult,
@@ -43,6 +44,8 @@ export interface ExpenseFxInput {
 /** 여정의 환율 적용 기준(Trip.fxPolicy·fxFixedRate·fxPolicyChangedAt) */
 export interface TripFxPolicy {
   policy: FxPolicy;
+  /** 여정 통화(Trip.currency). FIXED 여정에서 이 통화도 KRW도 아닌 결제는 시장 환율로 환산한다(C-32, effectiveFxPolicy) */
+  currency: string;
   /** 고시 단위당 원 */
   fixedRate: string | null;
   fixedAt: Date | null;
@@ -137,6 +140,8 @@ export class FxRatesService {
 
   /**
    * 여정 기준으로 결제 한 건의 원화를 정한다. 인입(S2B)은 이 함수의 결과를 Expense.krwAmount와 fx 스냅샷 컬럼에 넣는다.
+   * 여정 통화도 KRW도 아닌 외화는 여정 고정 환율 대신 결제 시점 시장 환율(policyApplied SPOT_AT_PAYMENT)로 환산한다(C-32).
+   * 카드사 원화 여정에서는 제3통화도 카드사 원화가 있으면 그 값, 없을 때만 시장 환율(임시)이다(effectiveFxPolicy).
    * @throws AppException FX_RATE_UNAVAILABLE(503) 매매기준율이 필요한데 고시가 하나도 없을 때
    */
   async convertForTrip(
@@ -144,10 +149,15 @@ export class FxRatesService {
     expense: ExpenseFxInput,
     db: Db = this.prisma,
   ): Promise<ConvertResult> {
+    const policy = effectiveFxPolicy(
+      trip.policy,
+      trip.currency,
+      expense.currency,
+    );
     const needsSpot =
       expense.currency.toUpperCase() !== KRW &&
-      (trip.policy === 'SPOT_AT_PAYMENT' ||
-        (trip.policy === 'CARD_BILLED' &&
+      (policy === 'SPOT_AT_PAYMENT' ||
+        (policy === 'CARD_BILLED' &&
           expense.billedKrwAmount == null &&
           expense.providerKrwAmount == null));
     const spot = needsSpot
@@ -157,7 +167,7 @@ export class FxRatesService {
       return convertToKrw({
         amount: expense.amount,
         currency: expense.currency,
-        policy: trip.policy,
+        policy,
         spot,
         fixedRate: trip.fixedRate,
         fixedAt: trip.fixedAt,

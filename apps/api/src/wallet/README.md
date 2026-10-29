@@ -14,6 +14,10 @@
 
 모두 로그인 필요, 본인 항목만(`userId` 조건). 남의 항목·없는 항목은 404.
 
+## 여정 연결 결제의 원화
+
+자동 연결(PENDING)·수정 때 여정 결제 원화는 `ManualExpenseService.convert` → `FxRatesService.convertForTrip`이 정한다. KRW·여정 통화는 여정 환율 기준(매매기준율·카드사 원화·고정 환율). 여정 통화도 KRW도 아닌 외화(예: 일본 여정에 USD)는 고정 환율 여정이면 결제 시점 시장 환율(`fxPolicyApplied = SPOT_AT_PAYMENT`), 카드사 원화 여정이면 직접 입력에는 카드사 원화가 없으므로 시장 환율 임시값(`CARD_BILLED`)이다(C-32). 고시가 없으면 503 `FX_RATE_UNAVAILABLE`. 규칙 전체는 `src/settlements/README.md` 계산 규칙.
+
 ## 지갑 항목의 기준
 
 목록·이번 달 합계·`Me.walletEntryCount`(GET `/api/users/me`, `/api/auth/session`의 `user`)는 같은 기준을 쓴다(`walletEntryWhere`): 내 거래 중 계좌·카드 양쪽에 잡힌 같은 결제의 계좌 쪽(`sameUserDuplicateOfId` 있음)을 뺀 것. 직접 입력을 지우면 행이 없어지므로 개수에서도 빠진다.
