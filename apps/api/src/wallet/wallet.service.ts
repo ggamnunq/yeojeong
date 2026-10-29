@@ -4,7 +4,10 @@ import {
   WALLET_ENTRY_LIST_LIMIT,
   type CreateWalletEntryRequest,
   type ExpenseDetailResponse,
+  type ImportWalletEntriesResponse,
+  type ImportWalletEntryItem,
   type TripStatus,
+  type TxSource,
   type UpdateWalletEntryRequest,
   type WalletEntry,
   type WalletEntryField,
@@ -13,6 +16,7 @@ import {
   type WalletLinkedTrip,
   type WalletTripCandidatesResponse,
 } from '@yeojeong/shared';
+import { AuditService } from '../audit/index.js';
 import {
   AppException,
   NotFoundError,
@@ -30,13 +34,16 @@ import {
   type ManualEditRecord,
   type ManualMember,
   type ManualTrip,
+  type WalletEntryOrigin,
 } from '../expenses/manual-expense.service.js';
 import {
   defaultWalletCurrency,
   manualAmountError,
   manualKrwError,
+  memoError,
   memoOf,
   merchantNameOf,
+  occurredAtError,
   rankTripCandidates,
   suggestedTripOf,
   type TripCandidateInput,
@@ -120,6 +127,14 @@ function visibleLink(record: EntryRecord): LinkRecord | null {
   return links.find((e) => e.status === 'SHARED') ?? links[0] ?? null;
 }
 
+/**
+ * 사용자가 직접 만든 지갑 항목: 직접 입력(MANUAL)과 카드 승인내역에서 고른 것(CARD_IMPORT, S8).
+ * 둘 다 결제수단·제공자 동기화가 없어 수정·삭제·여정 바꾸기를 같은 규칙으로 한다(여정 결제는 origin MANUAL, 작성자 = 나)
+ */
+export function isUserEntrySource(source: TxSource): boolean {
+  return source === 'MANUAL' || source === 'CARD_IMPORT';
+}
+
 const fieldError = (path: string, code: string, message: string) =>
   new ValidationFailedError([{ path, code, message }]);
 
@@ -141,6 +156,7 @@ export class WalletService {
     private readonly prisma: PrismaService,
     private readonly manual: ManualExpenseService,
     private readonly summary: WalletSummaryService,
+    private readonly audit: AuditService,
   ) {}
 
   // ─── 연결 후보 ───
@@ -270,7 +286,7 @@ export class WalletService {
   }
 
   private toEntry(record: EntryRecord): WalletEntry {
-    const manual = record.source === 'MANUAL';
+    const manual = isUserEntrySource(record.source);
     const link = visibleLink(record);
     const anyLink = record.expenses[0] ?? null;
     const amount = formatOriginalAmount(
@@ -391,61 +407,21 @@ export class WalletService {
     }
     const occurredAt = body.occurredAt ? new Date(body.occurredAt) : now;
     checkInputs(occurredAt, body.memo, now);
-
-    const ranked = rankTripCandidates(
-      await this.tripOptions(userId),
-      occurredAt,
-    );
-    let target: TripOption | null;
-    if (body.tripId === null) {
-      target = null;
-    } else if (body.tripId !== undefined) {
-      target = ranked.find((r) => r.trip.tripId === body.tripId)?.trip ?? null;
-      if (!target) throw tripNotAvailable();
-    } else {
-      target = suggestedTripOf(ranked);
-    }
-    const currency = (
-      body.currency ?? defaultWalletCurrency(ranked)
-    ).toUpperCase();
-    const amount = body.amount.trim();
-    const amountError = manualAmountError(amount, currency);
-    if (amountError) throw new ValidationFailedError([amountError]);
-    const merchantName = merchantNameOf(body.memo);
-
-    const chosen = target;
     let entryId: string;
     try {
-      entryId = await this.prisma.$transaction(async (tx) => {
-        const values = { amount, currency, occurredAt, merchantName };
-        if (!chosen) {
-          await this.checkWalletOnlyKrw(tx, amount, currency);
-          return this.manual.insertWalletTransaction(tx, {
-            userId,
-            amounts: values,
-            merchantName,
-            clientRequestId: body.clientRequestId ?? null,
-          });
-        }
-        // 여정 잠금이 먼저(결제 변경과 같은 순서), 거래·결제는 그 뒤에 만든다
-        const link = await this.lockTargetTrip(tx, userId, chosen);
-        const amounts = await this.manual.convert(tx, link.trip, values);
-        const transactionId = await this.manual.insertWalletTransaction(tx, {
-          userId,
-          amounts,
-          merchantName,
+      entryId = await this.insertEntry(
+        userId,
+        {
+          amount: body.amount,
+          currency: body.currency,
+          occurredAt,
+          merchantName: merchantNameOf(body.memo),
+          tripId: body.tripId,
           clientRequestId: body.clientRequestId ?? null,
-        });
-        await this.insertPending(
-          tx,
-          link,
-          amounts,
-          merchantName,
-          transactionId,
-          now,
-        );
-        return transactionId;
-      });
+        },
+        { source: 'MANUAL' },
+        now,
+      );
     } catch (error) {
       if (body.clientRequestId && isUniqueViolation(error)) {
         const existing = await this.findByClientRequest(
@@ -457,6 +433,175 @@ export class WalletService {
       throw error;
     }
     return this.respond(userId, entryId);
+  }
+
+  /**
+   * 지갑 항목 한 건을 만들고 여정에 연결한다(직접 입력·카드 승인내역 불러오기 공통).
+   * tripId 생략 = 자동 연결(기간 안 예정·진행 중 여정), uuid = 그 여정, null = 지갑에만. 입력 검사(시각·내용)는 호출자가 먼저 한다
+   */
+  private async insertEntry(
+    userId: string,
+    input: {
+      amount: string;
+      currency?: string;
+      occurredAt: Date;
+      merchantName: string;
+      tripId?: string | null;
+      clientRequestId: string | null;
+    },
+    origin: WalletEntryOrigin,
+    now: Date,
+  ): Promise<string> {
+    const { occurredAt, merchantName } = input;
+    const ranked = rankTripCandidates(
+      await this.tripOptions(userId),
+      occurredAt,
+    );
+    let target: TripOption | null;
+    if (input.tripId === null) {
+      target = null;
+    } else if (input.tripId !== undefined) {
+      target = ranked.find((r) => r.trip.tripId === input.tripId)?.trip ?? null;
+      if (!target) throw tripNotAvailable();
+    } else {
+      target = suggestedTripOf(ranked);
+    }
+    const currency = (
+      input.currency ?? defaultWalletCurrency(ranked)
+    ).toUpperCase();
+    const amount = input.amount.trim();
+    const amountError = manualAmountError(amount, currency);
+    if (amountError) throw new ValidationFailedError([amountError]);
+    const providerKrwAmount =
+      origin.source === 'CARD_IMPORT' ? origin.providerKrwAmount : null;
+
+    const chosen = target;
+    return this.prisma.$transaction(async (tx) => {
+      const values = { amount, currency, occurredAt, merchantName };
+      if (!chosen) {
+        await this.checkWalletOnlyKrw(tx, amount, currency, providerKrwAmount);
+        return this.manual.insertWalletTransaction(tx, {
+          userId,
+          amounts: values,
+          merchantName,
+          clientRequestId: input.clientRequestId,
+          origin,
+        });
+      }
+      // 여정 잠금이 먼저(결제 변경과 같은 순서), 거래·결제는 그 뒤에 만든다
+      const link = await this.lockTargetTrip(tx, userId, chosen);
+      const amounts = await this.manual.convert(tx, link.trip, {
+        ...values,
+        providerKrwAmount,
+      });
+      const transactionId = await this.manual.insertWalletTransaction(tx, {
+        userId,
+        amounts,
+        merchantName,
+        clientRequestId: input.clientRequestId,
+        origin,
+      });
+      await this.insertPending(
+        tx,
+        link,
+        amounts,
+        merchantName,
+        transactionId,
+        now,
+      );
+      return transactionId;
+    });
+  }
+
+  // ─── 카드 승인내역에서 고른 것 저장(S8) ───
+
+  /**
+   * 카드 승인내역 불러오기(S8)에서 사용자가 고른 승인 건을 지갑에 저장한다. 직접 입력과 같은 규칙(시각 범위·내용 40자·금액·원화 1억 상한)과
+   * 같은 여정 자동 연결을 쓴다. importKey가 이미 저장돼 있으면 새로 만들지 않고 그 항목을 돌려준다(created=false) — 다시 보내도 안전하다.
+   * 서버는 승인번호 원문을 받지 않으므로 importKey를 다시 계산해 검증할 수 없다(형식만 본다). 모두 검사한 뒤 한 건씩 저장한다
+   */
+  async importEntries(
+    userId: string,
+    items: readonly ImportWalletEntryItem[],
+    now: Date = new Date(),
+  ): Promise<ImportWalletEntriesResponse> {
+    const errors = items.flatMap((item, index) => {
+      const prefix = `items.${index}`;
+      const occurredAt = new Date(item.occurredAt);
+      const found = [
+        occurredAtError(occurredAt, now, `${prefix}.occurredAt`),
+        memoError(item.merchantName, `${prefix}.merchantName`),
+        manualAmountError(item.amount, item.currency, `${prefix}.amount`),
+      ];
+      if (
+        items.findIndex((other) => other.importKey === item.importKey) < index
+      ) {
+        found.push({
+          path: `${prefix}.importKey`,
+          code: 'duplicate',
+          message: '같은 결제가 두 번 있어요',
+        });
+      }
+      return found.filter((e) => e !== null);
+    });
+    if (errors.length > 0) throw new ValidationFailedError(errors);
+
+    const results: ImportWalletEntriesResponse['items'] = [];
+    for (const item of items) {
+      let id = (await this.findImported(userId, item.importKey))?.id;
+      let created = false;
+      if (!id) {
+        try {
+          id = await this.insertEntry(
+            userId,
+            {
+              amount: item.amount,
+              currency: item.currency,
+              occurredAt: new Date(item.occurredAt),
+              merchantName: merchantNameOf(item.merchantName),
+              tripId: item.tripId,
+              clientRequestId: null,
+            },
+            {
+              source: 'CARD_IMPORT',
+              externalRef: item.importKey,
+              providerKrwAmount: item.krwAmount ?? null,
+            },
+            now,
+          );
+          created = true;
+        } catch (error) {
+          // 동시에 같은 건을 저장했다: 먼저 들어간 항목을 돌려준다
+          if (!isUniqueViolation(error)) throw error;
+          id = (await this.findImported(userId, item.importKey))?.id;
+          if (!id) throw error;
+        }
+      }
+      results.push({
+        importKey: item.importKey,
+        created,
+        entry: this.toEntry(await this.loadEntry(userId, id)),
+      });
+    }
+    // 접근 기록: 건수만(금액·가맹점 없음)
+    await this.audit.record({
+      userId,
+      action: 'IMPORT_CARD_APPROVALS',
+      resourceType: 'USER',
+      resourceId: userId,
+      details: {
+        requested: items.length,
+        created: results.filter((r) => r.created).length,
+      },
+    });
+    return { items: results };
+  }
+
+  private findImported(userId: string, importKey: string) {
+    return this.prisma.transaction.findFirst({
+      where: { userId, source: 'CARD_IMPORT', externalRef: importKey },
+      select: { id: true },
+    });
   }
 
   private findByClientRequest(userId: string, clientRequestId: string) {
@@ -506,12 +651,18 @@ export class WalletService {
     });
   }
 
-  /** 여정에 연결하지 않는 항목도 원화 1억 상한을 지킨다(KRW는 금액, 외화는 최신 매매기준율 추정이 있을 때) */
-  private async checkWalletOnlyKrw(tx: Tx, amount: string, currency: string) {
+  /** 여정에 연결하지 않는 항목도 원화 1억 상한을 지킨다(KRW는 금액, 외화는 카드사 원화 → 최신 매매기준율 추정이 있을 때) */
+  private async checkWalletOnlyKrw(
+    tx: Tx,
+    amount: string,
+    currency: string,
+    providerKrwAmount: number | null = null,
+  ) {
     const krw =
       currency === 'KRW'
         ? krwAmountOf(amount)
-        : (await this.manual.spotEstimate(tx, amount, currency)).spotKrwAmount;
+        : (providerKrwAmount ??
+          (await this.manual.spotEstimate(tx, amount, currency)).spotKrwAmount);
     const error = krw === null ? null : manualKrwError(krw);
     if (error) throw new ValidationFailedError([error]);
   }
@@ -551,7 +702,9 @@ export class WalletService {
       },
     });
     if (!current) throw new NotFoundError();
-    if (current.source !== 'MANUAL') throw AppException.of('NOT_MANUAL_ENTRY');
+    if (!isUserEntrySource(current.source)) {
+      throw AppException.of('NOT_MANUAL_ENTRY');
+    }
     const locked =
       expense !== null &&
       (trip === null ||
