@@ -65,4 +65,25 @@ describe('SettlementRow', () => {
     expect(container.querySelector('svg.lucide-chevron-right')).toBeNull()
     expect(screen.getByText('탈퇴한 멤버')).toBeTruthy()
   })
+
+  it('tappable={false}여도 aria-label·data-*·id는 바깥 요소로 넘기고, 버튼 전용 속성은 버린다(DS17)', () => {
+    const { container } = render(
+      <SettlementRow
+        person={{ name: '민지' }}
+        paid={0}
+        share={0}
+        tappable={false}
+        aria-label="민지 정산 끝"
+        data-testid="row"
+        id="row-minji"
+        disabled
+      />,
+    )
+    const row = container.firstElementChild as HTMLElement
+    expect(row.tagName).toBe('DIV')
+    expect(row.getAttribute('aria-label')).toBe('민지 정산 끝')
+    expect(row.dataset.testid).toBe('row')
+    expect(row.id).toBe('row-minji')
+    expect(row.hasAttribute('disabled')).toBe(false)
+  })
 })

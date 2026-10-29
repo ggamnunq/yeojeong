@@ -1,6 +1,6 @@
 # 디자인 시스템 (`src/ds`)
 
-Figma 「여정」 v1.6(.1) 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다. v1.6 추가분은 아래 「v1.6 추가분 → 화면 교체 대응표」.
+Figma 「여정」 v1.6.2 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다. v1.6 추가분은 아래 「v1.6 추가분 → 화면 교체 대응표」, v1.6.2(DS17)는 「v1.6.2 추가분」.
 
 ## 토큰
 
@@ -38,12 +38,12 @@ Figma 「여정」 v1.6(.1) 디자인 시스템을 코드로 옮긴 것. 원본 
 
 ## 레이아웃 · 오버레이
 
-- 화면은 v1.4 셸로 조립한다(아래 「셸 사용 규칙」). `Screen`은 셸들이 공통으로 쓰는 레이아웃 틀(spec 7-1): `header` → 본문(`gutter` 좌우 20, 기본 on, `contentClassName`) → `cta`(Button Primary L FILL) → `nav`(BottomNav). 390 폭 가운데 정렬. 스크롤은 문서가 하고 헤더·하단은 sticky. 셸에 맞지 않는 화면(스플래시)만 `Screen`을 직접 쓴다.
+- 화면은 v1.4 셸로 조립한다(아래 「셸 사용 규칙」). `Screen`은 셸들이 공통으로 쓰는 레이아웃 틀(spec 7-1): `header` → 본문(`gutter` 좌우 20, 기본 on, `contentClassName`) → `cta`(BottomCTA: Primary L FILL 하나 또는 가로 2버튼) → `nav`(BottomNav). 390 폭 가운데 정렬. 스크롤은 문서가 하고 헤더·하단은 sticky. 셸에 맞지 않는 화면(스플래시)만 `Screen`을 직접 쓴다.
 - 안전영역: `index.html`의 `viewport-fit=cover`가 있어야 `env(safe-area-inset-*)`가 잡힌다. 위는 Screen 헤더 자리, 아래는 BottomNav(없으면 CTA나 본문)와 BottomSheet가 채운다.
 - `BottomSheet`·`Dialog`는 네이티브 `<dialog>.showModal()`(최상위 레이어 + 배경 inert) 위에 `useModalDialog`가 ESC·Tab 가두기·포커스 되돌리기·스크롤 잠금을 더한다. 열림 상태는 부모가 쥐고(`open`), 닫기 요청은 `onClose`/`onCancel`로만 알린다. 시트는 딤을 누르면 닫히고, 다이얼로그는 딤으로 닫히지 않는다.
 - 모션은 시트 200ms·다이얼로그 150ms이고 `prefers-reduced-motion`이면 없다.
 - 내용이 필요한 Figma BOOLEAN은 객체를 넘기면 켜진다: BottomSheet `CTA` → `cta={{ label, onClick }}`, Toast `Action` → `action={{ label, onClick }}`, TopHeader Back의 `action` 버튼. `Type=SharedToPersonal`처럼 붙어 있는 값은 kebab-case(`type="shared-to-personal"`).
-- `Toast`는 겉모습만, `ToastViewport`는 자리(내비 위 16)만 잡는다. 큐·타이머·자동 닫힘은 쓰는 쪽이 붙인다. 화면 코드는 `src/notifications`의 `toast.*`를 쓰고(`ToastHost`가 그린다) DS Toast를 직접 그리지 않는다. 사용법은 `src/api/README.md`.
+- `Toast`는 겉모습만, `ToastViewport`는 자리(`anchor`: 내비 위 · CTA 위 · 안전영역 위 16)만 잡는다. 큐·타이머·자동 닫힘은 쓰는 쪽이 붙인다. 화면 코드는 `src/notifications`의 `toast.*`를 쓰고(`ToastHost`가 그린다) DS Toast를 직접 그리지 않는다. 사용법은 `src/api/README.md`.
 - 카탈로그에서 열린 모습을 고정해 보여 줄 때는 `BottomSheetPanel`·`DialogPanel`·`PanelSidePanel`·`DropdownMenuPanel`(모달 동작 없는 겉모습)과 `catalog/PhoneFrame`을 쓴다. 화면 코드에서는 쓰지 않는다.
 
 ## 카탈로그
@@ -133,6 +133,23 @@ W5 화면 통합에서는 아래 임시 조합을 지우고 오른쪽 DS 공개 
 - **입력 문구(v1.6.1)**: 헬퍼 텍스트는 기본 숨김 — `helper`는 `error`와 같이 오류 문구로만 쓴다(설명형 헬퍼 금지). 장소 Picker 플레이스홀더 "도시 검색", 기간 "출발일 – 도착일", 예산 Suffix "원".
 - **Chip 체크**: Figma대로 선택 체크는 Outline에만 붙는다(Tone 선택은 면 색만). v1.5 코드는 Tone 선택에도 체크를 그렸는데 v1.6 속성 연결 복구에 맞춰 고쳤다.
 - **Dialog 처리 중**: `confirmState="loading"`이면 확인은 aria-busy + 누름 무시, 포커스는 유지. 처리 중 취소·ESC를 막을지는 `onCancel`에서 정한다.
+
+## v1.6.2 추가분 (DS17 · spec §9-4 · 화면명세 v0.5.8 0-4)
+
+| Figma v1.6.2 | 코드 | 화면에서 바꿀 곳 |
+| --- | --- | --- |
+| **BottomCTA**(세트 69:10702) `Layout=Single/Horizontal` | 셸·시트 `cta`가 그린다. Single = `cta={{ label, onClick, state? }}`(기본). Horizontal = `cta={{ layout: 'horizontal', secondary: { label, type?: 'danger-weak' }, primary: { label, state? } }}` — 간격 8, 1:1(grid 1fr 1fr), 왼쪽 보조 · 오른쪽 주 행동. 세로 2버튼 없음 | HF-09 여정 없음(초대코드로 참여 \| 여정 만들기) · HF-16·17 그룹장 시작 전(그룹 삭제 Danger-weak \| 여정 시작 / 기간 수정) |
+| CTA `State`(Loading·Disabled) | 셸·시트 cta 버튼마다 `state: 'loading' \| 'disabled' \| 'default'`(`disabled`도 그대로 받음). `ScreenCta`·`BottomSheetCta` 타입에 들어 있다 | W5B `app/loadingCta.ts`의 `withLoading` 대신 `state: pending ? 'loading' : 'default'` |
+| Button `Type=Danger-weak` | `type="danger-weak"` — 면 feedback/error/bg, 글자·아이콘·스피너 text/error, 테두리 없음. Pressed 글자 error/800 + 면 5% 어둡게(전용 토큰 없음), Disabled = bg/subtle + text/disabled | 2버튼 왼쪽 파괴적 보조(그룹 삭제 등). 텍스트 링크 "그룹 삭제"를 대체 |
+| Tag `Type=Warning` | `Tag type="warning"`(기본 "연결 만료") — feedback/warning/bg + fg, 아이콘 없음 | HF-30 마이페이지 지갑 줄 오른쪽(`Me.hasExpiredConnection`) |
+| EmptyState `Layout=Vertical/Horizontal` | `EmptyState type="illust" layout="horizontal"` — actions를 왼쪽 Secondary L · 오른쪽 Primary L 순서로, 1:1(하나면 FILL). 기본 vertical(비권장) | 버튼을 EmptyState 안에 둘 때 |
+| Row/Member 왕관·강퇴 | 왕관 = 이름 **앞**, 채운 14 · icon/subtle, 간격 4. 다른 곳은 `LeaderCrown`을 이름 앞에. 강퇴 = Body/S Regular + text/error | `features/trip-info/components.tsx`의 `text-warning-500` 왕관(이름 뒤) → `<LeaderCrown />` 이름 앞 |
+| StatCard 아이콘 20 | 라벨 아이콘을 18로 줄이던 덮어쓰기 제거 | — |
+| SettlementRow `Tappable=false` | 정적 `<div>`(버튼 역할 없음)에 aria-label·data-*·id 등 나머지 prop을 넘긴다(버튼 전용 속성은 버림) | — |
+| Toast 위치·수명(0-4) | `ToastViewport anchor`: `nav`(내비 위 16) · `cta`(내비 없음 + CTA 위 16) · `nav-cta`(둘 다 — CTA 위 16) · `safe-area`(안전영역 위 16) · `auto`(지금 그려진 Screen의 하단 구성, Screen이 등록). `onModalOpen(kind => …)`: 시트(`sheet`)·다이얼로그(`dialog`)·패널·메뉴가 열릴 때 알림 | `notifications/ToastHost`: `anchor="auto"` + `onModalOpen`으로 sheet·dialog면 큐 비우기(아래) |
+
+- **토스트 연결(앱 쪽)**: `ToastHost`가 `<ToastViewport anchor="auto" aboveNav={aboveNav}>`로 그리면 Screen이 알려 준 하단 구성(내비·CTA)을 따르고, Screen이 없을 때만 `aboveNav`(라우트 `handle.nav`)로 정한다. 시트·다이얼로그가 열리면 떠 있던 토스트를 닫는다: `useEffect(() => onModalOpen((kind) => { if (kind === 'sheet' || kind === 'dialog') store.clear() }), [store])` — 시트 안에서 새로 띄우는 토스트는 연 뒤라 영향 없음.
+- Dialog는 바뀐 게 없다(왼쪽 취소 · 오른쪽 확인, 처리 중 `confirmState="loading"`은 v1.6).
 
 ### 명세 충돌 반영 (docs/spec README §7)
 

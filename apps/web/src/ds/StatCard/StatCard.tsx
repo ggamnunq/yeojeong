@@ -38,11 +38,12 @@ export function StatCard({ type = 'default', size = 'l', label, amount, sub, ico
       {...rest}
     >
       <p className="flex items-center gap-1.5">
+        {/* 아이콘 박스 20(spec §6: 카드 라벨 앞 = 20, 선 ≈ 1.25). DS17에서 18로 줄이던 덮어쓰기를 지웠다 */}
         {!hero && (
           <Icon
             name={icon ?? (brand ? 'wallet' : 'receipt')}
             size={20}
-            className={clsx('size-4.5 shrink-0', brand ? 'text-icon-inverse' : 'text-icon-subtle')}
+            className={clsx('shrink-0', brand ? 'text-icon-inverse' : 'text-icon-subtle')}
           />
         )}
         <span className={clsx('text-body-s-strong', inverse ? 'text-inverse' : 'text-secondary')}>{label}</span>

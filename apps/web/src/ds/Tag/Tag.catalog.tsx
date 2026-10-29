@@ -2,7 +2,7 @@ import { defineCatalog } from '../../catalog/catalog'
 import { Row, Variant } from '../../catalog/ui'
 import { Tag, type TagSize, type TagType } from './Tag'
 
-const TYPES: TagType[] = ['shared', 'personal', 'pending', 'duplicate', 'refund', 'left', 'changed']
+const TYPES: TagType[] = ['shared', 'personal', 'pending', 'duplicate', 'refund', 'left', 'changed', 'warning']
 const SIZES: TagSize[] = ['m', 's']
 
 export default defineCatalog({

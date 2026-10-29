@@ -2,7 +2,7 @@ import { clsx } from 'clsx'
 import type { MouseEventHandler, ReactNode } from 'react'
 import { IconButton } from '../IconButton/IconButton'
 import { ProgressSteps, type ProgressStepsStep } from '../Progress/Steps'
-import { Screen, type ScreenCta } from '../Screen/Screen'
+import { Screen, type ScreenCtaValue } from '../Screen/Screen'
 import { focusRing, touchTarget } from '../styles'
 
 // Figma Shell/Onboarding(세트 58:10474 · Back 24:61264 · Close 58:10455, v1.6) · Leading=Back/Close
@@ -23,8 +23,8 @@ export type ShellOnboardingProps = {
   onClose?: MouseEventHandler<HTMLButtonElement>
   /** Figma Progress + 중첩 Progress/Steps의 Step. 단계를 주면 켜진다 */
   progress?: ProgressStepsStep
-  /** Figma CTA: 하단 Button Primary L. 객체를 주면 켜진다 */
-  cta?: ScreenCta
+  /** Figma CTA: 하단 BottomCTA(Primary L, state로 Loading). 객체를 주면 켜진다 */
+  cta?: ScreenCtaValue
   /** Figma Skip: 헤더 오른쪽 텍스트 버튼. 기본 false */
   skip?: boolean
   /** Figma Skip label. 기본 "건너뛰기"(화면에서는 "나중에" 등으로 교체) */

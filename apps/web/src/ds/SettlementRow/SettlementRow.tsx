@@ -1,5 +1,5 @@
 import { clsx } from 'clsx'
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 import { Avatar } from '../Avatar/Avatar'
 import type { AvatarPerson } from '../Avatar/rules'
 import { BadgeMe } from '../Badge/Me'
@@ -80,7 +80,25 @@ export function SettlementRow({
   )
 
   const rowClass = clsx('flex w-full items-center gap-3 bg-surface py-3.5 pr-4 pl-5 text-left', className)
-  if (!tappable) return <div className={rowClass}>{content}</div>
+  if (!tappable) {
+    // 비대화형 행도 aria-label·data-*·id·style 등은 그대로 받는다(DS17). 버튼에만 뜻이 있는 속성은 버린다
+    const {
+      disabled: _disabled,
+      form: _form,
+      formAction: _formAction,
+      formEncType: _formEncType,
+      formMethod: _formMethod,
+      formNoValidate: _formNoValidate,
+      formTarget: _formTarget,
+      value: _value,
+      ...divProps
+    } = rest
+    return (
+      <div className={rowClass} {...(divProps as unknown as HTMLAttributes<HTMLDivElement>)}>
+        {content}
+      </div>
+    )
+  }
 
   return (
     <button type={htmlType} className={clsx(rowClass, 'transition-colors select-none enabled:active:bg-pressed', focusRing)} {...rest}>

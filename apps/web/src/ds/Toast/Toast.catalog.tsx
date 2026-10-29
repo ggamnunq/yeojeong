@@ -73,6 +73,54 @@ export default defineCatalog({
             </ToastViewport>
           </PhoneFrame>
         </Sub>
+        <Sub title='ToastViewport anchor(DS17 · 화면명세 0-4) — 내비 위 / CTA 위 / 안전영역 위 16. 앱은 anchor="auto"(지금 Screen을 따름)'>
+          <Row>
+            <Variant name='anchor="nav"'>
+              <PhoneFrame height={480}>
+                <Screen header={<TopHeader groupName="오사카 3박 4일" />} nav={<BottomNav aria-label="토스트 위치 nav" />}>
+                  <span />
+                </Screen>
+                <ToastViewport anchor="nav">
+                  <Toast message="초대코드를 복사했어요" />
+                </ToastViewport>
+              </PhoneFrame>
+            </Variant>
+            <Variant name='anchor="cta" (내비 없음 + 하단 CTA)'>
+              <PhoneFrame height={480}>
+                <Screen header={<TopHeader type="back" title="여정 만들기" />} cta={{ label: '다음' }} background="surface">
+                  <span />
+                </Screen>
+                <ToastViewport anchor="cta">
+                  <Toast type="error" message="저장하지 못했어요. 다시 시도해 주세요" />
+                </ToastViewport>
+              </PhoneFrame>
+            </Variant>
+            <Variant name='anchor="nav-cta" (내비 + CTA)'>
+              <PhoneFrame height={480}>
+                <Screen
+                  header={<TopHeader groupName="오사카 3박 4일" />}
+                  nav={<BottomNav phase="ended" active="second" aria-label="토스트 위치 nav-cta" />}
+                  cta={{ label: '정산 요청 보내기' }}
+                >
+                  <span />
+                </Screen>
+                <ToastViewport anchor="nav-cta">
+                  <Toast type="info" message="공동 지출로 바꿨어요" />
+                </ToastViewport>
+              </PhoneFrame>
+            </Variant>
+            <Variant name='anchor="safe-area" (둘 다 없음)'>
+              <PhoneFrame height={480}>
+                <Screen header={<TopHeader type="back" title="마이페이지" />} background="surface">
+                  <span />
+                </Screen>
+                <ToastViewport anchor="safe-area">
+                  <Toast message="로그아웃했어요" />
+                </ToastViewport>
+              </PhoneFrame>
+            </Variant>
+          </Row>
+        </Sub>
       </div>
     )
   },

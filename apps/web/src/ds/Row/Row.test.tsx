@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { RowAccount } from './Account'
 import { RowAdd } from './Add'
-import { RowMember } from './Member'
+import { LeaderCrown, RowMember } from './Member'
 import { RowMemberAmount } from './MemberAmount'
 import { RowOption } from './Option'
 
@@ -31,6 +31,28 @@ describe('RowMember', () => {
     expect(screen.getByRole('img', { name: '그룹장' })).toBeTruthy()
     expect(screen.getByText('나')).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('왕관은 이름 앞, 채운 왕관 icon/subtle(warning 아님), 강퇴는 Body/S + text/error (DS17 · B-20)', () => {
+    render(<RowMember person={MINJI} leader kick={{}} />)
+    const crown = screen.getByRole('img', { name: '그룹장' })
+    const name = screen.getByText('민지')
+    expect(crown.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(crown.getAttribute('class')).toContain('text-icon-subtle')
+    expect(crown.getAttribute('class')).not.toContain('warning')
+    expect(crown.getAttribute('fill')).toBe('currentColor')
+    const kick = screen.getByRole('button', { name: '민지 강퇴' })
+    expect(kick.className).toContain('text-body-s')
+    expect(kick.className).not.toContain('text-label-m')
+    expect(kick.className).toContain('text-error')
+  })
+
+  it('LeaderCrown은 RowMember 왕관과 같은 모양(패널 밖에서도 같은 표기)', () => {
+    const { container } = render(<LeaderCrown />)
+    const crown = container.querySelector('svg') as SVGElement
+    expect(crown.getAttribute('aria-label')).toBe('그룹장')
+    expect(crown.getAttribute('width')).toBe('14')
+    expect(crown.getAttribute('class')).toContain('text-icon-subtle')
   })
 
   it('kick을 주면 그 사람 이름이 붙은 "강퇴" 버튼', () => {

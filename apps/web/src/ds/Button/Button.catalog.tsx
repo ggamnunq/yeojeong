@@ -2,7 +2,8 @@ import { defineCatalog } from '../../catalog/catalog'
 import { Row, Sub, Variant } from '../../catalog/ui'
 import { Button, type ButtonSize, type ButtonType } from './Button'
 
-const TYPES: ButtonType[] = ['primary', 'secondary', 'ghost', 'danger']
+// danger-weak = Figma Style=Danger-weak(DS17): 옅은 에러 면 + 에러 글자, 하단 2버튼 왼쪽의 파괴적 보조
+const TYPES: ButtonType[] = ['primary', 'secondary', 'ghost', 'danger', 'danger-weak']
 const SIZES: ButtonSize[] = ['l', 'm', 's']
 
 export default defineCatalog({

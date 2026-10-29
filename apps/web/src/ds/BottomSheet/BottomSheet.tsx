@@ -1,21 +1,24 @@
 import { clsx } from 'clsx'
 import { useId, type MouseEventHandler, type ReactNode } from 'react'
-import { Button, type ButtonProps } from '../Button/Button'
+import { BottomCTA, type BottomCTASingle, type BottomCTAValue } from '../BottomCTA/BottomCTA'
 import { IconButton } from '../IconButton/IconButton'
 import { useModalDialog } from '../useModalDialog'
 
 // Figma BottomSheet(24:8647) · Title · Close · CTA · Content(슬롯 = children).
 // 손잡이 36×4 → 헤더(제목 H3 + 닫기 IconButton Ghost M) → 내용(hug) → CTA(Button Primary L FILL), 간격 20(v1.5).
 // 패딩 8/20/(24 + 안전영역)/20, 위 모서리 radius/2xl, Elevation/3, 뒤에 bg/dim.
-export type BottomSheetCta = Pick<ButtonProps, 'label' | 'onClick' | 'disabled' | 'htmlType' | 'form'>
+/** 시트 CTA 버튼 하나(Layout=Single). DS17부터 state(loading·disabled)·aria-label도 받는다 */
+export type BottomSheetCta = BottomCTASingle
+/** 시트 CTA: 버튼 하나 또는 가로 2버튼({ layout: 'horizontal', secondary, primary }) */
+export type BottomSheetCtaValue = BottomCTAValue
 
 export type BottomSheetPanelProps = {
   /** Figma Title */
   title: ReactNode
   /** Figma Close — 오른쪽 위 닫기 버튼. 기본 true */
   close?: boolean
-  /** Figma CTA — 값이 있으면 아래에 Button Primary L을 꽉 채워 그린다 */
-  cta?: BottomSheetCta
+  /** Figma CTA — 값이 있으면 아래에 Button Primary L을 꽉 채워 그린다. layout="horizontal"이면 가로 2버튼(DS17) */
+  cta?: BottomSheetCtaValue
   /** Figma Content 슬롯 */
   children?: ReactNode
   onClose?: MouseEventHandler<HTMLButtonElement>
@@ -49,7 +52,7 @@ export function BottomSheetPanel({
       </div>
       {/* 내용이 길면 이 부분만 스크롤된다. 포커스 링이 잘리지 않게 스크롤 영역을 양옆·위아래로 조금 넓혔다. */}
       {children != null && <div className="-mx-5 -my-1 min-h-0 overflow-y-auto px-5 py-1">{children}</div>}
-      {cta && <Button type="primary" size="l" className="w-full" {...cta} />}
+      {cta && <BottomCTA cta={cta} className="shrink-0" />}
     </div>
   )
 }
@@ -63,7 +66,7 @@ export type BottomSheetProps = Omit<BottomSheetPanelProps, 'onClose' | 'titleId'
 
 export function BottomSheet({ open, onClose, 'aria-describedby': describedBy, ...panel }: BottomSheetProps) {
   const titleId = useId()
-  const { dialogProps, requestClose } = useModalDialog(open, onClose)
+  const { dialogProps, requestClose } = useModalDialog(open, onClose, 'sheet')
 
   return (
     <dialog

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Screen, type ScreenCta } from '../Screen/Screen'
+import { Screen, type ScreenCtaValue } from '../Screen/Screen'
 import { TopHeader, type TopHeaderBackProps, type TopHeaderCloseProps, type TopHeaderLogoProps } from '../TopHeader/TopHeader'
 
 // Figma Shell/Sub(24:61242) · Time(TEXT) · Content(INSTANCE_SWAP). 서브 화면 셸: 지갑·마이·환율·멤버별 내역·여정 생성·여정 없음.
@@ -11,8 +11,8 @@ export type ShellSubHeader = (Omit<TopHeaderBackProps, 'type'> & { type?: 'back'
 export type ShellSubProps = {
   /** Figma header: 기본 TopHeader Back(title · onBack · action), 여정 없음은 { type: 'logo' }, 닫기는 { type: 'close', title?, onClose } */
   header: ShellSubHeader
-  /** 하단 CTA(Button Primary L FILL, 아래 16 + 안전영역) — 여정 생성 등 */
-  cta?: ScreenCta
+  /** 하단 BottomCTA(Single = Primary L FILL · layout: "horizontal" = 가로 2버튼, 버튼마다 state), 아래 16 + 안전영역 — 여정 생성 등 */
+  cta?: ScreenCtaValue
   /** 내용 좌우 거터 20. 전폭 DS 행만 쌓는 화면이면 false */
   gutter?: boolean
   /** Figma Content 슬롯(390 × 710) */

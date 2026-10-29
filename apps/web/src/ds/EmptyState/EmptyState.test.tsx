@@ -30,6 +30,25 @@ describe('EmptyState', () => {
     expect(screen.getAllByRole('button')).toHaveLength(2)
   })
 
+  it('layout="horizontal"(v1.6.2)이면 버튼을 가로 1:1(간격 8), 기본은 세로', () => {
+    const actions = (
+      <>
+        <Button type="secondary" label="초대코드로 참여" />
+        <Button label="여정 만들기" />
+      </>
+    )
+    const { rerender } = render(<EmptyState type="illust" actions={actions} />)
+    const box = () => screen.getByRole('button', { name: '여정 만들기' }).parentElement as HTMLElement
+    expect(box().className).toContain('flex-col')
+    rerender(<EmptyState type="illust" layout="horizontal" actions={actions} />)
+    expect(box().className).not.toContain('flex-col')
+    expect(box().className).toContain('*:flex-1')
+    expect(box().className).toContain('gap-2')
+    const [left, right] = screen.getAllByRole('button')
+    expect(left.textContent).toBe('초대코드로 참여')
+    expect(right.textContent).toBe('여정 만들기')
+  })
+
   it('illust를 교체할 수 있다(Figma Illust 인스턴스 교체)', () => {
     render(<EmptyState type="illust" title="정산할 결제가 없어요" illust={<IllustSettled size={160} label="정산 완료" />} />)
     expect(screen.getByRole('img', { name: '정산 완료' })).toBeTruthy()
