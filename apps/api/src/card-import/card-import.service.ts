@@ -48,12 +48,11 @@ import { ItemTokenSigner } from './item-token.js';
 import { CodefClient, type CodefResponse } from './codef/codef.client.js';
 import { CodefConfig } from './codef/codef.config.js';
 import {
-  CARD_IMPORT_ORGANIZATIONS,
-  CARD_NUMBER_LOGIN_ENABLED,
   CODEF_OK,
   CODEF_PATHS,
   CODEF_TWO_WAY_REQUIRED,
   CODEF_TWO_WAY_TIMEOUT_SECONDS,
+  cardImportOrganizations,
   mapCodefError,
   organizationOf,
 } from './codef/codef.constants.js';
@@ -76,7 +75,7 @@ const yyyymmdd = (day: string) => day.replaceAll('-', '');
 type FetchOutcome = string;
 
 /**
- * 조회 기간 검사(기관별 상한 — codef.constants CARD_IMPORT_ORGANIZATIONS). 문제가 없으면 []
+ * 조회 기간 검사(기관별 상한 — codef.constants ALL_CARD_ORGANIZATIONS). 문제가 없으면 []
  */
 export function periodErrors(
   org: CardImportOrganization,
@@ -155,7 +154,9 @@ export class CardImportService {
       enabled: true,
       publicKey: this.codefConfig.publicKey,
       publicKeyFingerprint: this.codefConfig.publicKeyFingerprint,
-      organizations: CARD_IMPORT_ORGANIZATIONS.map((o) => ({ ...o })),
+      organizations: cardImportOrganizations(
+        this.codefConfig.cardNumberLogin,
+      ).map((o) => ({ ...o })),
       maxRangeDays: CARD_IMPORT_MAX_RANGE_DAYS,
       maxLookbackDays: CARD_IMPORT_MAX_LOOKBACK_DAYS,
       defaultRange,
@@ -211,7 +212,10 @@ export class CardImportService {
     request: FetchCardApprovalsRequest,
     now = new Date(),
   ): Promise<FetchCardApprovalsResponse> {
-    const org = organizationOf(request.organization);
+    const org = organizationOf(
+      request.organization,
+      this.codefConfig.cardNumberLogin,
+    );
     if (!org) {
       throw new ValidationFailedError([
         {
@@ -262,7 +266,15 @@ export class CardImportService {
         budgeted = 1;
       } else {
         // 새 조회: 사용자 횟수·쿨다운 → 예산 예약(원자적) → 시도 기록(사용자 횟수의 기준)
-        await this.limits.checkStart(userId, org.code, now);
+        // 현대·하나는 잠김 위험 카운터(24시간, 2회 쿨다운, 1회 실패 뒤엔 확인 필요)
+        await this.limits.checkStart(
+          userId,
+          org.code,
+          now,
+          org.requiresCardNo
+            ? { acknowledged: request.acknowledgeLockRisk === true }
+            : undefined,
+        );
         reservation = await this.limits.reserveFetch(now);
         budgeted = reservation.calls;
       }
@@ -273,6 +285,11 @@ export class CardImportService {
           ? await this.queryViaAccount(org.code, request, used)
           : await this.query(org.code, request, twoWay, used);
       const code = response.result.code;
+      // 현대·하나는 추가 인증이 없는 카드사다(KR_CD_P_002 2-way 안내). 오면 이어가지 않고 오류로 끝낸다(로그인 성공으로도 보지 않는다)
+      if (code === CODEF_TWO_WAY_REQUIRED && org.requiresCardNo) {
+        outcome = 'CARD_TWO_WAY_UNSUPPORTED';
+        throw AppException.of('CARD_TWO_WAY_UNSUPPORTED');
+      }
       if (code === CODEF_OK || code === CODEF_TWO_WAY_REQUIRED) {
         await this.limits.loginSucceeded(userId, org.code);
       }
@@ -332,13 +349,16 @@ export class CardImportService {
           session !== null &&
           session.attempts < TWO_WAY_MAX_ATTEMPTS &&
           session.callsLeft > 0;
-        // 아이디·비밀번호·카드번호·카드 비밀번호 오류는 같은 연속 실패로 센다(카드사 계정·카드 잠김 예방)
+        // 아이디·비밀번호·카드번호·카드 비밀번호 오류는 연속 실패로 센다(카드사 계정 잠김 예방).
+        // 현대·하나는 잠김 위험 카운터(24시간·2회)로 센다
         if (
           mapped === 'CARD_LOGIN_FAILED' ||
           mapped === 'CARD_NUMBER_INVALID' ||
           mapped === 'CARD_PASSWORD_INVALID'
         ) {
-          await this.limits.loginFailed(userId, org.code, now, mapped);
+          await this.limits.loginFailed(userId, org.code, now, mapped, {
+            lockRisk: org.requiresCardNo,
+          });
         }
         throw AppException.of(mapped);
       }
@@ -406,7 +426,7 @@ export class CardImportService {
   }
 
   /**
-   * 카드번호 로그인 필드: 지금 받는 카드사가 그것을 요구할 때만(현대·하나, CARD_NUMBER_LOGIN_ENABLED) 받는다. 아니면 400.
+   * 카드번호 로그인 필드: 지금 받는 카드사가 그것을 요구할 때만(현대·하나 — env CARD_NUMBER_LOGIN이 켜져 있어야 org가 나온다) 받는다. 아니면 400.
    * 카드번호는 숫자 14~19자리 + Luhn(isValidCardNumber)일 때만 받는다. 에러에는 값을 넣지 않는다(경로·코드·고정 문구만).
    * 암호문은 공개키 모듈러스 길이(2048비트 = 256바이트)와 같은 길이일 때만 받는다(평문·다른 키로 만든 값 거절)
    */
@@ -415,7 +435,7 @@ export class CardImportService {
     request: FetchCardApprovalsRequest,
   ) {
     const errors: FieldError[] = [];
-    const cardLogin = org.requiresCardNo && CARD_NUMBER_LOGIN_ENABLED;
+    const cardLogin = org.requiresCardNo;
     if (!cardLogin && (request.loginCardNo || request.encryptedCardPassword)) {
       errors.push({
         path: 'loginCardNo',

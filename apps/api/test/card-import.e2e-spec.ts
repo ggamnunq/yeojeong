@@ -150,6 +150,7 @@ describe.skipIf(!databaseUrl)(
               CODEF_CLIENT_ID: 'e2e-client-id',
               CODEF_CLIENT_SECRET: 'e2e-client-secret',
               CODEF_PUBLIC_KEY: PUBLIC_KEY,
+              CARD_NUMBER_LOGIN: 'true',
             }),
           ),
         )
@@ -546,10 +547,9 @@ describe.skipIf(!databaseUrl)(
       expect(logOutput).toContain('/api/card-import/fetch');
     });
 
-    it('rejects malformed card numbers without echoing them and maps CODEF card errors, cooling down after 2 card password failures (S8c)', async () => {
-      const seed = await seedOngoing(['준용', '민지']);
+    it('rejects malformed card numbers without echoing them and maps CODEF card errors (S8c)', async () => {
+      const seed = await seedOngoing(['준용']);
       await consent(seed, '준용').expect(201);
-      await consent(seed, '민지').expect(201);
       logOutput = '';
       const callsBefore = http.calls.length;
       // 형식 오류(Luhn·자리수·구분자·문자)는 CODEF에 가지 않는다
@@ -571,7 +571,7 @@ describe.skipIf(!databaseUrl)(
       }
       expect(http.calls.length).toBe(callsBefore);
 
-      // CODEF 카드번호 오류 → CARD_NUMBER_INVALID(연속 실패 1회)
+      // CODEF 카드번호 오류 → CARD_NUMBER_INVALID(잠김 위험 1회)
       routes = {
         [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-13103', {}),
       };
@@ -585,41 +585,19 @@ describe.skipIf(!databaseUrl)(
         message: '카드번호를 다시 확인해 주세요',
         details: { failedAttempts: 1 },
       });
-
-      // 카드 비밀번호 오류 → CARD_PASSWORD_INVALID, 2회째는 바로 쿨다운(현대: 3회 오류면 계정 잠김)
-      routes = {
-        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-13121', {}),
-      };
-      const hyundai = {
-        organization: '0302',
-        loginCardNo: CARD_NUMBER,
-        encryptedCardPassword: CARD_PASSWORD_CIPHERTEXT,
-      };
-      const first = await fetchAs(seed, '민지', hyundai).expect(400);
-      expect(first.body).toMatchObject({
-        code: 'CARD_PASSWORD_INVALID',
-        message: '카드 비밀번호를 다시 확인해 주세요',
-        details: { failedAttempts: 1 },
-      });
-      const second = await fetchAs(seed, '민지', hyundai).expect(429);
-      expect(second.body.code).toBe('CARD_IMPORT_LOGIN_COOLDOWN');
-      expect(second.body.details.retryAfterSec).toBeGreaterThan(1700);
-      // 쿨다운 중에는 CODEF에 가지 않는다
-      const callsAfter = http.calls.length;
-      const third = await fetchAs(seed, '민지', hyundai).expect(429);
-      expect(third.body.code).toBe('CARD_IMPORT_LOGIN_COOLDOWN');
-      expect(http.calls.length).toBe(callsAfter);
-
-      // CODEF 카드 비밀번호 횟수 초과 → 카드사에서 풀어야 함
+      // CODEF 카드 비밀번호 횟수 초과 → 카드사에서 풀어야 함(다른 카드사라 잠김 위험 확인 없음)
       routes = {
         [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-13122', {}),
       };
-      const exceeded = await fetchAs(seed, '준용', hyundai).expect(409);
+      const exceeded = await fetchAs(seed, '준용', {
+        organization: '0302',
+        loginCardNo: CARD_NUMBER,
+        encryptedCardPassword: CARD_PASSWORD_CIPHERTEXT,
+      }).expect(409);
       expect(exceeded.body.code).toBe('CARD_ACCOUNT_ACTION_REQUIRED');
 
       const everything =
-        JSON.stringify([bodies, cardNo.body, first.body, second.body]) +
-        logOutput;
+        JSON.stringify([bodies, cardNo.body, exceeded.body]) + logOutput;
       for (const secret of [
         ...malformed,
         CARD_NUMBER,
@@ -628,6 +606,117 @@ describe.skipIf(!databaseUrl)(
       ]) {
         expect(everything).not.toContain(secret);
       }
+    });
+
+    it('guards Hyundai·Hana against account lock: confirm after 1 failure, cool down at 2, reset only on success or after 24h (S8c review 1)', async () => {
+      const seed = await seedOngoing(['민지', '서연', '하늘']);
+      const minji = seed.members['민지'].userId;
+      const seoyeon = seed.members['서연'].userId;
+      await consent(seed, '민지').expect(201);
+      await consent(seed, '서연').expect(201);
+      await consent(seed, '하늘').expect(201);
+      const hyundai = (over: object = {}) => ({
+        organization: '0302',
+        loginCardNo: CARD_NUMBER,
+        encryptedCardPassword: CARD_PASSWORD_CIPHERTEXT,
+        ...over,
+      });
+      const lockRow = (userId: string) =>
+        prisma.cardImportLoginFailure.findUnique({
+          where: { userId_organization: { userId, organization: '0302' } },
+        });
+      const shiftLastFailure = (userId: string, minutes: number) =>
+        prisma.cardImportLoginFailure.update({
+          where: { userId_organization: { userId, organization: '0302' } },
+          data: {
+            lockRiskLastFailedAt: new Date(Date.now() - minutes * 60_000),
+            lastFailedAt: new Date(Date.now() - minutes * 60_000),
+          },
+        });
+
+      // 1회 실패(카드 비밀번호) → 다음 시도는 확인이 있어야 한다(없으면 409, CODEF 호출 없음)
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-13121', {}),
+      };
+      const first = await fetchAs(seed, '민지', hyundai()).expect(400);
+      expect(first.body).toMatchObject({
+        code: 'CARD_PASSWORD_INVALID',
+        message: '카드 비밀번호를 다시 확인해 주세요',
+        details: { failedAttempts: 1 },
+      });
+      let calls = http.calls.length;
+      const confirm = await fetchAs(seed, '민지', hyundai()).expect(409);
+      expect(confirm.body).toMatchObject({
+        code: 'CARD_LOCK_RISK_CONFIRM_REQUIRED',
+        details: { failedAttempts: 1 },
+      });
+      expect(http.calls.length).toBe(calls);
+      // 확인하고 보냈는데 또 틀림 → 2회째 바로 30분 쿨다운
+      const second = await fetchAs(
+        seed,
+        '민지',
+        hyundai({ acknowledgeLockRisk: true }),
+      ).expect(429);
+      expect(second.body.code).toBe('CARD_IMPORT_LOGIN_COOLDOWN');
+      expect(second.body.details.retryAfterSec).toBeGreaterThan(1700);
+      calls = http.calls.length;
+      await fetchAs(
+        seed,
+        '민지',
+        hyundai({ acknowledgeLockRisk: true }),
+      ).expect(429);
+      expect(http.calls.length).toBe(calls);
+      expect(await lockRow(minji)).toMatchObject({
+        lockRiskFailures: 2,
+        failures: 0,
+      });
+
+      // 쿨다운이 끝나도(31분 뒤) 카운터는 남는다 → 3회째 시도도 확인이 필요하다
+      await shiftLastFailure(minji, 31);
+      const third = await fetchAs(seed, '민지', hyundai()).expect(409);
+      expect(third.body).toMatchObject({
+        code: 'CARD_LOCK_RISK_CONFIRM_REQUIRED',
+        details: { failedAttempts: 2 },
+      });
+      // 확인하고 성공하면 카운터를 지운다
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () =>
+          codefResult('CF-00000', approvals()),
+      };
+      await fetchAs(
+        seed,
+        '민지',
+        hyundai({ acknowledgeLockRisk: true }),
+      ).expect(200);
+      expect(await lockRow(minji)).toBeNull();
+
+      // 일반 로그인 실패(아이디·비밀번호, CF-12803)도 현대·하나는 잠김 위험으로 센다. 24시간이 지나야 확인 없이 다시 보낼 수 있다
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-12803', {}),
+      };
+      const login = await fetchAs(seed, '서연', hyundai()).expect(400);
+      expect(login.body).toMatchObject({
+        code: 'CARD_LOGIN_FAILED',
+        details: { failedAttempts: 1 },
+      });
+      await shiftLastFailure(seoyeon, 23 * 60);
+      expect(
+        (await fetchAs(seed, '서연', hyundai()).expect(409)).body.code,
+      ).toBe('CARD_LOCK_RISK_CONFIRM_REQUIRED');
+      await shiftLastFailure(seoyeon, 24 * 60 + 1);
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () =>
+          codefResult('CF-00000', approvals()),
+      };
+      await fetchAs(seed, '서연', hyundai()).expect(200);
+
+      // 미입력 계열(CF-13100)은 사용자 실패로 세지 않는다(CARD_IMPORT_FAILED, 카운터 없음)
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-13100', {}),
+      };
+      const missing = await fetchAs(seed, '하늘', hyundai()).expect(502);
+      expect(missing.body.code).toBe('CARD_IMPORT_FAILED');
+      expect(await lockRow(seed.members['하늘'].userId)).toBeNull();
     });
 
     it('never echoes login values in validation errors, malformed bodies or logs', async () => {
@@ -697,9 +786,22 @@ describe.skipIf(!databaseUrl)(
       const failureRow = await prisma.cardImportLoginFailure.findFirst({
         where: { userId: seed.members['준용'].userId },
       });
-      expect(failureRow).toMatchObject({ organization: '0306', failures: 3 });
+      // 일반 카드사는 잠김 위험 카운터를 쓰지 않는다. 행에는 카운터·시각뿐(로그인 정보 없음)
+      expect(failureRow).toMatchObject({
+        organization: '0306',
+        failures: 3,
+        lockRiskFailures: 0,
+        lockRiskLastFailedAt: null,
+      });
       expect(Object.keys(failureRow ?? {}).sort()).toEqual(
-        ['failures', 'lastFailedAt', 'organization', 'userId'].sort(),
+        [
+          'failures',
+          'lastFailedAt',
+          'lockRiskFailures',
+          'lockRiskLastFailedAt',
+          'organization',
+          'userId',
+        ].sort(),
       );
     });
 

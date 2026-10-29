@@ -68,6 +68,7 @@ export class CardImportController {
     409,
     'CARD_ACCOUNT_ACTION_REQUIRED',
     'CARD_TWO_WAY_UNSUPPORTED',
+    'CARD_LOCK_RISK_CONFIRM_REQUIRED',
   )
   @ApiErrorResponse(410, 'CARD_TWO_WAY_EXPIRED')
   @ApiErrorResponse(

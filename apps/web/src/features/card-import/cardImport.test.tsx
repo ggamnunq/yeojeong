@@ -186,6 +186,11 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     expect(request.encryptedCardPassword).not.toBe(request.encryptedPassword)
     expect(JSON.stringify(request)).not.toMatch(/4321|pw-plain|cardNumber|cardPassword"|rule|5555-5555/)
 
+    // 잠김 위험 확인은 카드번호 로그인 카드사만 요청에 싣는다
+    expect(
+      await buildFetchRequest({ ...base, organization: '0302', rule: hyundai, cardNumber: PAN, cardPassword: PIN, acknowledgeLockRisk: true }),
+    ).toMatchObject({ acknowledgeLockRisk: true })
+    expect(await buildFetchRequest({ ...base, organization: '0306', acknowledgeLockRisk: true })).not.toHaveProperty('acknowledgeLockRisk')
     // 하나는 앞 2자리
     const hana = { requiresCardNo: true, cardPasswordDigits: 2 }
     await expect(buildFetchRequest({ ...base, organization: '0313', rule: hana, cardNumber: PAN, cardPassword: '43' })).resolves.toMatchObject({
@@ -227,8 +232,17 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     expect(JSON.stringify(ok)).not.toContain(PAN)
     expect(await errorCode(fetchCardApprovals({ ...body('badcard'), organization: '0302', ...card }))).toBe('CARD_NUMBER_INVALID')
     resetCardImportMock({ consented: true })
+    // 잠김 위험: 1회 실패 → 확인 없이 409 → 확인하고 또 틀리면 429 쿨다운
     expect(await errorCode(fetchCardApprovals({ ...body('badpin'), organization: '0302', ...card }))).toBe('CARD_PASSWORD_INVALID')
-    expect(await errorCode(fetchCardApprovals({ ...body('badpin'), organization: '0302', ...card }))).toBe('CARD_IMPORT_LOGIN_COOLDOWN')
+    expect(await errorCode(fetchCardApprovals({ ...body('me'), organization: '0302', ...card }))).toBe('CARD_LOCK_RISK_CONFIRM_REQUIRED')
+    expect(await errorCode(fetchCardApprovals({ ...body('badpin'), organization: '0302', ...card, acknowledgeLockRisk: true }))).toBe(
+      'CARD_IMPORT_LOGIN_COOLDOWN',
+    )
+    resetCardImportMock({ consented: true })
+    expect(await errorCode(fetchCardApprovals({ ...body('wrong'), organization: '0313', ...card }))).toBe('CARD_LOGIN_FAILED')
+    expect((await fetchCardApprovals({ ...body('me'), organization: '0313', ...card, acknowledgeLockRisk: true })).status).toBe('OK')
+    // 성공하면 다시 확인 없이 보낼 수 있다
+    expect((await fetchCardApprovals({ ...body('me'), organization: '0313', ...card })).status).toBe('OK')
 
     // hook: 결과(OK)를 받으면 요청(카드번호 포함)을 기억하지 않는다 — 이어가기를 부를 수 없다
     resetCardImportMock({ consented: true })

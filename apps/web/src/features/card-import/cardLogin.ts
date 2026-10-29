@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { CARD_NUMBER_MAX_DIGITS, CARD_NUMBER_MIN_DIGITS, isValidCardNumber, isValidCardPassword, type CardImportOrganization } from '@yeojeong/shared'
 
 // 현대·하나 카드번호 로그인 입력 규칙(S8c). 화면(HF-53 변형 입력칸)은 디자인 확정 뒤 이 파일의 규칙·hook을 쓴다.
@@ -43,27 +43,61 @@ export function cardPasswordError(value: string, digits: number): string | null 
 }
 
 /**
- * 입력칸 속성. 브라우저 자동 완성·저장(카드 정보 저장 제안)을 끈다. name을 cc-number 같은 표준 이름으로 두지 않는다.
- * 카드 비밀번호는 type=password(화면에 보이지 않게)
+ * 카드번호 입력칸 속성. 브라우저 자동 완성·카드 정보 저장 제안을 끈다(autocomplete="off").
+ * name·id에 card·cc·pan 같은 단어를 쓰지 않는다(브라우저·비밀번호 관리자가 카드 칸으로 알아보고 저장을 제안하지 않게)
  */
 export const CARD_NUMBER_INPUT_PROPS = {
+  name: 'yj-import-a',
+  type: 'text',
   inputMode: 'numeric',
   autoComplete: 'off',
   autoCorrect: 'off',
+  autoCapitalize: 'off',
   spellCheck: false,
   // 19자리 + 띄어쓰기 4
   maxLength: CARD_NUMBER_MAX_DIGITS + 4,
 } as const
 
-export const cardPasswordInputProps = (digits: number) =>
-  ({
-    type: 'password',
+/** 이 브라우저가 -webkit-text-security(글자를 점으로 가리기)를 지원하는가(CSS.supports로 실제로 확인한다) */
+export function textSecuritySupported(): boolean {
+  try {
+    return typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('-webkit-text-security', 'disc')
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 카드 비밀번호 입력칸 속성. type="password"면 비밀번호 관리자가 사이트 비밀번호로 저장을 제안하므로
+ * type="text" + 숫자 키패드 + CSS -webkit-text-security: disc로 가리고, autocomplete="one-time-code"로 저장·자동 완성을 막는다.
+ * fallback: -webkit-text-security를 지원하지 않는 브라우저에서는 글자가 그대로 보이므로 type="password"로 둔다(가리는 것이 우선).
+ * name에 card·pin·password 같은 단어를 쓰지 않는다
+ */
+export function cardPasswordInputProps(digits: number, masked: boolean = textSecuritySupported()) {
+  return {
+    name: 'yj-import-b',
+    type: masked ? 'text' : 'password',
     inputMode: 'numeric',
-    autoComplete: 'off',
+    autoComplete: 'one-time-code',
     autoCorrect: 'off',
+    autoCapitalize: 'off',
     spellCheck: false,
     maxLength: digits,
-  }) as const
+    style: masked ? ({ WebkitTextSecurity: 'disc' } as CSSProperties) : undefined,
+  } as const
+}
+
+/**
+ * 카드번호 입력칸을 감싸는 form 속성. 브라우저 기본 제출(Enter 키 포함)을 막는다 — 기본 제출은 값을 URL(GET 쿼리)·
+ * 페이지 이동으로 내보낼 수 있다. 제출은 화면의 버튼 처리기가 take() → buildFetchRequest로만 한다.
+ * method="post"는 혹시 막지 못했을 때도 값이 URL에 붙지 않게 하는 두 번째 안전장치다
+ */
+export const CARD_LOGIN_FORM_PROPS = {
+  method: 'post',
+  autoComplete: 'off',
+  noValidate: true,
+  onSubmit: (event: { preventDefault: () => void }) => event.preventDefault(),
+} as const
 
 /** buildFetchRequest가 화면 입력이 형식에 맞지 않을 때 던진다(값은 담지 않는다). 보내기 전에 막는다 */
 export class CardLoginInputError extends Error {

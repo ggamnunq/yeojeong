@@ -131,6 +131,96 @@ describe('createLogger', () => {
     });
   });
 
+  it('masks card keys by token (cardNum · card_pin · resCardNo · pan) without over-masking look-alikes (S8c review 3)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    logger.error(
+      {
+        x: {
+          cardNum: 'leak-a',
+          card_pin: 'leak-b',
+          resCardNo: 'leak-c',
+          PAN: 'leak-d',
+          primary_account_number: 'leak-e',
+          myCardPw: 'leak-f',
+          company: 'keep-company',
+          japan: 'keep-japan',
+          expand: 'keep-expand',
+        },
+      },
+      'keys',
+    );
+    expect(output).not.toContain('leak-');
+    expect(output).toContain('keep-company');
+    expect(output).toContain('keep-japan');
+    expect(output).toContain('keep-expand');
+  });
+
+  it('blocks card numbers by value: messages, Error message·stack·cause and URL-encoded bodies (S8c review 3)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    const PAN = '5555555555554444';
+    const pans = [
+      PAN,
+      '5555 5555 5555 4444',
+      '5555-5555-5555-4444',
+      // Amex 4-6-5 · 13자리 Visa · 은련(62, Luhn 무관)
+      '3782 822463 10005',
+      '4222222222222',
+      '6253123456780001',
+    ];
+    // 카드번호가 든 에러를 그대로 남긴 실수
+    const cause = new Error(`inner ${pans[1]}`);
+    logger.error(new Error(`CODEF 요청 실패 loginCardNo=${PAN}`, { cause }));
+    logger.error({ err: new Error(`카드 ${pans[2]} 확인`) }, '에러 필드');
+    logger.warn(`메시지에 카드번호 ${pans[3]} 와 ${pans[4]}`);
+    logger.info('포맷 인자 %s', pans[5]);
+    logger.info(
+      {
+        payload: encodeURIComponent(JSON.stringify({ loginCardNo: PAN })),
+        note: `free text ${PAN}.`,
+      },
+      'URL 인코딩 본문',
+    );
+    for (const pan of pans) expect(output).not.toContain(pan);
+    expect(output).not.toContain(PAN.slice(0, 12));
+    expect(output).toContain('[PAN]');
+  });
+
+  it('keeps ordinary numbers: amounts, ids, timestamps, phone and masked card numbers (S8c review 3)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    const keep = [
+      '18000',
+      '1000000000000',
+      '1793000000000',
+      '20190620120117',
+      '11111111-1111-4111-8111-111111111111',
+      'a3f1c0de-1234-5678-9abc-def012345678',
+      '123-45-67890',
+      '010-1234-5678',
+      '9410********1934',
+      '69331111',
+      '12345678901234567890123',
+      'E2E-APPROVAL-0001',
+    ];
+    logger.info(
+      { values: keep, text: keep.join(' / ') },
+      `numbers ${keep.join(' ')}`,
+    );
+    for (const value of keep) expect(output).toContain(value);
+    expect(output).not.toContain('[PAN]');
+  });
+
   it('masks by key at any depth: CODEF bodies, arrays, error causes and err.body (S8 review L1)', () => {
     let output = '';
     const logger = createLogger(

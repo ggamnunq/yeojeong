@@ -158,6 +158,10 @@ describe('조회 실패 → 화면(L-0 표)', () => {
     expect(classifyFetchError(new CardImportKeyPinError(), now)).toEqual({ to: 'error', kind: 'unavailable' })
     expect(classifyFetchError(new Error('boom'), now)).toEqual({ to: 'error', kind: 'unavailable' })
     expect(classifyFetchError(apiError('CARD_ACCOUNT_ACTION_REQUIRED', 409), now)).toEqual({ to: 'error', kind: 'action' })
+    expect(classifyFetchError(apiError('CARD_LOCK_RISK_CONFIRM_REQUIRED', 409, { failedAttempts: 2 }), now)).toEqual({
+      to: 'lock-risk-confirm',
+      attempts: 2,
+    })
   })
 
   it('maps the rest', () => {

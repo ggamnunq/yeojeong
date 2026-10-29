@@ -91,6 +91,12 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.feature_card_import
       }
 
+      # 현대·하나 카드번호 로그인(S8c). 약관 0.2 게시 전에는 false
+      env {
+        name  = "CARD_NUMBER_LOGIN"
+        value = var.card_number_login ? "true" : "false"
+      }
+
       env {
         name  = "CODEF_ENV"
         value = var.codef_env

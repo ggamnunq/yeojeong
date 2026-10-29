@@ -64,6 +64,11 @@ export interface CardLoginInput {
   cardNumber?: string
   /** requiresCardNo 카드사만: 카드 비밀번호(rule.cardPasswordDigits자리) */
   cardPassword?: string
+  /**
+   * requiresCardNo 카드사만: 409 CARD_LOCK_RISK_CONFIRM_REQUIRED 뒤 화면이 "한 번 더 틀리면 잠길 수 있어요"를 확인받았으면 true.
+   * 다른 카드사는 요청에 넣지 않는다
+   */
+  acknowledgeLockRisk?: boolean
 }
 
 /**
@@ -76,6 +81,7 @@ export async function buildFetchRequest({
   rule,
   cardNumber,
   cardPassword,
+  acknowledgeLockRisk,
   ...rest
 }: CardLoginInput): Promise<FetchCardApprovalsRequest> {
   const card = cardFields(rule, cardNumber, cardPassword)
@@ -87,6 +93,7 @@ export async function buildFetchRequest({
     encryptedPassword,
     loginCardNo: card.loginCardNo,
     encryptedCardPassword: await encryptCardPassword(publicKey, card.cardPassword),
+    ...(acknowledgeLockRisk === true ? { acknowledgeLockRisk: true } : {}),
   }
 }
 

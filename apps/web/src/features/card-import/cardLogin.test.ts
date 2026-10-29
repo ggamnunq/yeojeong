@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import {
+  CARD_LOGIN_FORM_PROPS,
   CARD_NUMBER_INPUT_PROPS,
   cardNumberDigits,
   cardNumberError,
@@ -41,9 +42,29 @@ describe('카드번호·카드 비밀번호 입력 규칙(S8c)', () => {
     expect(cardPasswordError('1a', 2)).toBe('카드 비밀번호 앞 2자리를 입력해 주세요')
   })
 
-  it('turns off autofill and hides the card password', () => {
-    expect(CARD_NUMBER_INPUT_PROPS).toMatchObject({ inputMode: 'numeric', autoComplete: 'off' })
-    expect(cardPasswordInputProps(2)).toMatchObject({ type: 'password', inputMode: 'numeric', autoComplete: 'off', maxLength: 2 })
+  it('turns off autofill, avoids card-like names and hides the card password without type=password where CSS masking works (review 4)', () => {
+    expect(CARD_NUMBER_INPUT_PROPS).toMatchObject({ type: 'text', inputMode: 'numeric', autoComplete: 'off' })
+    const masked = cardPasswordInputProps(4, true)
+    expect(masked).toMatchObject({ type: 'text', inputMode: 'numeric', autoComplete: 'one-time-code', maxLength: 4 })
+    expect(masked.style).toEqual({ WebkitTextSecurity: 'disc' })
+    // -webkit-text-security를 못 쓰면 글자가 보이므로 type=password로 가린다
+    const fallback = cardPasswordInputProps(2, false)
+    expect(fallback).toMatchObject({ type: 'password', autoComplete: 'one-time-code', maxLength: 2 })
+    expect(fallback.style).toBeUndefined()
+    for (const name of [CARD_NUMBER_INPUT_PROPS.name, masked.name]) expect(name).not.toMatch(/card|cc|pan|pin|pass|num/i)
+  })
+
+  it('blocks native form submission (Enter key, GET query) (review 4)', () => {
+    expect(CARD_LOGIN_FORM_PROPS).toMatchObject({ method: 'post', autoComplete: 'off', noValidate: true })
+    let prevented = false
+    CARD_LOGIN_FORM_PROPS.onSubmit({ preventDefault: () => (prevented = true) })
+    expect(prevented).toBe(true)
+    const form = document.createElement('form')
+    Object.assign(form, { method: CARD_LOGIN_FORM_PROPS.method, noValidate: true })
+    form.addEventListener('submit', CARD_LOGIN_FORM_PROPS.onSubmit)
+    const event = new Event('submit', { cancelable: true })
+    form.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
   })
 })
 

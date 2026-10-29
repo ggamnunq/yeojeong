@@ -329,6 +329,8 @@ export type MockCardImportState = {
   startedToday: number
   /** 연속 로그인 실패 수(아이디 "wrong") */
   loginFailures: number
+  /** 현대·하나 잠김 위험 실패 수(S8c, 없으면 0). 1 이상이면 acknowledgeLockRisk 필요, 2 이상이면 쿨다운 */
+  lockRiskFailures?: number
   /** 저장한 importKey */
   importedKeys: string[]
   twoWayTokens: string[]

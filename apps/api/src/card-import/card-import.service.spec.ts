@@ -23,9 +23,8 @@ import { ItemTokenSigner } from './item-token.js';
 import { CodefClient } from './codef/codef.client.js';
 import { CodefConfig } from './codef/codef.config.js';
 import {
-  CARD_IMPORT_ORGANIZATIONS,
-  CARD_NUMBER_LOGIN_ENABLED,
   CODEF_PATHS,
+  cardImportOrganizations,
   mapCodefError,
   organizationOf,
 } from './codef/codef.constants.js';
@@ -51,9 +50,10 @@ const BAD_LUHN = '5555555555554445';
 
 function setup(
   routes: Record<string, CodefRoute>,
-  options: { mode?: 'direct' | 'account' } = {},
+  options: { mode?: 'direct' | 'account'; cardNumberLogin?: boolean } = {},
 ) {
   const env = new ConfigService({
+    CARD_NUMBER_LOGIN: String(options.cardNumberLogin ?? true),
     CODEF_ENV: 'sandbox',
     CODEF_LOGIN_MODE: options.mode ?? 'direct',
     CODEF_CLIENT_ID: 'id',
@@ -138,6 +138,15 @@ const request = (
   to: '2026-11-13',
   ...over,
 });
+
+const hyundaiRequest = (over: Partial<FetchCardApprovalsRequest> = {}) =>
+  request({
+    organization: '0302',
+    from: '2026-11-12',
+    loginCardNo: PAN,
+    encryptedCardPassword: CARD_CIPHERTEXT,
+    ...over,
+  });
 
 const codeOf = async (promise: Promise<unknown>) => {
   try {
@@ -415,6 +424,14 @@ describe('CardImportService.fetch (direct)', () => {
       '0306',
       NOW,
       'CARD_LOGIN_FAILED',
+      { lockRisk: false },
+    );
+    // 일반 카드사는 잠김 위험 확인을 보지 않는다
+    expect(limits.checkStart).toHaveBeenCalledWith(
+      USER,
+      '0306',
+      NOW,
+      undefined,
     );
     expect(release).toHaveBeenCalledTimes(1);
     expect(http.calls).toHaveLength(1);
@@ -437,9 +454,18 @@ describe('CardImportService.fetch (direct)', () => {
   });
 
   it('offers all 9 card companies in screen order, Hyundai·Hana with card login rules (S8c)', () => {
-    expect(CARD_NUMBER_LOGIN_ENABLED).toBe(true);
+    expect(cardImportOrganizations(false).map((o) => o.code)).toEqual([
+      '0301',
+      '0303',
+      '0304',
+      '0305',
+      '0306',
+      '0309',
+      '0311',
+    ]);
+    expect(organizationOf('0302', false)).toBeNull();
     expect(
-      CARD_IMPORT_ORGANIZATIONS.map((o) => [
+      cardImportOrganizations(true).map((o) => [
         o.code,
         o.requiresCardNo,
         o.cardPasswordDigits,
@@ -456,11 +482,11 @@ describe('CardImportService.fetch (direct)', () => {
       ['0313', true, 2],
     ]);
     // 현대 최근 3개월(1회 90일) · 하나 최근 18개월(1회 3개월 → 우리 상한 365일)
-    expect(organizationOf('0302')).toMatchObject({
+    expect(organizationOf('0302', true)).toMatchObject({
       maxRangeDays: 90,
       maxLookbackDays: 90,
     });
-    expect(organizationOf('0313')).toMatchObject({
+    expect(organizationOf('0313', true)).toMatchObject({
       maxRangeDays: 90,
       maxLookbackDays: 365,
     });
@@ -591,42 +617,37 @@ describe('CardImportService.fetch (direct)', () => {
     expect(limits.acquire).not.toHaveBeenCalled();
   });
 
-  it('maps CODEF card number and card password errors and counts them as login failures (S8c)', async () => {
+  it('maps CODEF card number and card password errors, counting them on the lock-risk counter for Hyundai·Hana (S8c)', async () => {
     expect(
-      ['CF-13100', 'CF-13101', 'CF-13102', 'CF-13103', 'CF-13104'].map(
-        mapCodefError,
-      ),
-    ).toEqual(Array(5).fill('CARD_NUMBER_INVALID'));
+      ['CF-13101', 'CF-13102', 'CF-13103', 'CF-13104'].map(mapCodefError),
+    ).toEqual(Array(4).fill('CARD_NUMBER_INVALID'));
     expect(
-      ['CF-13120', 'CF-13121', 'CF-13123', 'CF-13124', 'CF-13125'].map(
-        mapCodefError,
-      ),
-    ).toEqual(Array(5).fill('CARD_PASSWORD_INVALID'));
+      ['CF-13121', 'CF-13123', 'CF-13124', 'CF-13125'].map(mapCodefError),
+    ).toEqual(Array(4).fill('CARD_PASSWORD_INVALID'));
     expect(mapCodefError('CF-13122')).toBe('CARD_ACCOUNT_ACTION_REQUIRED');
     expect(mapCodefError('CF-12834')).toBe('CARD_ACCOUNT_ACTION_REQUIRED');
 
     for (const [codefCode, ours] of [
       ['CF-13103', 'CARD_NUMBER_INVALID'],
       ['CF-13121', 'CARD_PASSWORD_INVALID'],
+      // 현대·하나는 일반 로그인 실패도 잠김 위험 카운터로 센다
+      ['CF-12803', 'CARD_LOGIN_FAILED'],
+      ['CF-12899', 'CARD_LOGIN_FAILED'],
     ] as const) {
       const { service, limits, release } = setup({
         [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult(codefCode, {}),
       });
       const error = (await service
-        .fetch(
-          USER,
-          request({
-            organization: '0302',
-            from: '2026-11-12',
-            loginCardNo: PAN,
-            encryptedCardPassword: CARD_CIPHERTEXT,
-          }),
-          NOW,
-        )
+        .fetch(USER, hyundaiRequest({ acknowledgeLockRisk: true }), NOW)
         .catch((e: unknown) => e)) as AppException;
       expect(error.code).toBe(ours);
       expect(JSON.stringify([error, error.details])).not.toContain(PAN);
-      expect(limits.loginFailed).toHaveBeenCalledWith(USER, '0302', NOW, ours);
+      expect(limits.checkStart).toHaveBeenCalledWith(USER, '0302', NOW, {
+        acknowledged: true,
+      });
+      expect(limits.loginFailed).toHaveBeenCalledWith(USER, '0302', NOW, ours, {
+        lockRisk: true,
+      });
       expect(limits.finishAttempt).toHaveBeenCalledWith('attempt-log-id', {
         organization: '0302',
         count: 0,
@@ -635,6 +656,110 @@ describe('CardImportService.fetch (direct)', () => {
       });
       expect(release).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it('does not count missing-parameter errors (CF-13100·13120·12401) as user failures (S8c)', async () => {
+    for (const codefCode of ['CF-13100', 'CF-13120', 'CF-12401']) {
+      expect(mapCodefError(codefCode)).toBe('CARD_IMPORT_FAILED');
+      const { service, limits } = setup({
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult(codefCode, {}),
+      });
+      expect(await codeOf(service.fetch(USER, hyundaiRequest(), NOW))).toBe(
+        'CARD_IMPORT_FAILED',
+      );
+      expect(limits.loginFailed).not.toHaveBeenCalled();
+    }
+  });
+
+  it('passes the lock-risk acknowledgement to the start check only for Hyundai·Hana (S8c)', async () => {
+    const { service, limits, http } = setup({
+      [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-00000', []),
+    });
+    limits.checkStart.mockRejectedValueOnce(
+      AppException.of('CARD_LOCK_RISK_CONFIRM_REQUIRED', {
+        details: { failedAttempts: 1 },
+      }),
+    );
+    expect(await codeOf(service.fetch(USER, hyundaiRequest(), NOW))).toBe(
+      'CARD_LOCK_RISK_CONFIRM_REQUIRED',
+    );
+    expect(limits.checkStart).toHaveBeenLastCalledWith(USER, '0302', NOW, {
+      acknowledged: false,
+    });
+    expect(http.calls).toHaveLength(0);
+    expect(limits.recordAttempt).not.toHaveBeenCalled();
+    await service.fetch(
+      USER,
+      hyundaiRequest({ organization: '0313', acknowledgeLockRisk: true }),
+      NOW,
+    );
+    expect(limits.checkStart).toHaveBeenLastCalledWith(USER, '0313', NOW, {
+      acknowledged: true,
+    });
+    // 일반 카드사는 확인 값을 보내도 보지 않는다
+    await service.fetch(USER, request({ acknowledgeLockRisk: true }), NOW);
+    expect(limits.checkStart).toHaveBeenLastCalledWith(
+      USER,
+      '0306',
+      NOW,
+      undefined,
+    );
+  });
+
+  it('ends a 2-way request from Hyundai·Hana as an error without treating it as a login success (S8c)', async () => {
+    const { service, limits } = setup({
+      [CODEF_PATHS.CARD_APPROVAL_LIST]: () =>
+        codefResult('CF-03002', {
+          method: 'smsAuthNo',
+          jobIndex: 0,
+          threadIndex: 0,
+          jti: 'jti',
+          twoWayTimestamp: 1,
+          continue2Way: true,
+        }),
+    });
+    expect(await codeOf(service.fetch(USER, hyundaiRequest(), NOW))).toBe(
+      'CARD_TWO_WAY_UNSUPPORTED',
+    );
+    expect(limits.loginSucceeded).not.toHaveBeenCalled();
+    expect(limits.openTwoWay).not.toHaveBeenCalled();
+    expect(limits.finishAttempt).toHaveBeenCalledWith(
+      'attempt-log-id',
+      expect.objectContaining({ result: 'CARD_TWO_WAY_UNSUPPORTED' }),
+    );
+  });
+
+  it('hides Hyundai·Hana and refuses card fields while CARD_NUMBER_LOGIN is off (default)', async () => {
+    const { service, http } = setup(
+      { [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-00000', []) },
+      { cardNumberLogin: false },
+    );
+    const config = await service.config(USER, NOW);
+    expect(config.organizations.map((o) => o.code)).toEqual([
+      '0301',
+      '0303',
+      '0304',
+      '0305',
+      '0306',
+      '0309',
+      '0311',
+    ]);
+    for (const over of [
+      hyundaiRequest(),
+      hyundaiRequest({ organization: '0313' }),
+      request({ loginCardNo: PAN, encryptedCardPassword: CARD_CIPHERTEXT }),
+    ]) {
+      const error = (await service
+        .fetch(USER, over, NOW)
+        .catch((e: unknown) => e)) as AppException;
+      expect(error.code).toBe('VALIDATION_FAILED');
+      expect(JSON.stringify([error, error.details])).not.toContain(PAN);
+    }
+    expect(http.calls).toHaveLength(0);
+    expect(new CodefConfig(new ConfigService({})).cardNumberLogin).toBe(false);
+    expect(
+      () => new CodefConfig(new ConfigService({ CARD_NUMBER_LOGIN: 'yes' })),
+    ).toThrow('CARD_NUMBER_LOGIN');
   });
 
   it('rejects ciphertexts that are not exactly the key modulus long and stray card fields (L2·L8)', async () => {
@@ -821,7 +946,7 @@ describe('CardImportService.fetch (direct)', () => {
   });
 
   it('checks the period against the card company limits', () => {
-    const shinhan = organizationOf('0306')!;
+    const shinhan = organizationOf('0306', false)!;
     expect(periodErrors(shinhan, '2026-11-10', '2026-11-13', NOW)).toEqual([]);
     expect(
       periodErrors(shinhan, '2026-11-14', '2026-11-13', NOW).map((e) => e.code),

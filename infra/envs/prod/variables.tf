@@ -182,6 +182,12 @@ variable "feature_card_import" {
   }
 }
 
+variable "card_number_login" {
+  description = "현대·하나 카드번호 로그인(CARD_NUMBER_LOGIN, feature_card_import와 별개). true면 카드번호 원문이 서버를 거쳐 CODEF로 간다(PCI DSS 범위 가능성 — 법률 자문 L-25). 처리방침 0.1은 카드번호를 수집하지 않으므로 약관 0.2를 게시하기 전에는 켜지 않는다"
+  type        = bool
+  default     = false
+}
+
 variable "card_import_allowed_user_ids" {
   description = "feature_card_import = allowlist일 때 켜 줄 사용자 ID(UUID) 목록(CARD_IMPORT_ALLOWED_USER_IDS). 비밀은 아니지만 terraform.tfvars로만 넣고 커밋하지 않는다"
   type        = list(string)

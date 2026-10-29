@@ -1,3 +1,4 @@
+import { luhnValid } from '@yeojeong/shared';
 import { pino } from 'pino';
 
 /** 키 이름 정규화: 소문자 + 영숫자만(loginId · LoginId · login_id · LOGIN-ID → loginid) */
@@ -49,6 +50,64 @@ const SENSITIVE = [
 export const SENSITIVE_KEYS: ReadonlySet<string> = new Set(
   SENSITIVE.map(normalizeKey),
 );
+/**
+ * 정규화한 키 이름에 이 토큰이 들어 있으면 카드번호·카드 비밀번호로 본다(S8c): loginCardNo · resCardNo · card_number · cardNum ·
+ * cardPassword · encryptedCardPassword · cardPin …
+ */
+const CARD_KEY_TOKENS = ['cardno', 'cardnum', 'cardpass', 'cardpw', 'cardpin'];
+/** 토큰으로 보면 오탐이 많은 짧은 이름은 정확히 같을 때만(pan · primaryAccountNumber) */
+const CARD_KEY_EXACT: ReadonlySet<string> = new Set([
+  'pan',
+  'primaryaccountnumber',
+]);
+
+/** 가릴 키인가(정규화한 이름 기준) */
+export function isSensitiveKey(normalized: string): boolean {
+  return (
+    SENSITIVE_KEYS.has(normalized) ||
+    CARD_KEY_EXACT.has(normalized) ||
+    CARD_KEY_TOKENS.some((token) => normalized.includes(token))
+  );
+}
+
+// ─── 값 기반 카드번호(PAN) 차단 ───
+// 키 이름과 무관하게 문자열 값(에러 메시지·stack·URL 인코딩 본문 포함) 안의 카드번호 모양을 [PAN]으로 바꾼다.
+// 후보: 구분자 없는 13~19자리, 또는 4자리 묶음(4-4-4-1~7, 4-6-4~5)에 공백·하이픈 하나씩. 앞뒤가 영숫자·하이픈이면 후보가 아니다
+// (UUID·해시·긴 숫자 일부를 잘라 보지 않는다). 후보는 Luhn이 맞거나 62(은련)로 시작할 때만 가린다.
+// 오탐 줄이기: 13자리 1로 시작(epoch ms)과 14자리 19·20으로 시작(yyyyMMddHHmmss 시각)은 카드번호로 보지 않는다.
+const PAN_CANDIDATE =
+  /(?<![0-9A-Za-z-])(?:\d{13,19}|\d{4}([ -])\d{4}\1\d{4}\1\d{1,7}|\d{4}([ -])\d{6}\2\d{4,5})(?![0-9A-Za-z]|-[0-9A-Za-z])/g;
+const PAN_CENSOR = '[PAN]';
+
+function looksLikePan(candidate: string): boolean {
+  const digits = candidate.replace(/[ -]/g, '');
+  if (digits.length < 13 || digits.length > 19) return false;
+  if (digits.length === 13 && digits.startsWith('1')) return false;
+  if (digits.length === 14 && /^(19|20)/.test(digits)) return false;
+  return digits.startsWith('62') || luhnValid(digits);
+}
+
+function replacePans(text: string): string {
+  return text.replace(PAN_CANDIDATE, (match) =>
+    looksLikePan(match) ? PAN_CENSOR : match,
+  );
+}
+
+/** 문자열 안의 카드번호 모양을 [PAN]으로. URL 인코딩된 문자열은 풀어서도 보고, 풀어서 걸리면 푼 문자열을 가려 돌려준다 */
+export function redactPan(text: string): string {
+  if (!/\d{4}/.test(text)) return text;
+  const replaced = replacePans(text);
+  if (/%[0-9A-Fa-f]{2}/.test(replaced)) {
+    try {
+      const decoded = decodeURIComponent(replaced);
+      const masked = replacePans(decoded);
+      if (masked !== decoded) return masked;
+    } catch {
+      // 잘못된 인코딩이면 그대로
+    }
+  }
+  return replaced;
+}
 
 const CENSOR = '[REDACTED]';
 const MAX_DEPTH = 25;
@@ -77,6 +136,7 @@ function walk(
   context: boolean,
   ancestors: Set<object>,
 ): unknown {
+  if (typeof value === 'string') return redactPan(value);
   if (typeof value !== 'object' || value === null) return value;
   if (ancestors.has(value)) return '[Circular]';
   if (depth > MAX_DEPTH) return '[Truncated]';
@@ -103,7 +163,7 @@ function walk(
     const out: Record<string, unknown> = {};
     for (const key of keys) {
       const normalized = normalizeKey(key);
-      if (SENSITIVE_KEYS.has(normalized)) {
+      if (isSensitiveKey(normalized)) {
         out[key] = CENSOR;
       } else if (CONTEXT_KEYS.has(normalized) && (context || loginShaped)) {
         out[key] = CENSOR;

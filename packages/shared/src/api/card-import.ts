@@ -19,10 +19,19 @@ export const CARD_IMPORT_FETCH_LIMIT = { COUNT: 3, WINDOW_SECONDS: 600, DAILY: 1
 /**
  * 같은 사용자·같은 카드사 로그인 연속 실패: WINDOW_SECONDS 안에 FAILURES회째 실패하면 그 응답부터 COOLDOWN_SECONDS 동안
  * 429 CARD_IMPORT_LOGIN_COOLDOWN { retryAfter(ISO), retryAfterSec }(카드사 계정 잠김 예방). 1·2회째는 400 CARD_LOGIN_FAILED { failedAttempts }.
- * 카드번호 오류(CARD_NUMBER_INVALID)도 같은 횟수로 센다. 카드 비밀번호 오류(CARD_PASSWORD_INVALID)는 CARD_PASSWORD_FAILURES회째부터 바로 쿨다운이다 —
- * 현대카드는 카드 비밀번호 3회 오류면 계정이 잠기고(KR_CD_P_002 현대카드 특이사항), 카드 비밀번호 오류 횟수는 다른 경로(ATM 등)와 합쳐질 수 있다
+ * 현대·하나(requiresCardNo)는 이 카운터 대신 더 엄한 CARD_IMPORT_LOCK_RISK_LIMIT를 쓴다
  */
-export const CARD_IMPORT_LOGIN_LIMIT = { FAILURES: 3, CARD_PASSWORD_FAILURES: 2, WINDOW_SECONDS: 1800, COOLDOWN_SECONDS: 1800 } as const;
+export const CARD_IMPORT_LOGIN_LIMIT = { FAILURES: 3, WINDOW_SECONDS: 1800, COOLDOWN_SECONDS: 1800 } as const;
+/**
+ * 카드번호 로그인 카드사(requiresCardNo — 현대·하나)의 잠김 위험 카운터(사용자·기관, 위 카운터와 따로 센다).
+ * 현대는 카드 비밀번호 3회 오류면 계정이 잠긴다(CODEF KR_CD_P_002 현대카드 특이사항) — 그래서 이 카드사들은 모든 로그인 실패
+ * (CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID)를 센다.
+ * - 1회 실패 뒤 새 조회는 요청에 acknowledgeLockRisk: true가 있어야 한다(없으면 409 CARD_LOCK_RISK_CONFIRM_REQUIRED) —
+ *   화면이 "한 번 더 틀리면 잠길 수 있어요"를 확인받고 보낸다.
+ * - FAILURES회째 실패 응답부터 COOLDOWN_SECONDS 동안 429 CARD_IMPORT_LOGIN_COOLDOWN. 쿨다운이 끝나도 카운터는 남아 다음 시도도 확인이 필요하다.
+ * - 카운터는 로그인에 성공하거나 마지막 실패 뒤 WINDOW_SECONDS(24시간)가 지나야만 0이 된다
+ */
+export const CARD_IMPORT_LOCK_RISK_LIMIT = { FAILURES: 2, WINDOW_SECONDS: 86_400, COOLDOWN_SECONDS: 1800 } as const;
 /** "비슷한 기록" 판정: 같은 통화·같은 금액의 직접 입력 지갑 항목이 승인 시각 ±N분 안에 있으면 similarManualEntryId */
 export const CARD_IMPORT_SIMILAR_WINDOW_MINUTES = 30;
 /** 한 번에 저장할 수 있는 최대 건수(POST /api/wallet/entries/import) */
@@ -96,11 +105,11 @@ export interface CardImportRetryDetails extends Record<string, unknown> {
   retryAfterSec: number;
 }
 
-/** 400 CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID의 details */
+/** 400 CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID, 409 CARD_LOCK_RISK_CONFIRM_REQUIRED의 details */
 export interface CardLoginFailedDetails extends Record<string, unknown> {
   /**
-   * 같은 사용자·카드사의 최근 30분 연속 실패 수(로그인·카드번호·카드 비밀번호 실패를 함께 센다). 3회째는 CARD_IMPORT_LOGIN_COOLDOWN,
-   * 카드 비밀번호 실패는 2회째부터 CARD_IMPORT_LOGIN_COOLDOWN(CARD_IMPORT_LOGIN_LIMIT)
+   * 같은 사용자·카드사의 연속 실패 수. 일반 카드사 = 최근 30분(3회째 쿨다운, CARD_IMPORT_LOGIN_LIMIT),
+   * 현대·하나 = 최근 24시간 잠김 위험 카운터(2회째 쿨다운, CARD_IMPORT_LOCK_RISK_LIMIT)
    */
   failedAttempts: number;
 }
@@ -136,6 +145,11 @@ export interface FetchCardApprovalsRequest {
   loginCardNo?: string;
   /** requiresCardNo 카드사만: 카드 비밀번호(cardPasswordDigits자리)를 config.publicKey로 RSA PKCS#1 v1.5 암호화한 base64 */
   encryptedCardPassword?: string;
+  /**
+   * requiresCardNo 카드사만: 최근 24시간 안에 로그인 실패가 있었으면(409 CARD_LOCK_RISK_CONFIRM_REQUIRED) 화면이
+   * "한 번 더 틀리면 카드사에서 잠길 수 있어요"를 확인받고 true로 다시 보낸다. 다른 카드사는 보지 않는다
+   */
+  acknowledgeLockRisk?: boolean;
   /** TWO_WAY_REQUIRED 뒤 이어서 보낼 때만 */
   twoWay?: CardImportTwoWayInput;
 }

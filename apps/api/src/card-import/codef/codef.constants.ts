@@ -84,14 +84,7 @@ export const CODEF_OTHER_TIMEOUT_MS = 10_000;
  * - 현대카드 특이사항(inputNote, 25.10.30 추가): 미입력 시 CF-12401, 카드 비밀번호 3회 오류 시 계정 잠김(CF-12834).
  *   하나카드는 시트 history 2026-10-08 "[로그인] 하나카드 아이디로그인 cardNo, cardPassword 추가"(비고: 비밀번호 앞 2자리).
  */
-/**
- * 카드번호 전체·카드 비밀번호가 필요한 카드사(현대·하나, requiresCardNo)를 받을지. 켰다(사용자 결정, S8c).
- * 카드번호는 CODEF가 원문으로 받아 우리 서버를 거쳐 간다 — 저장·로그·응답·에러에 남기지 않는다(README "저장하지 않는 것").
- * false로 돌리면 config 목록에서 빠지고 fetch는 400(organization)이다.
- */
-export const CARD_NUMBER_LOGIN_ENABLED: boolean = true;
-
-/** 9곳 전체(화면 순서). 실제로 받는 목록은 CARD_IMPORT_ORGANIZATIONS */
+/** 9곳 전체(화면 순서). 실제로 받는 목록은 cardImportOrganizations(env CARD_NUMBER_LOGIN) */
 export const ALL_CARD_ORGANIZATIONS: readonly CardImportOrganization[] = [
   {
     code: '0301',
@@ -167,14 +160,28 @@ export const ALL_CARD_ORGANIZATIONS: readonly CardImportOrganization[] = [
   },
 ];
 
-/** 지금 받는 카드사(9곳. CARD_NUMBER_LOGIN_ENABLED가 false면 현대·하나 제외 = 7곳) */
-export const CARD_IMPORT_ORGANIZATIONS: readonly CardImportOrganization[] =
-  ALL_CARD_ORGANIZATIONS.filter(
-    (o) => CARD_NUMBER_LOGIN_ENABLED || !o.requiresCardNo,
+/**
+ * 지금 받는 카드사. 카드번호 전체·카드 비밀번호가 필요한 카드사(현대·하나, requiresCardNo)는 env CARD_NUMBER_LOGIN(기본 off,
+ * CodefConfig.cardNumberLogin)이 켜졌을 때만 넣는다 — 카드번호는 CODEF가 원문으로 받아 우리 서버를 거쳐 가고, 처리방침 0.1은
+ * "카드번호를 수집하지 않는다"이므로 약관 0.2를 게시한 뒤에만 켠다. 꺼져 있으면 7곳, 켜면 9곳(화면 순서)
+ */
+export function cardImportOrganizations(
+  cardNumberLogin: boolean,
+): readonly CardImportOrganization[] {
+  return ALL_CARD_ORGANIZATIONS.filter(
+    (o) => cardNumberLogin || !o.requiresCardNo,
   );
+}
 
-export function organizationOf(code: string): CardImportOrganization | null {
-  return CARD_IMPORT_ORGANIZATIONS.find((o) => o.code === code) ?? null;
+/** 지금 받는 카드사 하나. 없거나 꺼져 있으면 null */
+export function organizationOf(
+  code: string,
+  cardNumberLogin: boolean,
+): CardImportOrganization | null {
+  return (
+    cardImportOrganizations(cardNumberLogin).find((o) => o.code === code) ??
+    null
+  );
 }
 
 /**
@@ -190,14 +197,13 @@ export const CODEF_ERROR_MAP: Readonly<Record<string, ErrorCode>> = {
   'CF-12861': 'CARD_LOGIN_FAILED',
   'CF-12877': 'CARD_LOGIN_FAILED',
   'CF-12899': 'CARD_LOGIN_FAILED',
-  // 카드번호(현대·하나 loginCardNo): 미입력 · 일치하는 카드 없음 · 관련 오류 · 잘못 입력 · 형식 오류
-  'CF-13100': 'CARD_NUMBER_INVALID',
+  // 카드번호(현대·하나 loginCardNo): 일치하는 카드 없음 · 관련 오류 · 잘못 입력 · 형식 오류.
+  // 미입력(CF-13100·13120·12401)은 우리 서버가 보낸 본문 문제라 사용자 실패로 세지 않는다(CARD_IMPORT_FAILED, 기본값)
   'CF-13101': 'CARD_NUMBER_INVALID',
   'CF-13102': 'CARD_NUMBER_INVALID',
   'CF-13103': 'CARD_NUMBER_INVALID',
   'CF-13104': 'CARD_NUMBER_INVALID',
-  // 카드 비밀번호(현대 4자리·하나 앞 2자리): 미입력 · 오류 · 형식 오류 · 자릿수 오류 · 관련 오류(13122 횟수 초과는 아래)
-  'CF-13120': 'CARD_PASSWORD_INVALID',
+  // 카드 비밀번호(현대 4자리·하나 앞 2자리): 오류 · 형식 오류 · 자릿수 오류 · 관련 오류(13122 횟수 초과는 아래)
   'CF-13121': 'CARD_PASSWORD_INVALID',
   'CF-13123': 'CARD_PASSWORD_INVALID',
   'CF-13124': 'CARD_PASSWORD_INVALID',

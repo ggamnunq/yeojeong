@@ -4,6 +4,7 @@ import {
   ADMIN_CODEF_DAYS,
   ADMIN_CODEF_TOP_USERS,
   CARD_IMPORT_FETCH_LIMIT,
+  CARD_IMPORT_LOCK_RISK_LIMIT,
   CARD_IMPORT_LOGIN_LIMIT,
   type AdminCodefDay,
   type AdminCodefResultCount,
@@ -68,6 +69,9 @@ export class AdminCodefService {
     const cooldownSince = new Date(
       now.getTime() - CARD_IMPORT_LOGIN_LIMIT.COOLDOWN_SECONDS * 1000,
     );
+    const lockRiskCooldownSince = new Date(
+      now.getTime() - CARD_IMPORT_LOCK_RISK_LIMIT.COOLDOWN_SECONDS * 1000,
+    );
 
     const [
       usageRows,
@@ -100,10 +104,12 @@ export class AdminCodefService {
           ORDER BY n DESC, user_id
           LIMIT ${ADMIN_CODEF_TOP_USERS}`,
       // 쿨다운: 30분 안 3회 이상 실패하고 마지막 실패 뒤 30분이 지나지 않은 사용자(card-import-limits.ts cooldownUntil과 같은 기준)
+      // + 현대·하나 잠김 위험 카운터 2회 이상이고 마지막 실패 뒤 30분이 지나지 않은 사용자(lockRiskCooldownUntil)
       this.prisma.$queryRaw<{ n: number }[]>`
           SELECT count(DISTINCT user_id)::int AS n
           FROM card_import_login_failures
-          WHERE failures >= ${CARD_IMPORT_LOGIN_LIMIT.FAILURES} AND last_failed_at > ${cooldownSince}`,
+          WHERE (failures >= ${CARD_IMPORT_LOGIN_LIMIT.FAILURES} AND last_failed_at > ${cooldownSince})
+             OR (lock_risk_failures >= ${CARD_IMPORT_LOCK_RISK_LIMIT.FAILURES} AND lock_risk_last_failed_at > ${lockRiskCooldownSince})`,
       this.prisma.cardImportTwoWaySession.aggregate({
         where: { budgetDay: today, expiresAt: { gt: now } },
         _sum: { callsLeft: true },

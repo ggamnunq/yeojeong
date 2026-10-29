@@ -28,6 +28,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsISO8601,
@@ -49,11 +50,12 @@ import {
 } from '../../expenses/dto/manual-request.dto.js';
 import { SUPPORTED_CURRENCY_CODES } from '../../fx/currencies.js';
 import { WalletEntryDto } from '../../wallet/dto/wallet.dto.js';
-import { CARD_IMPORT_ORGANIZATIONS } from '../codef/codef.constants.js';
+import { ALL_CARD_ORGANIZATIONS } from '../codef/codef.constants.js';
 
 // 요청 본문 검증 오류는 값을 되돌려 주지 않는다(createValidationPipe: value=false). 아이디·암호문이 응답·로그에 실리지 않는다.
 
-const ORG_CODES = CARD_IMPORT_ORGANIZATIONS.map((o) => o.code);
+// 형식만 본다(9곳). 지금 받는지(env CARD_NUMBER_LOGIN)는 서비스가 본다
+const ORG_CODES = ALL_CARD_ORGANIZATIONS.map((o) => o.code);
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const IMPORT_KEY = /^[0-9a-f]{64}$/;
@@ -130,6 +132,14 @@ export class FetchCardApprovalsDto implements FetchCardApprovalsRequest {
   @Length(16, 2048, { message: '다시 시도해 주세요' })
   @Matches(BASE64, { message: '다시 시도해 주세요' })
   encryptedCardPassword?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '현대·하나만: 409 CARD_LOCK_RISK_CONFIRM_REQUIRED 뒤 "한 번 더 틀리면 잠길 수 있어요"를 확인받고 true로 보낸다',
+  })
+  @IsOptional()
+  @IsBoolean({ message: '다시 시도해 주세요' })
+  acknowledgeLockRisk?: boolean;
 
   @ApiPropertyOptional({
     type: CardImportTwoWayDto,
