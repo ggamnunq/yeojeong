@@ -30,7 +30,7 @@ describe('여정 결제 추가(WF-46 · 47)', () => {
     const add = button(form, '추가')
     expect(add.hasAttribute('disabled') || add.getAttribute('aria-disabled') === 'true').toBe(true)
     typeAmount(form, '1200')
-    expect(within(form).getByText('≈ ₩11,030')).toBeTruthy()
+    expect(await within(form).findByText('≈ ₩11,030')).toBeTruthy()
     expect(within(form).getByRole('switch', { name: '내 지갑에도 기록' })).toBeTruthy()
     fireEvent.click(button(form, '추가'))
     expect(await screen.findByText('추가했어요')).toBeTruthy()
