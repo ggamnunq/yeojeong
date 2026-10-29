@@ -15,7 +15,10 @@ function Nickname() {
     <ShellOnboarding
       progress={step}
       onBack={() => setStep((s) => (s > 1 ? ((s - 1) as ProgressStepsStep) : s))}
-      cta={{ label: '다음', onClick: () => setStep((s) => (s < 4 ? ((s + 1) as ProgressStepsStep) : s)) }}
+      cta={{
+        label: '다음',
+        onClick: () => setStep((s) => (s < 4 ? ((s + 1) as ProgressStepsStep) : s)),
+      }}
     >
       <h1 className="text-h1 text-primary">닉네임을 정해 주세요</h1>
       <div className="mt-8">
@@ -53,6 +56,13 @@ export default defineCatalog({
                 <IllustLinked size={140} />
                 <p className="text-body-m text-secondary">계좌 1 · 카드 2</p>
               </div>
+            </ShellOnboarding>
+          </PhoneFrame>
+        </Variant>
+        <Variant name='skip · skipLabel="나중에" (HF-05)'>
+          <PhoneFrame>
+            <ShellOnboarding progress={2} skip skipLabel="나중에" cta={{ label: '토스 지갑 연결' }}>
+              <SlotScreen />
             </ShellOnboarding>
           </PhoneFrame>
         </Variant>

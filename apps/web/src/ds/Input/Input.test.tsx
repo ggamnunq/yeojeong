@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { Input } from './Input'
 
@@ -37,5 +38,23 @@ describe('Input', () => {
     expect(onClear).toHaveBeenCalledTimes(1)
     rerender(<Input label="그룹명" value="" onChange={() => {}} onClear={onClear} />)
     expect(screen.queryByRole('button', { name: '입력 지우기' })).toBeNull()
+  })
+
+  it('size="l"은 필드 60 · 값 H3, 기본(m)은 52 · Body/L', () => {
+    const { rerender } = render(<Input label="닉네임" size="l" />)
+    const input = screen.getByLabelText('닉네임')
+    expect(input.className).toContain('text-h3')
+    expect(input.parentElement?.className).toContain('h-15')
+    rerender(<Input label="닉네임" />)
+    expect(screen.getByLabelText('닉네임').className).toContain('text-body-l')
+    expect(screen.getByLabelText('닉네임').parentElement?.className).toContain('h-13')
+  })
+
+  it('labelVisible={false}면 라벨은 화면에서 숨지만 접근성 이름으로 남는다 · ref가 input에 닿는다', () => {
+    const ref = createRef<HTMLInputElement>()
+    render(<Input label="닉네임" labelVisible={false} ref={ref} />)
+    const input = screen.getByLabelText('닉네임')
+    expect(screen.getByText('닉네임').className).toContain('sr-only')
+    expect(ref.current).toBe(input)
   })
 })

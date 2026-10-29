@@ -11,20 +11,33 @@ export default defineCatalog({
   order: 5,
   Demo: function CheckboxCatalog() {
     return (
-      <Row>
-        <Variant name="Checked=Off">
-          <Checkbox label={LABEL} />
-        </Variant>
-        <Variant name="Checked=On">
-          <Checkbox label={LABEL} defaultChecked />
-        </Variant>
-        <Variant name="Off · disabled">
-          <Checkbox label={LABEL} disabled />
-        </Variant>
-        <Variant name="On · disabled">
-          <Checkbox label={LABEL} defaultChecked disabled />
-        </Variant>
-      </Row>
+      <div className="flex flex-col gap-6">
+        <Row>
+          <Variant name="Checked=Off">
+            <Checkbox label={LABEL} />
+          </Variant>
+          <Variant name="Checked=On">
+            <Checkbox label={LABEL} defaultChecked />
+          </Variant>
+          <Variant name="Off · disabled">
+            <Checkbox label={LABEL} disabled />
+          </Variant>
+          <Variant name="On · disabled">
+            <Checkbox label={LABEL} defaultChecked disabled />
+          </Variant>
+        </Row>
+        <Row>
+          <Variant name="labelVisible={false} · Off">
+            <Checkbox label={LABEL} labelVisible={false} />
+          </Variant>
+          <Variant name="labelVisible={false} · On">
+            <Checkbox label={LABEL} labelVisible={false} defaultChecked />
+          </Variant>
+          <Variant name="labelVisible={false} · On · disabled">
+            <Checkbox label={LABEL} labelVisible={false} defaultChecked disabled />
+          </Variant>
+        </Row>
+      </div>
     )
   },
 })

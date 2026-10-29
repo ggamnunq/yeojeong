@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { BottomSheet } from './BottomSheet'
+import { BottomSheet, BottomSheetPanel } from './BottomSheet'
 
 function Harness({ onClose = () => {}, onCta = () => {}, close }: { onClose?: () => void; onCta?: () => void; close?: boolean }) {
   const [open, setOpen] = useState(false)
@@ -32,6 +32,10 @@ const openSheet = () => {
 }
 
 describe('BottomSheet', () => {
+  it('v1.5 기본 내부 간격은 20px(gap-5)이다', () => {
+    const { container } = render(<BottomSheetPanel title="제목">내용</BottomSheetPanel>)
+    expect(container.firstElementChild?.className).toContain('gap-5')
+  })
   it('닫혀 있으면 보이지 않고, 열면 제목이 이름인 dialog가 된다', () => {
     render(<Harness />)
     expect(screen.queryByRole('dialog')).toBeNull()

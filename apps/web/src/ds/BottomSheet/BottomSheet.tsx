@@ -5,7 +5,7 @@ import { IconButton } from '../IconButton/IconButton'
 import { useModalDialog } from '../useModalDialog'
 
 // Figma BottomSheet(24:8647) · Title · Close · CTA · Content(슬롯 = children).
-// 손잡이 36×4 → 헤더(제목 H3 + 닫기 IconButton Ghost M) → 내용(hug) → CTA(Button Primary L FILL), 간격 16.
+// 손잡이 36×4 → 헤더(제목 H3 + 닫기 IconButton Ghost M) → 내용(hug) → CTA(Button Primary L FILL), 간격 20(v1.5).
 // 패딩 8/20/(24 + 안전영역)/20, 위 모서리 radius/2xl, Elevation/3, 뒤에 bg/dim.
 export type BottomSheetCta = Pick<ButtonProps, 'label' | 'onClick' | 'disabled' | 'htmlType' | 'form'>
 
@@ -36,7 +36,7 @@ export function BottomSheetPanel({
   return (
     <div
       className={clsx(
-        'flex max-h-[calc(100dvh-var(--spacing-header-height))] w-full flex-col gap-4 rounded-t-2xl bg-surface px-5 pt-2 pb-[calc(--spacing(6)+env(safe-area-inset-bottom))] shadow-elevation-3',
+        'flex max-h-[calc(100dvh-var(--spacing-header-height))] w-full flex-col gap-5 rounded-t-2xl bg-surface px-5 pt-2 pb-[calc(--spacing(6)+env(safe-area-inset-bottom))] shadow-elevation-3',
         className,
       )}
     >

@@ -9,7 +9,7 @@ import { focusRing } from '../styles'
 import { Tag } from '../Tag/Tag'
 import { formatSettlement, type SettlementRowNet } from './rules'
 
-// Figma SettlementRow(24:8571) · Net=Receive/Send/Even × Member=Active/Left(v1.4) + Me
+// Figma SettlementRow(24:8571) · Net=Receive/Send/Even × Member=Active/Left(v1.4) + Me + Tappable(v1.5)
 // 정산 요약의 사람별 행(누르면 그 사람의 결제 내역). Net은 순잔액(paid − share) 부호로 정해지고 net prop으로 덮어쓸 수 있다.
 export type SettlementRowMember = 'active' | 'left'
 
@@ -30,6 +30,8 @@ export type SettlementRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, '
   me?: boolean
   /** 이름 표기를 바꿀 때. 기본 person.name */
   name?: ReactNode
+  /** Figma Tappable. false면 비대화형 행이고 오른쪽 ›를 숨긴다. 기본 true */
+  tappable?: boolean
   htmlType?: 'button' | 'submit' | 'reset'
   children?: never
 }
@@ -49,6 +51,7 @@ export function SettlementRow({
   member = person.left ? 'left' : 'active',
   me = person.me ?? false,
   name,
+  tappable = true,
   htmlType = 'button',
   className,
   ...rest
@@ -56,16 +59,8 @@ export function SettlementRow({
   const s = formatSettlement(netAmount, net)
   const left = member === 'left'
 
-  return (
-    <button
-      type={htmlType}
-      className={clsx(
-        'flex w-full items-center gap-3 bg-surface py-3.5 pr-4 pl-5 text-left transition-colors select-none enabled:active:bg-pressed',
-        focusRing,
-        className,
-      )}
-      {...rest}
-    >
+  const content = (
+    <>
       <Avatar {...person} me={me} left={left} size="m" alt="" />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-center gap-1.5">
@@ -80,7 +75,16 @@ export function SettlementRow({
         <span className="font-amount text-amount-m whitespace-nowrap">{s.amount}</span>
         <span className="text-caption">{s.label}</span>
       </span>
-      <Icon name="chevron-right" size={20} className="shrink-0 text-icon-subtle" />
+      {tappable && <Icon name="chevron-right" size={16} className="shrink-0 text-icon-subtle" />}
+    </>
+  )
+
+  const rowClass = clsx('flex w-full items-center gap-3 bg-surface py-3.5 pr-4 pl-5 text-left', className)
+  if (!tappable) return <div className={rowClass}>{content}</div>
+
+  return (
+    <button type={htmlType} className={clsx(rowClass, 'transition-colors select-none enabled:active:bg-pressed', focusRing)} {...rest}>
+      {content}
     </button>
   )
 }

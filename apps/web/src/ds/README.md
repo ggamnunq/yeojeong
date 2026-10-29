@@ -1,6 +1,6 @@
 # 디자인 시스템 (`src/ds`)
 
-Figma 「여정」 v1.4 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다.
+Figma 「여정」 v1.5 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다. v1.6에서 복구된 기존 속성 연결(Button Loading · Input L · Chip Tone)도 반영하지만, v1.6 신규 컴포넌트·변형은 다음 단계에서 추가한다.
 
 ## 토큰
 
@@ -11,18 +11,18 @@ Figma 「여정」 v1.4 디자인 시스템을 코드로 옮긴 것. 원본 문�
 - `ds:tokens:check`는 CI에서 생성 결과와 커밋된 파일이 다르면 실패한다. tokens.css는 손으로 고치지 않는다. `scripts/__fixtures__/tokens-v1.3.css`(v1.3 생성 결과 고정 사본)와 비교하는 테스트가 기존 선언의 이름·값이 바뀌지 않았음을 보장한다.
 - Tailwind 기본 색·글자 크기·라운드·그림자는 지웠다. 토큰에 없는 값은 쓸 수 없다.
 
-| Figma | CSS 변수 | 유틸 |
-|---|---|---|
-| `primary/500` | `--color-primary-500` | `bg-primary-500` (팔레트는 되도록 역할 토큰으로) |
-| `bg/canvas` · `text/secondary` · `border/default` | `--color-bg-canvas` … | `bg-canvas` · `text-secondary` · `border-default` (짧은 이름) |
-| 그 밖의 역할 `icon/default` · `expense/shared/bg` · `trip/active/dot` | `--color-icon-default` … | `text-icon-default` · `bg-expense-shared-bg` · `bg-trip-active-dot` |
-| `radius/md` | `--radius-md` | `rounded-md` |
-| `Elevation/1` · `Focus/Ring` | `--shadow-elevation-1` · `--shadow-focus-ring` | `shadow-elevation-1` · `focus-visible:shadow-focus-ring` |
-| `layout/gutter` 등 | `--spacing-gutter` | `px-gutter` · `h-header-height` · `min-h-touch-min` |
-| `space/20` | Tailwind 기본 4px 스케일 | `p-5` (space/N = N/4) |
-| `Body/M Strong` · `Heading/H1` | `--text-body-m-strong` · `--text-h1` | `text-body-m-strong` · `text-h1` (크기·행간·자간·굵기 한 번에) |
-| `Amount/L` | `--text-amount-l` + `--font-amount` | `font-amount text-amount-l` (`font-amount`에 tabular-nums 포함) |
-| `Amount/XL`(v1.4, 40/48 −1) | `--text-amount-xl` | `font-amount text-amount-xl` — 화면당 영웅 숫자 1개만 |
+| Figma                                                                 | CSS 변수                                       | 유틸                                                                |
+| --------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------- |
+| `primary/500`                                                         | `--color-primary-500`                          | `bg-primary-500` (팔레트는 되도록 역할 토큰으로)                    |
+| `bg/canvas` · `text/secondary` · `border/default`                     | `--color-bg-canvas` …                          | `bg-canvas` · `text-secondary` · `border-default` (짧은 이름)       |
+| 그 밖의 역할 `icon/default` · `expense/shared/bg` · `trip/active/dot` | `--color-icon-default` …                       | `text-icon-default` · `bg-expense-shared-bg` · `bg-trip-active-dot` |
+| `radius/md`                                                           | `--radius-md`                                  | `rounded-md`                                                        |
+| `Elevation/1` · `Focus/Ring`                                          | `--shadow-elevation-1` · `--shadow-focus-ring` | `shadow-elevation-1` · `focus-visible:shadow-focus-ring`            |
+| `layout/gutter` 등                                                    | `--spacing-gutter`                             | `px-gutter` · `h-header-height` · `min-h-touch-min`                 |
+| `space/20`                                                            | Tailwind 기본 4px 스케일                       | `p-5` (space/N = N/4)                                               |
+| `Body/M Strong` · `Heading/H1`                                        | `--text-body-m-strong` · `--text-h1`           | `text-body-m-strong` · `text-h1` (크기·행간·자간·굵기 한 번에)      |
+| `Amount/L`                                                            | `--text-amount-l` + `--font-amount`            | `font-amount text-amount-l` (`font-amount`에 tabular-nums 포함)     |
+| `Amount/XL`(v1.4, 40/48 −1)                                           | `--text-amount-xl`                             | `font-amount text-amount-xl` — 화면당 영웅 숫자 1개만               |
 
 예외: 카카오 버튼의 `#FEE500` · `#EDD500`(눌림) · 라벨 `#000 85%`는 카카오 가이드 고정값. Tag·Badge의 S 크기 글자(11px)는 Figma에 텍스트 스타일이 없어 `text-[11px]`을 쓴다. Amount/XL 영웅 숫자 옆 단위(원·엔)는 `typography_rules`대로 같은 줄에 24 SemiBold로 작게 쓰는데 텍스트 스타일이 없어 `font-amount text-[24px] leading-8 font-semibold`을 쓴다.
 
@@ -55,21 +55,23 @@ Figma 「여정」 v1.4 디자인 시스템을 코드로 옮긴 것. 원본 문�
 
 ## 아이콘
 
-- `<Icon name="wallet" size={20} className="text-icon-default" />`. 이름은 Figma `Icon/<이름>` 44종(v1.4 `chevron-up`·`crown` 포함) 그대로, 실제 모양은 `Icon/icons.ts`의 lucide 매핑. 색은 `currentColor`, 선 굵기는 1.75(Fluency Systems Regular에 맞춤).
+- `<Icon name="wallet" size={20} className="text-icon-default" />`. 이름은 Figma `Icon/<이름>` 44종(v1.4 `chevron-up`·`crown` 포함) 그대로, 실제 모양은 `Icon/icons.ts`의 lucide 매핑. 색은 `currentColor`다.
+- v1.5 크기 규칙: 헤더·하단 내비·IconButton L/M = 24, 버튼 L/M·리스트·입력·토스트·콜아웃 = 20, 행 메타·Button S·동의 행 chevron·범례 = 16(태그 안은 12~14). 아이콘별 `viewBox`로 lucide 안전 여백을 보정해 그림이 박스의 약 75~85%를 채운다.
+- 시각 선 두께는 박스 크기/16(24 → 1.5px, 20 → 1.25px, 16 → 1px). `Icon`이 보정한 viewBox 크기에 맞춰 `strokeWidth`를 계산하므로 사용처에서 덮어쓰지 않는다.
 - 아이콘을 추가하려면 Figma 이름을 키로 `ICONS`에 넣고 `icons.test.ts`의 목록도 같이 고친다.
 - `Brand/KakaoSymbol`은 카카오 공식 리소스 PNG(`Icon/kakao-symbol.png`)라 `KakaoSymbol`이 data URI 이미지로 그린다.
 
 ## 데이터 컴포넌트 (Figma v1.4 기준)
 
-Avatar · AvatarStack · AvatarToggle · PaymentRow · DateHeader · TimelineItem · StatCard · BudgetProgress · SettlementRow · TransferRow · ListItem · Callout · EmptyState · SheetContent/PaymentDetail(`SheetContentPaymentDetail`).
+Avatar · AvatarStack · AvatarToggle · PaymentRow · DateHeader · TimelineItem · StatCard · BudgetProgress · MetricBar · SettlementRow · TransferRow · ListItem · Callout · EmptyState · RowConsent · SheetContent/Consent(`SheetContentConsent`) · SheetContent/PaymentDetail(`SheetContentPaymentDetail`) · Card/HeroTone(`CardHeroTone`) · Row/Tone(`RowTone`).
 
 - **순수 로직은 `<Name>/rules.ts`**(프사 폴백·스택 overflow·예산 상태·정산 부호·1인 금액). 컴포넌트 파일에는 컴포넌트만 둔다(fast refresh). 테스트는 rules 위주.
 - **사람 한 명 = `AvatarPerson`**(`name`·`src`·`source`·`color`·`joinOrder`·`me`·`left`). 행·스택·토글은 이 모양을 받는다. 스택 순서는 넘긴 배열 그대로(나 먼저 → 가입 순).
 - **프사 규칙(spec 7-2)**: `src`가 있으면 사진 → 없으면 「여정」 기본 이미지(`Avatar/default-image.svg`, Figma `Avatar/DefaultImage` Color=Gray를 SVG로 내보낸 것) → 사진 로딩 실패(`onError`)면 이니셜. 이니셜 색은 `color` 또는 `joinOrder`(Violet → Sunset → Green → Blue → Amber → Gray). 나·나간 멤버는 접근성 이름에 「(나)」「(나간 멤버)」가 붙고, 화면에는 「나」 배지(SettlementRow `me`)·Tag `left`를 같이 쓴다.
 - **외부 프사(카카오)**: 운영 CSP가 `img-src 'self' data:`라서 지금은 외부 URL 사진이 막힌다(→ 이니셜로 떨어짐). 카카오 로그인을 붙일 때 `public/_headers`의 `img-src`에 카카오 프사 CDN 호스트(예: `https://k.kakaocdn.net`, 실제 응답의 호스트를 확인)를 추가해야 한다. 카탈로그는 로컬 플레이스홀더(`src/catalog/photos/`)를 쓴다.
 - **금액**: `formatKrw(n)` → `₩1,284,000`, 음수는 U+2212 `−₩28,400`, `{ sign: 'always' }` → `+₩161,000`. 다른 통화는 `formatMoney(n, 'JPY')`. 받을 돈·보낼 돈은 색(`text-amount-receive|send`)만이 아니라 부호와 라벨(받을 돈 / 보낼 돈 / 정산 끝)을 항상 같이 쓴다.
-- **Figma `Style` 속성**(TimelineItem·Callout)은 HTML `style`과 이름이 겹친다. `type`/`htmlType`과 같은 규칙으로 Figma 쪽이 `style` 이름을 쓰고, 이 컴포넌트들은 HTML `style` 속성을 받지 않는다.
-- 탭하는 행(PaymentRow · TimelineItem 카드 · SettlementRow · ListItem · onClick 있는 Callout)은 `<button>`이고 Pressed는 `:active`. ListItem `value`와 onClick 없는 Callout은 `div`.
+- **Figma `Style` 속성**(TimelineItem·Callout·Chip)은 HTML `style`과 이름이 겹친다. `type`/`htmlType`과 같은 규칙으로 Figma 쪽이 `style` 이름을 쓰고, 이 컴포넌트들은 HTML `style` 속성을 받지 않는다.
+- 탭하는 행(PaymentRow · TimelineItem 카드 · `SettlementRow tappable={true}` · ListItem · onClick 있는 Callout)은 `<button>`이고 Pressed는 `:active`. `SettlementRow tappable={false}`·ListItem `value`·onClick 없는 Callout은 `div`.
 - 글자 예외(Figma에 텍스트 스타일 없음): Avatar 이니셜 XS `text-[10px]` · XL `text-[24px]`, AvatarStack +N 칩 XS `text-[9px]`(S는 Tag와 같은 11px). 원통화 금액·타임라인 시각은 `font-amount text-caption font-medium`(IBM Plex Sans KR 500, `styles/fonts.css`).
 - EmptyState 일러스트는 Figma 세트의 Icons8 컬러 PNG 대신 DS v1.4 `Illust/Empty-Trip`(24:61381)을 토큰 색 SVG로 그린다.
 
@@ -82,7 +84,7 @@ ShellApp · ShellSub · ShellOnboarding · ProgressSteps · RouteProgress · Row
 - **화면 = 셸 1개 + 내용(children = Figma `Content` 슬롯).** 여정 탭(결제내역·현황·여정 정보·정산) = `ShellApp`, 지갑·마이·환율·멤버별 내역·여정 생성·여정 없음 = `ShellSub`(여정 없음은 `header={{ type: 'logo' }}`), 인증 03~08 = `ShellOnboarding`(로그인은 `back={false}`, progress·cta 없음). 스플래시만 셸 없이.
 - 셸 바탕은 `bg/surface`(흰색). 헤더는 구분선이 없고, App 헤더 그룹명은 H2다(Figma 셸 인스턴스 덮어쓰기 — TopHeader의 `divider`·`groupNameSize`는 셸이 넣으니 화면에서 직접 쓰지 않는다).
 - 첫 블록 위 여백은 셸이 준다(App 8 · Sub 16 · Onboarding 24). 좌우 거터 20도 셸(기본 on). **전폭 DS 행(PaymentRow · TimelineItem · SettlementRow · ListItem · DateHeader · RowAccount · RowAdd)은 자체 좌우 20을 가지므로 거터 밖에 둔다** — 그런 행만 쌓는 화면은 `gutter={false}`, 섞이면 `gutter={false}` + 블록마다 `px-gutter`. `RowMemberAmount`는 거터 블록 안에 넣는다(Figma 350).
-- `ShellApp`: `header`(TopHeader Group props: groupName · menu · statusBadge · dropdown · onMenuClick · onGroupClick · onWalletClick · onMyClick) + `nav`(BottomNav props: active · phase(진행 중·시작 전 ongoing, 종료 후 ended) · onChange · hrefs) + `cta`. `ShellSub`: `header`(Back: title · onBack · action / Logo) + `cta`. `ShellOnboarding`: `back`(기본 true) · `onBack` · `progress`(1~4, 주면 켜짐) · `cta`.
+- `ShellApp`: `header`(TopHeader Group props: groupName · menu · statusBadge · dropdown · onMenuClick · onGroupClick · onWalletClick · onMyClick) + `nav`(BottomNav props: active · phase(진행 중·시작 전 ongoing, 종료 후 ended) · onChange · hrefs) + `cta`. `ShellSub`: `header`(Back: title · onBack · action / Logo) + `cta`. `ShellOnboarding`: `back`(기본 true) · `onBack` · `progress`(1~4, 주면 켜짐) · `cta` · `skip` + `skipLabel` + `onSkip`.
 - 상태바(44)·홈 인디케이터(34)는 시안용이라 그리지 않는다(Figma `Time` 속성 없음). 안전영역은 `env(safe-area-inset-*)`로만 비운다.
 - 오버레이는 셸 위 최상위 레이어(네이티브 `<dialog>`)에 뜬다: 딤 → BottomSheet / Dialog / `PanelSide` / `DropdownMenu`. 열림 상태는 화면이 쥐고 셸 헤더 콜백에서 연다 — ≡ `onMenuClick` → `PanelSide`, 그룹명 `onGroupClick` → `DropdownMenu` + `header.dropdown={open ? 'open' : 'closed'}`(⌃ · aria-expanded).
 - `PanelSide`: 왼쪽 300, 오른쪽 radius 24, Elevation/3. `useModalDialog`로 ESC · 딤 · 닫기 · Tab 가두기 · 포커스 되돌리기. children = `RowMember` × n + `RowAdd`("초대코드 공유"). 강퇴는 그룹장 화면의 남의 행에만 `kick={{ onClick }}`.
@@ -90,6 +92,23 @@ ShellApp · ShellSub · ShellOnboarding · ProgressSteps · RouteProgress · Row
 - 시트 내용: 결제자가 아닌 멤버·종료 후·결제자가 나간 결제는 `SheetContentReadOnly`(`locked` = 비활성 "변경 불가"), 단일 선택은 `SheetContentOption`(라디오 그룹, `RowOption`).
 - 일러스트는 `Illust*`(토큰 색 SVG, Icons8 금지): 결제 없음·여정 없음 = EmptyTrip, 연동 완료 = Linked, 정산 완료·연결 결과 = Settled, 지갑 연결 단계 = `IllustLinking phase`. 기본 140(120~160), 장식이라 `aria-hidden` — 뜻이 있으면 `label`. `EmptyState`도 IllustEmptyTrip을 쓴다.
 - `RouteProgress`는 영웅 카드(톤) 안에서만. Figma는 4일·진행 중 Day 2 고정이고, 코드는 `days`·`current`로 실제 일정을 받는다.
+
+## v1.5 임시 조합 → DS 교체 대응표
+
+W5 화면 통합에서는 아래 임시 조합을 지우고 오른쪽 DS 공개 API로 교체한다. 이 PR은 `features/**`를 수정하지 않는다.
+
+| 현재 임시 조합                                                       | 교체할 DS                                                             | 핵심 props                                             |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------ |
+| `features/auth/components/LargeInput`                                | `Input`                                                               | `size="l" labelVisible={false}`                        |
+| `features/auth/components/ConsentList`                               | 가입 화면은 `RowConsent` 목록, 금융 동의 시트는 `SheetContentConsent` | `required` · `checked` · `chevron`, `items` · `cta`    |
+| `features/auth/components/OnboardingShell`                           | `ShellOnboarding`                                                     | `skip skipLabel="나중에" onSkip`                       |
+| `features/auth/components/FinConsentSheet`의 직접 CTA/목록 조합      | `BottomSheet` + `SheetContentConsent`                                 | 시트 `cta`는 생략, 내용 `cta` 사용; 기본 gap 20        |
+| `features/stats/pages/StatsPage`의 보라 영웅 section                 | `StatCard`                                                            | `type="hero" size="l"`                                 |
+| `features/stats/pages/StatsPage`의 공동/개인 지표 막대               | `MetricBar`                                                           | `type="single" total` / `type="split" shared personal` |
+| `features/settlement/pages/SettlementPage`의 정산 영웅 section       | `CardHeroTone`                                                        | `sub` + `route={{ phase: 'ended', … }}`                |
+| `features/settlement/pages/SettlementMemberPage`의 멤버 영웅 section | `CardHeroTone`                                                        | `aside={<Avatar … />}` + 금액 톤                       |
+| 초대코드·토스 연결 상태의 톤 행 조합                                 | `RowTone`                                                             | `label` · `value` · `action`                           |
+| 탈퇴한 멤버 정산 행의 `disabled` + CSS chevron 숨김                  | `SettlementRow`                                                       | `tappable={false}`                                     |
 
 ### 명세 충돌 반영 (docs/spec README §7)
 

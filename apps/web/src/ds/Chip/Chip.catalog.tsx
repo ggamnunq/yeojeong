@@ -19,6 +19,12 @@ export default defineCatalog({
         <Variant name="State=Disabled">
           <Chip label="민지" disabled />
         </Variant>
+        <Variant name="Style=Tone · State=Default">
+          <Chip style="tone" label="Day 1" />
+        </Variant>
+        <Variant name="Style=Tone · State=Selected">
+          <Chip style="tone" label="확인 필요 2건" defaultSelected />
+        </Variant>
         <Variant name="눌러서 선택">
           <div className="flex gap-2">
             {['준용', '민지', '서준', '태현'].map((n) => (

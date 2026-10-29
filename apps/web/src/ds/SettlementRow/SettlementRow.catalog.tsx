@@ -35,6 +35,11 @@ export default defineCatalog({
             <SettlementRow person={ME} paid={300000} share={348250} />
           </div>
         </Sub>
+        <Sub title="tappable=false(비대화형 · › 없음)">
+          <div className="w-[390px]">
+            <SettlementRow person={{ name: '탈퇴한 멤버' }} paid={120000} share={120000} tappable={false} />
+          </div>
+        </Sub>
       </div>
     )
   },

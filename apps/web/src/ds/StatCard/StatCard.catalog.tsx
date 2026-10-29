@@ -19,6 +19,9 @@ export default defineCatalog({
           </Variant>
         </Row>
         <Row>
+          <Variant name='type="hero" · size="l" (v1.5 · 아이콘/sub 없음)'>
+            <StatCard className="w-[350px]" type="hero" label="내가 낼 금액" amount={32080} sub="표시되지 않는 문구" />
+          </Variant>
           <Variant name='type="brand" · size="l"'>
             <StatCard className="w-[350px]" type="brand" label="내가 낼 금액" amount={48250} sub="정산 시 서준에게 보낼 예정" />
           </Variant>
