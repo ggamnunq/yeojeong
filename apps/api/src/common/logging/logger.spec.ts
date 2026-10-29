@@ -106,10 +106,7 @@ describe('createLogger', () => {
       { list: [{ nested: [{ encryptedPassword: 'leak-array-cipher' }] }] },
       'e',
     );
-    logger.error(
-      { step: { organization: '0306', id: 'leak-sibling-id' } },
-      'f',
-    );
+    logger.error({ step: { loginType: '1', id: 'leak-sibling-id' } }, 'f');
     logger.info(
       { accessLogId: 'keep-this-id', req: { id: 'keep-req-id' } },
       'g',
@@ -130,5 +127,50 @@ describe('createLogger', () => {
     expect(lines[2]).toMatchObject({
       err: { message: expect.stringContaining('outer'), body: '[REDACTED]' },
     });
+  });
+
+  it('normalizes key case and separators, masks SMS codes in card-import context and avoids over-masking (review Low 3)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    const shared = { label: 'keep-shared' };
+    logger.error(
+      {
+        LoginId: 'leak-pascal',
+        login_id: 'leak-snake',
+        PASSWORD: 'leak-upper',
+        'encrypted-password': 'leak-kebab',
+        Connected_ID: 'leak-connected',
+      },
+      'a',
+    );
+    logger.error({ cardImportRequest: { code: 'leak-sms-1' } }, 'b');
+    logger.error(
+      { req2: { organization: '0306', loginId: 'x', code: 'leak-sms-2' } },
+      'c',
+    );
+    logger.info(
+      {
+        item: { organization: '0306', id: 'keep-org-id' },
+        a: shared,
+        b: shared,
+        result: { code: 'CF-00000' },
+      },
+      'd',
+    );
+    expect(output).not.toContain('leak-');
+    const keep = output.trim().split('\n').at(-1) ?? '';
+    expect(JSON.parse(keep)).toMatchObject({
+      item: { organization: '0306', id: 'keep-org-id' },
+      a: { label: 'keep-shared' },
+      b: { label: 'keep-shared' },
+      result: { code: 'CF-00000' },
+    });
+    const circular: Record<string, unknown> = { name: 'loop' };
+    circular.self = circular;
+    expect(() => logger.info({ circular }, 'e')).not.toThrow();
+    expect(output).toContain('[Circular]');
   });
 });
