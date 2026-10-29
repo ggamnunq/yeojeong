@@ -108,3 +108,29 @@ variable "audit_log_bucket_locked" {
   type        = bool
   default     = false
 }
+
+# ── 사용자가 gcloud로 직접 만드는 시크릿(값·버전은 Terraform 밖). 시크릿을 만든 뒤에만 켠다 ──
+# 끈 상태(기본)에서는 시크릿 조회·권한·Cloud Run env를 만들지 않으므로 시크릿이 없어도 plan·apply가 깨지지 않는다.
+
+variable "enable_kakao_unlink" {
+  description = "카카오 연결 끊기 알림 콜백. true면 Secret Manager yeojeong-kakao-admin-key를 KAKAO_ADMIN_KEY로 연결한다(시크릿이 먼저 있어야 한다)"
+  type        = bool
+  default     = false
+}
+
+variable "kakao_app_id" {
+  description = "카카오 앱 ID(숫자, 비밀 아님). 비우지 않으면 KAKAO_APP_ID로 넘겨 연결 끊기 알림의 app_id도 확인한다"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^[0-9]*$", var.kakao_app_id))
+    error_message = "kakao_app_id는 숫자여야 합니다."
+  }
+}
+
+variable "enable_exim_fx" {
+  description = "한국수출입은행 환율. true면 Secret Manager yeojeong-exim-api-key를 EXIM_API_KEY로 연결한다(시크릿이 먼저 있어야 한다). 연결되면 환율 소스가 koreaexim이 된다"
+  type        = bool
+  default     = false
+}

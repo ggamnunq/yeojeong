@@ -1,5 +1,6 @@
 import {
   SetMetadata,
+  applyDecorators,
   createParamDecorator,
   type ExecutionContext,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import type {
   TripContext,
 } from './auth-context.js';
 import {
+  IS_EXTERNAL_WEBHOOK_KEY,
   IS_PUBLIC_KEY,
   REQUIRED_CONSENTS_KEY,
   REQUIRED_ROLE_KEY,
@@ -26,6 +28,13 @@ import {
 
 /** 로그인 없이 부를 수 있는 라우트. 세션 쿠키가 있으면 req.auth는 그대로 채워진다 */
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
+
+/**
+ * 외부 서버가 서버 간으로 부르는 콜백(예: 카카오 연결 끊기 알림). 로그인·CSRF(Origin) 확인을 건너뛰므로
+ * **핸들러가 반드시 호출자를 직접 인증**해야 한다(공유 비밀 상수 시간 비교 등). origin lock은 그대로 적용된다.
+ */
+export const ExternalWebhook = () =>
+  applyDecorators(Public(), SetMetadata(IS_EXTERNAL_WEBHOOK_KEY, true));
 
 /**
  * 그룹장만 부를 수 있는 라우트(:tripId 또는 :groupId 필요). 아니면 403 NOT_LEADER.

@@ -106,3 +106,18 @@ resource "random_password" "audit_hmac_key" {
     prevent_destroy = true
   }
 }
+
+# 사용자가 gcloud로 직접 만든 시크릿(서울 리전 user-managed 복제). Terraform은 시크릿·버전을 만들지 않고 참조만 한다.
+# 기능 플래그(variables.tf)를 켠 것만 조회하므로, 시크릿이 없을 때는 플래그를 끈 채로 두면 plan이 깨지지 않는다.
+locals {
+  # Cloud Run env 이름 → Secret Manager 시크릿 ID
+  external_secret_env = merge(
+    var.enable_kakao_unlink ? { KAKAO_ADMIN_KEY = "yeojeong-kakao-admin-key" } : {},
+    var.enable_exim_fx ? { EXIM_API_KEY = "yeojeong-exim-api-key" } : {},
+  )
+}
+
+data "google_secret_manager_secret" "external" {
+  for_each  = local.external_secret_env
+  secret_id = each.value
+}

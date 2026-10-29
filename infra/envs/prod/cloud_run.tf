@@ -22,6 +22,14 @@ resource "google_secret_manager_secret_iam_member" "api_runtime" {
   member    = google_service_account.api_runtime.member
 }
 
+# 사용자가 직접 만든 시크릿(secrets.tf external_secret_env)도 같은 방식으로 런타임 서비스 계정에만 읽기 권한을 준다
+resource "google_secret_manager_secret_iam_member" "api_runtime_external" {
+  for_each  = local.external_secret_env
+  secret_id = data.google_secret_manager_secret.external[each.key].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = google_service_account.api_runtime.member
+}
+
 resource "google_cloud_run_v2_service" "api" {
   name     = var.api_service_name
   location = var.region
@@ -99,6 +107,28 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
+      # 기능 플래그로 켠 외부 시크릿(KAKAO_ADMIN_KEY, EXIM_API_KEY)
+      dynamic "env" {
+        for_each = local.external_secret_env
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = data.google_secret_manager_secret.external[env.key].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.kakao_app_id == "" ? [] : [var.kakao_app_id]
+        content {
+          name  = "KAKAO_APP_ID"
+          value = env.value
+        }
+      }
+
       env {
         name = "DATABASE_URL"
         value_source {
@@ -148,6 +178,7 @@ resource "google_cloud_run_v2_service" "api" {
   depends_on = [
     google_project_service.this,
     google_secret_manager_secret_iam_member.api_runtime,
+    google_secret_manager_secret_iam_member.api_runtime_external,
     google_secret_manager_secret_version.this,
   ]
 }

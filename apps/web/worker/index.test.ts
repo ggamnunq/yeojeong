@@ -72,4 +72,31 @@ describe('Worker /api 프록시', () => {
     expect(headers.get('x-client-ip')).toBe('203.0.113.7')
     expect(headers.get('x-forwarded-for')).toBeNull()
   })
+
+  it('카카오 연결 끊기 알림(서버 간 POST 폼)은 Authorization·본문을 그대로 넘기고 origin lock 헤더를 붙인다', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 200 }))
+
+    const res = await worker.fetch(
+      new Request('https://jinyeojeong.com/api/auth/kakao/unlink', {
+        method: 'POST',
+        headers: {
+          authorization: 'KakaoAK admin-key',
+          'content-type': 'application/x-www-form-urlencoded;charset=utf-8',
+          'cf-connecting-ip': '203.0.113.9',
+        },
+        body: 'app_id=1&user_id=2&referrer_type=UNLINK_FROM_APPS',
+      }),
+      env,
+    )
+
+    expect(res.status).toBe(200)
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit]
+    expect(url.toString()).toBe('https://api.example.run.app/api/auth/kakao/unlink')
+    const headers = init.headers as Headers
+    expect(headers.get('authorization')).toBe('KakaoAK admin-key')
+    expect(headers.get('content-type')).toContain('application/x-www-form-urlencoded')
+    expect(headers.get('x-origin-auth')).toBe(env.ORIGIN_SECRET)
+    expect(init.method).toBe('POST')
+    expect(await new Response(init.body).text()).toBe('app_id=1&user_id=2&referrer_type=UNLINK_FROM_APPS')
+  })
 })
