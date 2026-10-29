@@ -38,4 +38,17 @@ describe('PaymentRow', () => {
     render(<PaymentRow payer={payer} merchant="MK택시" meta="14:10 · 내 결제" amount={26290} changed />)
     expect(screen.getByRole('button').textContent).toContain('변경됨')
   })
+
+  it('leading="none"(DS18 · HF-49 지갑)은 프사 없이 메타 "HH:mm · 여정"과 원통화 보조 줄을 그린다', () => {
+    const { container } = render(
+      <PaymentRow leading="none" merchant="551 호라이 난바본점" meta="18:20 · 오사카 3박 4일" amount={25740} originalAmount="¥2,800" />,
+    )
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('[data-source]')).toBeNull()
+    const text = screen.getByRole('button').textContent ?? ''
+    expect(text).toContain('18:20 · 오사카 3박 4일')
+    expect(text).toContain('₩25,740')
+    expect(text).toContain('¥2,800')
+  })
 })
+

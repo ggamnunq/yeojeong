@@ -1,6 +1,6 @@
 # 디자인 시스템 (`src/ds`)
 
-Figma 「여정」 v1.6.2 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다. v1.6 추가분은 아래 「v1.6 추가분 → 화면 교체 대응표」, v1.6.2(DS17)는 「v1.6.2 추가분」.
+Figma 「여정」 v1.6.3 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다. v1.6 추가분은 아래 「v1.6 추가분 → 화면 교체 대응표」, v1.6.2(DS17)는 「v1.6.2 추가분」, v1.6.3(DS18 · 수동 결제)은 「v1.6.3 추가분」.
 
 ## 토큰
 
@@ -84,7 +84,7 @@ ShellApp · ShellSub · ShellOnboarding · ProgressSteps · RouteProgress · Row
 - **화면 = 셸 1개 + 내용(children = Figma `Content` 슬롯).** 여정 탭(결제내역·현황·여정 정보·정산) = `ShellApp`, 지갑·마이·환율·멤버별 내역·여정 생성·여정 없음 = `ShellSub`(여정 없음은 `header={{ type: 'logo' }}`), 인증 03~08 = `ShellOnboarding`(로그인은 `back={false}`, progress·cta 없음). 스플래시만 셸 없이.
 - 셸 바탕은 `bg/surface`(흰색). 헤더는 구분선이 없고, App 헤더 그룹명은 H2다(Figma 셸 인스턴스 덮어쓰기 — TopHeader의 `divider`·`groupNameSize`는 셸이 넣으니 화면에서 직접 쓰지 않는다).
 - 첫 블록 위 여백은 셸이 준다(App 8 · Sub 16 · Onboarding 24). 좌우 거터 20도 셸(기본 on). **전폭 DS 행(PaymentRow · TimelineItem · SettlementRow · ListItem · DateHeader · RowAccount · RowAdd)은 자체 좌우 20을 가지므로 거터 밖에 둔다** — 그런 행만 쌓는 화면은 `gutter={false}`, 섞이면 `gutter={false}` + 블록마다 `px-gutter`. `RowMemberAmount`는 거터 블록 안에 넣는다(Figma 350).
-- `ShellApp`: `header`(TopHeader Group props: groupName · menu · statusBadge · dropdown · onMenuClick · onGroupClick · onWalletClick · onMyClick) + `nav`(BottomNav props: active · phase(진행 중·시작 전 ongoing, 종료 후 ended) · onChange · hrefs) + `cta`. `ShellSub`: `header`(Back: title · onBack · action / Logo) + `cta`. `ShellOnboarding`: `leading`(back ‹ 기본 · close ✕, v1.6) · `back`(기본 true, Leading 버튼 표시) · `onBack` · `onClose` · `progress`(1~4, 주면 켜짐) · `cta` · `skip` + `skipLabel` + `onSkip`.
+- `ShellApp`: `header`(TopHeader Group props: groupName · menu · statusBadge · dropdown · onMenuClick · onGroupClick · onWalletClick · onMyClick) + `nav`(BottomNav props: active · phase(진행 중·시작 전 ongoing, 종료 후 ended) · onChange · hrefs) + `cta`. `ShellSub`: `header`(Back: title · onBack · action / Logo) + `cta`. `ShellOnboarding`: `leading`(back ‹ 기본 · close ✕, v1.6) · `back`(기본 true, Leading 버튼 표시) · `onBack` · `onClose` · `progress`(1~4, 주면 켜짐) + `progressTotal`(기본 4, 가입 2단계는 2 — DS18) · `cta` · `skip` + `skipLabel` + `onSkip`.
 - 상태바(44)·홈 인디케이터(34)는 시안용이라 그리지 않는다(Figma `Time` 속성 없음). 안전영역은 `env(safe-area-inset-*)`로만 비운다.
 - 오버레이는 셸 위 최상위 레이어(네이티브 `<dialog>`)에 뜬다: 딤 → BottomSheet / Dialog / `PanelSide` / `DropdownMenu`. 열림 상태는 화면이 쥐고 셸 헤더 콜백에서 연다 — ≡ `onMenuClick` → `PanelSide`, 그룹명 `onGroupClick` → `DropdownMenu` + `header.dropdown={open ? 'open' : 'closed'}`(⌃ · aria-expanded).
 - `PanelSide`: 왼쪽 300, 오른쪽 radius 24, Elevation/3. `useModalDialog`로 ESC · 딤 · 닫기 · Tab 가두기 · 포커스 되돌리기. children = `RowMember` × n + `RowAdd`("초대코드 공유"). 강퇴는 그룹장 화면의 남의 행에만 `kick={{ onClick }}`.
@@ -150,6 +150,29 @@ W5 화면 통합에서는 아래 임시 조합을 지우고 오른쪽 DS 공개 
 
 - **토스트 연결(앱 쪽)**: `ToastHost`가 `<ToastViewport anchor="auto" aboveNav={aboveNav}>`로 그리면 Screen이 알려 준 하단 구성(내비·CTA)을 따르고, Screen이 없을 때만 `aboveNav`(라우트 `handle.nav`)로 정한다. 시트·다이얼로그가 열리면 떠 있던 토스트를 닫는다: `useEffect(() => onModalOpen((kind) => { if (kind === 'sheet' || kind === 'dialog') store.clear() }), [store])` — 시트 안에서 새로 띄우는 토스트는 연 뒤라 영향 없음.
 - Dialog는 바뀐 게 없다(왼쪽 취소 · 오른쪽 확인, 처리 중 `confirmState="loading"`은 v1.6).
+
+## v1.6.3 추가분 (DS18 · spec §9-5 · 화면명세 v0.6.0 K절 수동 결제)
+
+모두 기존 API에 더한 것이라 기존 호출은 그대로 컴파일되고 모습도 같다(예외: SheetContent/Option 행 간격 4 → 0).
+
+| Figma v1.6.3 | 코드 | 화면에서 쓸 곳 |
+| --- | --- | --- |
+| BottomSheet `Back#88:0` | `leading="back"`(또는 `back`) + `onBack` · `backLabel`(기본 "뒤로"). Back이면 ✕는 기본 숨김(`close`로 다시 켬) | 같은 시트 안 단계: HF-47 나누기 · 결제자, HF-48b 여정 선택 |
+| BottomSheet `Action#88:1` | `action={{ label?, onClick, disabled? }}`(Button Ghost S, 기본 "수정"). 헤더 순서 ‹ · 제목 · action · ✕, 간격 8 | HF-20b 수동 결제 상세 "수정"(작성자 · 종료 전) |
+| PaymentRow `Avatar#88:2` off | `leading="none"`(payer 없음) + `walletMeta(time, tripName?)` → "08:50 · 오사카 3박 4일" / "08:50" + `originalAmount` | HF-49 내 지갑 행 |
+| DateHeader `Day#88:13` off | `day`를 생략하거나 `day={false}`(빈 자리 없음) | HF-49 "11.13 (금)". 여정 결제내역은 `day="Day 2"` |
+| Progress/Steps `Total=4/3/2` | `total`(기본 4). 셸은 `ShellOnboarding progress={1} progressTotal={2}` | 가입 2단계(accountLink=false): 닉네임 1/2(HF-03) · 약관 2/2(HF-04) |
+| Row/Option `Logo#88:16` · `Subtitle#88:19` | `logo={false}`(원 아이콘 없음) · `subtitle` 생략 = Subtitle off(높이 46). SheetContentOption 항목도 `logo` | HF-48b 여정 목록 · HF-10b 통화 |
+| SheetContent/Option | N행 · 간격 0(2행 · 간격 4에서 일반화) | HF-48b(+ 맨 아래 "추가 안 함") · HF-10b 통화 7행 |
+| **Row/Field**(77:10504) | `RowField`(라벨 … 값 ›, `<button>`): `value` · `placeholder`(흐림) · `avatar`(프사 XS) · `stack`(AvatarStack XS, 최대 4 + "+N") · `personal`(자물쇠 개인) · `chevron`(기본 true) · `disabled`. 변형 `RowFieldInput`(값 = 인라인 입력, › 없음) · `RowFieldToggle`(라벨 + Toggle) | 수동 결제 폼 행(내용 · 결제자 · 나누기 · 날짜 · 여정 · 내 지갑에도 기록) |
+| **SheetContent/SplitPick**(79:11072) | `SheetContentSplitPick`: 나누기(기본 `mode="multiple"`, `selected: string[]`, `onChange(ids)`, `count?` · `perPerson` · `remainder` · `personal`) / 결제자 `mode="single"`(`selected: string \| null`, `onChange(id)`, 요약 없음 · 라디오 · ←→). `members`: `AvatarPerson & { id, disabled? }`. 글자는 `splitPickSummary(krw, n)` | HF-47 · 47b, 결제자 선택 |
+| (Form/ManualPayment 금액 줄) | `InputAmount`: `value`(원값 "1200") · `onChange(raw)` · `symbol` · `fractionDigits` · `currency={{ label, onClick? }}` · `converted`. 순수 로직 `normalizeAmountInput` · `formatAmountInput` · `amountInputNumber` | HF-46 · 48 · 50 맨 위 큰 금액 |
+
+- **Form/ManualPayment는 DS에 없다**(06 로컬 조합). 화면이 조립한다: `BottomSheet` → `InputAmount className="pb-4"` → `RowFieldInput "내용"`(placeholder "예) 저녁", `maxLength={40}`) → `RowField` 결제자(`avatar` + "나"/닉네임) · 나누기(`stack`, 나만이면 `personal`) · 날짜("지금") · (지갑) 여정(이름, 없으면 `placeholder="추가 안 함"`) → `RowFieldToggle "내 지갑에도 기록"`(결제자 = 나일 때만). CTA는 시트 `cta`: 추가 = Single(`state: 금액 > 0 ? 'default' : 'disabled'`), 수정 = Horizontal(삭제 Danger-weak | 저장). 카탈로그 `Pattern/ManualPayment`에 HF-46~50 · 20b · 49 조립 예시와 단계 전환 동작 예시가 있다.
+- **시트 안 단계**: 한 `BottomSheet`의 `title` · `leading` · children · `cta`만 바꾼다(겹 시트 금지). 나누기 단계는 임시 선택(draft)을 쥐고 "완료"에서 반영, ‹(`onBack`)은 버림. 결제자 단계는 `cta` 없이 `onChange`에서 바로 반영 + 폼으로. 단계가 바뀌어 누른 행이 사라지면 시트가 포커스를 새 제목으로 옮긴다. 처음 열 때 금액에 포커스를 주려면 `InputAmount autoFocus`.
+- **나누기 요약**: `splitPickSummary(amountKrw, n)` → `{ perPerson: "1인 ₩3,676", remainder: "결제자 +2원" | null }`(FR-509 내림 + 나머지 결제자, Figma 샘플 ₩3,677이 아니다). 나만(결제자 = 나) 선택이면 `personal`. 완료 비활성 조건(0명 · 결제자 ≠ 나인데 결제자 혼자)은 화면이 시트 `cta.state`로.
+- **수정(WF-50) 나간 멤버**: 기존 부담 인원 중 나간 멤버는 `left: true`로 흐리게, "해제만 가능"은 선택이 꺼졌을 때 `disabled: true`.
+- **통화 칩**: KRW ↔ 여정 통화는 화면 상태. 칩 글자는 코드("JPY"), 금액 앞 기호는 `symbol`. KRW 여정은 `currency={{ label: 'KRW' }}`(onClick 없음 = 정적 칩). 환산 줄은 외화이고 환율이 있을 때만.
 
 ### 명세 충돌 반영 (docs/spec README §7)
 

@@ -17,3 +17,12 @@ export function payerLabel(payer: Pick<AvatarPerson, 'name' | 'me'>) {
 export function paymentMeta(time: string, payer: Pick<AvatarPerson, 'name' | 'me'>) {
   return `${time} · ${payerLabel(payer)}`
 }
+
+/**
+ * 내 지갑 행(PaymentRow leading="none", HF-49) meta: "08:50 · 오사카 3박 4일".
+ * 연결된 여정이 없으면(또는 나간·삭제된 여정) 시각만 "08:50". 여정 이름은 그룹명 그대로 — 길면 행이 말줄임한다.
+ */
+export function walletMeta(time: string, tripName?: string | null) {
+  const name = tripName?.trim()
+  return name ? `${time} · ${name}` : time
+}

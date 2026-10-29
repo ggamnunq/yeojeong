@@ -4,6 +4,7 @@ import { Sub } from '../../catalog/ui'
 import { Divider } from '../Divider/Divider'
 import { formatMoney } from '../format'
 import { PaymentRow } from './PaymentRow'
+import { walletMeta } from './rules'
 
 export default defineCatalog({
   title: 'PaymentRow',
@@ -82,6 +83,25 @@ export default defineCatalog({
               originalAmount={formatMoney(11400, 'JPY')}
               participants={GROUP}
             />
+          </div>
+        </Sub>
+        <Sub title='leading="none" (DS18 · HF-49 내 지갑) · 메타 walletMeta("HH:mm", 여정) · 원통화 보조 줄'>
+          <div className="flex w-[390px] flex-col">
+            <PaymentRow
+              leading="none"
+              merchant="551 호라이 난바본점"
+              meta={walletMeta('18:20', '오사카 3박 4일')}
+              amount={25740}
+              originalAmount={formatMoney(2800, 'JPY')}
+            />
+            <PaymentRow
+              leading="none"
+              merchant="MK택시"
+              meta={walletMeta('14:10', '오사카 3박 4일')}
+              amount={26290}
+              originalAmount={formatMoney(2860, 'JPY')}
+            />
+            <PaymentRow leading="none" merchant="GS25 역삼점" meta={walletMeta('21:05')} amount={4800} />
           </div>
         </Sub>
       </div>

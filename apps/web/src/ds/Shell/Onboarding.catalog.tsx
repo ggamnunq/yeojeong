@@ -48,6 +48,16 @@ export default defineCatalog({
             <Nickname />
           </PhoneFrame>
         </Variant>
+        <Variant name="닉네임(HF-03) · progress={1} progressTotal={2} (DS18 · 가입 2단계)">
+          <PhoneFrame>
+            <ShellOnboarding progress={1} progressTotal={2} cta={{ label: '다음' }}>
+              <h1 className="text-h1 text-primary">닉네임을 알려 주세요</h1>
+              <div className="mt-8">
+                <Input label="닉네임" labelVisible={false} size="l" defaultValue="준용" />
+              </div>
+            </ShellOnboarding>
+          </PhoneFrame>
+        </Variant>
         <Variant name="연결 완료(HF-08) · progress={4}">
           <PhoneFrame>
             <ShellOnboarding progress={4} cta={{ label: '시작하기' }}>
