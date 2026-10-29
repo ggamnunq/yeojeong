@@ -116,7 +116,7 @@ function cardFields(rule: CardLoginRule | undefined, cardNumber: string | undefi
  * POST /card-import/fetch. TanStack 뮤테이션을 쓰지 않는다 — 뮤테이션 캐시(variables)에 아이디·암호문·인증번호가 남기 때문이다.
  * 요청은 fetchCardApprovals를 바로 부르고, 대기 상태만 useState로 둔다. 결과(OK | TWO_WAY_REQUIRED)는 화면 state로만 든다.
  * - start(request): 화면이 buildFetchRequest로 먼저 암호화한 요청(암호문)만 받는다. 이 hook은 평문 비밀번호를 보지 않는다.
- * - 추가 인증 동안만 처음 요청(아이디·암호문·기간, 현대·하나는 카드번호·카드 비밀번호 암호문)을 ref에 둔다(서버가 무상태라 같은 본문을
+ * - 추가 인증 동안만 처음 요청(아이디·암호문·기간, 현대·하나는 카드번호 원문·카드 비밀번호 암호문)을 ref에 둔다(서버가 무상태라 같은 본문을
  *   다시 보내야 한다). 결과(OK)·실패 응답이면 바로 버리고, 추가 인증(TWO_WAY_REQUIRED)일 때만 남긴다. reset으로도 버린다.
  * - 취소: signal(AbortController)로 진행 중 요청을 끊는다. 서버 쪽 CODEF 호출은 끝까지 갈 수 있고, 화면은 응답을 버린다.
  * 에러 안내는 화면이 한다(토스트 없음, 403 CONSENT_REQUIRED도 화면이 WF-51로). 401만 전역 처리기로 넘긴다. 자동 재시도 없음(카드사 잠금 위험)

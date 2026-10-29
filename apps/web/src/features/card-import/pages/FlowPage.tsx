@@ -174,6 +174,7 @@ export default function FlowPage() {
     [cancelRequest, resetFetcher],
   )
 
+  const clearSecretsOnHide = secrets.clear
   // bfcache: 페이지를 떠날 때(pagehide) 메모리의 아이디·비밀번호·결과·itemToken을 비우고,
   // 뒤로 가기로 복원되면(pageshow persisted) 처음(로그인 전)부터 다시 시작한다
   useEffect(() => {
@@ -195,6 +196,8 @@ export default function FlowPage() {
       setLockRiskOpen(false)
       setCardError(null)
       riskRequest.current = null
+      // 카드번호·카드 비밀번호도 같은 동기 렌더에서 함께 비운다(bfcache로 얼기 전에 화면에서도 지워지게)
+      clearSecretsOnHide()
       setStep('login')
     }
     const onShow = (event: PageTransitionEvent) => {
@@ -209,7 +212,7 @@ export default function FlowPage() {
       window.removeEventListener('pagehide', wipe)
       window.removeEventListener('pageshow', onShow)
     }
-  }, [cancelRequest, resetFetcher])
+  }, [cancelRequest, resetFetcher, clearSecretsOnHide])
 
   // WF-53이 다시 보일 때마다 남은 횟수(remainingToday)를 새로 받는다
   const prevStep = useRef<Step>(step)
