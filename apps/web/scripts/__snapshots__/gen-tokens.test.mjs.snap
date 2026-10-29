@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`gen-tokens > 출력 스냅샷 1`] = `
-"/* 자동 생성 파일 — 직접 고치지 말 것. 원본: apps/web/design-tokens/tokens.json (DS v1.5 · 2026-10-28)
+"/* 자동 생성 파일 — 직접 고치지 말 것. 원본: apps/web/design-tokens/tokens.json (DS v1.6 · 2026-10-28)
  * 다시 만들기: pnpm --filter @yeojeong/web ds:tokens
  * 간격(space/N)은 Tailwind 기본 4px 스케일을 쓴다: space/2=0.5 space/4=1 space/8=2 space/12=3 space/16=4 space/20=5 space/24=6 space/32=8 space/40=10 space/48=12 space/64=16 */
 

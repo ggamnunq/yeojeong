@@ -1,6 +1,6 @@
 # 디자인 시스템 (`src/ds`)
 
-Figma 「여정」 v1.5 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다. v1.6에서 복구된 기존 속성 연결(Button Loading · Input L · Chip Tone)도 반영하지만, v1.6 신규 컴포넌트·변형은 다음 단계에서 추가한다.
+Figma 「여정」 v1.6(.1) 디자인 시스템을 코드로 옮긴 것. 원본 문서(`docs/design/`)는 로컬 전용이라 레포에는 없다. v1.6 추가분은 아래 「v1.6 추가분 → 화면 교체 대응표」.
 
 ## 토큰
 
@@ -63,7 +63,7 @@ Figma 「여정」 v1.5 디자인 시스템을 코드로 옮긴 것. 원본 문�
 
 ## 데이터 컴포넌트 (Figma v1.4 기준)
 
-Avatar · AvatarStack · AvatarToggle · PaymentRow · DateHeader · TimelineItem · StatCard · BudgetProgress · MetricBar · SettlementRow · TransferRow · ListItem · Callout · EmptyState · RowConsent · SheetContent/Consent(`SheetContentConsent`) · SheetContent/PaymentDetail(`SheetContentPaymentDetail`) · Card/HeroTone(`CardHeroTone`) · Row/Tone(`RowTone`).
+Avatar · AvatarStack · AvatarToggle · PaymentRow · DateHeader · TimelineItem · StatCard · BudgetProgress · MetricBar · SettlementRow · TransferRow · ListItem · Callout · EmptyState · RowConsent · SheetContent/Consent(`SheetContentConsent`) · SheetContent/PaymentDetail(`SheetContentPaymentDetail`) · Card/HeroTone(`CardHeroTone`) · Row/Tone(`RowTone`) · SheetContent/DateRange(`SheetContentDateRange`, v1.6) · Input Type=Picker(`InputPicker`, v1.6).
 
 - **순수 로직은 `<Name>/rules.ts`**(프사 폴백·스택 overflow·예산 상태·정산 부호·1인 금액). 컴포넌트 파일에는 컴포넌트만 둔다(fast refresh). 테스트는 rules 위주.
 - **사람 한 명 = `AvatarPerson`**(`name`·`src`·`source`·`color`·`joinOrder`·`me`·`left`). 행·스택·토글은 이 모양을 받는다. 스택 순서는 넘긴 배열 그대로(나 먼저 → 가입 순).
@@ -84,7 +84,7 @@ ShellApp · ShellSub · ShellOnboarding · ProgressSteps · RouteProgress · Row
 - **화면 = 셸 1개 + 내용(children = Figma `Content` 슬롯).** 여정 탭(결제내역·현황·여정 정보·정산) = `ShellApp`, 지갑·마이·환율·멤버별 내역·여정 생성·여정 없음 = `ShellSub`(여정 없음은 `header={{ type: 'logo' }}`), 인증 03~08 = `ShellOnboarding`(로그인은 `back={false}`, progress·cta 없음). 스플래시만 셸 없이.
 - 셸 바탕은 `bg/surface`(흰색). 헤더는 구분선이 없고, App 헤더 그룹명은 H2다(Figma 셸 인스턴스 덮어쓰기 — TopHeader의 `divider`·`groupNameSize`는 셸이 넣으니 화면에서 직접 쓰지 않는다).
 - 첫 블록 위 여백은 셸이 준다(App 8 · Sub 16 · Onboarding 24). 좌우 거터 20도 셸(기본 on). **전폭 DS 행(PaymentRow · TimelineItem · SettlementRow · ListItem · DateHeader · RowAccount · RowAdd)은 자체 좌우 20을 가지므로 거터 밖에 둔다** — 그런 행만 쌓는 화면은 `gutter={false}`, 섞이면 `gutter={false}` + 블록마다 `px-gutter`. `RowMemberAmount`는 거터 블록 안에 넣는다(Figma 350).
-- `ShellApp`: `header`(TopHeader Group props: groupName · menu · statusBadge · dropdown · onMenuClick · onGroupClick · onWalletClick · onMyClick) + `nav`(BottomNav props: active · phase(진행 중·시작 전 ongoing, 종료 후 ended) · onChange · hrefs) + `cta`. `ShellSub`: `header`(Back: title · onBack · action / Logo) + `cta`. `ShellOnboarding`: `back`(기본 true) · `onBack` · `progress`(1~4, 주면 켜짐) · `cta` · `skip` + `skipLabel` + `onSkip`.
+- `ShellApp`: `header`(TopHeader Group props: groupName · menu · statusBadge · dropdown · onMenuClick · onGroupClick · onWalletClick · onMyClick) + `nav`(BottomNav props: active · phase(진행 중·시작 전 ongoing, 종료 후 ended) · onChange · hrefs) + `cta`. `ShellSub`: `header`(Back: title · onBack · action / Logo) + `cta`. `ShellOnboarding`: `leading`(back ‹ 기본 · close ✕, v1.6) · `back`(기본 true, Leading 버튼 표시) · `onBack` · `onClose` · `progress`(1~4, 주면 켜짐) · `cta` · `skip` + `skipLabel` + `onSkip`.
 - 상태바(44)·홈 인디케이터(34)는 시안용이라 그리지 않는다(Figma `Time` 속성 없음). 안전영역은 `env(safe-area-inset-*)`로만 비운다.
 - 오버레이는 셸 위 최상위 레이어(네이티브 `<dialog>`)에 뜬다: 딤 → BottomSheet / Dialog / `PanelSide` / `DropdownMenu`. 열림 상태는 화면이 쥐고 셸 헤더 콜백에서 연다 — ≡ `onMenuClick` → `PanelSide`, 그룹명 `onGroupClick` → `DropdownMenu` + `header.dropdown={open ? 'open' : 'closed'}`(⌃ · aria-expanded).
 - `PanelSide`: 왼쪽 300, 오른쪽 radius 24, Elevation/3. `useModalDialog`로 ESC · 딤 · 닫기 · Tab 가두기 · 포커스 되돌리기. children = `RowMember` × n + `RowAdd`("초대코드 공유"). 강퇴는 그룹장 화면의 남의 행에만 `kick={{ onClick }}`.
@@ -109,6 +109,30 @@ W5 화면 통합에서는 아래 임시 조합을 지우고 오른쪽 DS 공개 
 | `features/settlement/pages/SettlementMemberPage`의 멤버 영웅 section | `CardHeroTone`                                                        | `aside={<Avatar … />}` + 금액 톤                       |
 | 초대코드·토스 연결 상태의 톤 행 조합                                 | `RowTone`                                                             | `label` · `value` · `action`                           |
 | 탈퇴한 멤버 정산 행의 `disabled` + CSS chevron 숨김                  | `SettlementRow`                                                       | `tappable={false}`                                     |
+
+## v1.6 추가분 → 화면 교체 대응표 (spec §11)
+
+모두 기존 API에 더한 것이라 기존 호출은 그대로 컴파일된다(기본값 = v1.5 모습). 세트로 바뀐 DateHeader · Shell/Onboarding · SheetContent/ReadOnly는 카탈로그 `figma` ID만 세트 ID로 바꿨다.
+
+| Figma v1.6                                                | 코드                                                                                             | 바꿀 화면 임시 조합                                                                     |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| DateHeader `Style=Plain`                                  | `DateHeader style="plain"`(배경 없음 · Day·합계 3차 Caption)                                     | `features/payments/components/ListParts`의 `PlainDateHeader`                            |
+| TimelineItem `Position=First`                             | `TimelineItem position="first"`(점 위 레일 숨김)                                                 | `features/payments/components/Views`의 `FIRST_NODE` 클래스                              |
+| SegmentedControl `Size=S` · `Disabled 1~3`                | `size="s"`(32 · 폭 176/240 · Label/S) · `disabledItems={['second']}`                             | 결제내역 컨트롤 줄 `w-44` 래퍼(ListParts) · 결제 상세 `SHARED_SEGMENT_OFF`(PaymentSheet) |
+| Shell/Onboarding `Leading=Close`                          | `ShellOnboarding leading="close" onClose`                                                        | `features/wallet/components/ConnectStatus`의 Screen 조립(HF-06)                          |
+| Input `Suffix` · `Trailing icon` · `Icon`                 | `Input suffix suffixText="원"` · `trailingIcon icon="marker"`                                    | 여정 생성 예산 입력(TripForm)                                                           |
+| Input `Type=Picker`                                       | `InputPicker`(`<button>`, 라벨+값이 접근성 이름, ⌄, 오류도 ⌄ 유지)                               | `features/trips/components/PickerField`(장소 "도시 검색" · 기간 "출발일 – 도착일")      |
+| SheetContent/ReadOnly `Type=Refund`                       | `SheetContentReadOnly type="refund" payment refunds`(취소 금액은 양수로 → −₩ 표기)               | `features/payments/components/SheetParts`의 `RefundSummary` · `RefundFacts`(읽기 전용)  |
+| Chip `Removable`                                          | `Chip removable`(오른쪽 ✕ 16, 체크 대신) + "해제"가 든 `aria-label`                              | 결제내역 「확인 필요 n건 ✕」 선택 버튼(ListParts `ControlRow`)                          |
+| TopHeader `Type=Close` + `Center title`                   | `TopHeader type="close" title?` · 셸은 `ShellSub header={{ type: 'close' }}`                     | 생성 완료(HF-11 · `features/trips/pages/CreatedPage`)                                   |
+| SheetContent/DateRange                                    | `SheetContentDateRange`(+ `formatDateRange` · `pickDate` · `isDateSelectable`)                   | `features/trips/components/PeriodSheet`의 네이티브 date 입력 두 칸                      |
+| Dialog `Body` · confirm `State=Loading`                   | `Dialog body={false}` · `confirmState="loading"`                                                 | 처리 중 확인 다이얼로그(여정 종료·멤버 내보내기·결제수단 삭제 등)                       |
+| EmptyState `Type=Illust` · `Illust` · `Button 2`          | `EmptyState type="illust" illust? actions?`(일러스트 160 + H2 + 버튼 L)                          | 여정 없음(HF-09 · `features/trips/pages/NoTripPage`)                                    |
+
+- **기간 시트**: `InputPicker` → `BottomSheet`(시트 `cta` 없음) + `SheetContentDateRange`(`cta={{ onClick }}` = "확인", 둘 다 골라야 켜짐). 값은 `'YYYY-MM-DD'`, `today`는 서버 기준일을 넘긴다. 한도는 `min`(기본 오늘 — 과거 출발 허용이면 앞당김) · `max` · `endMin`(진행 중 수정: 오늘) · `maxDays`(최대 일수) · `startLocked`(진행 중 수정). 처음엔 출발일 칩이 활성이고, 날짜를 고르면 도착일 칩으로 넘어간다. 도착일을 고르는 중 출발일 앞을 누르면 새 출발일. 키보드는 grid 하나에 탭 멈춤 하나(←→↑↓ · Home/End · PageUp/PageDown), 날짜 버튼 이름은 "2026년 11월 12일 목요일, 출발일, 오늘".
+- **입력 문구(v1.6.1)**: 헬퍼 텍스트는 기본 숨김 — `helper`는 `error`와 같이 오류 문구로만 쓴다(설명형 헬퍼 금지). 장소 Picker 플레이스홀더 "도시 검색", 기간 "출발일 – 도착일", 예산 Suffix "원".
+- **Chip 체크**: Figma대로 선택 체크는 Outline에만 붙는다(Tone 선택은 면 색만). v1.5 코드는 Tone 선택에도 체크를 그렸는데 v1.6 속성 연결 복구에 맞춰 고쳤다.
+- **Dialog 처리 중**: `confirmState="loading"`이면 확인은 aria-busy + 누름 무시, 포커스는 유지. 처리 중 취소·ESC를 막을지는 `onCancel`에서 정한다.
 
 ### 명세 충돌 반영 (docs/spec README §7)
 

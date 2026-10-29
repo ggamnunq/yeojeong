@@ -7,16 +7,18 @@ import { formatKrw } from '../format'
 import { focusRing } from '../styles'
 import { Tag } from '../Tag/Tag'
 
-// Figma TimelineItem(24:8408) · Type=Shared/Personal/Pending/Now × Position=Middle/Last × Style=Card/Plain(v1.4)
-// 점 = 공동 보라 / 개인 회색 / 미확정 빈 회색 링 / 지금 보라(v1.4, 노을은 도착점·보낼 돈 전용). 날짜의 마지막 노드만 position="last".
+// Figma TimelineItem(24:8408) · Type=Shared/Personal/Pending/Now × Position=First/Middle/Last(v1.6 First) × Style=Card/Plain(v1.4)
+// 점 = 공동 보라 / 개인 회색 / 미확정 빈 회색 링 / 지금 보라(v1.4, 노을은 도착점·보낼 돈 전용).
+// 날짜의 첫 노드 = position="first"(점 위로 레일이 나가지 않음), 마지막 노드 = position="last"(점 아래 레일 없음).
 // 레일은 항목 전체 높이로 이어진다(v1.4 레일 끊김 수정). 카드는 누르면 결제 상세가 열리는 버튼. 항목끼리 간격 0으로 쌓는다.
 export type TimelineItemType = 'shared' | 'personal' | 'pending' | 'now'
-export type TimelineItemPosition = 'middle' | 'last'
+export type TimelineItemPosition = 'first' | 'middle' | 'last'
 export type TimelineItemStyle = 'card' | 'plain'
 
 // Figma Style과 이름이 겹쳐 HTML style 속성은 받지 않는다(htmlType과 같은 규칙)
 export type TimelineItemProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'style' | 'children'> & {
   type?: TimelineItemType
+  /** Figma Position. 기본 middle. first = 날짜의 첫 노드(위 레일 숨김), last = 마지막 노드(아래 레일 없음) */
   position?: TimelineItemPosition
   /** Figma Style: card = 흰 카드 + 테두리, plain = 면·테두리 없음(하이파이 기본, 레일 1.5 · 점 10) */
   style?: TimelineItemStyle
@@ -69,7 +71,10 @@ export function TimelineItem({
         {time}
       </span>
       <span aria-hidden className="flex w-5 shrink-0 flex-col items-center">
-        <span className={clsx('h-3.5 shrink-0', line, now ? 'bg-brand' : 'bg-border-strong')} />
+        {/* 첫 노드는 위 레일 자리만 남기고(점 위치 유지) 그리지 않는다 */}
+        <span
+          className={clsx('h-3.5 shrink-0', line, now ? 'bg-brand' : 'bg-border-strong', position === 'first' && 'invisible')}
+        />
         <span className={clsx('shrink-0 rounded-full', plain && !now ? 'size-2.5' : 'size-3.5', DOT[type])} />
         {position !== 'last' && <span className={clsx('flex-1', line, 'bg-border-strong')} />}
       </span>

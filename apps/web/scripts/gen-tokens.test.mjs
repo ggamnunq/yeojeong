@@ -67,7 +67,7 @@ describe('gen-tokens', () => {
     expect(css).toContain('--text-amount-xl: 40px;')
     expect(css).toContain('--text-amount-xl--letter-spacing: -1px;')
     expect(css).toContain("--font-amount: 'IBM Plex Sans KR', 'Noto Sans KR Variable',")
-    expect(css).toContain('원본: apps/web/design-tokens/tokens.json (DS v1.5 · 2026-10-28)')
+    expect(css).toContain('원본: apps/web/design-tokens/tokens.json (DS v1.6 · 2026-10-28)')
   })
 
   it('typography_rules는 해당 스타일 옆 주석으로 남는다', () => {

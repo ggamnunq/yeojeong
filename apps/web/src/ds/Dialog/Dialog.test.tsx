@@ -63,4 +63,20 @@ describe('Dialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
     expect(onSheetClose).not.toHaveBeenCalled()
   })
+
+  it('body={false}(v1.6)면 제목만 — 본문과 aria-describedby가 없다', () => {
+    render(<Dialog open {...COPY} body={false} onCancel={() => {}} onConfirm={() => {}} />)
+    const dialog = screen.getByRole('alertdialog')
+    expect(dialog.getAttribute('aria-describedby')).toBeNull()
+    expect(screen.queryByText(COPY.message)).toBeNull()
+  })
+
+  it('confirmState="loading"(v1.6)이면 확인 버튼이 aria-busy이고 누름을 무시한다', () => {
+    const onConfirm = vi.fn()
+    render(<Dialog open {...COPY} confirmState="loading" onCancel={() => {}} onConfirm={onConfirm} />)
+    const confirm = screen.getByRole('button', { name: '삭제하기' })
+    expect(confirm.getAttribute('aria-busy')).toBe('true')
+    fireEvent.click(confirm)
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
 })

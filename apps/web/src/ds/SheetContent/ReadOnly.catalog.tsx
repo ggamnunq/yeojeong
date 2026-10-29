@@ -10,7 +10,7 @@ const JUNYONG = { ...ME, me: false }
 
 export default defineCatalog({
   title: 'SheetContent/ReadOnly',
-  figma: '24:68666',
+  figma: '59:10351',
   group: 'components',
   order: 83,
   Demo: function SheetContentReadOnlyCatalog() {
@@ -57,6 +57,40 @@ export default defineCatalog({
                   detail="¥4,800 · 11.13 10:30"
                   payer={{ ...SUBIN, left: true }}
                   participants={[ME, MINJI, TAEHYUN, { ...SUBIN, left: true }]}
+                />
+              </div>
+            </Variant>
+          </Row>
+        </Sub>
+        <Sub title='type="refund" (v1.6 · HF-41 환불 묶음) — 결제·취소 톤 블록 + 결제자 · 부담 인원 · 1인, 버튼 없음'>
+          <Row>
+            <Variant name="전액 취소(순액 ₩0)">
+              <div className="w-[350px]">
+                <SheetContentReadOnly
+                  type="refund"
+                  amount={0}
+                  detail="¥0 · 11.13 (금)"
+                  payment={{ time: '09:40', amount: 121330 }}
+                  refunds={[{ time: '12:15', amount: 121330 }]}
+                  payer={TAEHYUN}
+                  participants={[MINJI_ME, JUNYONG, TAEHYUN, SUBIN]}
+                />
+              </div>
+            </Variant>
+            <Variant name="부분 취소 2건 · changed">
+              <div className="w-[350px]">
+                <SheetContentReadOnly
+                  type="refund"
+                  amount={40000}
+                  detail="¥4,400 · 11.13 (금)"
+                  changed
+                  payment={{ time: '09:40', amount: 120000 }}
+                  refunds={[
+                    { time: '12:15', amount: 50000 },
+                    { time: '18:02', amount: 30000 },
+                  ]}
+                  payer={JUNYONG}
+                  participants={[MINJI_ME, JUNYONG, TAEHYUN, SUBIN]}
                 />
               </div>
             </Variant>

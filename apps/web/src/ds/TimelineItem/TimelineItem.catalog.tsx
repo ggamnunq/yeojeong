@@ -7,8 +7,8 @@ import { TimelineItem, type TimelineItemStyle } from './TimelineItem'
 function Day({ style }: { style: TimelineItemStyle }) {
   return (
     <div className="flex w-[390px] flex-col bg-canvas">
-      <DateHeader date="10월 28일 (화)" day="2일차" />
-      <TimelineItem type="now" style={style} time="15:40" meta="오사카성 공원 근처" />
+      <DateHeader style={style === 'plain' ? 'plain' : 'default'} date="10월 28일 (화)" day="2일차" />
+      <TimelineItem type="now" position="first" style={style} time="15:40" meta="오사카성 공원 근처" />
       <TimelineItem
         type="shared"
         style={style}
@@ -40,13 +40,29 @@ export default defineCatalog({
   Demo: function TimelineItemCatalog() {
     return (
       <div className="flex flex-col gap-8">
-        <Sub title='Now → Shared → Personal → Pending(position="last") · 간격 0으로 쌓음'>
+        <Sub title='Now(position="first") → Shared → Personal → Pending(position="last") · 간격 0으로 쌓음'>
           <Row>
             <Variant name='style="card"'>
               <Day style="card" />
             </Variant>
             <Variant name='style="plain"'>
               <Day style="plain" />
+            </Variant>
+          </Row>
+        </Sub>
+        <Sub title='position="first" (v1.6) — 점 위로 레일이 나가지 않음 · 종료한 날(Now 없음)'>
+          <Row>
+            <Variant name='style="card"'>
+              <div className="w-[390px] bg-canvas">
+                <TimelineItem position="first" time="09:12" merchant="세븐일레븐 신사이바시" amount={6230} meta="¥700 · 내 결제" participants={GROUP.slice(0, 3)} />
+                <TimelineItem type="personal" position="last" time="11:40" merchant="스타벅스 난바" amount={7120} meta="¥800 · 내 결제" />
+              </div>
+            </Variant>
+            <Variant name='style="plain"'>
+              <div className="w-[390px] bg-surface">
+                <TimelineItem position="first" style="plain" time="09:12" merchant="세븐일레븐 신사이바시" amount={6230} meta="¥700 · 내 결제" participants={GROUP.slice(0, 3)} />
+                <TimelineItem type="personal" position="last" style="plain" time="11:40" merchant="스타벅스 난바" amount={7120} meta="¥800 · 내 결제" />
+              </div>
             </Variant>
           </Row>
         </Sub>
