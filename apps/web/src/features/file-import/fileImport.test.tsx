@@ -117,11 +117,11 @@ describe('HF-68 결과', () => {
     // 기본 선택: 기간 안(滴滴出行 · 海底捞火锅), 기간 밖(小杨生煎)은 해제
     expect(screen.getByText('3건 중 2건')).toBeTruthy()
     const row = (name: string) => screen.getByText(name).closest('label') as HTMLElement
-    expect(within(row('滴滴出行')).getByText('¥128.00')).toBeTruthy()
+    expect(within(row('滴滴出行')).getByText('CN¥128.00')).toBeTruthy()
     expect(await within(row('滴滴出行')).findByText('약 ₩24,330')).toBeTruthy()
     expect(within(row('滴滴出行')).getByText(/^\d{2}:\d{2} · /)).toBeTruthy()
-    expect(within(row('海底捞火锅')).getByText('¥438.00')).toBeTruthy()
-    expect(within(row('海底捞火锅')).getByText('부분 환불 −¥30.00')).toBeTruthy()
+    expect(within(row('海底捞火锅')).getByText('CN¥438.00')).toBeTruthy()
+    expect(within(row('海底捞火锅')).getByText('부분 환불 −CN¥30.00')).toBeTruthy()
     expect(within(row('瑞幸咖啡')).getByText('추가됨')).toBeTruthy()
     expect((within(row('瑞幸咖啡')).getByRole('checkbox') as HTMLInputElement).disabled).toBe(true)
     expect(within(row('上海迪士尼度假区')).getByText('환불됨')).toBeTruthy()

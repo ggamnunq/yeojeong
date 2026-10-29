@@ -1,7 +1,7 @@
 import { MANUAL_OCCURRED_AT_FUTURE_SECONDS, MANUAL_OCCURRED_AT_PAST_DAYS, type FileImportCheckResponse, type FileImportItem } from '@yeojeong/shared'
 import { formatKrw, MINUS } from '../../ds'
 import { previewKrw } from '../manual/rules'
-import { formatDateLabel, kst } from '../payments/rules'
+import { formatDateLabel, formatOriginal, kst } from '../payments/rules'
 import { COPY } from './copy'
 import type { StatementItem } from './parsers/types'
 
@@ -54,17 +54,14 @@ export function groupRows(rows: readonly ResultRow[]) {
   return groups
 }
 
-/** 위안 표기 "¥1,280.00"(위챗 화면 안에서는 엔화와 헷갈리지 않아 ¥만 쓴다) */
-export function formatYuan(amount: string) {
-  const [int, frac = '00'] = amount.split('.')
-  return `¥${int.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${frac.padEnd(2, '0').slice(0, 2)}`
-}
+/** 원통화 표기는 앱 공용 규칙(payments/rules formatOriginal: JPY "¥", CNY "CN¥" …) */
+const original = (amount: string, currency: string) => formatOriginal(amount, currency) ?? amount
 
-/** 행 금액: 주 = ¥ 순액, 보조 = 부분 환불 "부분 환불 −¥30.00"(환불액을 모르면 "부분 환불") 또는 "약 ₩"(최신 고시) */
+/** 행 금액: 주 = 원통화 순액("CN¥128.00"), 보조 = 부분 환불 "부분 환불 −CN¥30.00"(환불액을 모르면 "부분 환불") 또는 "약 ₩"(최신 고시) */
 export function rowAmounts(row: Pick<ResultRow, 'amount' | 'currency' | 'refund' | 'refundAmount'>, rate: string | null): { amount: string; subAmount?: string } {
-  const amount = formatYuan(row.amount)
+  const amount = original(row.amount, row.currency)
   if (row.refund === 'PARTIAL') {
-    return { amount, subAmount: row.refundAmount ? `${COPY.partialRefund} ${MINUS}${formatYuan(row.refundAmount)}` : COPY.partialRefund }
+    return { amount, subAmount: row.refundAmount ? `${COPY.partialRefund} ${MINUS}${original(row.refundAmount, row.currency)}` : COPY.partialRefund }
   }
   const estimate = rate ? previewKrw(row.amount, row.currency, rate) : null
   return { amount, subAmount: estimate !== null && estimate > 0 ? `약 ${formatKrw(estimate)}` : undefined }

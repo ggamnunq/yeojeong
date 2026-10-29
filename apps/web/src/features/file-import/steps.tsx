@@ -176,7 +176,7 @@ export function EmptyStep({ info, onBack, onManual, onPick }: { info: ProviderIn
   }
   return (
     <ShellSub header={{ title: info.name, onBack }} cta={cta}>
-      <EmptyState type="illust" illust={<IllustEmptyTrip size={144} />} title={COPY.empty} className="flex-1 justify-center" />
+      <EmptyState type="illust" illust={<IllustEmptyTrip size={144} />} title={COPY.empty} className="flex-1 justify-center break-keep" />
     </ShellSub>
   )
 }

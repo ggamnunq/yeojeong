@@ -25,7 +25,7 @@ export function QuietButton({ children, onClick, className }: { children: ReactN
   )
 }
 
-/** 가운데 일러스트 + 제목 + 보조 줄(HF-55 · 57 · 57r · 57d) */
+/** 가운데 일러스트 + 제목 + 보조 줄(HF-55 · 57 · 57r · 57d · 66b · 66c · 67). 자연 줄바꿈 + 낱말 단위(keep-all) */
 export function CenterStatus({
   phase,
   title,
@@ -44,8 +44,8 @@ export function CenterStatus({
   return (
     <div className="flex flex-1 flex-col items-center justify-center pb-10 text-center" aria-live={live ? 'polite' : undefined}>
       <IllustLinking phase={phase} width={240} className={clsx(live && 'motion-safe:animate-pulse')} />
-      <h2 className="mt-8 text-h2 text-primary">{title}</h2>
-      {sub && <p className="mt-1.5 text-body-s text-secondary">{sub}</p>}
+      <h2 className="mt-8 text-h2 break-keep text-primary">{title}</h2>
+      {sub && <p className="mt-1.5 text-body-s break-keep text-secondary">{sub}</p>}
       {children}
     </div>
   )

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chunk, formatYuan, groupRows, inAcceptedRange, initialSelection, rowAmounts, rowChip, selectAllState, toggleAll, toImportItems, type ResultRow } from './rules'
+import { chunk, groupRows, inAcceptedRange, initialSelection, rowAmounts, rowChip, selectAllState, toggleAll, toImportItems, type ResultRow } from './rules'
 
 const row = (over: Partial<ResultRow> = {}): ResultRow => ({
   txnDigest: 'd1',
@@ -36,11 +36,11 @@ describe('결과 규칙(HF-68)', () => {
   })
 
   it('금액: ¥ 주 금액 + "약 ₩" / 부분 환불 줄', () => {
-    expect(rowAmounts(row(), '190.080000')).toEqual({ amount: '¥128.00', subAmount: '약 ₩24,330' })
-    expect(rowAmounts(row(), null)).toEqual({ amount: '¥128.00', subAmount: undefined })
-    expect(rowAmounts(rows[4], '190.08')).toEqual({ amount: '¥98.00', subAmount: '부분 환불 −¥30.00' })
-    expect(rowAmounts(row({ refund: 'PARTIAL', refundAmount: null }), '190.08')).toEqual({ amount: '¥128.00', subAmount: '부분 환불' })
-    expect(formatYuan('1234567.5')).toBe('¥1,234,567.50')
+    expect(rowAmounts(row(), '190.080000')).toEqual({ amount: 'CN¥128.00', subAmount: '약 ₩24,330' })
+    expect(rowAmounts(row(), null)).toEqual({ amount: 'CN¥128.00', subAmount: undefined })
+    expect(rowAmounts(rows[4], '190.08')).toEqual({ amount: 'CN¥98.00', subAmount: '부분 환불 −CN¥30.00' })
+    expect(rowAmounts(row({ refund: 'PARTIAL', refundAmount: null }), '190.08')).toEqual({ amount: 'CN¥128.00', subAmount: '부분 환불' })
+    expect(rowAmounts(row({ amount: '1234567.50' }), null).amount).toBe('CN¥1,234,567.50')
   })
 
   it('KST 날짜로 묶는다(23:30 CST = 다음 날 00:30 KST)', () => {
