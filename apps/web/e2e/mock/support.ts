@@ -1,0 +1,19 @@
+import type { Page } from '@playwright/test'
+
+// 목 개발 서버의 시나리오 스위치(src/mocks·features/*/mocks.ts의 localStorage 키). 페이지를 열기 전에 부른다.
+export type MockScenario = {
+  session?: 'AUTHENTICATED' | 'SIGNUP_REQUIRED' | 'ANONYMOUS'
+  /** 지갑 목 상태: 'expired' | 'empty' | 'no-consent' */
+  wallet?: 'expired' | 'empty' | 'no-consent'
+}
+
+export async function useMockScenario(page: Page, scenario: MockScenario = {}) {
+  await page.addInitScript((s) => {
+    // 같은 컨텍스트에서 페이지를 다시 열어도 처음 값으로 시작한다
+    if (sessionStorage.getItem('e2e:init')) return
+    sessionStorage.setItem('e2e:init', '1')
+    localStorage.clear()
+    if (s.session) localStorage.setItem('yj:mock:session', s.session)
+    if (s.wallet) localStorage.setItem('yj:mock:wallet', s.wallet)
+  }, scenario)
+}

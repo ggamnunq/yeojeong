@@ -5,11 +5,11 @@ import { errorMessage, fieldErrors, isApiError, keys, type SessionResponse } fro
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
-import { ShellOnboarding } from '../../../ds'
+import { withLoading } from '../../../app/loadingCta'
+import { SheetContentConsent, ShellOnboarding } from '../../../ds'
 import { toast } from '../../../notifications'
 import { consentDocumentsQuery, postSignup, visibleConsents } from '../api'
-import { ConsentList } from '../components/ConsentList'
-import { useConsentChecks } from '../consent'
+import { useConsentChecks, useConsentItems } from '../consent'
 import { COPY } from '../copy'
 import { useFlowState } from '../historyState'
 
@@ -22,6 +22,7 @@ export default function TermsPage() {
   const documents = useQuery(consentDocumentsQuery('SIGNUP'))
   const docs = visibleConsents(documents.data)
   const consent = useConsentChecks(docs)
+  const items = useConsentItems(docs, consent.checked)
   const [formError, setFormError] = useState<string | null>(null)
   const session = useSession()
   const nickname = state.nickname
@@ -85,16 +86,15 @@ export default function TermsPage() {
     <ShellOnboarding
       progress={2}
       onBack={back}
-      cta={{ label: COPY.next, onClick: submit, disabled: !consent.requiredDone || signup.isPending }}
+      cta={withLoading({ label: COPY.next, onClick: submit, disabled: !consent.requiredDone }, signup.isPending)}
     >
       <h1 className="sr-only">약관 동의</h1>
       <h2 className="text-h1 text-primary">{COPY.termsTitle}</h2>
-      <ConsentList
+      <SheetContentConsent
         className="pt-8"
-        docs={docs}
-        checked={consent.checked}
-        onToggleAll={consent.toggleAll}
+        items={items}
         onToggle={consent.toggle}
+        onToggleAll={consent.toggleAll}
         loading={documents.isPending}
       />
       <div className="flex-1" />

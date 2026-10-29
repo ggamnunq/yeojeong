@@ -3,6 +3,8 @@ import type {
   ExpenseListItem,
   ExpenseStatus,
   FxPolicy,
+  LeaveReason,
+  Me,
   MemberRole,
   MemberSummary,
   TripDetail,
@@ -10,6 +12,7 @@ import type {
   TripEventType,
   TripStatus,
 } from '../api'
+import { WITHDRAWN_NICKNAME } from '../app/person'
 
 // 명세 샘플 데이터(screens.md 「샘플 데이터 정의」): 오사카 3박 4일, 준용 = 나 · 그룹장, 민지·태현·수빈.
 // 시점은 진행 중 11.13 18:34(현황 샘플 기준). 11.14 이후 결제는 아직 없다.
@@ -38,10 +41,13 @@ export type MockTrip = {
 export type MockMembership = {
   membershipId: string
   tripId: string
-  userId: string
+  /** 탈퇴(ACCOUNT_DELETED)하면 null(서버 ON DELETE SET NULL) */
+  userId: string | null
   role: MemberRole
   joinOrder: number
   leftAt: string | null
+  /** 나간 이유(LEFT·KICKED·ACCOUNT_DELETED). 활성 멤버는 생략 */
+  leaveReason?: LeaveReason | null
 }
 
 export type MockPaymentMethod = {
@@ -293,26 +299,56 @@ export function resetMockDb() {
 // ── 응답 모양으로 바꾸기 ─────────────────────────────────────────
 
 const DAY_MS = 86_400_000
-const dateDiff = (a: string, b: string) => Math.round((Date.parse(a) - Date.parse(b)) / DAY_MS)
+/** 두 날짜("YYYY-MM-DD")의 일 수 차이 a − b */
+export const dateDiff = (a: string, b: string) => Math.round((Date.parse(a) - Date.parse(b)) / DAY_MS)
 
-export const findUser = (userId: string) => db.users.find((u) => u.id === userId)
+export const findUser = (userId: string | null) => (userId === null ? undefined : db.users.find((u) => u.id === userId))
 export const findTrip = (tripId: string) => db.trips.find((t) => t.tripId === tripId)
+export const findMembership = (membershipId: string) => db.memberships.find((m) => m.membershipId === membershipId)
 
 /** 활성 멤버십(나간 멤버 제외) */
 export function activeMembership(tripId: string, userId: string) {
   return db.memberships.find((m) => m.tripId === tripId && m.userId === userId && m.leftAt === null)
 }
 
+/** 서버 toMemberSummary와 같다: 탈퇴한 멤버는 "탈퇴한 멤버" · 프사 null · isWithdrawn */
 export function memberSummary(m: MockMembership, viewerUserId = db.meUserId): MemberSummary {
   const user = findUser(m.userId)
   return {
     membershipId: m.membershipId,
-    nickname: user?.nickname ?? '탈퇴한 멤버',
+    nickname: user?.nickname ?? WITHDRAWN_NICKNAME,
     profileImageUrl: user?.profileImageUrl ?? null,
-    role: m.role,
+    role: m.leftAt ? 'MEMBER' : m.role,
     joinOrder: m.joinOrder,
-    isMe: m.userId === viewerUserId,
+    isMe: m.userId !== null && m.userId === viewerUserId,
     isLeft: m.leftAt !== null,
+    isWithdrawn: m.userId === null && m.leaveReason === 'ACCOUNT_DELETED',
+  }
+}
+
+export const memberSummaryById = (membershipId: string, viewerUserId = db.meUserId) =>
+  memberSummary(findMembership(membershipId)!, viewerUserId)
+
+/** 사람 목록 정렬(화면명세 0-8, C-05): 나 먼저 → 가입 순 */
+export function meFirst<T extends { isMe: boolean; joinOrder: number }>(items: readonly T[]): T[] {
+  return [...items].sort((a, b) => Number(b.isMe) - Number(a.isMe) || a.joinOrder - b.joinOrder)
+}
+
+/** 연결 해제(REMOVED)되지 않은 결제수단(서버 Me.paymentMethodCount 기준) */
+export const userMethods = (userId: string | null) =>
+  db.paymentMethods.filter((p) => p.userId === userId && p.status !== 'REMOVED')
+
+/** GET /api/users/me · 세션 user · 가입 응답 */
+export function meOf(userId = db.meUserId): Me {
+  const user = findUser(userId)!
+  const methods = userMethods(userId)
+  return {
+    id: user.id,
+    nickname: user.nickname,
+    profileImageUrl: user.profileImageUrl,
+    hasProfileImage: user.profileImageUrl !== null,
+    paymentMethodCount: methods.length,
+    hasExpiredConnection: methods.some((p) => p.status === 'EXPIRED'),
   }
 }
 
@@ -414,13 +450,11 @@ export function tripDetail(trip: MockTrip, viewerUserId = db.meUserId): TripDeta
 
 export function expenseListItem(e: MockExpense, viewerUserId = db.meUserId): ExpenseListItem {
   const trip = findTrip(e.tripId)!
-  const byId = (id: string) => memberSummary(db.memberships.find((m) => m.membershipId === id)!, viewerUserId)
+  const byId = (id: string) => memberSummaryById(id, viewerUserId)
   const localDate = e.occurredAt.slice(0, 10)
   const inPeriod = localDate >= trip.startDate && localDate <= trip.endDate
   const payer = byId(e.payerMembershipId)
-  const participants = e.participantMembershipIds
-    ?.map(byId)
-    .sort((a, b) => Number(b.isMe) - Number(a.isMe) || a.joinOrder - b.joinOrder)
+  const participants = e.participantMembershipIds && meFirst(e.participantMembershipIds.map(byId))
   return {
     id: e.id,
     occurredAt: e.occurredAt,

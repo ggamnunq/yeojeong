@@ -1,7 +1,6 @@
 import { paths } from '../../../app/paths'
-import { Icon, IllustLinking, type IconName } from '../../../ds'
+import { Icon, IllustLinking, ShellOnboarding, type IconName } from '../../../ds'
 import { FinConsentSheet } from '../components/FinConsentSheet'
-import { OnboardingShell } from '../components/OnboardingShell'
 import { COPY } from '../copy'
 import { useFlowState } from '../historyState'
 
@@ -22,10 +21,12 @@ export default function SignupWalletPage() {
   const closeSheet = () => navigate(-1)
 
   return (
-    <OnboardingShell
+    <ShellOnboarding
       progress={3}
       onBack={leave}
-      skip={{ label: COPY.later, onClick: leave }}
+      skip
+      skipLabel={COPY.later}
+      onSkip={leave}
       cta={{ label: COPY.connectToss, onClick: openSheet }}
     >
       <h1 className="sr-only">토스 지갑 연결</h1>
@@ -38,12 +39,12 @@ export default function SignupWalletPage() {
       <ul className="flex gap-2.5 pt-6 pb-2">
         {LABELS.map(({ icon, label }) => (
           <li key={label} className="flex min-w-0 flex-1 flex-col gap-2.5 rounded-lg bg-subtle px-4 py-4.5">
-            <Icon name={icon} size={24} className="text-icon-default" />
+            <Icon name={icon} size={20} className="text-icon-default" />
             <span className="text-body-m-strong text-primary">{label}</span>
           </li>
         ))}
       </ul>
       <FinConsentSheet open={sheetOpen} onClose={closeSheet} screen="WF-05" purpose="SIGNUP" from={paths.signupWallet()} />
-    </OnboardingShell>
+    </ShellOnboarding>
   )
 }

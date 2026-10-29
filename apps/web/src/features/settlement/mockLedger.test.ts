@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { db, EDGE_EXPENSE_IDS, MEMBER, TRIP } from '../../mocks/data'
-import { JEJU, ledgerOf, seedJejuSettlement } from './mockData'
+import { JEJU, seedJejuSettlement } from '../../mocks/seeds'
+import { ledgerOf } from './mockData'
 import { budgetRatio, budgetState, computeLedger, divRoundHalfUp, spendingSplit, splitShares } from './mockLedger'
 
 // 목 장부가 서버(S2C)와 같은 식을 쓰는지(기능명세 4-3·4-4·4-6·4-9 샘플 수치)

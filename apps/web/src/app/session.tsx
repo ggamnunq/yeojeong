@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation, useNavigate } from 'react-router'
 import {
   apiFetch,
   consentRequiredIds,
+  isNoActivePaymentMethod,
   keys,
   onConsentRequired,
   onUnauthenticated,
@@ -12,6 +13,7 @@ import {
   type Me,
   type SessionResponse,
 } from '../api'
+import { connectPrompt } from './connectPrompt'
 import { paths, safeReturnTo } from './paths'
 import { ErrorScreen, LoadingScreen } from './states'
 
@@ -136,8 +138,14 @@ export function SessionBridge() {
       if (AUTH_FREE_PATHS.some((p) => latest.current.location.pathname.startsWith(p))) return
       latest.current.navigate(paths.login(here()), { replace: true })
     })
-    const offConsent = onConsentRequired((_error, required) => {
-      if (required.length > 0 && !required.some((id) => (SIGNUP_CONSENTS as readonly string[]).includes(id))) return
+    const offConsent = onConsentRequired((error, required) => {
+      // 재동의 화면은 가입 약관(TOS 등)만. 연동 동의(FIN_*) 누락·결제수단 0개(NO_ACTIVE_PAYMENT_METHOD)는
+      // 화면을 그대로 두고 지갑 연결 흐름(동의 시트 또는 계좌·카드 추가)으로 잇는다(화면명세 0-6, v0.5.7)
+      const signup = required.some((id) => (SIGNUP_CONSENTS as readonly string[]).includes(id))
+      if (!signup && (required.length > 0 || isNoActivePaymentMethod(error))) {
+        connectPrompt.open(required)
+        return
+      }
       if (latest.current.location.pathname === '/reconsent') return
       latest.current.navigate(paths.reconsent(required, here()))
     })

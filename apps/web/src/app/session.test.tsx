@@ -87,13 +87,28 @@ describe('SessionBridge', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('연동 동의(FIN_*)만 빠졌으면 이동하지 않는다(지갑 화면이 시트로 받는다)', async () => {
+  it('연동 동의(FIN_*)만 빠졌으면 이동하지 않고 그 화면 위에 연동 동의 시트(WF-05b), 토스트 없음', async () => {
     const { router, queryClient } = renderApp('/trips/trip-osaka/info')
     await screen.findByRole('heading', { name: '여정 정보' })
 
     server.use(http.get('/api/me/trips', () => mockError('CONSENT_REQUIRED', 403, { required: ['FIN_LINK'] })))
     await expect(queryClient.fetchQuery({ queryKey: ['probe'], queryFn: () => apiFetch('/me/trips') })).rejects.toThrow()
+    expect(await screen.findByRole('dialog', { name: '금융정보 연동 동의' })).toBeTruthy()
     expect(router.state.location.pathname).toBe('/trips/trip-osaka/info')
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('결제수단 0개(NO_ACTIVE_PAYMENT_METHOD) + missing 없음 → 재동의가 아니라 계좌·카드 추가 시트', async () => {
+    const { router, queryClient } = renderApp('/trips/trip-osaka/info')
+    await screen.findByRole('heading', { name: '여정 정보' })
+
+    server.use(
+      http.get('/api/me/trips', () =>
+        mockError('CONSENT_REQUIRED', 403, { reason: 'NO_ACTIVE_PAYMENT_METHOD', missing: [], required: [] }),
+      ),
+    )
+    await expect(queryClient.fetchQuery({ queryKey: ['probe'], queryFn: () => apiFetch('/me/trips') })).rejects.toThrow()
+    expect(await screen.findByRole('dialog', { name: '계좌·카드 추가' })).toBeTruthy()
+    expect(router.state.location.pathname).toBe('/trips/trip-osaka/info')
   })
 })

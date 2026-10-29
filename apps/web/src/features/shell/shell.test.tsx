@@ -19,6 +19,7 @@ const member = (over: Partial<MemberSummary>): MemberSummary => ({
   joinOrder: 2,
   isMe: false,
   isLeft: false,
+  isWithdrawn: false,
   ...over,
 })
 
@@ -183,7 +184,7 @@ describe('HF-15 그룹원 패널', () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
     renderApp('/trips/trip-osaka/payments')
     const panel = await openPanel()
-    fireEvent.click(within(panel).getByRole('button', { name: '복사' }))
+    fireEvent.click(within(panel).getByRole('button', { name: '초대코드 복사' }))
     expect(await screen.findByText('복사했어요')).toBeTruthy()
     expect(writeText).toHaveBeenCalledWith('K7M-2QX')
   })

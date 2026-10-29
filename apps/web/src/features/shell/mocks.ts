@@ -32,6 +32,7 @@ export const handlers: HttpHandler[] = [
     const target = db.memberships.find((m) => m.membershipId === params.membershipId && m.tripId === trip.tripId)
     if (!target || target.leftAt !== null) return mockError('NOT_FOUND', 404)
     target.leftAt = new Date().toISOString()
+    target.leaveReason = 'KICKED'
     return noContent()
   }),
 
@@ -42,6 +43,7 @@ export const handlers: HttpHandler[] = [
     const { denied, membership } = requireMember(trip.tripId)
     if (denied) return denied
     membership.leftAt = new Date().toISOString()
+    membership.leaveReason = 'LEFT'
     if (membership.role !== 'LEADER') return HttpResponse.json({ newLeader: null, groupDeleted: false })
     membership.role = 'MEMBER'
     const next = db.memberships

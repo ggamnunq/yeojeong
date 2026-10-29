@@ -5,19 +5,10 @@ import { Link } from 'react-router'
 import { paths } from '../../../app/paths'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { useCurrentTrip, useMyTrips } from '../../../app/trip'
-import {
-  BottomSheet,
-  Callout,
-  Icon,
-  IconButton,
-  ListItem,
-  RowAccount,
-  RowAdd,
-  SheetContentOption,
-  ShellSub,
-} from '../../../ds'
+import { Callout, Icon, IconButton, ListItem, RowAccount, RowAdd, ShellSub } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { paymentMethodsQuery, tripFxQuery } from '../api'
+import { AddMethodSheet } from '../components/AddMethodSheet'
 import { RemoveMethodFlow } from '../components/RemoveMethodFlow'
 import { FinConsentSheet } from '../../auth/components/FinConsentSheet'
 import { displayMaskedNumber, formatFxLabel, formatKstTime, formatSyncedAt } from '../format'
@@ -133,25 +124,20 @@ function WalletContent({ data }: { data: PaymentMethodsResponse }) {
 
       <FxSection />
 
-      <BottomSheet
+      <AddMethodSheet
         open={adding}
         onClose={() => setAdding(false)}
-        title="계좌·카드 추가"
-        cta={{
-          label: '연결',
-          disabled: connect.isPending,
-          onClick: () => {
-            setAdding(false)
-            connect.start({ purpose: 'WALLET_ADD' })
-          },
+        pending={connect.isPending}
+        onConnect={() => {
+          setAdding(false)
+          connect.start({ purpose: 'WALLET_ADD' })
         }}
-      >
-        <SheetContentOption options={[{ value: 'TOSS', title: '토스로 불러오기' }]} value="TOSS" aria-label="불러올 곳" />
-      </BottomSheet>
+      />
 
       <RemoveMethodFlow
         method={menuFor}
         isLastOfConnection={menuFor ? lastOfConnection(menuFor) : false}
+        isLastMethod={data.methods.length === 1}
         onClose={() => setMenuFor(null)}
       />
       {connect.consentSheet && <FinConsentSheet {...connect.consentSheet} />}

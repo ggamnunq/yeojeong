@@ -4,6 +4,7 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router'
 import { isApiError, keys } from '../../../api'
 import { paths, safeReturnTo } from '../../../app/paths'
 import { LoadingScreen } from '../../../app/states'
+import { withLoading } from '../../../app/loadingCta'
 import { Checkbox, Icon, ShellOnboarding } from '../../../ds'
 import { attemptQuery, candidatesQuery, confirmConnection } from '../api'
 import { connectPath, external, originPath, readAttemptContext, writeAttemptContext } from '../connect'
@@ -73,11 +74,14 @@ function SelectMethods({ attemptId, returnTo }: { attemptId: string; returnTo: s
       cta={
         empty
           ? { label: '확인', onClick: () => navigate(origin, { replace: true }) }
-          : {
-              label: `${selected.size}개 연결`,
-              disabled: selected.size === 0 || confirm.isPending || !candidates.data,
-              onClick: () => confirm.mutate(list.filter((c) => selected.has(c.candidateId)).map((c) => c.candidateId)),
-            }
+          : withLoading(
+              {
+                label: `${selected.size}개 연결`,
+                disabled: selected.size === 0 || !candidates.data,
+                onClick: () => confirm.mutate(list.filter((c) => selected.has(c.candidateId)).map((c) => c.candidateId)),
+              },
+              confirm.isPending,
+            )
       }
     >
       <h1 className="text-h1 text-primary">불러올 계좌·카드</h1>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { handleApiError, isApiError } from '../../../api'
 import { paths } from '../../../app/paths'
+import { withLoading } from '../../../app/loadingCta'
 import { AvatarStack, Input, RouteProgress, ShellSub } from '../../../ds'
 import { toast } from '../../../notifications'
 import { invitePreviewQuery, useJoinTrip } from '../api'
@@ -86,7 +87,7 @@ export default function JoinPage() {
         title: '초대코드로 참여',
         onBack: () => (location.key === 'default' ? navigate(paths.splash(), { replace: true }) : navigate(-1)),
       }}
-      cta={{ label: '참여하기', onClick: submit, disabled: !data || errorText !== null || join.isPending }}
+      cta={withLoading({ label: '참여하기', onClick: submit, disabled: !data || errorText !== null }, join.isPending)}
     >
       <Input
         label="초대코드"

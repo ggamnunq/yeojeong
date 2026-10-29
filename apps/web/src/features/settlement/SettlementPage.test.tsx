@@ -5,7 +5,7 @@ import { db, TRIP } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { mockError } from '../../mocks/utils'
 import { renderApp } from '../../test/render'
-import { JEJU, seedJejuSettlement } from './mockData'
+import { JEJU, seedJejuSettlement } from '../../mocks/seeds'
 
 // 앱 전체(가드·셸·lazy 화면)를 여는 테스트라 CI·부하가 큰 환경에서 1초 기본 대기가 모자랄 수 있다(이 파일에만 적용)
 configure({ asyncUtilTimeout: 5000 })
@@ -24,7 +24,7 @@ describe('정산 요약(HF-25)', () => {
     await openSettlement()
     const hero = screen.getByRole('region', { name: '총 공동 지출' })
     expect(hero.textContent).toContain('₩826,910')
-    expect(hero.textContent).toContain('N빵 1인₩206,728')
+    expect(hero.textContent).toMatch(/N빵 1인\s?₩206,728/)
     expect(within(hero).getByRole('img', { name: '도착' })).toBeTruthy()
     expect(hero.textContent).toContain('08.21 (금)')
     expect(hero.textContent).toContain('08.23 (일)')
@@ -80,14 +80,18 @@ describe('나간 멤버(HF-44)', () => {
   it('탈퇴한 멤버: 기본 아바타 + "탈퇴한 멤버", 태그 없음, 탭 불가', async () => {
     seedJejuSettlement({ withdrawn: true })
     const { router } = await openSettlement()
-    expect(rows()).toHaveLength(5)
-    const gone = rows()[4] as HTMLButtonElement
-    expect(gone.getAttribute('aria-label')).toBe('탈퇴한 멤버, 결제 ₩24,000, 부담 ₩4,800, 받을 돈 ₩19,200')
+    const items = within(screen.getByRole('list', { name: '멤버별 정산' })).getAllByRole('listitem')
+    expect(items).toHaveLength(5)
+    // 탈퇴한 멤버 행은 누를 수 없는 행(SettlementRow tappable=false: 버튼·› 없음)
+    expect(rows()).toHaveLength(4)
+    const gone = items[4]
+    expect(within(gone).queryByRole('button')).toBeNull()
+    expect(gone.textContent).toContain('탈퇴한 멤버')
+    expect(gone.textContent).toContain('받을 돈')
     expect(gone.textContent).not.toContain('나간 멤버')
     expect(gone.querySelector('[data-source]')?.getAttribute('data-source')).toBe('default')
     expect(gone.querySelector('.grayscale')).toBeNull()
-    expect(gone.disabled).toBe(true)
-    fireEvent.click(gone)
+    fireEvent.click(gone.firstElementChild!)
     expect(path(router)).toBe('/trips/trip-jeju/settlement')
     // 나간 멤버(수빈)는 그대로 태그 + 탭 가능
     expect(within(rows()[3]).getByText('나간 멤버')).toBeTruthy()

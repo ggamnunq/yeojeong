@@ -1,10 +1,35 @@
 import { useMemo } from 'react'
+import { useNavigate } from 'react-router'
+import type { SheetContentConsentItem } from '../../ds'
+import { consentDocHref } from './api'
 import { useFlowState } from './historyState'
 import type { ConsentAgreement, ConsentDocument, ConsentMethod } from './types'
 
-/** 행 문구: "[필수] 서비스 이용약관" */
-export function consentLabel(doc: ConsentDocument) {
-  return `${doc.required ? '[필수]' : '[선택]'} ${doc.title}`
+/**
+ * 동의 문서 → DS Row/Consent 행(SheetContent/Consent items). ›(전문)는 앱 안 이동이라 라우터로 연다.
+ * 체크는 이 history 항목에 남으므로 전문을 보고 돌아와도 그대로다.
+ */
+export function useConsentItems(docs: readonly ConsentDocument[], checked: ReadonlySet<string>): SheetContentConsentItem[] {
+  const navigate = useNavigate()
+  return docs.map((doc) => {
+    const href = consentDocHref(doc)
+    return {
+      id: doc.consentId,
+      title: doc.title,
+      required: doc.required,
+      checked: checked.has(doc.consentId),
+      chevron: href
+        ? {
+            label: `${doc.title} 전문`,
+            href,
+            onClick: (event) => {
+              event.preventDefault()
+              void navigate(href)
+            },
+          }
+        : undefined,
+    }
+  })
 }
 
 /**

@@ -46,9 +46,10 @@ export function AppShell() {
           onMyClick: () => navigate(paths.me()),
         }} />}
         nav={<>
-          {cta && <div className="bg-surface px-gutter pt-3 pb-3">
-            <Button type="primary" size="l" className="w-full" label={cta.label} disabled={cta.disabled} htmlType={cta.htmlType} form={cta.form} onClick={cta.onClick} />
-            {cta.secondary && <button type="button" className="mt-2 w-full py-2 text-body-s text-secondary" onClick={cta.secondary.onClick}>{cta.secondary.label}</button>}
+          {/* 하단 2버튼은 한 줄 2열(간격 8, 1:1): 보조(그룹 삭제 등) 왼쪽 Secondary · 주 액션 오른쪽 Primary(사용자 결정) */}
+          {cta && <div className="flex gap-2 bg-surface px-gutter pt-3 pb-3">
+            {cta.secondary && <Button type="secondary" size="l" className="min-w-0 flex-1" label={cta.secondary.label} onClick={cta.secondary.onClick} />}
+            <Button type="primary" size="l" className="min-w-0 flex-1" label={cta.label} disabled={cta.disabled} htmlType={cta.htmlType} form={cta.form} onClick={cta.onClick} />
           </div>}
           <BottomNav {...{
           active: NAV_ORDER[activeIndex],

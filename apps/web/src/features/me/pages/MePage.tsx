@@ -6,7 +6,7 @@ import { keys } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
-import { Avatar, Dialog, Icon, ShellSub } from '../../../ds'
+import { Avatar, Dialog, Icon, ShellSub, Tag } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { toast } from '../../../notifications'
 import { paymentMethodsQuery } from '../../wallet/api'
@@ -83,11 +83,13 @@ function MeContent({ nickname, profileImageUrl }: { nickname: string; profileIma
           focusRing,
         )}
       >
-        <Icon name="wallet" size={24} className="shrink-0 text-icon-default" />
+        <Icon name="wallet" size={20} className="shrink-0 text-icon-default" />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-body-m-strong text-primary">내 지갑</span>
           {counts !== null && <span className="truncate text-caption text-tertiary">{counts}</span>}
         </span>
+        {/* 연결 만료(WF-30). DS Tag에 만료 변형이 없어 중립 회색 칩(미확정과 같은 모양)에 문구만 바꾼다 */}
+        {methods.data?.hasExpiredConnection && <Tag type="pending" size="s" label="연결 만료" className="shrink-0" />}
         <Icon name="chevron-right" size={20} className="shrink-0 text-icon-subtle" />
       </Link>
 

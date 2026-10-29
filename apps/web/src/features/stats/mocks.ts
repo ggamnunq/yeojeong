@@ -2,7 +2,8 @@ import { HttpResponse, type HttpHandler } from 'msw'
 import { findTrip, MOCK_NOW, TRIP } from '../../mocks/data'
 import { api, mockError, requireMember } from '../../mocks/utils'
 import { budgetRatio, budgetState, spendingSplit } from '../settlement/mockLedger'
-import { ledgerOf, meFirst, personalTotal, seedJejuSettlement, summaryOf } from '../settlement/mockData'
+import { ledgerOf, meFirst, personalTotal, summaryOf } from '../settlement/mockData'
+import { seedJejuSettlement } from '../../mocks/seeds'
 import type { TripSummary } from '../settlement/types'
 
 // GET /api/trips/:tripId/summary (FR-601~604). 지금 SHARED 결제로 즉석 계산(기능명세 4-6·4-9). 미확정은 모든 수치에서 뺀다.

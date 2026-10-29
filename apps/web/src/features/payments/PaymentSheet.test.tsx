@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { db, TRIP, USER } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { renderApp } from '../../test/render'
+import { walletMock } from '../wallet/mocks'
 import { fail } from './mocks'
 
 const PAYMENTS = `/trips/${TRIP.osaka}/payments`
@@ -259,6 +260,49 @@ describe('분담 변경(HF-31~39)', () => {
     expect(card.textContent).toContain('탈퇴한 멤버')
     expect(card.textContent).not.toContain('나간 멤버')
     expect(within(sheet).getByRole('img', { name: '부담 인원 나, 태현 외 3명' })).toBeTruthy()
+  })
+})
+
+describe('결제수단 0개(v0.5.7)', () => {
+  const removeAllMyMethods = () => {
+    for (const p of db.paymentMethods) if (p.userId === db.meUserId) p.status = 'REMOVED'
+  }
+
+  it('공동 → 개인: 본문 "내 결제내역에서도 지워져요" → 204면 시트 닫고 "결제를 지웠어요", 목록에서 사라진다', async () => {
+    removeAllMyMethods()
+    const { sheet, router } = await openFromList(/이치란/)
+    fireEvent.click(segment(sheet, '개인'))
+    fireEvent.click(cta(sheet, '개인으로 변경'))
+    const dialog = await screen.findByRole('alertdialog', { name: '개인 결제로 바꿀까요?' })
+    await waitFor(() => expect(dialog.textContent).toContain('내 결제내역에서도 지워져요'))
+    fireEvent.click(within(dialog).getByRole('button', { name: '바꾸기' }))
+    expect(await screen.findByText('결제를 지웠어요')).toBeTruthy()
+    await waitFor(() => expect(router.state.location.pathname).toBe(PAYMENTS))
+    await waitFor(() => expect(screen.queryByRole('button', { name: /이치란/ })).toBeNull())
+    expect(db.expenses.some((e) => e.id === 'exp-ichiran')).toBe(false)
+    expect(screen.queryByText('요청한 내용을 찾을 수 없어요')).toBeNull()
+  })
+
+  it('공동으로 확정이 403 CONSENT_REQUIRED(NO_ACTIVE_PAYMENT_METHOD) + missing → 시트 유지, 연동 동의 시트, 토스트 없음', async () => {
+    removeAllMyMethods()
+    walletMock().finMissing = ['FIN_LINK', 'FIN_PRIVACY']
+    const { sheet, router } = await openFromList(/551 호라이/)
+    fireEvent.click(cta(sheet, '공동으로 확정'))
+    expect(await screen.findByRole('dialog', { name: '금융정보 연동 동의' })).toBeTruthy()
+    expect(router.state.location.pathname).toBe(`${PAYMENTS}/exp-551`)
+    expect(screen.getByRole('dialog', { name: '551 호라이 난바본점' })).toBeTruthy()
+    expect(db.expenses.find((e) => e.id === 'exp-551')!.status).toBe('PENDING')
+    // 토스트·안내 없음(서버 문구 "금융정보 연동 동의가 필요해요"를 띄우지 않는다)
+    expect(screen.queryByText(/동의가 필요해요/)).toBeNull()
+  })
+
+  it('동의는 유효하고(missing 없음) 결제수단만 0개면 계좌·카드 추가 시트(WF-28)', async () => {
+    removeAllMyMethods()
+    const { sheet } = await openFromList(/551 호라이/)
+    fireEvent.click(cta(sheet, '공동으로 확정'))
+    const add = await screen.findByRole('dialog', { name: '계좌·카드 추가' })
+    expect(within(add).getByRole('button', { name: '연결' })).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: '금융정보 연동 동의' })).toBeNull()
   })
 })
 

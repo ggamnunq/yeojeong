@@ -5,7 +5,7 @@ import { keys, type FxPolicy } from '../../../api'
 import { paths } from '../../../app/paths'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { useTripDetail } from '../../../app/trip'
-import { Input, ShellSub } from '../../../ds'
+import { CardHeroTone, Input, ShellSub } from '../../../ds'
 import { toast } from '../../../notifications'
 import { tripFxQuery, updateFxPolicy } from '../api'
 import { FxPolicyOptions } from '../components/FxPolicyOptions'
@@ -77,21 +77,17 @@ function FxContent({ tripId, fx }: { tripId: string; fx: TripFxView }) {
   return (
     <>
       <div className="px-gutter">
-        <div className="flex flex-col rounded-xl bg-subtle px-5 pt-6 pb-5">
-          <p className="text-body-s text-secondary">
-            {fx.tripCurrency} → {fx.baseCurrency}
-          </p>
-          <p className="mt-1 font-amount text-amount-xl text-primary">
-            <span className="text-[24px] font-semibold text-secondary">{unit} = </span>
-            {current ? formatFxRate(current.displayRate) : '—'}
-            <span className="text-[24px] font-semibold">원</span>
-          </p>
-          {current && (
-            <p className="mt-1.5 text-body-s text-tertiary">
-              {current.source} · {formatKstTime(current.effectiveAt)} 갱신
-            </p>
-          )}
-        </div>
+        <CardHeroTone
+          label={`${fx.tripCurrency} → ${fx.baseCurrency}`}
+          hero={
+            <>
+              <span className="text-[24px] leading-8 font-semibold text-secondary">{unit} = </span>
+              {current ? formatFxRate(current.displayRate) : '—'}
+              <span className="text-[24px] leading-8 font-semibold">원</span>
+            </>
+          }
+          sub={current && <span className="text-tertiary">{`${current.source} · ${formatKstTime(current.effectiveAt)} 갱신`}</span>}
+        />
       </div>
 
       <div className="flex items-center justify-between px-gutter pt-8 pb-1">

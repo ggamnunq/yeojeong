@@ -7,7 +7,7 @@ import {
 } from '@yeojeong/shared'
 import { HttpResponse, type HttpHandler } from 'msw'
 import type { Me } from '../../api'
-import { db, findUser } from '../../mocks/data'
+import { db, meOf } from '../../mocks/data'
 import { api, mockError, noContent, type NoContent } from '../../mocks/utils'
 import type {
   ConsentAgreement,
@@ -89,19 +89,6 @@ function nicknameProblem(input: unknown) {
         : result.reason === 'TOO_LONG'
           ? '닉네임은 10자까지 쓸 수 있어요'
           : '닉네임을 입력해 주세요',
-  }
-}
-
-function meOf(userId: string): Me {
-  const user = findUser(userId)!
-  const methods = db.paymentMethods.filter((p) => p.userId === userId && p.status !== 'REMOVED')
-  return {
-    id: user.id,
-    nickname: user.nickname,
-    profileImageUrl: user.profileImageUrl,
-    hasProfileImage: user.profileImageUrl !== null,
-    paymentMethodCount: methods.length,
-    hasExpiredConnection: methods.some((p) => p.status === 'EXPIRED'),
   }
 }
 

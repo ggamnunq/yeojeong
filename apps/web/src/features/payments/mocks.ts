@@ -3,18 +3,23 @@ import { HttpResponse, type HttpHandler } from 'msw'
 import type { EditBlockReason } from '../../api'
 import { splitEvenly } from '../../ds'
 import {
+  dateDiff,
   db,
   expenseListItem,
+  findMembership,
   findTrip,
+  meFirst,
   MEMBER,
   memberSummary,
   MOCK_NOW,
+  userMethods,
   visibleExpenses,
   type MockExpense,
   type MockMembership,
 } from '../../mocks/data'
-import { api, mockError, requireMember } from '../../mocks/utils'
-import { seedJejuSettlement } from '../settlement/mockData'
+import { api, mockError, noContent, requireMember, type NoContent } from '../../mocks/utils'
+import { finConsentRequired, walletMock } from '../wallet/mocks'
+import { seedJejuSettlement } from '../../mocks/seeds'
 import { clock } from './clock'
 import type { ExpenseRow, ExpensesPage, OutOfPeriodAddResponse, OutOfPeriodCandidate, PaymentDetail } from './types'
 
@@ -30,7 +35,7 @@ export const fail = (code: ErrorCode, details?: Record<string, unknown>) => mock
 // ── 종료된 여정 샘플(제주, WF-39 잠금 · 탈퇴한 멤버) ─────────────────
 // 중앙 샘플에는 종료 여정 결제가 없다. 현황·정산 목(W4F)이 넣는 제주 정산 샘플(탈퇴한 멤버 포함)을 같이 써서
 // 결제내역과 정산이 같은 장부를 본다. 결제 핸들러가 처음 불릴 때 넣고, db를 되돌리면 다시 넣는다.
-export const ensureSeed = () => seedJejuSettlement({ withdrawn: true })
+const ensureSeed = () => seedJejuSettlement({ withdrawn: true })
 
 // ── 변경 이력 상태(서버 firstSharedAt · 중복 해제 기록) ──────────────
 // db.expenses 배열·항목은 되돌릴 때마다 새로 만들어지므로 WeakMap/WeakSet이면 함께 초기화된다.
@@ -47,20 +52,18 @@ const wasShared = (e: MockExpense) => sharedOnce.has(e) || e.status === 'SHARED'
 
 // ── 응답 모양 ──────────────────────────────────────────────────────
 
-const membership = (id: string) => db.memberships.find((m) => m.membershipId === id)
-const DAY_MS = 86_400_000
+const membership = findMembership
 
 function period(tripId: string): ExpensesPage['period'] {
   const trip = findTrip(tripId)!
-  const days = Math.round((Date.parse(trip.endDate) - Date.parse(trip.startDate)) / DAY_MS) + 1
   const today = MOCK_NOW.slice(0, 10)
   const inPeriod = trip.status === 'ONGOING' && today >= trip.startDate && today <= trip.endDate
   return {
     tripStatus: trip.status,
     startDate: trip.startDate,
     endDate: trip.endDate,
-    days,
-    todayDayIndex: inPeriod ? Math.round((Date.parse(today) - Date.parse(trip.startDate)) / DAY_MS) + 1 : null,
+    days: dateDiff(trip.endDate, trip.startDate) + 1,
+    todayDayIndex: inPeriod ? dateDiff(today, trip.startDate) + 1 : null,
   }
 }
 
@@ -97,10 +100,11 @@ function remainderHolder(e: MockExpense) {
 /** 부담 인원 후보: 활성 멤버 + 지금 부담 인원의 나간 멤버(해제만, Q-30). 나 → 가입 순 */
 function candidatesOf(e: MockExpense) {
   const current = e.participantMembershipIds ?? []
-  return db.memberships
-    .filter((m) => m.tripId === e.tripId && (m.leftAt === null || current.includes(m.membershipId)))
-    .map((m) => memberSummary(m))
-    .sort((a, b) => Number(b.isMe) - Number(a.isMe) || a.joinOrder - b.joinOrder)
+  return meFirst(
+    db.memberships
+      .filter((m) => m.tripId === e.tripId && (m.leftAt === null || current.includes(m.membershipId)))
+      .map((m) => memberSummary(m)),
+  )
 }
 
 function expenseDetail(e: MockExpense, me: MockMembership): PaymentDetail {
@@ -273,7 +277,7 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(expenseDetail(found.expense, found.me))
   }),
 
-  api.put<PaymentDetail, ClassifyExpenseRequest>('/api/trips/:tripId/expenses/:expenseId/classification', async ({ params, request }) => {
+  api.put<PaymentDetail | NoContent, ClassifyExpenseRequest>('/api/trips/:tripId/expenses/:expenseId/classification', async ({ params, request }) => {
     const found = visibleExpense(String(params.tripId), String(params.expenseId))
     if (found.denied) return found.denied
     const { expense: e, me } = found
@@ -298,6 +302,17 @@ export const handlers: HttpHandler[] = [
       return HttpResponse.json(expenseDetail(e, me))
     }
     if (body.version !== e.version) return fail('VERSION_CONFLICT', { current: expenseDetail(e, me) })
+
+    // 결제자의 결제수단이 0개면 공개 확대(공동 지정·부담 인원 추가)를 막고, 공동 → 개인은 결제를 지운다(v0.5.7, S4)
+    const wallet = walletMock() // 지갑 시나리오('empty' 등)를 먼저 적용한다
+    const noMethods = userMethods(me.userId).length === 0
+    const widens = body.status === 'SHARED' && (e.status !== 'SHARED' || ids.some((id) => !before.includes(id)))
+    if (noMethods && widens) return finConsentRequired(wallet.finMissing, 'NO_ACTIVE_PAYMENT_METHOD')
+    if (noMethods && body.status === 'PERSONAL' && e.status === 'SHARED' && body.confirmSharedToPersonal === true) {
+      leaveDuplicateGroup(e)
+      db.expenses = db.expenses.filter((x) => x !== e)
+      return noContent()
+    }
 
     if (body.status === 'SHARED') {
       if (ids.length === 0) return fail('PARTICIPANTS_REQUIRED')

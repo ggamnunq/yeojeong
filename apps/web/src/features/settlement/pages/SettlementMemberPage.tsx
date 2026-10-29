@@ -1,15 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { clsx } from 'clsx'
 import { useEffect, useId } from 'react'
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router'
 import { isApiError, keys, type ExpenseListItem } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useTripDetail } from '../../../app/trip'
-import { Avatar, BadgeMe, formatKrw, Icon, orderMembers, PaymentRow, ShellSub, Tag, type SettlementRowNet } from '../../../ds'
+import { Avatar, BadgeMe, CardHeroTone, formatKrw, Icon, orderMembers, PaymentRow, ShellSub, Tag, type SettlementRowNet } from '../../../ds'
 import { settlementMemberQuery } from '../api'
 import type { SettlementMemberExpenses, SettlementView } from '../types'
 import { CardsSkeleton, InlineError, SectionLabel } from '../ui'
-import { memberState, originalAmountText, paymentDateMeta, settlementText, toPerson } from '../view'
+import { memberState, originalAmountText, paymentDateMeta, settlementText, toPerson, toPersonAt } from '../view'
 
 // WF-26·44 / HF-26 멤버별 결제 내역(Sub 셸, 내비 없음). 영웅 = 그 사람의 ±(받을 돈·보낼 돈) + 프사,
 // 공동 결제 n건(PaymentRow, 탭 → 결제 상세 시트), 개인 결제는 남이면 건수만 "비공개"(C-02), 본인이면 목록.
@@ -78,7 +77,6 @@ const NET_COLOR = {
 } satisfies Record<SettlementRowNet, string>
 
 function MemberContent({ data, left }: { data: SettlementMemberExpenses; left: boolean }) {
-  const heroId = useId()
   const sharedId = useId()
   const personalId = useId()
   const s = settlementText(data.direction, data.netKrw)
@@ -89,31 +87,28 @@ function MemberContent({ data, left }: { data: SettlementMemberExpenses; left: b
   return (
     <div className="flex flex-col pb-8">
       <div className="px-gutter">
-        {/* 영웅 카드 · 톤: "보낼 돈" → −₩26,340(40, 보낼 돈 색) + 프사 L · 아래 "결제 ₩ · 부담 ₩" */}
-        <section aria-labelledby={heroId} className="flex flex-col rounded-xl bg-subtle px-5 pt-6 pb-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 flex-col gap-1">
-              <h2 id={heroId} className="text-body-s text-secondary">
-                {s.label}
-              </h2>
-              <p className={clsx('font-amount text-amount-xl whitespace-nowrap', NET_COLOR[s.net])}>{s.amount}</p>
-            </div>
-            <Avatar {...toPerson(data.member, left)} size="l" ring alt="" />
-          </div>
-          <dl className="mt-2 flex items-center gap-1.5 text-body-s whitespace-nowrap">
-            <div className="flex items-center gap-1.5">
-              <dt className="text-secondary">결제</dt>
-              <dd className="text-body-s-strong text-primary">{formatKrw(data.paidKrw)}</dd>
-            </div>
-            <span aria-hidden className="text-tertiary">
-              ·
-            </span>
-            <div className="flex items-center gap-1.5">
-              <dt className="text-secondary">부담</dt>
-              <dd className="text-body-s-strong text-primary">{formatKrw(data.burdenKrw)}</dd>
-            </div>
-          </dl>
-        </section>
+        {/* 톤 영웅(Card/HeroTone, HF-26): "보낼 돈" → −₩26,340(보낼 돈 색) + 프사 L · 아래 "결제 ₩ · 부담 ₩" */}
+        <CardHeroTone
+          headingLevel={2}
+          label={s.label}
+          hero={<span className={NET_COLOR[s.net]}>{s.amount}</span>}
+          aside={<Avatar {...toPersonAt(data.member, left)} size="l" ring alt="" />}
+          sub={
+            <dl className="mt-1 flex items-center gap-1.5 whitespace-nowrap">
+              <div className="flex items-center gap-1.5">
+                <dt>결제</dt>
+                <dd className="text-body-s-strong text-primary">{formatKrw(data.paidKrw)}</dd>
+              </div>
+              <span aria-hidden className="text-tertiary">
+                ·
+              </span>
+              <div className="flex items-center gap-1.5">
+                <dt>부담</dt>
+                <dd className="text-body-s-strong text-primary">{formatKrw(data.burdenKrw)}</dd>
+              </div>
+            </dl>
+          }
+        />
       </div>
 
       <SectionLabel id={sharedId} className="px-gutter pt-8 pb-1">

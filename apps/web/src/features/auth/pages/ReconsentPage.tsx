@@ -4,10 +4,10 @@ import { keys } from '../../../api'
 import { paths, safeReturnTo } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
-import { ShellOnboarding } from '../../../ds'
+import { withLoading } from '../../../app/loadingCta'
+import { SheetContentConsent, ShellOnboarding } from '../../../ds'
 import { consentDocumentsQuery, postLogout, postReconsent, visibleConsents } from '../api'
-import { ConsentList } from '../components/ConsentList'
-import { useConsentChecks } from '../consent'
+import { useConsentChecks, useConsentItems } from '../consent'
 import { COPY } from '../copy'
 
 /**
@@ -32,6 +32,7 @@ export default function ReconsentPage() {
   const matched = signupDocs.filter((d) => required.has(d.consentId))
   const docs = matched.length > 0 ? matched : signupDocs.filter((d) => d.required)
   const consent = useConsentChecks(docs)
+  const items = useConsentItems(docs, consent.checked)
 
   const agree = useMutation({
     mutationFn: postReconsent,
@@ -62,19 +63,21 @@ export default function ReconsentPage() {
   return (
     <ShellOnboarding
       back={false}
-      cta={{
-        label: COPY.agree,
-        disabled: !consent.requiredDone || busy,
-        onClick: () => agree.mutate({ agreements: consent.agreements(), method: consent.method }),
-      }}
+      cta={withLoading(
+        {
+          label: COPY.agree,
+          disabled: !consent.requiredDone || logout.isPending,
+          onClick: () => agree.mutate({ agreements: consent.agreements(), method: consent.method }),
+        },
+        agree.isPending,
+      )}
     >
       <h1 className="text-h1 text-primary">{COPY.reconsentTitle}</h1>
-      <ConsentList
+      <SheetContentConsent
         className="pt-8"
-        docs={docs}
-        checked={consent.checked}
-        onToggleAll={consent.toggleAll}
+        items={items}
         onToggle={consent.toggle}
+        onToggleAll={consent.toggleAll}
         loading={documents.isPending}
       />
       <div className="flex-1" />

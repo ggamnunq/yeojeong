@@ -12,6 +12,7 @@ export type {
   ExpenseOrigin,
   ExpenseStatus,
   FxPolicy,
+  LeaveReason,
   Me,
   MemberRole,
   MemberSummary,

@@ -1,5 +1,6 @@
 import { cleanup } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll } from 'vitest'
+import { connectPrompt } from '../app/connectPrompt'
 import { resetMockDb } from '../mocks/data'
 import { server } from '../mocks/server'
 import { toastStore } from '../notifications/store'
@@ -12,6 +13,7 @@ afterEach(() => {
   server.resetHandlers()
   resetMockDb()
   toastStore.clear()
+  connectPrompt.close()
   try {
     localStorage.clear()
   } catch {

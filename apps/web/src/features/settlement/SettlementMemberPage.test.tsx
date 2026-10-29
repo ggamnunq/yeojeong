@@ -2,7 +2,7 @@ import { configure, fireEvent, screen, waitFor, within } from '@testing-library/
 import { describe, expect, it } from 'vitest'
 import { db, MEMBER, TRIP } from '../../mocks/data'
 import { renderApp } from '../../test/render'
-import { JEJU, seedJejuSettlement } from './mockData'
+import { JEJU, seedJejuSettlement } from '../../mocks/seeds'
 
 // 앱 전체(가드·셸·lazy 화면)를 여는 테스트라 CI·부하가 큰 환경에서 1초 기본 대기가 모자랄 수 있다(이 파일에만 적용)
 configure({ asyncUtilTimeout: 5000 })

@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import { Outlet, ScrollRestoration, useMatches } from 'react-router'
+import { FinConnectHost } from '../features/wallet/components/FinConnectHost'
 import { ToastHost } from '../notifications'
 import { SessionBridge } from './session'
 import { LoadingScreen } from './states'
@@ -19,6 +20,7 @@ export function RootLayout() {
       <Suspense fallback={<LoadingScreen />}>
         <Outlet />
       </Suspense>
+      <FinConnectHost />
       <ToastHost aboveNav={aboveNav} />
       <ScrollRestoration />
     </>
