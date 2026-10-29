@@ -80,7 +80,8 @@ function agreedAll(agreements: ConsentAgreement[] | undefined, ids: readonly str
 }
 
 /** 서버 normalizeNickname과 같은 규칙(FR-103) */
-function nicknameProblem(input: unknown) {
+/** 서버 assertNickname과 같은 닉네임 오류(가입 · 내 정보 수정 목 공용) */
+export function nicknameProblem(input: unknown) {
   if (typeof input !== 'string') return { code: 'EMPTY', message: '닉네임을 입력해 주세요' }
   const result = normalizeNickname(input)
   if (result.ok) return null

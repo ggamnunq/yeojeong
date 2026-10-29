@@ -28,4 +28,14 @@ describe('CardHeroTone', () => {
     expect(screen.getByRole('heading', { level: 3, name: '총 공동 지출' })).toBeTruthy()
     expect(screen.getByRole('region', { name: '총 공동 지출' })).toBeTruthy()
   })
+
+  it('action.text면 아이콘 대신 텍스트 버튼(Ghost S) — 보이는 글자 + 접근성 이름', () => {
+    const onClick = vi.fn()
+    render(<CardHeroTone label="여행 중" hero="Day 2" action={{ label: '여정 정보 수정', text: '수정', onClick }} />)
+    const button = screen.getByRole('button', { name: '여정 정보 수정' })
+    expect(button.textContent).toBe('수정')
+    expect(button.querySelector('svg')).toBeNull()
+    fireEvent.click(button)
+    expect(onClick).toHaveBeenCalledTimes(1)
+  })
 })

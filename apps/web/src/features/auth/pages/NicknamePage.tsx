@@ -1,23 +1,18 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, type FormEvent } from 'react'
 import { handleApiError, keys } from '../../../api'
 import { accountLinkOf } from '../../../app/features'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { rememberSignupReturnTo } from '../../../app/signupReturnTo'
-import { Input, ShellOnboarding } from '../../../ds'
+import { ShellOnboarding } from '../../../ds'
 import { forgetInvites } from '../../trips/pendingInvite'
 import { postLogout } from '../api'
 import { COPY } from '../copy'
 import { useFlowState } from '../historyState'
 import { signupProgress } from '../steps'
-import {
-  graphemeLength,
-  isNicknameValid,
-  NICKNAME_MAX_LENGTH,
-  nicknameFromDraft,
-  sanitizeNicknameInput,
-} from '../nickname'
+import { NicknameInput } from '../components/NicknameInput'
+import { isNicknameValid, nicknameFromDraft } from '../nickname'
 
 /** WF-03 닉네임 입력(HF-03, FR-103). 저장은 WF-04 가입 요청에서 함께 보낸다 */
 export default function NicknamePage() {
@@ -25,8 +20,6 @@ export default function NicknamePage() {
   const queryClient = useQueryClient()
   const { state, patch, navigate } = useFlowState()
   const formId = useId()
-  const inputRef = useRef<HTMLInputElement>(null)
-  const composing = useRef(false)
   const [value, setValue] = useState(
     () => state.nickname ?? nicknameFromDraft(session.data?.signupDraft?.kakaoNickname),
   )
@@ -40,8 +33,7 @@ export default function NicknamePage() {
   }, [draftReturnTo])
 
   const change = (next: string) => {
-    // 한글 조합 중에는 자르지 않는다(조합이 깨진다). 조합이 끝나면 10자로 맞춘다
-    setValue(sanitizeNicknameInput(next, { truncate: !composing.current }))
+    setValue(next)
     if (error) setError(null)
   }
 
@@ -78,31 +70,12 @@ export default function NicknamePage() {
       <h1 className="sr-only">닉네임</h1>
       <h2 className="text-h1 text-primary">{COPY.nicknameTitle}</h2>
       <form id={formId} noValidate onSubmit={submit} className="pt-8">
-        <Input
-          ref={inputRef}
-          size="l"
-          labelVisible={false}
-          label="닉네임"
-          name="nickname"
-          autoComplete="nickname"
-          enterKeyHint="next"
+        <NicknameInput
+          value={value}
+          error={error}
           // 가입 첫 입력이라 바로 쓸 수 있게 포커스를 둔다(Figma State=Focus)
           autoFocus
-          value={value}
-          error={error !== null}
-          helper={error ?? COPY.nicknameHelper(graphemeLength(value), NICKNAME_MAX_LENGTH)}
-          onChange={(e) => change(e.currentTarget.value)}
-          onCompositionStart={() => {
-            composing.current = true
-          }}
-          onCompositionEnd={(e) => {
-            composing.current = false
-            change(e.currentTarget.value)
-          }}
-          onClear={() => {
-            change('')
-            inputRef.current?.focus()
-          }}
+          onChange={change}
         />
       </form>
     </ShellOnboarding>

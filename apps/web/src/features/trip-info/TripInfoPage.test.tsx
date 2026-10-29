@@ -20,7 +20,7 @@ const metaLine = (text: string) =>
 const expirebusan = () => Object.assign(findTrip(TRIP.busan)!, { startDate: '2026-11-01', endDate: '2026-11-02' })
 
 describe('HF-16 시작 전 여정 정보', () => {
-  it('그룹장: 출발까지 D-n · 경로 · 메타 · 그룹원 · 초대코드 + 연필 · 「여정 시작」 · 「그룹 삭제」', async () => {
+  it('그룹장: 출발까지 D-n · 경로 · 메타 · 그룹원 · 초대코드 + 「수정」 · 「여정 시작」 · 「그룹 삭제」', async () => {
     makeMeLeader(TRIP.busan)
     renderApp('/trips/trip-busan/info')
     expect(await screen.findByText('출발까지')).toBeTruthy()
@@ -30,7 +30,8 @@ describe('HF-16 시작 전 여정 정보', () => {
     expect(metaLine('부산 · 1박 2일 · 예산 ₩600,000')).toBeTruthy()
     expect(screen.getByRole('heading', { name: '그룹원 3명' })).toBeTruthy()
     expect(main().getByText('B8N-4RT')).toBeTruthy()
-    expect(button('여정 정보 수정')).toBeTruthy()
+    // W9: 연필 아이콘 → 텍스트 버튼 「수정」(발견성)
+    expect(button('여정 정보 수정')?.textContent).toBe('수정')
     expect(await screen.findByRole('button', { name: '여정 시작' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '그룹 삭제' })).toBeTruthy()
     // 시작 전에는 프사 줄 「추가」가 없다(HF-16)
@@ -44,7 +45,7 @@ describe('HF-16 시작 전 여정 정보', () => {
     expect(within(list[1]).getByRole('img', { name: '그룹장' })).toBeTruthy()
   })
 
-  it('멤버: 연필 · 「여정 시작」 · 「그룹 삭제」 없음(초대코드는 있음)', async () => {
+  it('멤버: 「수정」 · 「여정 시작」 · 「그룹 삭제」 없음(초대코드는 있음)', async () => {
     renderApp('/trips/trip-busan/info')
     await screen.findByText('출발까지')
     expect(main().getByText('B8N-4RT')).toBeTruthy()
@@ -148,7 +149,7 @@ describe('Q-26 종료일이 지난 시작 전 여정', () => {
 })
 
 describe('HF-23 진행 중 여정 정보', () => {
-  it('그룹장: 여행 중 Day 2 / 4 · 그룹원 + 「추가」 · 초대코드 · 「여정 종료하기」 · 연필', async () => {
+  it('그룹장: 여행 중 Day 2 / 4 · 그룹원 + 「추가」 · 초대코드 · 「여정 종료하기」 · 「수정」', async () => {
     renderApp('/trips/trip-osaka/info')
     expect(await screen.findByText('여행 중')).toBeTruthy()
     expect(screen.getByText('Day 2')).toBeTruthy()
@@ -164,7 +165,14 @@ describe('HF-23 진행 중 여정 정보', () => {
     expect(button('그룹 삭제')).toBeNull()
   })
 
-  it('멤버: 「여정 종료하기」 · 연필 없음, 「추가」는 있음', async () => {
+  it('그룹장 「수정」 → 여정 정보 수정(진행 중에도 그룹명은 열림)', async () => {
+    const { router } = renderApp('/trips/trip-osaka/info')
+    fireEvent.click(await screen.findByRole('button', { name: '여정 정보 수정' }))
+    await waitFor(() => expect(path(router)).toBe('/trips/trip-osaka/edit'))
+    expect(((await screen.findByRole('textbox', { name: '그룹명' })) as HTMLInputElement).disabled).toBe(false)
+  })
+
+  it('멤버: 「여정 종료하기」 · 「수정」 없음, 「추가」는 있음', async () => {
     db.meUserId = USER.minji
     renderApp('/trips/trip-osaka/info')
     expect(await screen.findByText('여행 중')).toBeTruthy()
@@ -224,7 +232,7 @@ describe('HF-23 진행 중 여정 정보', () => {
 })
 
 describe('종료 후 여정 정보', () => {
-  it('도착한 경로 · 읽기 전용(초대코드 · 추가 · 버튼 · 연필 없음)', async () => {
+  it('도착한 경로 · 읽기 전용(초대코드 · 추가 · 버튼 · 「수정」 없음)', async () => {
     renderApp('/trips/trip-jeju/info')
     expect(await screen.findByText('2박 3일')).toBeTruthy()
     expect(screen.getByRole('img', { name: '도착' })).toBeTruthy()
