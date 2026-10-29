@@ -1,4 +1,4 @@
-import type { AuthSessionResponse, ConsentDocumentSummary, ConsentScreen } from '@yeojeong/shared'
+import type { AttemptPurpose, AuthSessionResponse, ConsentDocumentSummary, ConsentScreen } from '@yeojeong/shared'
 
 // 인증·동의 플로우에서만 쓰는 요청·응답 타입(기능명세 6-3 auth·consents·wallet).
 // 응답 모양은 @yeojeong/shared(서버 1차)를 쓰고, 요청 본문은 서버 DTO에 맞춰 여기 둔다.
@@ -9,26 +9,18 @@ export type FinConsentScreen = Extract<ConsentScreen, 'WF-05' | 'WF-28' | 'WF-42
 export type {
   ConsentAgreementInput as ConsentAgreement,
   ConsentMethod,
+  ConsentStatusResponse,
   ConsentSubmitRequest as FinConsentRequest,
   ReconsentRequest,
   SignupRequest,
 } from '@yeojeong/shared'
 
-export type ConnectionPurpose = 'SIGNUP' | 'WALLET_ADD' | 'RECONNECT'
-
-/** POST /api/payment-connections */
-export interface StartConnectionRequest {
-  provider: 'TOSS'
-  purpose: ConnectionPurpose
-  reconnectConnectionId?: string
-}
-
-/** 201 { attemptId, authUrl, expiresAt } */
-export interface StartConnectionResponse {
-  attemptId: string
-  authUrl: string
-  expiresAt: string
-}
+/** 토스 연결 목적·요청·응답(POST /api/payment-connections)은 결제수단 계약(shared api/payment-methods)을 그대로 쓴다 */
+export type {
+  AttemptPurpose as ConnectionPurpose,
+  StartConnectionRequest,
+  StartConnectionResponse,
+} from '@yeojeong/shared'
 
 /**
  * WF-05b → WF-06(/wallet/connect/toss)으로 넘기는 location.state.
@@ -36,7 +28,7 @@ export interface StartConnectionResponse {
  */
 export interface ConnectHandoffState {
   authUrl: string
-  purpose: ConnectionPurpose
+  purpose: AttemptPurpose
   from: string
 }
 

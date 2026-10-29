@@ -1,8 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { isApiError, keys } from '../../../api'
 import { paths } from '../../../app/paths'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { useCurrentTrip, useMyTrips } from '../../../app/trip'
@@ -18,17 +17,14 @@ import {
   ShellSub,
 } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
-import { paymentMethodsQuery, requestSync, tripFxQuery } from '../api'
+import { paymentMethodsQuery, tripFxQuery } from '../api'
 import { RemoveMethodFlow } from '../components/RemoveMethodFlow'
 import { FinConsentSheet } from '../../auth/components/FinConsentSheet'
 import { displayMaskedNumber, formatFxLabel, formatKstTime, formatSyncedAt } from '../format'
 import type { PaymentMethodsResponse, PaymentMethodView } from '../types'
 import { useBack } from '../useBack'
+import { useManualSync } from '../useManualSync'
 import { useTossConnect } from '../useTossConnect'
-
-const SYNC_POLL_MS = 1500
-const SYNC_MAX_MS = 15_000
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** WF-27 지갑 · WF-42 연결 만료 · WF-28 계좌·카드 추가 시트 */
 export default function WalletPage() {
@@ -49,7 +45,6 @@ export default function WalletPage() {
 }
 
 function WalletContent({ data }: { data: PaymentMethodsResponse }) {
-  const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [menuFor, setMenuFor] = useState<PaymentMethodView | null>(null)
   const connect = useTossConnect()
@@ -58,28 +53,8 @@ function WalletContent({ data }: { data: PaymentMethodsResponse }) {
   // 동기화 대상은 진행 중 여정이 있는 사용자뿐이라 없으면 새로고침을 숨긴다(확정 명세)
   const myTrips = useMyTrips()
   const hasOngoingTrip = myTrips.data?.items.some((t) => t.status === 'ONGOING') ?? false
-  const sync = useMutation({
-    mutationFn: async () => {
-      const before = data.lastSyncedAt
-      try {
-        const started = await requestSync()
-        if (started.skipped) return
-      } catch (error) {
-        // 60초 제한(429)·만료(409)·제공자 장애: 토스트 없이 목록만 다시 받는다(FR-402)
-        if (isApiError(error) && error.status === 401) throw error
-        return
-      }
-      // 202 뒤 동기화가 끝나 시각이 바뀔 때까지 최대 15초 기다린다
-      const deadline = Date.now() + SYNC_MAX_MS
-      while (Date.now() < deadline) {
-        const next = await queryClient.fetchQuery({ ...paymentMethodsQuery(), staleTime: 0 })
-        if (next.lastSyncedAt !== before) return
-        await wait(SYNC_POLL_MS)
-      }
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: keys.wallet.methods }),
-    meta: { silent: true },
-  })
+  // 202면 동기화가 끝나 시각이 바뀔 때까지 스피너, 429·409·skipped는 토스트 없이 재조회만(FR-402)
+  const sync = useManualSync()
 
   const empty = data.methods.length === 0
   const lastOfConnection = (method: PaymentMethodView) =>

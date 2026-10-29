@@ -1,13 +1,14 @@
-import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
-import type { ExpenseListParams } from '../../../api'
+import { keys, type ExpenseListParams } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { useTripDetail } from '../../../app/trip'
 import { Callout } from '../../../ds'
 import { FinConsentSheet } from '../../auth/components/FinConsentSheet'
-import { paymentMethodsQuery, requestSync } from '../../wallet/api'
+import { paymentMethodsQuery } from '../../wallet/api'
+import { useManualSync } from '../../wallet/useManualSync'
 import { useTossConnect } from '../../wallet/useTossConnect'
 import { expensesQuery } from '../api'
 import { clock } from '../clock'
@@ -54,11 +55,9 @@ export default function PaymentsPage() {
   const connect = useTossConnect()
   const touchStart = useRef<number | null>(null)
   const [pullDistance, setPullDistance] = useState(0)
-  const sync = useMutation({
-    mutationFn: requestSync,
-    meta: { silent: true },
-    onSettled: () => query.refetch(),
-  })
+  const queryClient = useQueryClient()
+  // 당겨서 새로고침 = 수동 동기화(진행 중만). 202면 끝날 때까지 스피너 → 목록·배너(여정 상세) 재조회. 429는 토스트 없이 재조회만
+  const sync = useManualSync(() => queryClient.invalidateQueries({ queryKey: keys.trips.detail(trip.tripId) }))
   const firstPage = query.data?.pages[0]
   const pendingCount = ongoing ? (firstPage?.pendingCount ?? trip.me.pendingCount) : 0
   // 받은 period를 기억해 두면 Day를 바꿔 새로 받는 동안에도 칩·오늘이 그대로다(렌더 중 갱신 — 파생 상태 패턴)
@@ -116,7 +115,7 @@ export default function PaymentsPage() {
         setPullDistance(Math.min(80, Math.max(0, (event.touches[0]?.clientY ?? touchStart.current) - touchStart.current)))
       }}
       onTouchEnd={() => {
-        if (pullDistance >= 56 && !sync.isPending) sync.mutate()
+        if (ongoing && pullDistance >= 56 && !sync.isPending) sync.mutate()
         touchStart.current = null
         setPullDistance(0)
       }}
