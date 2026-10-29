@@ -56,6 +56,8 @@ const ORGANIZATIONS: CardImportOrganization[] = [
 export function resetCardImportMock(options: { consented?: boolean } = {}) {
   db.cardImportState = {
     consentAgreedAt: options.consented ? new Date().toISOString() : null,
+    consentVersion: options.consented ? CONSENT_VERSION : null,
+    requiredVersion: CONSENT_VERSION,
     startedToday: 0,
     loginFailures: 0,
     importedKeys: [],
@@ -65,6 +67,14 @@ export function resetCardImportMock(options: { consented?: boolean } = {}) {
 }
 
 const state = () => db.cardImportState
+const CONSENT_VERSION = '0.1-draft'
+const major = (version: string) => version.split('.')[0]
+
+/** 유효한 CARD_IMPORT 동의: 철회 안 됐고, 동의한 버전의 MAJOR가 지금 문서와 같다(MAJOR가 오르면 재동의) */
+const consentValid = () => {
+  const { consentAgreedAt, consentVersion, requiredVersion } = state()
+  return consentAgreedAt !== null && consentVersion !== null && major(consentVersion) === major(requiredVersion)
+}
 
 const DAY_MS = 86_400_000
 const retryAfter = (seconds: number) => ({
@@ -80,9 +90,9 @@ const hex64 = (seed: string) => {
 }
 
 function consentStatus(): ConsentStatusResponse {
-  return state().consentAgreedAt
+  return consentValid()
     ? { valid: true, missing: [], required: [] }
-    : { valid: false, missing: ['CARD_IMPORT'], required: [{ id: 'CARD_IMPORT', version: '0.1-draft' }] }
+    : { valid: false, missing: ['CARD_IMPORT'], required: [{ id: 'CARD_IMPORT', version: state().requiredVersion }] }
 }
 
 /** 진행 중 여정(내가 활성 멤버) 중 오늘이 기간 안인 것. 기본 기간 · 자동 연결 여정 */
@@ -297,9 +307,10 @@ export const handlers: HttpHandler[] = [
     if (body.stage !== 'CARD_IMPORT') return undefined
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
-    const ok = body.agreements?.some((a) => a.consentId === 'CARD_IMPORT' && a.agreed && a.version)
-    if (!ok) return mockError('TERMS_REQUIRED', 400, undefined, '필수 항목에 동의해 주세요')
+    const agreement = body.agreements?.find((a) => a.consentId === 'CARD_IMPORT' && a.agreed && a.version)
+    if (!agreement) return mockError('TERMS_REQUIRED', 400, undefined, '필수 항목에 동의해 주세요')
     state().consentAgreedAt = new Date().toISOString()
+    state().consentVersion = agreement.version
     return HttpResponse.json({ valid: true, missing: [], required: [] }, { status: 201 })
   }),
 
@@ -307,12 +318,12 @@ export const handlers: HttpHandler[] = [
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
     return HttpResponse.json(
-      state().consentAgreedAt
+      consentValid()
         ? [
             {
               consentId: 'CARD_IMPORT' as const,
               title: '카드 승인내역 불러오기',
-              version: '0.1-draft',
+              version: state().consentVersion!,
               agreedAt: state().consentAgreedAt!,
               docUrl: '/consents/CARD_IMPORT',
             },
@@ -326,6 +337,7 @@ export const handlers: HttpHandler[] = [
     if (denied) return denied
     if (params.consentId !== 'CARD_IMPORT') return mockError('NOT_FOUND', 404)
     state().consentAgreedAt = null
+    state().consentVersion = null
     return noContent()
   }),
 ]

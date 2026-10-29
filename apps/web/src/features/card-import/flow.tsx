@@ -34,11 +34,11 @@ export function useFlowNav() {
 }
 
 /** features.cardImport가 꺼져 있으면(또는 운영 빌드에 공개키 지문이 없으면) 지갑으로(화면명세 0-11) */
-export function cardImportOnly(Page: ComponentType, options: { requireFlow?: boolean; fallback?: string } = {}): ComponentType {
+export function cardImportOnly(Page: ComponentType, options: { requireFlow?: boolean } = {}): ComponentType {
   function CardImportOnly() {
     const enabled = useCardImportEnabled()
     const location = useLocation()
-    if (!enabled) return <Navigate replace to={options.fallback ?? paths.wallet()} />
+    if (!enabled) return <Navigate replace to={paths.wallet()} />
     // 새로고침·직접 진입으로 흐름 상태를 잃으면 처음(WF-51)부터
     if (options.requireFlow && !flowStateOf(location.state)) return <Navigate replace to={paths.walletImport()} />
     return <Page />

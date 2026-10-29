@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Navigate } from 'react-router'
 import type { RevocableConsent, RevocableConsentId } from '@yeojeong/shared'
 import { paths } from '../../../app/paths'
 import { ErrorScreen } from '../../../app/states'
@@ -9,7 +10,10 @@ import { useBack } from '../../wallet/useBack'
 import { CONSENT_LABELS, COPY } from '../copy'
 import { useRevocableConsents, useWithdrawConsent } from '../hooks'
 
-/** WF-58 동의 관리 · WF-58b 철회 확인. 철회해도 저장한 지갑 항목은 그대로다 */
+/**
+ * WF-58 동의 관리 · WF-58b 철회 확인. 기능 플래그와 무관하다(서버 revocable·withdraw도 무관).
+ * 유효 동의가 0건이면(처음부터 또는 철회 뒤) HF-30으로 돌려보낸다. 철회해도 저장한 지갑 항목은 그대로다
+ */
 export default function ConsentsPage() {
   const back = useBack(paths.me())
   const consents = useRevocableConsents()
@@ -40,7 +44,7 @@ export default function ConsentsPage() {
       ) : consents.isError ? (
         <ErrorScreen error={consents.error} onRetry={() => void consents.refetch()} />
       ) : consents.data.length === 0 ? (
-        <p className="py-10 text-center text-body-m text-secondary">{COPY.consentsEmpty}</p>
+        <Navigate replace to={paths.me()} />
       ) : (
         <ul className="flex flex-col">
           {consents.data.map((c) => (

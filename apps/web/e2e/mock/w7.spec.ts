@@ -123,13 +123,18 @@ test.describe('카드 내역 불러오기(W7)', () => {
     const dialog = page.getByRole('alertdialog', { name: '동의를 철회할까요?' })
     await dialog.getByRole('button', { name: '철회' }).click()
     await expect(page.getByText('철회했어요')).toBeVisible()
-    await expect(page.getByText('동의한 항목이 없어요')).toBeVisible()
+    // 유효 동의가 0건 → HF-30으로 돌아가고 "동의 관리" 행이 사라진다
+    await expect(page.getByRole('heading', { name: '마이페이지' })).toBeVisible()
+    await expect(page.getByRole('link', { name: '동의 관리' })).toHaveCount(0)
   })
 
-  test('기능이 꺼져 있으면 진입점이 없다', async ({ page }) => {
+  test('기능이 꺼져 있으면 진입점이 없다 · 동의가 없으면 "동의 관리"도 없다', async ({ page }) => {
     await useMockScenario(page)
     await page.goto('/wallet')
     await expect(page.getByText('이번 달')).toBeVisible()
     await expect(page.getByRole('button', { name: '불러오기', exact: true })).toHaveCount(0)
+    await page.goto('/me')
+    await expect(page.getByText('로그아웃')).toBeVisible()
+    await expect(page.getByRole('link', { name: '동의 관리' })).toHaveCount(0)
   })
 })

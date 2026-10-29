@@ -321,6 +321,10 @@ const walletEntries: MockWalletEntry[] = [
 
 export type MockCardImportState = {
   consentAgreedAt: string | null
+  /** 동의한 문서 버전 */
+  consentVersion: string | null
+  /** 지금 문서 버전. MAJOR(첫 자리)가 동의한 버전과 다르면 재동의가 필요하다(서버 validConsentVersions 흉내) */
+  requiredVersion: string
   /** 오늘 시작한 조회 수(remainingToday) */
   startedToday: number
   /** 연속 로그인 실패 수(아이디 "wrong") */
@@ -359,7 +363,7 @@ export function createMockDb(): MockDb {
     session: 'AUTHENTICATED',
     accountLink: false,
     cardImport: false,
-    cardImportState: { consentAgreedAt: null, startedToday: 0, loginFailures: 0, importedKeys: [], twoWayTokens: [], remaining: null },
+    cardImportState: { consentAgreedAt: null, consentVersion: null, requiredVersion: '0.1-draft', startedToday: 0, loginFailures: 0, importedKeys: [], twoWayTokens: [], remaining: null },
     signupReturnTo: null,
     consentRequired: null,
     meUserId: USER.junyong,

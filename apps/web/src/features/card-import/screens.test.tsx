@@ -263,10 +263,10 @@ describe('보안(L-0 메모리 규칙)', () => {
   })
 })
 
-describe('동의 관리(WF-30 · 58 · 58b)', () => {
-  it('lists the consent and withdraws it', async () => {
+describe('동의 관리(WF-30 · 58 · 58b) — 기능 플래그와 무관, 유효 동의가 있을 때만', () => {
+  it('lists the consent and withdraws it, then returns to HF-30 without the row', async () => {
     resetCardImportMock({ consented: true })
-    renderApp('/me')
+    const { router } = renderApp('/me')
     fireEvent.click(await screen.findByRole('link', { name: '동의 관리' }))
     expect(await screen.findByText('카드 내역 조회 동의')).toBeTruthy()
     expect(screen.getByText(/^\d{4}\.\d{2}\.\d{2} 동의$/)).toBeTruthy()
@@ -275,15 +275,55 @@ describe('동의 관리(WF-30 · 58 · 58b)', () => {
     expect(within(dialog).getByText('카드 내역을 불러오려면 다시 동의해야 해요')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: '철회' }))
     expect(await screen.findByText('철회했어요')).toBeTruthy()
-    expect(await screen.findByText('동의한 항목이 없어요')).toBeTruthy()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/me'))
+    expect(db.cardImportState.consentAgreedAt).toBeNull()
+    await screen.findByText('로그아웃')
+    await waitFor(() => expect(screen.queryByRole('link', { name: '동의 관리' })).toBeNull())
+  })
+
+  it('shows "동의 관리" and lets the user withdraw even when features.cardImport is off', async () => {
+    db.cardImport = false
+    resetCardImportMock({ consented: true })
+    renderApp('/me')
+    fireEvent.click(await screen.findByRole('link', { name: '동의 관리' }))
+    fireEvent.click(await screen.findByRole('button', { name: '카드 내역 조회 동의 철회' }))
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: '철회' }))
+    expect(await screen.findByText('철회했어요')).toBeTruthy()
     expect(db.cardImportState.consentAgreedAt).toBeNull()
   })
 
-  it('hides "동의 관리" when the feature is off', async () => {
-    db.cardImport = false
-    renderApp('/me')
+  it('hides "동의 관리" without a valid consent, and /me/consents goes back to HF-30', async () => {
+    const { router } = renderApp('/me')
     await screen.findByText('로그아웃')
+    // revocable 응답을 받은 뒤에도 행이 없다
+    await new Promise((r) => setTimeout(r, 50))
     expect(screen.queryByRole('link', { name: '동의 관리' })).toBeNull()
+    await router.navigate('/me/consents')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/me'))
+  })
+})
+
+describe('WF-51 재동의(약관 MAJOR 버전 상승)', () => {
+  it('shows the consent row again when the agreed MAJOR version is outdated, and agrees with the new version', async () => {
+    resetCardImportMock({ consented: true })
+    db.cardImportState.requiredVersion = '1.0'
+    renderApp('/wallet')
+    fireEvent.click(await screen.findByRole('button', { name: '불러오기' }))
+    const row = await screen.findByRole('checkbox', { name: /카드 내역 조회 동의/ })
+    expect(disabled(button('계속'))).toBe(true)
+    fireEvent.click(row)
+    fireEvent.click(button('계속'))
+    expect(await screen.findByRole('heading', { name: '카드사 선택' })).toBeTruthy()
+    expect(db.cardImportState.consentVersion).toBe('1.0')
+  })
+
+  it('keeps the row hidden after a MINOR bump', async () => {
+    resetCardImportMock({ consented: true })
+    db.cardImportState.requiredVersion = '0.2'
+    renderApp('/wallet')
+    fireEvent.click(await screen.findByRole('button', { name: '불러오기' }))
+    await waitFor(() => expect(disabled(button('계속'))).toBe(false))
+    expect(screen.queryByRole('checkbox')).toBeNull()
   })
 })
 

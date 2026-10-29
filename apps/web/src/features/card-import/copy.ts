@@ -62,7 +62,6 @@ export const COPY = {
   withdrawTitle: '동의를 철회할까요?',
   withdrawMessage: '카드 내역을 불러오려면 다시 동의해야 해요',
   withdrawn: '철회했어요',
-  consentsEmpty: '동의한 항목이 없어요',
 } as const
 
 /** 동의 관리 행 이름(Figma HF-58). 서버 title은 문서 제목이라 화면 이름으로 바꾼다 */
