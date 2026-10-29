@@ -142,6 +142,55 @@ export const WALLET_ERRORS = {
   },
 } as const satisfies Record<string, ErrorDefinition>;
 
+/** 카드 승인내역 불러오기(S8, CODEF). CODEF 결과 코드 → 이 코드(apps/api/src/card-import/README.md 에러 매핑) */
+export const CARD_IMPORT_ERRORS = {
+  /** 카드사 아이디·비밀번호가 맞지 않다 */
+  CARD_LOGIN_FAILED: {
+    status: 400,
+    message: '카드사 아이디나 비밀번호를 다시 확인해 주세요',
+  },
+  /** 비밀번호 오류 횟수 초과·잠김·비밀번호 재설정·카드 소지 확인 등 카드사 홈페이지에서 풀어야 한다 */
+  CARD_ACCOUNT_ACTION_REQUIRED: {
+    status: 409,
+    message: '카드사 홈페이지에서 계정 상태를 확인해 주세요',
+  },
+  /** 카드사 서비스 시간 외·점검·과부하·응답 지연 */
+  CARD_COMPANY_UNAVAILABLE: {
+    status: 503,
+    message: '카드사 연결이 원활하지 않아요. 잠시 후 다시 시도해 주세요',
+  },
+  /** 추가 인증 제한 시간이 지났거나 인증 정보가 맞지 않다. 처음부터 다시 조회한다 */
+  CARD_TWO_WAY_EXPIRED: {
+    status: 410,
+    message: '인증 시간이 지났어요. 처음부터 다시 시도해 주세요',
+  },
+  /** 인증번호가 맞지 않다 */
+  CARD_TWO_WAY_INVALID: {
+    status: 400,
+    message: '인증번호를 다시 확인해 주세요',
+  },
+  /** 이 카드사는 지금 방식으로 추가 인증을 이어갈 수 없다(CODEF_LOGIN_MODE=account) */
+  CARD_TWO_WAY_UNSUPPORTED: {
+    status: 409,
+    message: '이 카드사는 지금 불러올 수 없어요',
+  },
+  /** 화면이 비밀번호를 올바르게 암호화하지 못했다(공개키가 바뀌었을 수 있다 — config를 다시 받는다) */
+  CARD_PASSWORD_ENCRYPTION_INVALID: {
+    status: 400,
+    message: '다시 시도해 주세요',
+  },
+  /** 사용자당 조회 제한(10분 5회). details.retryAfterSec */
+  CARD_IMPORT_RATE_LIMITED: {
+    status: 429,
+    message: '잠시 후 다시 불러와 주세요',
+  },
+  /** 그 밖의 CODEF 오류·통신 실패 */
+  CARD_IMPORT_FAILED: {
+    status: 502,
+    message: '카드 내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요',
+  },
+} as const satisfies Record<string, ErrorDefinition>;
+
 /**
  * API 서버가 아니라 화면(apps/web의 apiFetch)이나 앞단 Cloudflare Worker가 만드는 코드.
  * 서버 코드에서는 던지지 않는다. status는 같은 상황을 HTTP로 나타낸 값이고,
@@ -180,6 +229,7 @@ export const ERRORS = {
   ...EXPENSE_ERRORS,
   ...FX_ERRORS,
   ...WALLET_ERRORS,
+  ...CARD_IMPORT_ERRORS,
 } as const satisfies Record<string, ErrorDefinition>;
 
 export type ErrorCode = keyof typeof ERRORS;

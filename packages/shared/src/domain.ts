@@ -86,8 +86,11 @@ export const TX_KIND_VALUES = ['APPROVAL', 'CANCEL'] as const;
 export type TxKind = (typeof TX_KIND_VALUES)[number];
 export const TxKind = enumObject(TX_KIND_VALUES);
 
-export const TX_SOURCE_VALUES = ['PROVIDER', 'MANUAL'] as const;
-/** 지갑 거래의 출처. PROVIDER = 계좌·카드에서 가져옴, MANUAL = 직접 입력 */
+export const TX_SOURCE_VALUES = ['PROVIDER', 'MANUAL', 'CARD_IMPORT'] as const;
+/**
+ * 지갑 거래의 출처. PROVIDER = 계좌·카드 연결(토스)에서 가져옴, MANUAL = 직접 입력,
+ * CARD_IMPORT = 카드 승인내역 불러오기(S8, 일회성)에서 사용자가 고른 것. CARD_IMPORT는 지갑에서 직접 입력과 같게 다룬다(수정·삭제·여정 바꾸기)
+ */
 export type TxSource = (typeof TX_SOURCE_VALUES)[number];
 export const TxSource = enumObject(TX_SOURCE_VALUES);
 
@@ -151,6 +154,10 @@ export const ACCESS_ACTION_VALUES = [
   'CREATE_EXPENSE',
   'EDIT_EXPENSE',
   'DELETE_EXPENSE',
+  /** 카드 승인내역 불러오기(S8). details = 기관 코드·건수·결과 코드만 */
+  'FETCH_CARD_APPROVALS',
+  /** 불러온 승인내역 중 고른 것을 지갑에 저장(S8). details = 건수만 */
+  'IMPORT_CARD_APPROVALS',
 ] as const;
 /** 금융 데이터 접근 로그(AccessLog.action) */
 export type AccessAction = (typeof ACCESS_ACTION_VALUES)[number];

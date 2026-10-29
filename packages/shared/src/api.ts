@@ -1,5 +1,6 @@
 import type {
   ConsentId,
+  RevocableConsentId,
   ConsentMethod,
   ConsentRequirement,
   ConsentScreen,
@@ -84,6 +85,11 @@ export interface FeatureFlags {
    * 연결 API 자체는 그대로 동작한다(env FEATURE_ACCOUNT_LINK, 기본 false)
    */
   accountLink: boolean;
+  /**
+   * 카드 승인내역 불러오기(S8, CODEF 일회성 조회). false면 화면이 지갑의 "카드 내역 불러오기" 진입점을 숨긴다.
+   * env FEATURE_CARD_IMPORT(기본 false) + CODEF 키가 모두 있을 때만 true. 서버는 항상 채운다(옛 웹 목 호환을 위해 선택 필드)
+   */
+  cardImport?: boolean;
 }
 
 /** GET /api/consents/documents */
@@ -121,19 +127,35 @@ export interface ReconsentRequest {
   method: Extract<ConsentMethod, 'ALL' | 'INDIVIDUAL'>;
 }
 
-/** POST /api/consents (FR-809, 결제수단 연결 전 동의 시트) */
+/**
+ * POST /api/consents — 결제수단 연결 전 동의 시트(FR-809, stage FIN_LINK) · 카드 승인내역 불러오기 전 동의(S8, stage CARD_IMPORT).
+ * screen은 stage마다 정해져 있다: FIN_LINK = WF-05·WF-28·WF-42, CARD_IMPORT = CARD_IMPORT
+ */
 export interface ConsentSubmitRequest {
-  stage: Extract<ConsentStage, 'FIN_LINK'>;
+  stage: Extract<ConsentStage, 'FIN_LINK' | 'CARD_IMPORT'>;
   agreements: ConsentAgreementInput[];
   method: Extract<ConsentMethod, 'ALL' | 'INDIVIDUAL'>;
-  screen: Extract<ConsentScreen, 'WF-05' | 'WF-28' | 'WF-42'>;
+  screen: Extract<ConsentScreen, 'WF-05' | 'WF-28' | 'WF-42' | 'CARD_IMPORT'>;
 }
 
-/** GET /api/consents/status, POST /api/consents */
+/** GET /api/consents/status?stage=FIN_LINK|CARD_IMPORT, POST /api/consents */
 export interface ConsentStatusResponse {
   valid: boolean;
   missing: ConsentId[];
   required: ConsentRequirement[];
+}
+
+/** GET /api/consents/revocable — 동의 관리 화면(HF-58)의 한 줄. 지금 유효하게 동의한 철회 가능 항목만 나온다 */
+export interface RevocableConsent {
+  consentId: RevocableConsentId;
+  /** 화면 제목(CONSENT_DEFINITIONS.title) */
+  title: string;
+  /** 동의한 문서 버전 */
+  version: string;
+  /** 그 버전에 동의한 시각(ISO 8601) */
+  agreedAt: string;
+  /** 전문 공개 경로 */
+  docUrl: string | null;
 }
 
 /** POST /api/users/me/deletion-request (FR-108). 메일은 화면이 mailto로 연다(서버는 보내지 않는다) */
