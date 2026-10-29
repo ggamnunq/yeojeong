@@ -46,6 +46,10 @@ export const PURGE_STEP_VALUES = [
   'USER_CONSENTS',
   'ACCESS_LOGS',
   'ACCOUNT_DELETIONS',
+  /** 카드 승인내역 불러오기 호출 보호 카운터(로그인 실패 수·CODEF 일일 호출 수 7일, 만료된 잠금) */
+  'CARD_IMPORT_COUNTERS',
+  /** CODEF 계정 삭제 대기 행 보관 상한 30일(넘으면 버리고 error 로그). 남은 행이 있으면 매일 error 로그 */
+  'CODEF_PENDING_DELETIONS',
 ] as const;
 /** 파기 배치 단계. 순서와 기준은 apps/api/src/retention/README.md */
 export type PurgeStep = (typeof PURGE_STEP_VALUES)[number];

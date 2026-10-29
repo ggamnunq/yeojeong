@@ -226,7 +226,9 @@ export class AuthService {
     state: SessionState,
     req: Request,
   ): Promise<AuthSessionResponse> {
-    const features = this.features.view();
+    const features = this.features.view(
+      state.status === 'AUTHENTICATED' ? state.user.id : null,
+    );
     if (state.status === 'AUTHENTICATED') {
       const [user, reconsentRequired] = await Promise.all([
         this.users.me(state.user.id),

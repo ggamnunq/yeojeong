@@ -3,7 +3,10 @@ import { Injectable } from '@nestjs/common';
 import {
   CONSENT_DEFINITIONS,
   CONSENT_ID_VALUES,
+  REVOCABLE_CONSENTS,
   type ConsentDocumentSummary,
+  type RevocableConsent,
+  type RevocableConsentId,
   type ConsentId,
   type ConsentRequirement,
   type ConsentScreen,
@@ -22,7 +25,10 @@ import {
   AppException,
   ValidationFailedError,
 } from '../common/errors/app-exception.js';
+import { validConsentVersions } from '../common/auth/consent-checker.js';
+import { toKstIso } from '../expenses/kst.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import type { ConsentAgreementDto } from './dto/consent.dto.js';
 
 const MAX_UA_LENGTH = 512;
@@ -56,7 +62,66 @@ export class ConsentsService {
     private readonly catalog: ConsentCatalog,
     private readonly config: AuthConfig,
     private readonly audit: AuditService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  /**
+   * 동의 관리 화면(HF-58): 철회할 수 있는 항목(REVOCABLE_CONSENTS) 중 지금 유효하게 동의한 것.
+   * 버전마다 최신 행이 agreed이고 철회되지 않았을 때만 유효하다(validConsentVersions). 여러 버전이 유효하면 가장 최근 동의 하나를 보인다
+   */
+  async revocable(userId: string): Promise<RevocableConsent[]> {
+    const rows = await this.prisma.userConsent.findMany({
+      where: { userId, consentId: { in: [...REVOCABLE_CONSENTS] } },
+      select: {
+        consentId: true,
+        version: true,
+        agreed: true,
+        agreedAt: true,
+        withdrawnAt: true,
+        createdAt: true,
+      },
+    });
+    return REVOCABLE_CONSENTS.flatMap((id) => {
+      const valid = new Set(validConsentVersions(rows, id));
+      const latest = rows
+        .filter(
+          (r) =>
+            r.consentId === id &&
+            r.agreed &&
+            r.withdrawnAt === null &&
+            valid.has(r.version),
+        )
+        .sort((a, b) => b.agreedAt.getTime() - a.agreedAt.getTime())[0];
+      if (!latest) return [];
+      const definition = CONSENT_DEFINITIONS[id];
+      return [
+        {
+          consentId: id,
+          title: definition.title,
+          version: latest.version,
+          agreedAt: toKstIso(latest.agreedAt),
+          docUrl: definition.docUrl,
+        },
+      ];
+    });
+  }
+
+  /**
+   * 동의 철회(HF-58). 기존 철회 방식과 같다(결제수단 전부 해제·탈퇴): 행 내용은 고치지 않고 유효한 행의 withdrawnAt·withdrawChannel만 채운다.
+   * 철회 기록은 "철회 후 3년" 보존 대상으로 남고, 다시 동의하면 새 행이 쌓인다(append — record()).
+   * 이미 저장한 지갑 항목은 그대로 둔다. 유효한 동의가 없어도 성공으로 본다(멱등). 철회한 행 수를 돌려준다
+   */
+  async withdraw(
+    userId: string,
+    consentId: RevocableConsentId,
+    now = new Date(),
+  ): Promise<number> {
+    const result = await this.prisma.userConsent.updateMany({
+      where: { userId, consentId, agreed: true, withdrawnAt: null },
+      data: { withdrawnAt: now, withdrawChannel: 'HF-58' },
+    });
+    return result.count;
+  }
 
   async documents(stage: ConsentStage): Promise<ConsentDocumentSummary[]> {
     const docs = await this.catalog.load();

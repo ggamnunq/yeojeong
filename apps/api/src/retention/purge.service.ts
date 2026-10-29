@@ -7,6 +7,7 @@ import type {
 import { AccountDeletionService } from '../account/account-deletion.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { CardImportLimits } from '../card-import/card-import-limits.js';
 import { RETENTION, cutoff } from './retention-policy.js';
 
 type Tx = Prisma.TransactionClient;
@@ -72,6 +73,8 @@ export class PurgeService {
     const consent = cutoff(now, RETENTION.withdrawnConsent);
     const accessLog = cutoff(now, RETENTION.accessLog);
     const deletion = cutoff(now, RETENTION.accountDeletion);
+    const counters = cutoff(now, RETENTION.cardImportCounters);
+    const pendingDeletion = cutoff(now, RETENTION.codefPendingDeletion);
     const { rows, groups } = PURGE_LIMITS;
 
     return [
@@ -287,6 +290,71 @@ export class PurgeService {
             remove: (ids) =>
               tx.accountDeletion.deleteMany({ where: { id: { in: ids } } }),
           });
+        },
+      ],
+      [
+        'CARD_IMPORT_COUNTERS',
+        async (tx, dryRun) => {
+          // 행이 작고(사용자·기관·날짜·개수) 많지 않아 한 번에 지운다. 잠금은 만료된 것만(진행 중 조회는 건드리지 않는다)
+          const failures = { lastFailedAt: { lte: counters } };
+          const usage = { day: { lte: counters } };
+          const locks = { expiresAt: { lte: now } };
+          if (dryRun) {
+            const counts = await Promise.all([
+              tx.cardImportLoginFailure.count({ where: failures }),
+              tx.codefDailyUsage.count({ where: usage }),
+              tx.cardImportLock.count({ where: locks }),
+              CardImportLimits.purgeExpiredTwoWays(tx, now, true),
+            ]);
+            return { count: counts.reduce((a, b) => a + b, 0), hasMore: false };
+          }
+          const results = await Promise.all([
+            tx.cardImportLoginFailure.deleteMany({ where: failures }),
+            tx.codefDailyUsage.deleteMany({ where: usage }),
+            tx.cardImportLock.deleteMany({ where: locks }),
+          ]);
+          // 버려진 이어가기 행: 지우면서 남은 예약을 그날 예산에 돌려준다
+          const twoWays = await CardImportLimits.purgeExpiredTwoWays(
+            tx,
+            now,
+            false,
+          );
+          return {
+            count: results.reduce((a, r) => a + r.count, 0) + twoWays,
+            hasMore: false,
+          };
+        },
+      ],
+      [
+        'CODEF_PENDING_DELETIONS',
+        async (tx, dryRun) => {
+          // 보관 상한(30일)을 넘긴 삭제 대기는 버린다(connectedId 암호문). 그 계정은 CODEF 콘솔에서 운영자가 정리한다
+          const expired = { createdAt: { lte: pendingDeletion } };
+          const count = dryRun
+            ? await tx.codefPendingDeletion.count({ where: expired })
+            : (await tx.codefPendingDeletion.deleteMany({ where: expired }))
+                .count;
+          if (count > 0 && !dryRun) {
+            this.logger.error(
+              { dropped: count },
+              'CODEF 계정 삭제 대기가 30일을 넘겨 버렸다 — CODEF 콘솔에서 계정 정리 필요',
+            );
+          }
+          // 남은 대기가 있으면 매일 알린다(행 수·가장 오래된 시각만)
+          const pending = await tx.codefPendingDeletion.aggregate({
+            _count: { _all: true },
+            _min: { createdAt: true },
+          });
+          if (pending._count._all > 0) {
+            this.logger.error(
+              {
+                pending: pending._count._all,
+                oldestCreatedAt: pending._min.createdAt?.toISOString(),
+              },
+              'CODEF 계정 삭제 대기가 남아 있다',
+            );
+          }
+          return { count, hasMore: false };
         },
       ],
     ];

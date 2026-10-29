@@ -41,6 +41,10 @@ locals {
       id   = "yeojeong-audit-hmac-key"
       data = random_password.audit_hmac_key.result
     }
+    import_key_hmac_key = {
+      id   = "yeojeong-import-key-hmac-key"
+      data = random_password.import_key_hmac_key.result
+    }
   }
 }
 
@@ -107,6 +111,17 @@ resource "random_password" "audit_hmac_key" {
   }
 }
 
+# 교체 금지: 카드 승인내역 불러오기(S8)의 importKey(HMAC-SHA256(카드사·승인번호·승인 일시·금액, 이 키)) 전용 키다.
+# 지갑에 저장된 importKey와 다시 불러온 결과를 같은 승인으로 맞추는(중복 "추가됨") 기준이라 바꾸면 판정이 끊긴다. prevent_destroy로 교체를 막는다.
+resource "random_password" "import_key_hmac_key" {
+  length  = 64
+  special = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 # 사용자가 gcloud로 직접 만든 시크릿(서울 리전 user-managed 복제). Terraform은 시크릿·버전을 만들지 않고 참조만 한다.
 # 기능 플래그(variables.tf)를 켠 것만 조회하므로, 시크릿이 없을 때는 플래그를 끈 채로 두면 plan이 깨지지 않는다.
 locals {
@@ -114,6 +129,11 @@ locals {
   external_secret_env = merge(
     var.enable_kakao_unlink ? { KAKAO_ADMIN_KEY = "yeojeong-kakao-admin-key" } : {},
     var.enable_exim_fx ? { EXIM_API_KEY = "yeojeong-exim-api-key" } : {},
+    var.enable_codef ? {
+      CODEF_CLIENT_ID     = "yeojeong-codef-client-id"
+      CODEF_CLIENT_SECRET = "yeojeong-codef-client-secret"
+      CODEF_PUBLIC_KEY    = "yeojeong-codef-public-key"
+    } : {},
   )
 }
 

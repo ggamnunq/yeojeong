@@ -52,6 +52,8 @@ export const CONSENT_DOCS: Record<ConsentId, LegalDocId> = {
   FIN_LINK: 'fin-link',
   FIN_PRIVACY: 'consent-collection',
   THIRD_PARTY: 'consent-third-party',
+  // S8 카드 승인내역 불러오기 동의. 전문(docs/legal)이 나오기 전까지 수집·이용 동의서로 연다(법무 문서 확정 후 교체)
+  CARD_IMPORT: 'consent-collection',
 }
 
 /** 화면 제목: 동의 항목이면 그 항목 제목(consents.md 1절 화면 제목) */

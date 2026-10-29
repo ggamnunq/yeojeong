@@ -12,6 +12,7 @@ locals {
     TOKEN_ENCRYPTION_KEY = "token_encryption_key"
     USER_REF_HMAC_KEY    = "user_ref_hmac_key"
     AUDIT_HMAC_KEY       = "audit_hmac_key"
+    IMPORT_KEY_HMAC_KEY  = "import_key_hmac_key"
   }
 }
 
@@ -89,6 +90,30 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.feature_account_link
       }
 
+      # 카드 승인내역 불러오기(S8). CODEF 키는 enable_codef로 external_secret_env에 붙는다
+      env {
+        name  = "FEATURE_CARD_IMPORT"
+        value = var.feature_card_import
+      }
+
+      env {
+        name  = "CODEF_ENV"
+        value = var.codef_env
+      }
+
+      env {
+        name  = "CODEF_DAILY_CALL_BUDGET"
+        value = tostring(var.codef_daily_call_budget)
+      }
+
+      dynamic "env" {
+        for_each = length(var.card_import_allowed_user_ids) == 0 ? [] : [join(",", var.card_import_allowed_user_ids)]
+        content {
+          name  = "CARD_IMPORT_ALLOWED_USER_IDS"
+          value = env.value
+        }
+      }
+
       env {
         name  = "INTERNAL_JOB_OIDC_AUDIENCE"
         value = var.internal_job_oidc_audience
@@ -112,7 +137,7 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
-      # 기능 플래그로 켠 외부 시크릿(KAKAO_ADMIN_KEY, EXIM_API_KEY)
+      # 기능 플래그로 켠 외부 시크릿(KAKAO_ADMIN_KEY, EXIM_API_KEY, CODEF_*)
       dynamic "env" {
         for_each = local.external_secret_env
         content {

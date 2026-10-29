@@ -19,8 +19,8 @@ export interface AuditEntry {
   ip?: string | null;
   requestId?: string | null;
   ua?: string | null;
-  /** 건수 같은 숫자 요약만(예: 파기 건수). 금액·가맹점·개인정보는 넣지 않는다 */
-  details?: Readonly<Record<string, number>> | null;
+  /** 건수 같은 숫자 요약이나 코드 값만(예: 파기 건수, 기관 코드·결과 코드). 금액·가맹점·개인정보는 넣지 않는다 */
+  details?: Readonly<Record<string, number | string>> | null;
 }
 
 type AccessLogWriter = Pick<Prisma.TransactionClient, 'accessLog'>;

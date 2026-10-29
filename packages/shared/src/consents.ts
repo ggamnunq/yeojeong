@@ -10,12 +10,13 @@ export const CONSENT_ID_VALUES = [
   'FIN_LINK',
   'FIN_PRIVACY',
   'THIRD_PARTY',
+  'CARD_IMPORT',
 ] as const;
 export type ConsentId = (typeof CONSENT_ID_VALUES)[number];
 export const ConsentId = enumObject(CONSENT_ID_VALUES);
 
-export const CONSENT_STAGE_VALUES = ['SIGNUP', 'FIN_LINK'] as const;
-/** 동의를 받는 시점: 가입(WF-04) · 금융정보 연동(WF-05b) */
+export const CONSENT_STAGE_VALUES = ['SIGNUP', 'FIN_LINK', 'CARD_IMPORT'] as const;
+/** 동의를 받는 시점: 가입(WF-04) · 금융정보 연동(WF-05b) · 카드 승인내역 불러오기(S8, 최초 1회) */
 export type ConsentStage = (typeof CONSENT_STAGE_VALUES)[number];
 export const ConsentStage = enumObject(CONSENT_STAGE_VALUES);
 
@@ -32,6 +33,8 @@ export const CONSENT_SCREEN_VALUES = [
   'WF-30',
   'RECONSENT',
   'SUPPORT',
+  /** 카드 내역 불러오기 시작 전 확인(WF-51, consents.md 9-5 표기) */
+  'HF-51',
 ] as const;
 /** 동의를 받은 화면(UserConsent.screen) */
 export type ConsentScreen = (typeof CONSENT_SCREEN_VALUES)[number];
@@ -41,6 +44,8 @@ export const WITHDRAW_CHANNEL_VALUES = [
   'WF-27',
   'SUPPORT',
   'ACCOUNT_DELETED',
+  /** 동의 관리 화면(철회 가능한 동의 목록) */
+  'HF-58',
 ] as const;
 export type WithdrawChannel = (typeof WITHDRAW_CHANNEL_VALUES)[number];
 
@@ -113,6 +118,14 @@ export const CONSENT_DEFINITIONS = {
     hidden: false,
     docUrl: '/consents/THIRD_PARTY',
   },
+  CARD_IMPORT: {
+    id: 'CARD_IMPORT',
+    title: '카드 승인내역 불러오기',
+    required: true,
+    stage: 'CARD_IMPORT',
+    hidden: false,
+    docUrl: '/consents/CARD_IMPORT',
+  },
 } as const satisfies Record<ConsentId, ConsentDefinition>;
 
 /** 가입(WF-04)에서 반드시 받아야 하는 항목. 로그인 상태의 모든 요청에서 서버가 확인한다 */
@@ -128,6 +141,20 @@ export const FIN_LINK_REQUIRED_CONSENTS = [
   'FIN_PRIVACY',
   'THIRD_PARTY',
 ] as const satisfies readonly ConsentId[];
+
+/** 카드 승인내역 불러오기(S8) 전에 받는 항목. POST /api/card-import/fetch가 @RequireConsents로 확인한다 */
+export const CARD_IMPORT_REQUIRED_CONSENTS = [
+  'CARD_IMPORT',
+] as const satisfies readonly ConsentId[];
+
+/**
+ * 사용자가 동의 관리 화면(HF-58)에서 직접 철회할 수 있는 항목. 가입 필수 항목은 탈퇴로만, 연동 동의(FIN_*)는 결제수단 전부 해제로 철회된다.
+ * 철회해도 이미 저장한 지갑 항목은 그대로 남는다(다음 불러오기 전에 다시 동의를 받는다)
+ */
+export const REVOCABLE_CONSENTS = [
+  'CARD_IMPORT',
+] as const satisfies readonly ConsentId[];
+export type RevocableConsentId = (typeof REVOCABLE_CONSENTS)[number];
 
 /** 403 CONSENT_REQUIRED의 details에 담기는 항목 하나 */
 export interface ConsentRequirement {

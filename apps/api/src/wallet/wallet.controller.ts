@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
@@ -17,14 +18,21 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
-import type {
-  WalletEntryListResponse,
-  WalletEntryMutationResponse,
-  WalletTripCandidatesResponse,
+import {
+  type ImportWalletEntriesResponse,
+  type WalletEntryListResponse,
+  type WalletEntryMutationResponse,
+  type WalletTripCandidatesResponse,
 } from '@yeojeong/shared';
 import { Audited, fromCurrentUser } from '../audit/index.js';
 import { CurrentUser, type AuthUser } from '../common/auth/index.js';
 import { ApiErrorResponse } from '../common/errors/index.js';
+import { CardImportGuard } from '../common/features.js';
+import { CardImportConsentGuard } from '../card-import/card-import-consent.guard.js';
+import {
+  ImportWalletEntriesDto,
+  ImportWalletEntriesResponseDto,
+} from '../card-import/dto/card-import.dto.js';
 import {
   CreateWalletEntryDto,
   DeleteWalletEntryQueryDto,
@@ -37,7 +45,7 @@ import {
 } from './dto/wallet.dto.js';
 import { WalletService } from './wallet.service.js';
 
-/** 내 지갑(S7). 본인 것만 다룬다(userId 조건). 남의 항목·없는 항목은 404 */
+/** 내 지갑(S7). 본인 것만 다룬다(userId 조건). 남의 항목·없는 항목은 404. 직접 입력과 카드 승인내역에서 고른 것(S8 CARD_IMPORT)을 같은 규칙으로 고치고 지운다 */
 @ApiTags('wallet')
 @ApiErrorResponse(401, 'UNAUTHENTICATED')
 @Controller('wallet')
@@ -99,6 +107,28 @@ export class WalletController {
     @Body() body: CreateWalletEntryDto,
   ): Promise<WalletEntryMutationResponse> {
     return this.wallet.create(user.id, body);
+  }
+
+  @ApiOperation({
+    summary: '카드 승인내역에서 고른 결제 저장(S8)',
+    description:
+      'POST /api/card-import/fetch 결과에서 고른 항목을 지갑에 저장한다(source CARD_IMPORT). 직접 입력과 같은 입력 규칙·여정 자동 연결을 쓰고, ' +
+      '저장한 항목은 직접 입력처럼 고치거나 지울 수 있다. importKey가 이미 있으면 새로 만들지 않고 그 항목을 돌려준다(created=false, 다시 보내도 안전). ' +
+      '서버는 importKey를 다시 계산해 검증할 수 없어(승인번호 원문을 받지 않는다) 형식만 본다. 기능 플래그가 꺼져 있으면 404.',
+  })
+  @ApiCreatedResponse({ type: ImportWalletEntriesResponseDto })
+  @ApiErrorResponse(400, 'VALIDATION_FAILED')
+  @ApiErrorResponse(403, 'CONSENT_REQUIRED')
+  @ApiErrorResponse(404, 'NOT_FOUND')
+  @ApiErrorResponse(503, 'FX_RATE_UNAVAILABLE')
+  // 플래그(404) 먼저, 그다음 CARD_IMPORT 동의(403)
+  @UseGuards(CardImportGuard, CardImportConsentGuard)
+  @Post('entries/import')
+  importEntries(
+    @CurrentUser() user: AuthUser,
+    @Body() body: ImportWalletEntriesDto,
+  ): Promise<ImportWalletEntriesResponse> {
+    return this.wallet.importEntries(user.id, body.items);
   }
 
   @ApiOperation({

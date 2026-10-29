@@ -34,6 +34,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       res.end();
       return;
     }
+    // 429에 다시 시도할 수 있는 초가 있으면 HTTP Retry-After도 붙인다(카드 승인내역 불러오기 한도 등). 이미 있으면(Throttler) 그대로
+    const retryAfterSec = error.details?.retryAfterSec;
+    if (
+      error.status === 429 &&
+      typeof retryAfterSec === 'number' &&
+      !res.getHeader('Retry-After')
+    ) {
+      res.setHeader('Retry-After', String(Math.ceil(retryAfterSec)));
+    }
     const body: ApiErrorBody = {
       code: error.code,
       message: error.message,

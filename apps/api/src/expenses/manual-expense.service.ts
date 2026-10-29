@@ -68,6 +68,17 @@ export interface ManualAmounts {
   krw: ConvertResult;
 }
 
+/** 지갑 거래의 출처. 직접 입력이거나, 카드 승인내역에서 고른 것(S8) */
+export type WalletEntryOrigin =
+  | { source: 'MANUAL' }
+  | {
+      source: 'CARD_IMPORT';
+      /** importKey(HMAC hex). (userId, externalRef) 부분 유니크로 중복 저장을 막는다 */
+      externalRef: string;
+      /** 카드사가 준 원화(있으면). 지갑 원화 표시·CARD_BILLED 정책 환산에 쓴다 */
+      providerKrwAmount: number | null;
+    };
+
 /** 거래(지갑 항목)에 넣는 매매기준율 추정. 고시가 없으면 NULL */
 export interface SpotEstimate {
   spotRateId: string | null;
@@ -489,7 +500,13 @@ export class ManualExpenseService {
   async convert(
     tx: Tx,
     trip: ManualTrip,
-    input: { amount: string; currency: string; occurredAt: Date },
+    input: {
+      amount: string;
+      currency: string;
+      occurredAt: Date;
+      /** 카드사가 준 원화(S8 카드 승인내역). 여정이 CARD_BILLED 정책이면 이 값을 쓴다 */
+      providerKrwAmount?: number | null;
+    },
   ): Promise<ManualAmounts> {
     const amount = input.amount.trim();
     const currency = input.currency.toUpperCase();
@@ -502,7 +519,12 @@ export class ManualExpenseService {
         fixedRate: trip.fxFixedRate,
         fixedAt: trip.fxPolicyChangedAt,
       },
-      { amount, currency, occurredAt: input.occurredAt },
+      {
+        amount,
+        currency,
+        occurredAt: input.occurredAt,
+        providerKrwAmount: input.providerKrwAmount ?? null,
+      },
       tx,
     );
     const krwError = manualKrwError(krw.krwAmount);
@@ -535,7 +557,10 @@ export class ManualExpenseService {
     };
   }
 
-  /** 지갑 거래(MANUAL) 한 건 */
+  /**
+   * 지갑 거래 한 건. 기본은 직접 입력(MANUAL).
+   * 카드 승인내역 불러오기(S8)는 source CARD_IMPORT + externalRef(importKey) + 카드사가 준 원화(providerKrwAmount)를 넘긴다
+   */
   async insertWalletTransaction(
     tx: Tx,
     input: {
@@ -543,14 +568,20 @@ export class ManualExpenseService {
       amounts: Pick<ManualAmounts, 'amount' | 'currency' | 'occurredAt'>;
       merchantName: string;
       clientRequestId: string | null;
+      origin?: WalletEntryOrigin;
     },
   ): Promise<string> {
     const { amount, currency, occurredAt } = input.amounts;
     const spot = await this.spotEstimate(tx, amount, currency);
+    const origin = input.origin ?? { source: 'MANUAL' };
     const row = await tx.transaction.create({
       data: {
         userId: input.userId,
-        source: 'MANUAL',
+        source: origin.source,
+        ...(origin.source === 'CARD_IMPORT' && {
+          externalRef: origin.externalRef,
+          providerKrwAmount: origin.providerKrwAmount,
+        }),
         kind: 'APPROVAL',
         occurredAt,
         merchantNameRaw: input.merchantName,
