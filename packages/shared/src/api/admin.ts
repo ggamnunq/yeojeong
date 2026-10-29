@@ -76,7 +76,9 @@ export interface AdminUserListQuery {
 export interface AdminCardImportAccess {
   /** env CARD_IMPORT_ALLOWED_USER_IDS에 있는지 */
   allowlisted: boolean;
-  /** 지금 이 회원에게 기능이 켜져 있는지(단계·CODEF 키·allowlist 반영) */
+  /** 관리자 페이지에서 준 권한(card_import_grants)이 있는지 */
+  granted: boolean;
+  /** 지금 이 회원에게 기능이 켜져 있는지(단계·CODEF 키·env 목록·관리자 권한 반영) */
   enabled: boolean;
 }
 
@@ -241,4 +243,59 @@ export interface AdminCodefUsage {
     /** CARD_IMPORT_ALLOWED_USER_IDS 인원 수(ID는 내보내지 않는다) */
     allowlistCount: number;
   };
+}
+
+/** 카드 불러오기 권한 메모 최대 글자 수(선택). 개인정보를 적지 않는다 */
+export const ADMIN_CARD_IMPORT_GRANT_NOTE_MAX = 100;
+
+export const ADMIN_CARD_IMPORT_GRANT_SOURCE_VALUES = ['ADMIN', 'ENV'] as const;
+/**
+ * 카드 불러오기 권한 출처: ADMIN = 관리자 페이지에서 준 권한(card_import_grants, 회수 가능) ·
+ * ENV = env CARD_IMPORT_ALLOWED_USER_IDS(하위 호환·비상용 — 관리자 페이지에서 회수할 수 없고 tfvars에서 빼야 한다)
+ */
+export type AdminCardImportGrantSource = (typeof ADMIN_CARD_IMPORT_GRANT_SOURCE_VALUES)[number];
+export const AdminCardImportGrantSource = enumObject(ADMIN_CARD_IMPORT_GRANT_SOURCE_VALUES);
+
+/** 카드 불러오기 권한 한 줄(회원 한 명). 출처가 둘 다면 한 줄에 둘 다 적는다 */
+export interface AdminCardImportGrant {
+  userId: string;
+  /** env에만 있고 회원이 없으면(탈퇴·잘못 넣은 ID) null */
+  nickname: string | null;
+  /** ADMIN · ENV 중 하나 이상(ADMIN이 앞) */
+  sources: AdminCardImportGrantSource[];
+  /** 관리자 페이지에서 준 시각(ADMIN일 때만, 아니면 null) */
+  grantedAt: string | null;
+  /** 준 관리자 행위자 ID(아이디에서 만든 UUID, ADMIN일 때만) */
+  grantedBy: string | null;
+  /** 운영 메모(ADMIN일 때만) */
+  note: string | null;
+  /** 관리자 페이지에서 회수할 수 있는지(= sources에 ADMIN이 있다). ENV만이면 false */
+  revocable: boolean;
+  /** CARD_IMPORT 동의가 지금 유효한지(현재 버전에 동의했고 철회하지 않음) */
+  cardImportConsent: boolean;
+  /** 오늘(KST) 새 조회 수(접근 기록 FETCH_CARD_APPROVALS step START) */
+  todayFetchCount: number;
+}
+
+/** GET /api/admin/card-import-grants 200 */
+export interface AdminCardImportGrantList {
+  /** 기준 시각 */
+  asOf: string;
+  flags: {
+    /** env FEATURE_CARD_IMPORT 값(off·allowlist·on) */
+    featureCardImport: string;
+    /** 실제로 쓰는 단계(CODEF 키가 없으면 off). 권한은 allowlist일 때만 의미가 있다(on은 모두, off는 아무도) */
+    effectiveMode: string;
+  };
+  /** 사용자당 하루 조회 한도(CARD_IMPORT_FETCH_LIMIT.DAILY) */
+  dailyLimit: number;
+  /** 관리자 부여(최근 순) → env에만 있는 항목 순 */
+  items: AdminCardImportGrant[];
+}
+
+/** POST /api/admin/card-import-grants 본문 */
+export interface AdminCreateCardImportGrantRequest {
+  userId: string;
+  /** 선택, 100자까지 */
+  note?: string;
 }

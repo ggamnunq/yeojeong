@@ -93,6 +93,53 @@ test.describe('관리자(데스크톱)', () => {
   })
 })
 
+test.describe('관리자 카드 불러오기 권한(데스크톱)', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false })
+
+  test('권한 탭: 단계 안내 → 회원 찾아 추가 → 회원 상세에 반영 → 목록에서 회수', async ({ page }) => {
+    await page.goto('/admin/login')
+    await login(page)
+    await expect(page.getByRole('heading', { level: 1, name: '회원' })).toBeVisible()
+    await page.getByRole('navigation', { name: '관리자 메뉴' }).getByRole('link', { name: '카드 불러오기 권한' }).click()
+    await expect(page).toHaveURL(/\/admin\/card-import$/)
+    await expect(page.getByRole('heading', { level: 1, name: '카드 불러오기 권한' })).toBeVisible()
+    await expect(page.getByText('허용 목록 단계예요. 아래 회원에게만 카드 불러오기가 보여요')).toBeVisible()
+    const table = page.getByRole('region', { name: '카드 불러오기 권한 표' })
+    await expect(table.getByRole('row')).toHaveCount(4)
+    // env 항목은 회수 버튼이 없다
+    const envRow = table.getByRole('row').filter({ hasText: '준용' })
+    await expect(envRow.getByText('env — tfvars에서 빼야 해요')).toBeVisible()
+    await expect(envRow.getByRole('button')).toHaveCount(0)
+
+    // 추가: 회원 검색 → 선택 → 메모 → 권한 추가
+    await page.getByLabel('회원 검색').fill('태현')
+    await page.getByRole('button', { name: '회원 찾기' }).click()
+    await page.getByRole('region', { name: '회원 검색 결과 표' }).getByRole('button', { name: '태현 선택' }).click()
+    await page.getByLabel('메모(선택)').fill('베타 테스트')
+    await page.getByRole('button', { name: '권한 추가' }).click()
+    await expect(page.getByText('태현 님에게 카드 불러오기 권한을 줬어요')).toBeVisible()
+    await expect(table.getByRole('row')).toHaveCount(5)
+
+    // 회원 상세에도 반영
+    await table.getByRole('link', { name: '태현' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: '태현' })).toBeVisible()
+    const section = page.getByRole('region', { name: '카드 불러오기 권한' })
+    await expect(section.getByText('있음', { exact: true })).toBeVisible()
+    await expect(section.getByRole('button', { name: '권한 회수' })).toBeVisible()
+
+    // 목록에서 회수(확인 다이얼로그)
+    await page.goBack()
+    await expect(page).toHaveURL(/\/admin\/card-import$/)
+    await page.getByRole('button', { name: '태현 권한 회수' }).click()
+    const dialog = page.getByRole('alertdialog', { name: '태현 님의 권한을 회수할까요?' })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: '회수' }).click()
+    await expect(page.getByText('태현 님의 카드 불러오기 권한을 회수했어요')).toBeVisible()
+    await expect(table.getByRole('row')).toHaveCount(4)
+    await expect(table.getByRole('link', { name: '태현' })).toHaveCount(0)
+  })
+})
+
 test.describe('관리자(모바일 폭)', () => {
   test('390px에서도 페이지 가로 스크롤이 없다(표는 자기 상자 안에서만 넘친다)', async ({ page }) => {
     await page.goto('/admin/login')
@@ -107,6 +154,9 @@ test.describe('관리자(모바일 폭)', () => {
     await page.getByRole('navigation', { name: '관리자 메뉴' }).getByRole('link', { name: '회원' }).click()
     await page.getByRole('link', { name: '준용' }).click()
     await expect(page.getByRole('heading', { level: 1, name: '준용' })).toBeVisible()
+    expect(await overflow()).toBeLessThanOrEqual(0)
+    await page.getByRole('navigation', { name: '관리자 메뉴' }).getByRole('link', { name: '카드 불러오기 권한' }).click()
+    await expect(page.getByRole('region', { name: '카드 불러오기 권한 표' }).getByRole('row')).toHaveCount(4)
     expect(await overflow()).toBeLessThanOrEqual(0)
   })
 })

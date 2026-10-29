@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   ADMIN_USER_PAGE_SIZE,
   type AdminUserDetail,
@@ -11,7 +10,7 @@ import {
 } from '@yeojeong/shared';
 import { AccountDeletionService } from '../account/account-deletion.service.js';
 import { AppException, NotFoundError } from '../common/errors/index.js';
-import { FeatureFlags, parseAllowedUserIds } from '../common/features.js';
+import { CardImportAccess, FeatureFlags } from '../common/features.js';
 import { toKstIso } from '../expenses/kst.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -87,6 +86,8 @@ const listSelect = () =>
       orderBy: { requestedAt: 'desc' },
       take: 1,
     },
+    // 관리자 페이지에서 준 카드 불러오기 권한(있으면 행 하나)
+    cardImportGrant: { select: { userId: true } },
   }) satisfies Prisma.UserSelect;
 
 type ListRow = Prisma.UserGetPayload<{ select: ReturnType<typeof listSelect> }>;
@@ -97,18 +98,12 @@ type ListRow = Prisma.UserGetPayload<{ select: ReturnType<typeof listSelect> }>;
  */
 @Injectable()
 export class AdminUsersService {
-  private readonly allowlist: ReadonlySet<string>;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly features: FeatureFlags,
+    private readonly cardImport: CardImportAccess,
     private readonly deletion: AccountDeletionService,
-    config: ConfigService,
-  ) {
-    this.allowlist = parseAllowedUserIds(
-      config.get<string>('CARD_IMPORT_ALLOWED_USER_IDS'),
-    );
-  }
+  ) {}
 
   async list(query: {
     q?: string;
@@ -308,6 +303,7 @@ export class AdminUsersService {
   private listItem(row: ListRow): AdminUserListItem {
     const pending = row.accountDeletions[0];
     const status: AdminUserStatus = pending ? 'DELETION_REQUESTED' : 'ACTIVE';
+    const granted = row.cardImportGrant !== null;
     return {
       id: row.id,
       nickname: row.nickname,
@@ -317,8 +313,11 @@ export class AdminUsersService {
       walletEntryCount: row._count.transactions,
       status,
       cardImport: {
-        allowlisted: this.allowlist.has(row.id.toLowerCase()),
-        enabled: this.features.cardImportFor(row.id),
+        allowlisted: this.features.cardImportEnvAllowlist.has(
+          row.id.toLowerCase(),
+        ),
+        granted,
+        enabled: this.cardImport.enabledWithGrant(row.id, granted),
       },
     };
   }

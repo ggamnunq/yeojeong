@@ -31,6 +31,12 @@ export const AUDIT_ACTION_VALUES = [
   'ADMIN_WITHDRAW_USER',
   /** CODEF 호출 현황 열람 */
   'ADMIN_VIEW_CODEF_USAGE',
+  /** 카드 불러오기 권한 목록 열람. details = 건수·회원 ID 목록 */
+  'ADMIN_VIEW_CARD_IMPORT_GRANTS',
+  /** 카드 불러오기 권한 부여. resourceId = 회원 ID, details = 결과(PENDING → GRANTED | 에러 코드)·메모 */
+  'ADMIN_GRANT_CARD_IMPORT',
+  /** 카드 불러오기 권한 회수. resourceId = 회원 ID, details = 결과(PENDING → REVOKED | 에러 코드)·원래 부여 시각 */
+  'ADMIN_REVOKE_CARD_IMPORT',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTION_VALUES)[number];
 
@@ -49,5 +55,7 @@ export const AUDIT_RESOURCE_TYPE_VALUES = [
   'ADMIN',
   /** 관리자 CODEF 호출 현황(resourceId 없음) */
   'CODEF_USAGE',
+  /** 관리자 카드 불러오기 권한 목록(resourceId 없음. 부여·회수는 USER + 회원 ID) */
+  'CARD_IMPORT_GRANT',
 ] as const;
 export type AuditResourceType = (typeof AUDIT_RESOURCE_TYPE_VALUES)[number];

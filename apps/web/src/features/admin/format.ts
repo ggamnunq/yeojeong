@@ -56,9 +56,24 @@ export function formatWait(seconds: number): string {
   return seconds < 60 ? `${seconds}초` : `${Math.ceil(seconds / 60)}분`
 }
 
+/** 카드 불러오기 권한 출처: env 목록(회수 불가)이 먼저, 관리자 페이지 권한, 없음 */
+export function cardImportSourceLabel({ allowlisted, granted }: { allowlisted: boolean; granted: boolean }): string {
+  if (allowlisted && granted) return 'env · 관리자 권한'
+  if (allowlisted) return 'env 허용 목록'
+  if (granted) return '관리자 권한'
+  return '권한 없음'
+}
+
 /** 카드 승인내역 불러오기 허용 상태 한 줄 */
-export function cardImportLabel({ allowlisted, enabled }: { allowlisted: boolean; enabled: boolean }): string {
-  return `${allowlisted ? '허용 목록' : '목록 밖'} · ${enabled ? '켜짐' : '꺼짐'}`
+export function cardImportLabel(access: { allowlisted: boolean; granted: boolean; enabled: boolean }): string {
+  return `${cardImportSourceLabel(access)} · ${access.enabled ? '켜짐' : '꺼짐'}`
+}
+
+/** 기능 단계(FEATURE_CARD_IMPORT 실제 단계) 안내 */
+export const CARD_IMPORT_MODE_NOTICE: Record<string, string> = {
+  off: '기능이 꺼져 있어 권한이 있어도 보이지 않아요',
+  allowlist: '허용 목록 단계예요. 아래 회원에게만 카드 불러오기가 보여요',
+  on: '전체 공개 단계예요. 권한과 상관없이 모든 회원에게 보여요',
 }
 
 /** 인증 코드(TOTP) 입력값: 숫자만, 6자리까지 */

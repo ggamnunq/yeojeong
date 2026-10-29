@@ -16,6 +16,7 @@ export const routes: AppRoute[] = [
           { path: '/admin/users', Component: lazy(() => import('./pages/AdminUsersPage')) },
           { path: '/admin/users/:userId', Component: lazy(() => import('./pages/AdminUserDetailPage')) },
           { path: '/admin/codef', Component: lazy(() => import('./pages/AdminCodefPage')) },
+          { path: '/admin/card-import', Component: lazy(() => import('./pages/AdminCardImportPage')) },
         ],
       },
     ],
