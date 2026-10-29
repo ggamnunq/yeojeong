@@ -9,6 +9,7 @@ import {
   cardPasswordInputProps,
   cardPasswordLabel,
   formatCardNumberInput,
+  maskCardNumber,
   useCardSecrets,
 } from './cardLogin'
 
@@ -122,5 +123,65 @@ describe('useCardSecrets: 메모리에만, 제출·이탈·pagehide·카드사 �
     )
     const storage = JSON.stringify({ ...sessionStorage, ...localStorage }) + window.location.href + JSON.stringify(history.state)
     expect(storage).not.toContain(PAN)
+  })
+})
+
+describe('W7e: 카드번호는 WF-53h에 머무는 동안 남긴다(v0.7.6 보정)', () => {
+  it('masks the middle on blur — first 4 and last 4 only, grouped by 4', () => {
+    expect(maskCardNumber(PAN)).toBe('5555 •••• •••• 4444')
+    expect(maskCardNumber('5555 5555 5555 4444')).toBe('5555 •••• •••• 4444')
+    // 14·15·19자리
+    expect(maskCardNumber('36227206271667')).toBe('3622 •••• ••16 67')
+    expect(maskCardNumber('378282246310005')).toBe('3782 •••• •••0 005')
+    expect(maskCardNumber('6250941006528599123')).toBe('6250 •••• •••• •••9 123')
+    // 가릴 가운데가 없으면 그대로(입력 중)
+    expect(maskCardNumber('94101234')).toBe('9410 1234')
+    expect(maskCardNumber('')).toBe('')
+    expect(maskCardNumber(PAN)).not.toContain('5555 5555')
+  })
+
+  it('takeForSubmit copies both but clears only the card password; clearCardPassword keeps the number; clear empties both', () => {
+    const { result } = renderHook(() => useCardSecrets('0302', HYUNDAI))
+    act(() => {
+      result.current.setCardNumber(PAN)
+      result.current.setCardPassword('1234')
+    })
+    let taken = { cardNumber: '', cardPassword: '' }
+    act(() => {
+      taken = result.current.takeForSubmit()
+    })
+    expect(taken).toEqual({ cardNumber: '5555 5555 5555 4444', cardPassword: '1234' })
+    expect(result.current.cardNumber).toBe('5555 5555 5555 4444')
+    expect(result.current.cardPassword).toBe('')
+    // 카드 비밀번호는 한 번만 나간다
+    act(() => {
+      taken = result.current.takeForSubmit()
+    })
+    expect(taken.cardPassword).toBe('')
+    act(() => result.current.setCardPassword('5678'))
+    act(() => result.current.clearCardPassword())
+    expect(result.current.cardPassword).toBe('')
+    expect(result.current.cardNumber).toBe('5555 5555 5555 4444')
+    act(() => result.current.clear())
+    expect(result.current.cardNumber).toBe('')
+    act(() => {
+      taken = result.current.takeForSubmit()
+    })
+    expect(taken).toEqual({ cardNumber: '', cardPassword: '' })
+  })
+
+  it('still clears the kept number on pagehide and unmount', () => {
+    const { result, unmount } = renderHook(() => useCardSecrets('0313', HANA))
+    act(() => {
+      result.current.setCardNumber(PAN)
+      result.current.setCardPassword('12')
+      result.current.takeForSubmit()
+    })
+    expect(result.current.cardNumber).not.toBe('')
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'))
+    })
+    expect(result.current.cardNumber).toBe('')
+    unmount()
   })
 })

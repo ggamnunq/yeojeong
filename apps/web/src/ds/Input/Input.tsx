@@ -36,6 +36,11 @@ export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> & {
   clearLabel?: string
   /** Type=Password 보기 토글의 접근성 이름(보임 여부는 aria-pressed). 기본 "비밀번호 보기" */
   revealLabel?: string
+  /**
+   * 짧은 숫자 비밀번호 칸(HF-53h 카드 비밀번호 136폭): 보기 토글·경고 아이콘 없이 테두리로만 상태를 보인다(HF-53hb Error).
+   * type은 password이거나, 비밀번호 관리자를 피하려고 CSS로 가린 text일 수 있다. 기본 false
+   */
+  pin?: boolean
   /** HTML input size(보이는 글자 수). Figma Size와 이름이 겹쳐 따로 둔다 */
   htmlSize?: number
   ref?: Ref<HTMLInputElement>
@@ -64,6 +69,7 @@ export function Input({
   onClear,
   clearLabel = '입력 지우기',
   revealLabel = '비밀번호 보기',
+  pin = false,
   htmlSize,
   type,
   disabled,
@@ -77,7 +83,7 @@ export function Input({
   const suffixId = `${inputId}-suffix`
   const describedBy = [suffix ? suffixId : null, helper ? helperId : null].filter(Boolean).join(' ') || undefined
   const hasValue = rest.value === undefined ? true : String(rest.value).length > 0
-  const password = type === 'password'
+  const password = type === 'password' && !pin
   const [revealed, setRevealed] = useState(false)
 
   return (
@@ -137,7 +143,7 @@ export function Input({
           >
             <Icon name={revealed ? 'eye-off' : 'eye'} size={20} />
           </button>
-        ) : error ? (
+        ) : pin ? null : error ? (
           <Icon name="alert" size={20} className="shrink-0 text-error" />
         ) : (
           onClear &&

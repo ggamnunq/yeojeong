@@ -20,6 +20,7 @@ import {
   toggleAll,
   classifyLockoutAckError,
   visibleOrganizations,
+  CARD_NUMBER_LOGIN_SCREEN_READY,
 } from './rules'
 
 const BC = { code: '0305', name: 'BC카드', maxRangeDays: 60, maxLookbackDays: 270 }
@@ -203,16 +204,21 @@ describe('조회 실패 → 화면(L-0 표)', () => {
 
 describe('현대·하나 카드번호 로그인(S8c)', () => {
   const now = Date.parse('2026-11-13T06:30:00Z')
-  it('marks Hyundai and Hana and hides them until the card input screen exists', () => {
+  it('marks Hyundai and Hana and shows all 9 in the Figma order (W7e — server sends code order)', () => {
     expect(orgMark({ code: '0302', name: '현대카드' })).toBe('현')
     expect(orgMark({ code: '0313', name: '하나카드' })).toBe('하')
-    const orgs = [
-      { code: '0301', requiresCardNo: false },
-      { code: '0302', requiresCardNo: true },
-      { code: '0306', requiresCardNo: false },
-      { code: '0313', requiresCardNo: true },
-    ]
-    expect(visibleOrganizations(orgs).map((o) => o.code)).toEqual(['0301', '0306'])
+    expect(CARD_NUMBER_LOGIN_SCREEN_READY).toBe(true)
+    // 서버 config 순서(기관 코드 순) + 모르는 코드 하나
+    const orgs = ['0301', '0302', '0303', '0304', '0305', '0306', '0309', '0311', '0313', '0399'].map((code) => ({
+      code,
+      requiresCardNo: code === '0302' || code === '0313',
+    }))
+    expect(visibleOrganizations(orgs).map((o) => o.code)).toEqual(['0301', '0303', '0304', '0305', '0306', '0309', '0311', '0302', '0313', '0399'])
+    // config에 없는 카드사는 그리지 않는다(정렬이 추가하지 않는다)
+    expect(visibleOrganizations([{ code: '0313', requiresCardNo: true }, { code: '0306', requiresCardNo: false }]).map((o) => o.code)).toEqual([
+      '0306',
+      '0313',
+    ])
   })
 
   it('maps card number and card password failures, local input errors and server format errors', () => {

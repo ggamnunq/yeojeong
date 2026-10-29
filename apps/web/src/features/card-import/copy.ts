@@ -23,11 +23,30 @@ export const COPY = {
   fetch: '불러오기',
   loginFailed: '아이디나 비밀번호가 맞지 않아요',
   loginLockWarning: '카드사에서 로그인이 잠길 수 있어요',
-  // 현대·하나 카드번호 로그인(S8c). 입력칸 문구는 HF-53 변형 디자인이 확정되면 다듬는다
+  // (v0.7.6) 로그인 안내 블록(Figma HF-53 계열 공통) — 은행 아이디 혼동 방지
+  guideTitle: (org: string) => `${org} 홈페이지 아이디·비밀번호예요`,
+  guideNotBankStrong: '은행 아이디',
+  // Figma HF-53: "카드 비밀번호·" 뒤에서 줄을 바꾼다
+  guideNotBankRest: ['·간편비밀번호·카드 비밀번호·', '인증서 비밀번호가 아니에요'] as const,
+  guideNoId: '아이디가 없으면 홈페이지에서 만들고 로그인되는지 확인해 주세요',
+  // 현대·하나 카드 확인(WF-53h · 53hb). 카드번호에는 "암호화" 표현을 쓰지 않는다(원문이 HTTPS로 서버를 거친다)
+  cardCheckReason: (org: string) => `${org}는 카드번호와 카드 비밀번호로 한 번 더 확인해요`,
+  cardNumber: '카드번호',
+  cardPasswordPlaceholder: (digits: number) => `${digits}자리`,
+  cardAnyCard: '이 카드사 계정에 등록된 본인 카드 아무거나 괜찮아요',
+  cardNotStored: '카드번호와 카드 비밀번호는 저장하지 않아요',
   cardNumberInvalid: '카드번호를 다시 확인해 주세요',
-  cardPasswordInvalid: '카드 비밀번호를 다시 확인해 주세요',
+  cardPasswordInvalid: '카드 비밀번호가 맞지 않아요',
   cardPasswordLockWarning: '한 번 더 틀리면 카드사에서 잠길 수 있어요',
-  loginLocked: '카드사 홈페이지에서 로그인 정보를 확인한 뒤 다시 시도해 주세요',
+  // HF-53hd 1회 실패 뒤 다시 조회(Default 톤, 제목 두 줄)
+  lockRiskTitle: ['한 번 더 틀리면', '카드사에서 잠길 수 있어요'] as const,
+  lockRiskMessage: (org: string) => `${org} 홈페이지에서 먼저 로그인해 보세요`,
+  // HF-57h 2회 실패 차단(제목 두 줄)
+  lockedTitle: (org: string) => [`${org} 홈페이지에서`, '먼저 확인해 주세요'] as const,
+  lockedSub: '아이디·비밀번호·카드 비밀번호로 로그인되는지 확인해요',
+  lockedAck: '확인했어요',
+  ackTooEarly: (hhmm: string) => `${hhmm} 이후 다시 눌러 주세요`,
+  ackDaily: '오늘은 더 시도할 수 없어요',
   cooldown: (hhmm: string) => `${hhmm} 이후 다시 시도해 주세요`,
   twoWayTitle: '추가 인증',
   twoWayCode: '인증번호',
