@@ -22,6 +22,7 @@ import { ConsentsModule } from './consents/consents.module.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
 import { FxModule } from './fx/fx.module.js';
 import { HealthModule } from './health/health.module.js';
+import { PaymentMethodsModule } from './payment-methods/payment-methods.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RetentionModule } from './retention/retention.module.js';
 import { SettlementsModule } from './settlements/settlements.module.js';
@@ -48,6 +49,7 @@ import { UsersModule } from './users/users.module.js';
     AuthModule,
     UsersModule,
     ConsentsModule,
+    PaymentMethodsModule,
   ],
   providers: [
     { provide: APP_PIPE, useValue: createValidationPipe() },

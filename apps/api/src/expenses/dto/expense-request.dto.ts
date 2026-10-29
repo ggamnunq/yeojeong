@@ -123,7 +123,7 @@ export class OutOfPeriodCandidatesQueryDto {
 export class AddOutOfPeriodExpensesDto implements AddOutOfPeriodExpensesRequest {
   @ApiProperty({
     type: [String],
-    format: 'uuid',
+    description: '후보 조회에서 받은 서명된 임시 식별자',
     minItems: 1,
     maxItems: OUT_OF_PERIOD_ADD_MAX,
   })
@@ -133,6 +133,10 @@ export class AddOutOfPeriodExpensesDto implements AddOutOfPeriodExpensesRequest 
     message: `한 번에 ${OUT_OF_PERIOD_ADD_MAX}건까지 추가할 수 있어요`,
   })
   @ArrayUnique({ message: '같은 결제가 두 번 들어 있어요' })
-  @IsUUID('all', { each: true, message: '결제 형식이 올바르지 않아요' })
+  @IsString({ each: true, message: '결제 형식이 올바르지 않아요' })
+  @MaxLength(2048, {
+    each: true,
+    message: '결제 형식이 올바르지 않아요',
+  })
   candidateIds: string[];
 }

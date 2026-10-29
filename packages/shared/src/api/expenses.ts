@@ -150,7 +150,7 @@ export interface DismissDuplicateRequest {
 
 /** GET /api/trips/:tripId/out-of-period-candidates?side= 의 항목. 날짜 오름차순 배열로 온다 */
 export interface OutOfPeriodCandidate {
-  /** 추가 요청에 그대로 보낸다 */
+  /** 추가 요청에 그대로 보내는 짧은 만료의 서명된 임시 식별자 */
   candidateId: string;
   occurredAt: string;
   localDate: string;
@@ -165,7 +165,7 @@ export interface OutOfPeriodCandidate {
 
 /** POST /api/trips/:tripId/out-of-period-expenses */
 export interface AddOutOfPeriodExpensesRequest {
-  /** 1~50, 겹침 불가 */
+  /** 후보 조회에서 받은 임시 식별자. 1~50, 겹침 불가 */
   candidateIds: string[];
 }
 

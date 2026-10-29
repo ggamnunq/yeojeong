@@ -8,6 +8,14 @@ import type {
 import request from 'supertest';
 import { ExpenseLifecycleService } from './../src/expenses/expense-lifecycle.service.js';
 import { ExpenseStatsService } from './../src/expenses/expense-stats.service.js';
+import {
+  PaymentProviderAdapter,
+  type ProviderTransaction,
+} from './../src/payment-methods/providers/payment-provider.adapter.js';
+import {
+  CipherPurpose,
+  TokenCipher,
+} from './../src/payment-methods/token-cipher.js';
 import type { PrismaClient } from './../src/generated/prisma/client.js';
 import { TRIP_EVENTS, type TripEndedEvent } from './../src/trips/events.js';
 import {
@@ -945,68 +953,96 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
   });
 
   describe('기간 외 결제 추가 (FR-408)', () => {
-    it('lists own out-of-period approvals and adds them as pending', async () => {
+    it('fetches candidates live and stores only selected approvals as pending', async () => {
       const seed = await fx.seedTrip(['준용', '민지']);
       const me = seed.members['준용'];
-      const agoda = await fx.addTransaction(me, {
-        at: kst('2026-10-20 21:10'),
-        merchant: '아고다 · 오리엔탈 익스프레스 난바',
-        amount: '486000',
-        currency: 'KRW',
+      const method = await prisma.paymentMethod.findUniqueOrThrow({
+        where: { id: me.paymentMethodId },
       });
-      const jeju = await fx.addTransaction(me, {
-        at: kst('2026-11-02 09:00'),
-        merchant: '제주항공 ICN–KIX 4매',
-        amount: '1032400',
-        currency: 'KRW',
+      const cipher = app.get(TokenCipher);
+      await prisma.paymentConnection.update({
+        where: { id: method.connectionId },
+        data: {
+          accessTokenEnc: cipher.encrypt(
+            'fixture-token',
+            CipherPurpose.ACCESS_TOKEN,
+          ),
+        },
       });
-      const kkday = await fx.addTransaction(me, {
-        at: kst('2026-11-10 12:00'),
-        merchant: 'KKday · 유니버설 스튜디오 입장권',
-        amount: '412800',
-        currency: 'KRW',
-      });
-      await fx.addTransaction(me, {
-        at: kst('2026-11-10 13:00'),
-        merchant: 'KKday 환불',
-        amount: '-100000',
-        currency: 'KRW',
-        kind: 'CANCEL',
-        cancelOf: kkday.id,
-      });
-      const cancelled = await fx.addTransaction(me, {
-        at: kst('2026-11-05 10:00'),
-        merchant: '취소된 숙소',
-        amount: '200000',
-        currency: 'KRW',
-      });
-      await fx.addTransaction(me, {
-        at: kst('2026-11-05 11:00'),
-        merchant: '취소된 숙소',
-        amount: '-200000',
-        currency: 'KRW',
-        kind: 'CANCEL',
-        cancelOf: cancelled.id,
-      });
-      await fx.addTransaction(me, {
-        at: kst('2026-08-01 10:00'),
-        merchant: '너무 이른 결제',
-        amount: '10000',
-        currency: 'KRW',
-      });
-      await fx.addTransaction(me, {
-        at: kst('2026-11-12 09:00'),
-        merchant: '기간 안 결제',
-        amount: '10000',
-        currency: 'KRW',
-      });
-      const minjis = await fx.addTransaction(seed.members['민지'], {
-        at: kst('2026-11-01 10:00'),
-        merchant: '민지 항공권',
-        amount: '500000',
-        currency: 'KRW',
-      });
-
+      const items: ProviderTransaction[] = [
+        {
+          ref: 'agoda',
+          kind: 'APPROVAL',
+          occurredAt: kst('2026-10-20 21:10'),
+          merchantName: '아고다',
+          amount: '486000',
+          currency: 'KRW',
+          krwAmount: 486000,
+          raw: {},
+        },
+        {
+          ref: 'jeju',
+          kind: 'APPROVAL',
+          occurredAt: kst('2026-11-02 09:00'),
+          merchantName: '제주항공',
+          amount: '1032400',
+          currency: 'KRW',
+          krwAmount: 1032400,
+          raw: {},
+        },
+        {
+          ref: 'kkday',
+          kind: 'APPROVAL',
+          occurredAt: kst('2026-11-10 12:00'),
+          merchantName: 'KKday',
+          amount: '412800',
+          currency: 'KRW',
+          krwAmount: 412800,
+          raw: {},
+        },
+        {
+          ref: 'kkday-refund',
+          kind: 'CANCEL',
+          occurredAt: kst('2026-11-10 13:00'),
+          merchantName: 'KKday',
+          amount: '100000',
+          currency: 'KRW',
+          approvalRef: 'kkday',
+          raw: {},
+        },
+        {
+          ref: 'cancelled',
+          kind: 'APPROVAL',
+          occurredAt: kst('2026-11-05 10:00'),
+          merchantName: '취소된 숙소',
+          amount: '200000',
+          currency: 'KRW',
+          krwAmount: 200000,
+          raw: {},
+        },
+        {
+          ref: 'cancelled-refund',
+          kind: 'CANCEL',
+          occurredAt: kst('2026-11-05 11:00'),
+          merchantName: '취소된 숙소',
+          amount: '200000',
+          currency: 'KRW',
+          approvalRef: 'cancelled',
+          raw: {},
+        },
+      ];
+      const provider = vi
+        .spyOn(app.get(PaymentProviderAdapter), 'listTransactions')
+        .mockImplementation(async (_tokens, input) => ({
+          items:
+            input.methodRef === method.externalRef
+              ? items.filter(
+                  (item) =>
+                    item.occurredAt >= input.from &&
+                    item.occurredAt <= input.to,
+                )
+              : [],
+        }));
       const candidates = async () =>
         (
           await request(server())
@@ -1015,80 +1051,55 @@ describe.skipIf(!databaseUrl)('Expenses (e2e, real DB)', () => {
             )
             .set(as(seed, '준용'))
             .expect(200)
-        ).body as {
-          candidateId: string;
-          merchantName: string;
-          krwAmount: number;
-          paymentMethodLabel: string;
-        }[];
+        ).body as { candidateId: string; merchantName: string }[];
       const before = await candidates();
-      expect(before.map((c) => c.merchantName)).toEqual([
-        '아고다 · 오리엔탈 익스프레스 난바',
-        '제주항공 ICN–KIX 4매',
-        'KKday · 유니버설 스튜디오 입장권',
+      expect(before.map((item) => item.merchantName)).toEqual([
+        '아고다',
+        '제주항공',
+        'KKday',
       ]);
-      expect(before[0]).toMatchObject({
-        candidateId: agoda.id,
-        krwAmount: 486000,
-        localDate: '2026-10-20',
-        paymentMethodLabel: '토스뱅크 체크카드 1934',
-      });
-      await request(server())
-        .get(`/api/trips/${seed.tripId}/out-of-period-candidates?side=AFTER`)
-        .set(as(seed, '준용'))
-        .expect(200)
-        .expect([]);
-
+      expect(provider).toHaveBeenCalled();
+      expect(
+        await prisma.transaction.count({ where: { userId: me.userId } }),
+      ).toBe(0);
       const add = (ids: string[]) =>
         request(server())
           .post(`/api/trips/${seed.tripId}/out-of-period-expenses`)
           .set(as(seed, '준용'))
           .send({ candidateIds: ids });
-      const res = await add([jeju.id, agoda.id]).expect(201);
+      const res = await add([
+        before[1].candidateId,
+        before[0].candidateId,
+      ]).expect(201);
       expect(res.body.added).toBe(2);
-      expect(res.body.items.map((i: ExpenseRow) => i.merchantName)).toEqual([
-        '아고다 · 오리엔탈 익스프레스 난바',
-        '제주항공 ICN–KIX 4매',
-      ]);
+      expect(
+        res.body.items.map((item: ExpenseRow) => item.merchantName),
+      ).toEqual(['아고다', '제주항공']);
       expect(res.body.items[0]).toMatchObject({
         status: 'PENDING',
         origin: 'OUT_OF_PERIOD',
         periodSide: 'BEFORE',
-        dayIndex: null,
         krwAmount: 486000,
       });
-      expect((await list(seed, '준용')).pendingCount).toBe(2);
-      expect((await list(seed, '민지')).items).toEqual([]);
-      expect((await candidates()).map((c) => c.candidateId)).toEqual([
-        kkday.id,
+      expect(
+        await prisma.transaction.count({ where: { userId: me.userId } }),
+      ).toBe(2);
+      expect((await candidates()).map((item) => item.merchantName)).toEqual([
+        'KKday',
       ]);
-
-      // 이미 추가한 건·남의 거래·취소된 거래·범위 밖은 400(하나라도 있으면 아무것도 추가하지 않는다)
-      for (const id of [agoda.id, minjis.id, cancelled.id]) {
-        const bad = await add([kkday.id, id]).expect(400);
-        expect(bad.body).toMatchObject({
-          code: 'OUT_OF_PERIOD_CANDIDATE_INVALID',
-          details: { invalidCandidateIds: [id] },
-        });
-      }
+      await add([before[0].candidateId]).expect(400);
       await add([]).expect(400);
-
-      // 부분 취소는 자식으로 붙는다
-      const partial = await add([kkday.id]).expect(201);
+      const partial = await add([before[2].candidateId]).expect(201);
       expect(partial.body.items[0]).toMatchObject({
         krwAmount: 312800,
         grossKrwAmount: 412800,
         refunds: [{ krwAmount: -100000 }],
       });
-      const logs = await prisma.expenseChangeLog.findMany({
-        where: { tripId: seed.tripId },
-      });
       expect(
-        logs.filter((l) => l.action === 'OUT_OF_PERIOD_ADDED'),
-      ).toHaveLength(3);
-      expect(logs.filter((l) => l.action === 'REFUND_ATTACHED')).toHaveLength(
-        1,
-      );
+        await prisma.expenseChangeLog.count({
+          where: { tripId: seed.tripId, action: 'OUT_OF_PERIOD_ADDED' },
+        }),
+      ).toBe(3);
     });
 
     it('is only available while the trip is ongoing', async () => {

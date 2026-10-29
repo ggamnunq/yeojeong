@@ -31,3 +31,4 @@ export * from './api/account.js';
 export * from './api/expenses.js';
 export type * from './api/settlements.js';
 export type * from './api/fx.js';
+export type * from './api/payment-methods.js';

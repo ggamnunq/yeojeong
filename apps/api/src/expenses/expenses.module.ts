@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TransactionsModule } from '../transactions/transactions.module.js';
 import { ExpenseCommandService } from './expense-command.service.js';
 import { ExpenseLifecycleService } from './expense-lifecycle.service.js';
 import { ExpenseQueryService } from './expense-query.service.js';
@@ -13,6 +14,7 @@ import { TripEndedListener } from './trip-ended.listener.js';
  * trip.ended를 받으려면 앱에 EventEmitterModule.forRoot()가 있어야 한다(S2A가 등록).
  */
 @Module({
+  imports: [TransactionsModule],
   controllers: [ExpensesController],
   providers: [
     ExpenseQueryService,
