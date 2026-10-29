@@ -22,7 +22,7 @@ import {
 } from './api'
 import { encryptCardPassword, pinPolicy } from './crypto'
 
-// 카드 승인내역 불러오기(S8) TanStack Query hooks. 화면 없이 데이터 계층만 둔다.
+// 카드 승인내역 불러오기(S8) TanStack Query hooks. 화면(W7 pages/)이 쓴다.
 
 /** features.cardImport(GET /auth/session). 값이 없거나 true가 아니면 false(fail closed) */
 export function cardImportOf(session: SessionResponse | undefined | null): boolean {

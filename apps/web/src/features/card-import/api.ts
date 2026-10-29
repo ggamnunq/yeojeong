@@ -13,7 +13,7 @@ import {
 } from '@yeojeong/shared'
 import { apiFetch, keys } from '../../api'
 
-// 카드 승인내역 불러오기(S8) API 클라이언트. 화면은 디자인 세션이 붙인다(이 폴더에는 routes.tsx가 없다).
+// 카드 승인내역 불러오기(S8) API 클라이언트. 화면(W7)은 routes.tsx · pages/ · steps.tsx.
 // 서버 계약: apps/api/src/card-import/README.md. 키는 keys.wallet.all 아래(지갑을 바꾸면 같이 무효화된다).
 
 export const cardImportKeys = {
