@@ -10,13 +10,18 @@ import {
   type CodefRoute,
 } from '../../test/fakes/codef-http.js';
 import { AppException } from '../common/errors/index.js';
-import { TokenCipher } from '../payment-methods/token-cipher.js';
 import { CardImportService, periodErrors } from './card-import.service.js';
 import { CodefAccountRemover } from './codef/codef-account-remover.js';
+import { ImportKeyHasher } from './import-key.js';
 import { ItemTokenSigner } from './item-token.js';
 import { CodefClient } from './codef/codef.client.js';
 import { CodefConfig } from './codef/codef.config.js';
-import { CODEF_PATHS, organizationOf } from './codef/codef.constants.js';
+import {
+  CARD_IMPORT_ORGANIZATIONS,
+  CARD_NUMBER_LOGIN_ENABLED,
+  CODEF_PATHS,
+  organizationOf,
+} from './codef/codef.constants.js';
 import { TwoWayTokenSealer } from './two-way-token.js';
 
 const KEY = Buffer.alloc(32, 3).toString('base64');
@@ -82,7 +87,7 @@ function setup(
     client,
     config,
     new TwoWayTokenSealer(env),
-    TokenCipher.fromKey(KEY),
+    new ImportKeyHasher(env),
     { findMissing: vi.fn().mockResolvedValue([]) } as never,
     audit as never,
     { findSpotRate: vi.fn().mockResolvedValue(null) } as never,
@@ -369,27 +374,36 @@ describe('CardImportService.fetch (direct)', () => {
     expect(audit.record).not.toHaveBeenCalled();
   });
 
-  it('requires the card number for Hyundai and Hana and passes it to CODEF only', async () => {
+  it('rejects Hyundai and Hana while card-number login is disabled', async () => {
     const { service, http } = setup({
       [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-00000', []),
     });
-    expect(
-      await codeOf(service.fetch(USER, request({ organization: '0302' }), NOW)),
-    ).toBe('VALIDATION_FAILED');
-    await service.fetch(
-      USER,
-      request({
-        organization: '0313',
-        loginCardNo: '9410123412341934',
-        encryptedCardPassword: 'Q0FSRFBBU1NXT1JELUNJUEhFUg==',
-      }),
-      NOW,
-    );
-    expect(http.calls.at(-1)?.body).toMatchObject({
-      organization: '0313',
-      loginCardNo: '9410123412341934',
-      cardPassword: 'Q0FSRFBBU1NXT1JELUNJUEhFUg==',
-    });
+    expect(CARD_NUMBER_LOGIN_ENABLED).toBe(false);
+    expect(CARD_IMPORT_ORGANIZATIONS.map((o) => o.code)).toEqual([
+      '0301',
+      '0303',
+      '0304',
+      '0305',
+      '0306',
+      '0309',
+      '0311',
+    ]);
+    for (const organization of ['0302', '0313']) {
+      expect(
+        await codeOf(
+          service.fetch(
+            USER,
+            request({
+              organization,
+              loginCardNo: '9410123412341934',
+              encryptedCardPassword: 'Q0FSRFBBU1NXT1JELUNJUEhFUg==',
+            }),
+            NOW,
+          ),
+        ),
+      ).toBe('VALIDATION_FAILED');
+    }
+    expect(http.calls).toHaveLength(0);
   });
 
   it('checks the period against the card company limits', () => {

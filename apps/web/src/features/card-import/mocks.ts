@@ -37,16 +37,15 @@ export const MOCK_TWO_WAY_CODE = '123456'
 /** 목 결과의 자동 연결 여정 표시용 ID(목 여정 데이터와 연결하지 않는다) */
 export const MOCK_TRIP_ID = 'mock-card-import-trip'
 
+// 서버와 같다: 현대·하나(카드번호 전체 필요)는 1차에서 뺐다
 const ORGANIZATIONS: CardImportOrganization[] = [
   { code: '0301', name: 'KB국민카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
-  { code: '0302', name: '현대카드', maxRangeDays: 90, maxLookbackDays: 90, requiresCardNo: true },
   { code: '0303', name: '삼성카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
   { code: '0304', name: 'NH농협카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
   { code: '0305', name: 'BC카드', maxRangeDays: 60, maxLookbackDays: 270, requiresCardNo: false },
   { code: '0306', name: '신한카드', maxRangeDays: 90, maxLookbackDays: 180, requiresCardNo: false },
   { code: '0309', name: '우리카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
   { code: '0311', name: '롯데카드', maxRangeDays: 92, maxLookbackDays: 180, requiresCardNo: false },
-  { code: '0313', name: '하나카드', maxRangeDays: 90, maxLookbackDays: 365, requiresCardNo: true },
 ]
 
 interface CardImportMockState {

@@ -63,7 +63,7 @@ export const CODEF_QUERY_TIMEOUT_MS = 30_000;
 export const CODEF_OTHER_TIMEOUT_MS = 10_000;
 
 /**
- * 불러올 수 있는 카드사 9곳(기능명세 4-12-1, 화면 순서): 개인 카드 승인내역(KR_CD_P_002) 아이디 로그인(loginType "1").
+ * 카드사 9곳(기능명세 4-12-1, 화면 순서): 개인 카드 승인내역(KR_CD_P_002) 아이디 로그인(loginType "1").
  * 기관 코드: CODEF "파라미터 상세보기" 시트(기관별 개발현황) — 0301 KB국민 · 0302 현대 · 0303 삼성 · 0304 NH농협 · 0305 BC ·
  * 0306 신한 · 0309 우리 · 0311 롯데 · 0313 하나(0301 KB, 0309 우리는 easycodef-java README에도 있다).
  * 현대·하나는 아이디 로그인에 카드번호 전체(loginCardNo)·카드 비밀번호(cardPassword, RSA)가 더 필요하다(KR_CD_P_002 입력부) → requiresCardNo.
@@ -73,7 +73,15 @@ export const CODEF_OTHER_TIMEOUT_MS = 10_000;
  * 추가 인증(KR_CD_P_002 2-way 안내): 문자 인증번호(smsAuthNo)뿐 — 롯데 아이디 로그인, 씨티 기기 변경. 보안문자(secureNo)는 이 상품 안내에 없다.
  * 뺀 곳: 씨티(0307)·전북(0315)은 아이디 로그인이 되지만 화면 9곳에 없다. 광주(0316)·수협(0320)·제주(0321)는 인증서 로그인만.
  */
-export const CARD_IMPORT_ORGANIZATIONS: readonly CardImportOrganization[] = [
+/**
+ * 카드번호 전체·카드 비밀번호가 필요한 카드사(현대·하나, requiresCardNo)를 받을지. 1차는 끈다 —
+ * 카드번호 전체를 서버가 거쳐 보내야 해서다(결정 2026-10-29). 코드 경로(loginCardNo·cardPassword)는 남겨 둔다.
+ * false면 config 목록에서 빠지고 fetch는 400(organization)이다.
+ */
+export const CARD_NUMBER_LOGIN_ENABLED = false;
+
+/** 9곳 전체(화면 순서). 실제로 받는 목록은 CARD_IMPORT_ORGANIZATIONS */
+export const ALL_CARD_ORGANIZATIONS: readonly CardImportOrganization[] = [
   {
     code: '0301',
     name: 'KB국민카드',
@@ -138,6 +146,12 @@ export const CARD_IMPORT_ORGANIZATIONS: readonly CardImportOrganization[] = [
     requiresCardNo: true,
   },
 ];
+
+/** 지금 받는 카드사(CARD_NUMBER_LOGIN_ENABLED가 false면 현대·하나 제외 = 7곳) */
+export const CARD_IMPORT_ORGANIZATIONS: readonly CardImportOrganization[] =
+  ALL_CARD_ORGANIZATIONS.filter(
+    (o) => CARD_NUMBER_LOGIN_ENABLED || !o.requiresCardNo,
+  );
 
 export function organizationOf(code: string): CardImportOrganization | null {
   return CARD_IMPORT_ORGANIZATIONS.find((o) => o.code === code) ?? null;

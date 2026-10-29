@@ -42,7 +42,8 @@ export interface CardImportOrganization {
   maxLookbackDays: number;
   /**
    * 아이디 로그인에 카드번호·카드 비밀번호가 더 필요한 카드사(현대·하나). true면 화면이 loginCardNo(카드번호 전체)와
-   * encryptedCardPassword(카드 비밀번호 앞 2자리를 비밀번호와 같은 방식으로 암호화)를 더 받는다
+   * encryptedCardPassword(카드 비밀번호 앞 2자리를 비밀번호와 같은 방식으로 암호화)를 더 받는다.
+   * 1차는 이런 카드사를 config에 내리지 않는다(서버 CARD_NUMBER_LOGIN_ENABLED = false → 늘 false)
    */
   requiresCardNo: boolean;
 }
