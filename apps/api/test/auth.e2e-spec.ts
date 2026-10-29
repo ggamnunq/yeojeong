@@ -500,12 +500,12 @@ describe('Auth (e2e)', () => {
       expect(state.body.reconsentRequired).toEqual([
         { id: 'TOS', version: '2026-10-01' },
       ]);
-      // 재동의 전에도 탈퇴·삭제 요청은 할 수 있다
+      // 요청 코드 발급 API는 없앴다(L-1). 재동의 전 탈퇴는 test/consent-v1.e2e-spec.ts(실DB)
       await request(server)
         .post('/api/users/me/deletion-request')
         .set('Cookie', sessionCookie)
         .set('Origin', TEST_ORIGIN)
-        .expect(201);
+        .expect(404);
 
       await request(server)
         .post('/api/auth/reconsent')
@@ -548,33 +548,6 @@ describe('Auth (e2e)', () => {
       const res = await agent.get('/api/users/me').expect(401);
       expect(cookies(res).yj_session).toMatch(/Expires=Thu, 01 Jan 1970/);
     });
-  });
-
-  it('issues a deletion request code with a support mail draft (FR-108)', async () => {
-    const agent = await start();
-    await signup(agent);
-    const res = await agent
-      .post('/api/users/me/deletion-request')
-      .set('Origin', TEST_ORIGIN)
-      .expect(201);
-    expect(res.body.code).toMatch(
-      /^YJD-[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/,
-    );
-    expect(res.body.mail).toMatchObject({
-      to: 'support@jinyeojeong.com',
-      subject: `[여정] 탈퇴·삭제 요청 ${res.body.code}`,
-    });
-    expect(res.body.mail.body).toContain(res.body.code);
-    expect(res.body.mailto).toMatch(
-      /^mailto:support@jinyeojeong\.com\?subject=/,
-    );
-    expect(new Date(res.body.expiresAt).getTime()).toBeGreaterThan(
-      Date.now() + 23 * 3_600_000,
-    );
-    const [record] = db.accountDeletion.rows;
-    expect(record).toMatchObject({ channel: 'SUPPORT', completedAt: null });
-    expect(record.requestCodeHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(JSON.stringify(record)).not.toContain(res.body.code);
   });
 
   it('serves the current consent documents publicly', async () => {

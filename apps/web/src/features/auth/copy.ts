@@ -29,6 +29,7 @@ export const COPY = {
   reconsentTitle: '약관이 바뀌었어요',
   agree: '동의',
   logout: '로그아웃',
+  withdraw: '탈퇴',
   loadFailed: '불러오지 못했어요',
   retry: '다시 시도',
 } as const

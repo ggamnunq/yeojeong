@@ -50,6 +50,8 @@ const REVIEW_MARK = /\s*\[검토\]/g
 const HIDDEN_SECTION = /게시하지 않음/
 const DATE = /시행일\s*`?(\d{4}-\d{2}-\d{2})/
 const VERSION = /v(\d+(?:\.\d+)+)/
+/** 정식 발행본(docs/legal/v1.0) 머리 줄: "버전 1.0 · 시행일 2026-10-30" (인용이 아니라 문단) */
+const META_LINE = /^버전\s+(\d+(?:\.\d+)+)\s*·\s*시행일\s*(\d{4}-\d{2}-\d{2})?\s*$/
 
 /** 문장 끝 `[검토]` 표시를 지운다 */
 export const stripReview = (text: string) => text.replace(REVIEW_MARK, '').trim()
@@ -216,6 +218,15 @@ export function parseLegal(source: string): LegalDocument {
       doc.effectiveDate = DATE.exec(text)?.[1] ?? null
       doc.version = VERSION.exec(text)?.[1] ?? null
       continue
+    }
+    if (!seenSection && !metaRead && token.block.kind === 'paragraph' && doc.intro.length === 0) {
+      const meta = META_LINE.exec(token.block.text)
+      if (meta) {
+        metaRead = true
+        doc.version = meta[1]
+        doc.effectiveDate = meta[2] ?? null
+        continue
+      }
     }
     if (token.block.kind === 'quote' && token.block.lines.length === 0) continue
     append(stack.at(-1)?.section.blocks ?? doc.intro, token.block)

@@ -3,7 +3,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
-import { CONSENT_DOCUMENT_VERSIONS } from '../src/common/auth/index.js';
+import {
+  CONSENT_DOCUMENT_VERSIONS,
+  currentConsentVersion,
+} from '../src/common/auth/index.js';
 import { parse } from 'dotenv';
 import { AppModule } from './../src/app.module.js';
 import type {
@@ -102,20 +105,19 @@ export async function createSignupConsents(db: Db, userId: string) {
   const userRefHash = hex64();
   const ids = ['TOS', 'PRIVACY', 'AGE14', 'MARKETING'] as const;
   for (const consentId of ids) {
-    const doc = CONSENT_DOCUMENT_VERSIONS.find(
-      (d) => d.consentId === consentId,
-    );
+    // 지금 시행 중인 버전(시행일 전후로 초안 ↔ 정식 v1.0이 바뀐다)
+    const doc = currentConsentVersion(consentId, CONSENT_DOCUMENT_VERSIONS);
     await db.userConsent.create({
       data: {
         userId,
         userRefHash,
         consentId,
-        version: doc?.version ?? '0.1-draft',
+        version: doc.version,
         agreed: consentId !== 'MARKETING',
         ua: 'yeojeong-e2e',
         screen: 'WF-04',
         method: 'ALL',
-        docHash: doc?.docHash ?? hex64(),
+        docHash: doc.docHash,
       },
     });
   }

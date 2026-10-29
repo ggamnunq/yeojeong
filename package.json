@@ -11,6 +11,7 @@
     "lint": "pnpm --recursive lint",
     "test": "pnpm --recursive test && pnpm --filter @yeojeong/api test:e2e",
     "db:up": "docker compose up -d",
-    "db:down": "docker compose down"
+    "db:down": "docker compose down",
+    "ops:db-connect": "bash scripts/ops/db-connect.sh"
   }
 }

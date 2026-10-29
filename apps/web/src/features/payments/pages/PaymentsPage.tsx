@@ -9,6 +9,7 @@ import { useSession } from '../../../app/session'
 import { useTripDetail } from '../../../app/trip'
 import { Callout, Icon, RowAdd } from '../../../ds'
 import { FinConsentSheet } from '../../auth/components/FinConsentSheet'
+import { NoticeBanner } from '../../notices/NoticeBanner'
 import { paymentMethodsQuery } from '../../wallet/api'
 import { useManualSync } from '../../wallet/useManualSync'
 import { useTossConnect } from '../../wallet/useTossConnect'
@@ -143,6 +144,8 @@ export default function PaymentsPage() {
           </span>
         </div>
       )}
+      {/* 공지 배너(HF-60): 결제내역 헤더 아래, 거터 안 */}
+      <NoticeBanner className="px-gutter pb-2" />
       {accountLink && ongoing && trip.me.connectionExpired && (
         <div className="px-gutter pt-2">
           <Callout

@@ -1,6 +1,7 @@
 import type { HealthResponse, Me, TripDetailResponse } from '@yeojeong/shared'
 import { HttpResponse, type HttpHandler } from 'msw'
 import type { MyTripsResponse, SessionResponse } from '../../api'
+import { mockConsentVersion } from '../../mocks/consentVersions'
 import { db, findTrip, meOf, tripDetail, tripListItem } from '../../mocks/data'
 import { api, denyUnlessAuthenticated, mockError, requireMember } from '../../mocks/utils'
 
@@ -15,7 +16,7 @@ export const handlers: HttpHandler[] = [
             status: 'AUTHENTICATED',
             user: meOf(),
             ...(db.consentRequired?.length && {
-              reconsentRequired: db.consentRequired.map((id) => ({ id, version: '0.1-draft' })),
+              reconsentRequired: db.consentRequired.map((id) => ({ id, version: mockConsentVersion(id) })),
             }),
           }
         : db.session === 'SIGNUP_REQUIRED'

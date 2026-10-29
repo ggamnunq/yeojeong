@@ -28,6 +28,7 @@ import { ConsentsModule } from './consents/consents.module.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
 import { FxModule } from './fx/fx.module.js';
 import { HealthModule } from './health/health.module.js';
+import { NoticesModule } from './notices/notices.module.js';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RetentionModule } from './retention/retention.module.js';
@@ -47,6 +48,7 @@ import { WalletModule } from './wallet/wallet.module.js';
     EventEmitterModule.forRoot(),
     // 기능 모듈은 아래에 한 줄씩 추가한다(apps/api/README.md "모듈 추가")
     HealthModule,
+    NoticesModule,
     TripsModule,
     AuditModule,
     AccountModule,

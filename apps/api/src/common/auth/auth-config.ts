@@ -1,10 +1,9 @@
-import { createHmac, hkdfSync } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { ValueSigner } from '../crypto/signed-value.js';
 import { TokenCipher } from '../crypto/token-cipher.js';
 
 const MIN_SECRET_LENGTH = 32;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * 인증·암호화 설정. 시작할 때 한 번 검증하고 값이 없거나 틀리면 부팅을 멈춘다.
@@ -21,10 +20,7 @@ export class AuthConfig {
   readonly signer: ValueSigner;
   /** *_enc 컬럼 암호화 */
   readonly tokenCipher: TokenCipher;
-  /** 탈퇴·삭제 요청 코드 메일의 받는 주소(FR-108) */
-  readonly supportEmail: string;
   private readonly userRefKey: string;
-  private readonly deletionCodeKey: Buffer;
 
   constructor(config: ConfigService) {
     const required = (name: string) => {
@@ -77,26 +73,10 @@ export class AuthConfig {
 
     // 교체 금지: 탈퇴 후에도 동의 기록·처리 기록을 같은 사용자로 묶는 데 쓴다
     this.userRefKey = secret('USER_REF_HMAC_KEY');
-    this.deletionCodeKey = Buffer.from(
-      hkdfSync('sha256', this.userRefKey, '', 'yeojeong:deletion-code:v1', 32),
-    );
-
-    const supportEmail = required('SUPPORT_EMAIL');
-    if (!EMAIL.test(supportEmail)) {
-      throw new Error('SUPPORT_EMAIL 형식이 잘못됐습니다');
-    }
-    this.supportEmail = supportEmail;
   }
 
   /** UserConsent·AccountDeletion.userRefHash = HMAC-SHA256(userId, USER_REF_HMAC_KEY) */
   userRefHash(userId: string): string {
     return createHmac('sha256', this.userRefKey).update(userId).digest('hex');
-  }
-
-  /** 탈퇴·삭제 요청 코드는 원문 대신 이 값만 저장한다 */
-  deletionCodeHash(code: string): string {
-    return createHmac('sha256', this.deletionCodeKey)
-      .update(code)
-      .digest('hex');
   }
 }

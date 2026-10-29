@@ -78,7 +78,8 @@ export default function ReconsentPage() {
         loading={documents.isPending}
       />
       <div className="flex-1" />
-      <div className="flex justify-center pb-1">
+      {/* 동의하지 않으면 로그아웃 또는 탈퇴(약관 제3조⑤). 탈퇴 화면(HF-59)은 재동의 전에도 열린다 */}
+      <div className="flex justify-center gap-1 pb-1">
         <button
           type="button"
           disabled={busy}
@@ -86,6 +87,14 @@ export default function ReconsentPage() {
           className="rounded-sm px-2 pt-2.5 pb-1.5 text-body-s text-tertiary focus-visible:shadow-focus-ring focus-visible:outline-hidden disabled:text-disabled"
         >
           {COPY.logout}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => navigate(paths.meWithdraw())}
+          className="rounded-sm px-2 pt-2.5 pb-1.5 text-body-s text-tertiary focus-visible:shadow-focus-ring focus-visible:outline-hidden disabled:text-disabled"
+        >
+          {COPY.withdraw}
         </button>
       </div>
     </ShellOnboarding>

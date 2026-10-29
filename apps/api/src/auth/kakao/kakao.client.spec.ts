@@ -2,7 +2,6 @@ import { ConfigService } from '@nestjs/config';
 import { TEST_ENV } from '../../../test/env.js';
 import { AuthConfig } from '../../common/auth/auth-config.js';
 import { safeReturnTo } from '../auth.service.js';
-import { generateDeletionCode } from '../../users/users.service.js';
 import {
   HttpKakaoClient,
   KakaoError,
@@ -134,15 +133,5 @@ describe('safeReturnTo', () => {
     42,
   ])('rejects %s', (path) => {
     expect(safeReturnTo(path)).toBeNull();
-  });
-});
-
-describe('generateDeletionCode', () => {
-  it('uses the unambiguous alphabet in YJD-XXXX-XXXX-XXXX form', () => {
-    const codes = new Set(Array.from({ length: 50 }, generateDeletionCode));
-    expect(codes.size).toBe(50);
-    for (const code of codes) {
-      expect(code).toMatch(/^YJD(-[2-9A-HJKMNP-Z]{4}){3}$/);
-    }
   });
 });

@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 /** consent_documents 한 행. 새 버전은 마이그레이션으로 행을 추가한다(지우지 않는다) */
 export interface ConsentDocumentVersion {
   consentId: ConsentId;
-  /** 시행일 YYYY-MM-DD(같은 날 두 번이면 .2). 초안은 0.1-draft */
+  /** 문서 버전("1.0" — 다음 개정은 1.1 MINOR · 2.0 MAJOR). 시행일은 effectiveAt. 초안은 0.1-draft */
   version: string;
   title: string;
   required: boolean;
@@ -42,8 +42,37 @@ const draft = (
   isDraft: true,
 });
 
+/** 정식 약관 v1.0 시행일(2026-10-30 00:00 KST). docs/legal/v1.0 문서 머리·부칙과 같다 */
+export const V1_EFFECTIVE_AT = new Date('2026-10-30T00:00:00+09:00');
+/** 게시본(apps/web/src/features/legal/content) SHA-256 — consent-catalog.spec.ts가 파일로 다시 계산해 대조한다 */
+const V1_TERMS_HASH =
+  '97b15008160a8e381efb66222f27487b316d1925c01e6fe54c114cc1aabd7c58';
+const V1_PRIVACY_HASH =
+  'ad74dea6c6372da76c72bdd546b389e66815e4da6af15ed66cde1addfe33cfd6';
+const V1_SUMMARY =
+  '정식 약관 v1.0 시행 — 수동 결제·지갑·공동 결제 공개 범위 반영, 연동·카드 불러오기·마케팅 제외';
+const v1 = (
+  consentId: ConsentId,
+  title: string,
+  docPath: string,
+  docHash: string,
+): ConsentDocumentVersion => ({
+  consentId,
+  version: '1.0',
+  title,
+  required: true,
+  docPath,
+  docHash,
+  effectiveAt: V1_EFFECTIVE_AT,
+  changeType: 'MAJOR',
+  summary: V1_SUMMARY,
+  isDraft: false,
+});
+
 /**
- * 마이그레이션 20261028101853_add_consent_documents_is_draft가 넣은 초안 행과 같은 값(테스트·픽스처용).
+ * 마이그레이션이 넣은 consent_documents 행과 같은 값(테스트·픽스처용).
+ * - 20261028101853_add_consent_documents_is_draft · 20261029160001_card_import_constraints: 초안(0.1-draft)
+ * - 20261030010000_consent_documents_v1_0: 정식 v1.0(TOS·PRIVACY·AGE14) — 시행일부터 초안 동의자는 재동의
  * 서버의 판정 기준은 이 상수가 아니라 consent_documents 테이블이다(ConsentCatalog).
  */
 export const CONSENT_DOCUMENT_VERSIONS: Catalog = [
@@ -109,6 +138,24 @@ export const CONSENT_DOCUMENT_VERSIONS: Catalog = [
     summary:
       '카드사 로그인 정보로 승인내역을 한 번 조회하고, 고른 결제만 지갑에 저장해요. 로그인 정보와 조회 결과는 저장하지 않아요.',
   },
+  v1(
+    'TOS',
+    '서비스 이용약관',
+    'docs/legal/v1.0/서비스 이용약관.md',
+    V1_TERMS_HASH,
+  ),
+  v1(
+    'PRIVACY',
+    '개인정보 수집·이용',
+    'docs/legal/v1.0/개인정보 수집·이용 동의서.md',
+    V1_PRIVACY_HASH,
+  ),
+  v1(
+    'AGE14',
+    '만 14세 이상입니다',
+    'docs/legal/v1.0/서비스 이용약관.md',
+    V1_TERMS_HASH,
+  ),
 ];
 
 function effective(id: ConsentId, catalog: Catalog, now: Date) {

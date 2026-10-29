@@ -716,7 +716,6 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
           userId: carol,
           userRefHash: 'c'.repeat(64),
           channel: 'SUPPORT',
-          expiresAt: new Date(Date.now() + DAY_MS),
         },
       });
       cookie = await login();

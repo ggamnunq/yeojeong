@@ -11,6 +11,8 @@ export type MockScenario = {
   cardImport?: boolean | 'low' | 'exhausted'
   /** 카드 내역 조회 동의가 서버에 남아 있는 상태로 시작(새로고침해도 유지). 기본 false */
   cardImportConsent?: boolean
+  /** 재동의가 필요한 가입 동의(예: ['TOS', 'PRIVACY', 'AGE14']) — 정식 약관 시행 뒤 초안 동의자 */
+  reconsent?: string[]
 }
 
 export async function useMockScenario(page: Page, scenario: MockScenario = {}) {
@@ -24,5 +26,6 @@ export async function useMockScenario(page: Page, scenario: MockScenario = {}) {
     if (s.accountLink) localStorage.setItem('yj:mock:accountLink', '1')
     if (s.cardImport) localStorage.setItem('yj:mock:cardImport', s.cardImport === true ? '1' : s.cardImport)
     if (s.cardImportConsent) localStorage.setItem('yj:mock:cardImportConsent', '1')
+    if (s.reconsent) localStorage.setItem('yj:mock:reconsent', s.reconsent.join(','))
   }, scenario)
 }

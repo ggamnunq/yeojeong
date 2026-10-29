@@ -20,6 +20,7 @@ import {
 } from '../../trips/rules'
 import type { NavState, TripInfo } from '../../trips/types'
 import { FxRow, InviteCodeRow, MemberAvatars, TextLink, TripHeroCard, TripMeta } from '../components'
+import { NoticeBanner } from '../../notices/NoticeBanner'
 
 type OpenDialog = 'start' | 'end' | 'delete' | null
 
@@ -137,6 +138,8 @@ export default function TripInfoPage() {
   return (
     <div className="flex flex-1 flex-col">
       <h2 className="sr-only">여정 정보</h2>
+      {/* 공지 배너: 시작 전에는 이 화면이 여정 첫 화면(WF-16)이라 여기에도 둔다. 진행 중·종료 뒤에는 결제내역이 첫 화면 */}
+      {trip.status === 'UPCOMING' && <NoticeBanner className="px-gutter pb-2" />}
       <div className="px-gutter">
         <TripHeroCard
           status={trip.status}
