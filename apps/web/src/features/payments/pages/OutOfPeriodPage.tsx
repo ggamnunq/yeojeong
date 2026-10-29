@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import { isApiError, keys } from '../../../api'
 import { paths } from '../../../app/paths'
-import { withLoading } from '../../../app/loadingCta'
 import { useTripDetail } from '../../../app/trip'
 import { Button, Callout, Checkbox, EmptyState, formatKrw, SegmentedControl, ShellSub } from '../../../ds'
 import { toast } from '../../../notifications'
@@ -79,10 +78,7 @@ export default function OutOfPeriodPage() {
     <ShellSub
       header={{ title: '기간 외 결제 추가', onBack: back }}
       gutter={false}
-      cta={withLoading(
-        { label: `${chosen.length}건 추가`, disabled: chosen.length === 0 || loading, onClick: () => add.mutate(chosen) },
-        add.isPending,
-      )}
+      cta={{ label: `${chosen.length}건 추가`, disabled: chosen.length === 0 || loading, onClick: () => add.mutate(chosen), state: add.isPending ? 'loading' : 'default' }}
     >
       <div className="px-gutter pb-2">
         <SegmentedControl

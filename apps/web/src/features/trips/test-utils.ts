@@ -1,4 +1,4 @@
-import { configure } from '@testing-library/react'
+import { configure, within } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest'
 import { db, MOCK_NOW } from '../../mocks/data'
 import { toastStore } from '../../notifications'
@@ -42,4 +42,10 @@ export function stubNavigator({ share }: { share?: boolean } = {}) {
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
   Object.defineProperty(navigator, 'share', { value: share ? shareFn : undefined, configurable: true })
   return { writeText, share: shareFn }
+}
+
+/** 기간 시트 달력의 날짜 버튼("2026년 11월 20일 금요일, …") */
+export function dayButton(sheet: HTMLElement, ymd: string) {
+  const [y, m, d] = ymd.split('-').map(Number)
+  return within(sheet).getByRole('button', { name: new RegExp(`^${y}년 ${m}월 ${d}일`) })
 }

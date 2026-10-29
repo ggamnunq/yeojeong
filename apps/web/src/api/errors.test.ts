@@ -96,11 +96,9 @@ describe('handleApiError', () => {
 
   it('NOT_FOUND·CONFLICT는 서버 문구로 안내 토스트, FORBIDDEN은 오류 토스트', () => {
     handleApiError(apiError('NOT_FOUND', { message: '여정을 찾을 수 없어요' }))
+    expect(toasts()).toEqual([{ type: 'info', message: '여정을 찾을 수 없어요', action: undefined }])
     handleApiError(apiError('CONFLICT', { message: '이미 정산이 끝난 여정이에요' }))
-    expect(toasts()).toEqual([
-      { type: 'info', message: '여정을 찾을 수 없어요', action: undefined },
-      { type: 'info', message: '이미 정산이 끝난 여정이에요', action: undefined },
-    ])
+    expect(toasts()).toEqual([{ type: 'info', message: '이미 정산이 끝난 여정이에요', action: undefined }])
 
     toastStore.clear()
     handleApiError(apiError('FORBIDDEN', { message: '이 여정의 멤버만 볼 수 있어요' }))
@@ -140,13 +138,15 @@ describe('handleApiError', () => {
 
   it('같은 코드·문구가 연달아 오면 하나만 띄운다', () => {
     handleApiError(apiError('TIMEOUT', { status: 0 }), { retry: () => {} })
+    const first = toastStore.getSnapshot()[0]
     handleApiError(apiError('TIMEOUT', { status: 0 }), { retry: () => {} })
+    // 같은 토스트가 그대로 남는다(새로 띄우지 않음)
+    expect(toastStore.getSnapshot()).toEqual([first])
     handleApiError(apiError('INTERNAL_ERROR'))
+    const second = toastStore.getSnapshot()[0]
     handleApiError(apiError('INTERNAL_ERROR'))
-    expect(toasts().map((t) => t.message)).toEqual([
-      ERRORS.TIMEOUT.message,
-      `${ERRORS.INTERNAL_ERROR.message} (문의 번호 05c8d730)`,
-    ])
+    expect(toastStore.getSnapshot()).toEqual([second])
+    expect(second.message).toBe(`${ERRORS.INTERNAL_ERROR.message} (문의 번호 05c8d730)`)
   })
 })
 
@@ -171,11 +171,9 @@ describe('CONSENT_REQUIRED · 결제수단 0개(v0.5.7)', () => {
 
   it('모르는 403·409 도메인 코드는 서버 문구 그대로(새 코드가 생겨도 안내가 된다)', () => {
     handleApiError(new ApiError({ code: 'SOME_NEW_RULE' as ErrorCode, message: '지금은 할 수 없어요', status: 403 }))
+    expect(toastStore.getSnapshot().map((t) => [t.type, t.message])).toEqual([['error', '지금은 할 수 없어요']])
     handleApiError(new ApiError({ code: 'ANOTHER_NEW_RULE' as ErrorCode, message: '이미 바뀌었어요', status: 409 }))
-    expect(toastStore.getSnapshot().map((t) => [t.type, t.message])).toEqual([
-      ['error', '지금은 할 수 없어요'],
-      ['info', '이미 바뀌었어요'],
-    ])
+    expect(toastStore.getSnapshot().map((t) => [t.type, t.message])).toEqual([['info', '이미 바뀌었어요']])
   })
 })
 

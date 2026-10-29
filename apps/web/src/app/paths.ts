@@ -40,6 +40,9 @@ export const paths = {
   stats: (tripId: string) => `/trips/${tripId}/stats`,
   settlement: (tripId: string) => `/trips/${tripId}/settlement`,
   settlementMember: (tripId: string, membershipId: string) => `/trips/${tripId}/settlement/${membershipId}`,
+  /** 멤버별 결제 내역(HF-26) 위 결제 상세 시트(하단 탭은 정산 그대로) */
+  settlementPayment: (tripId: string, membershipId: string, expenseId: string) =>
+    `/trips/${tripId}/settlement/${membershipId}/payments/${expenseId}`,
   tripInfo: (tripId: string) => `/trips/${tripId}/info`,
   fx: (tripId: string) => `/trips/${tripId}/fx`,
 
@@ -50,8 +53,14 @@ export const paths = {
   licenses: () => '/licenses',
 } as const
 
-/** 로그인 뒤 돌아올 수 있는 같은 origin 경로만 받는다(`//evil.com`·`/\\evil.com` 차단) */
+/**
+ * 로그인·가입 뒤 돌아올 수 있는 같은 origin 상대 경로만 받는다(서버 safeReturnTo와 같은 규칙).
+ * `//evil.com`·백슬래시·제어문자·`/api` 경로는 막는다
+ */
 export function safeReturnTo(value: string | null | undefined): string | null {
-  if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return null
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return null
+  // oxlint-disable-next-line no-control-regex -- 제어문자를 막는 검사
+  if (value.includes('\\') || /[\u0000-\u001f\u007f]/.test(value)) return null
+  if (value === '/api' || value.startsWith('/api/') || value.startsWith('/api?')) return null
   return value
 }

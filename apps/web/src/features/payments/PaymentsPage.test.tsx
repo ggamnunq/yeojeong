@@ -176,8 +176,10 @@ describe('결제내역 · 당겨서 새로고침(FR-402)', () => {
     const day2 = await screen.findByRole('region', { name: '11.13 (금) Day 2' })
     const listedBefore = count.list
     pull(day2)
-    expect(await screen.findByText('새로고침 중')).toBeTruthy()
-    await waitFor(() => expect(screen.queryByText('새로고침 중')).toBeNull())
+    // 표시는 스피너만(글자 없음, 화면명세 0-6 v0.5.8)
+    const spinner = await screen.findByRole('status', { name: '새로고침 중' })
+    expect(spinner.textContent).toBe('')
+    await waitFor(() => expect(screen.queryByRole('status', { name: '새로고침 중' })).toBeNull())
     expect(count.sync).toBe(1)
     expect(count.list).toBeGreaterThan(listedBefore)
   })

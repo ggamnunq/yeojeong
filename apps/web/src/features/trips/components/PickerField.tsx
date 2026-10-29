@@ -2,8 +2,8 @@ import { clsx } from 'clsx'
 import { useId, type ReactNode } from 'react'
 import { Icon, type IconName } from '../../../ds'
 
-// 누르면 시트를 여는 입력란(장소 검색 · 기간 선택). DS Input과 같은 겉모습(라벨 Body/S Strong · 52 · radius md · 오른쪽 아이콘 20)이지만
-// 글자를 직접 받지 않는 버튼이다. DS Input에 trailing icon·읽기 전용 선택 변형이 없어 플로우에서 조합했다(DS 추가 요청).
+// 누르면 기간 시트를 여는 입력란(HF-10 「기간」). DS Input과 같은 겉모습(라벨 Body/S Strong · 52 · radius md · 오른쪽 달력 아이콘 20)이지만
+// 글자를 직접 받지 않는 버튼이다. DS InputPicker는 ⌄가 항상 붙는데 HF-10 기간 칸은 달력 아이콘만 있어 이 조합을 남겼다.
 export type PickerFieldProps = {
   /** 폼 오류 포커스용(서버 DTO 경로와 같게) */
   name: string
@@ -11,7 +11,7 @@ export type PickerFieldProps = {
   /** 고른 값. 없으면 플레이스홀더 */
   value?: ReactNode
   placeholder: string
-  /** Figma trailing icon: 장소 marker · 기간 calendar */
+  /** Figma trailing icon: 기간 calendar */
   icon: IconName
   /** 오류 문구. 있으면 Input State=Error 모양 */
   error?: string | null

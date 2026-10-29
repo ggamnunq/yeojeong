@@ -1,5 +1,5 @@
 import { HttpResponse, type HttpHandler } from 'msw'
-import { activeMembership, db, findTrip, userMethods, type MockPaymentMethod } from '../../mocks/data'
+import { activeMembership, db, findTrip, SUPPORTED_CURRENCIES, userMethods, type MockPaymentMethod } from '../../mocks/data'
 import { api, denyUnlessAuthenticated, mockError, noContent, requireMember, type NoContent } from '../../mocks/utils'
 import type {
   AttemptPurpose,
@@ -100,6 +100,9 @@ const RATES: Record<string, Pick<FxRateView, 'currencyNameKo' | 'displayUnit' | 
     sourceUrl: 'https://www.exchangerate-api.com',
   },
 }
+
+/** 통화 목록의 단위(모르는 통화는 코드 · 1) */
+const unitOf = (code: string) => SUPPORTED_CURRENCIES.find((c) => c.code === code) ?? { unitName: code, displayUnit: 1 }
 
 const ALL_FIN: readonly FinConsentId[] = ['FIN_LINK', 'FIN_PRIVACY', 'THIRD_PARTY']
 /** 결제수단을 전부 해제하면 철회되는 동의(THIRD_PARTY는 유지, 기능명세 Q-39) */
@@ -272,8 +275,9 @@ function tripFxView(tripId: string): TripFxView | null {
   return {
     baseCurrency: 'KRW',
     tripCurrency: trip.currency,
-    currencyNameKo: isKrwTrip ? '원' : (rate?.currencyNameKo ?? trip.currency),
-    displayUnit: rate?.displayUnit ?? 1,
+    // 고시가 없는 통화도 단위 표기는 통화 목록(unitName · displayUnit)을 따른다 — 고정 환율 입력 "100동당"
+    currencyNameKo: isKrwTrip ? '원' : (rate?.currencyNameKo ?? unitOf(trip.currency).unitName),
+    displayUnit: rate?.displayUnit ?? unitOf(trip.currency).displayUnit,
     isKrwTrip,
     current,
     policy: trip.fxPolicy,

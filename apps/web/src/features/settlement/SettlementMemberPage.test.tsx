@@ -2,7 +2,7 @@ import { configure, fireEvent, screen, waitFor, within } from '@testing-library/
 import { describe, expect, it } from 'vitest'
 import { db, MEMBER, TRIP } from '../../mocks/data'
 import { renderApp } from '../../test/render'
-import { JEJU, seedJejuSettlement } from '../../mocks/seeds'
+import { JEJU, JEJU_WITHDRAWN, seedJejuSettlement } from '../../mocks/seeds'
 
 // 앱 전체(가드·셸·lazy 화면)를 여는 테스트라 CI·부하가 큰 환경에서 1초 기본 대기가 모자랄 수 있다(이 파일에만 적용)
 configure({ asyncUtilTimeout: 5000 })
@@ -79,10 +79,45 @@ describe('나간 멤버(HF-44)', () => {
 })
 
 describe('이동', () => {
-  it('결제 행 → 결제 상세 시트 주소', async () => {
+  it('공동 결제 행 → 이 화면 위 잠금 상세 시트(정산 하위 주소, 하단 탭 이동 없음) → 닫으면 HF-26 그대로', async () => {
     const { router } = await openMember(JEJU.minji)
     fireEvent.click(list(/공동 결제/).getAllByRole('button').at(-1)!)
-    await waitFor(() => expect(path(router)).toBe('/trips/trip-jeju/payments/jeju-rentcar'))
+    await waitFor(() => expect(path(router)).toBe(`/trips/trip-jeju/settlement/${JEJU.minji}/payments/jeju-rentcar`))
+    const sheet = await screen.findByRole('dialog', { name: '제주 렌터카 공항점' })
+    // HF-26 화면이 시트 아래 그대로 있다
+    expect(title().textContent).toBe('민지')
+    // 종료 후 = 잠금 상세(분담 편집 없음)
+    expect(within(sheet).queryByRole('radiogroup')).toBeNull()
+
+    fireEvent.click(within(sheet).getByRole('button', { name: '닫기' }))
+    await waitFor(() => expect(path(router)).toBe(`/trips/trip-jeju/settlement/${JEJU.minji}`))
+    expect(screen.queryByRole('dialog', { name: '제주 렌터카 공항점' })).toBeNull()
+  })
+
+  it('주소로 바로 연 시트도 닫으면 HF-26으로(결제내역 탭으로 가지 않는다)', async () => {
+    const { router } = renderApp(`/trips/trip-jeju/settlement/${JEJU.minji}/payments/jeju-rentcar`)
+    const sheet = await screen.findByRole('dialog', { name: '제주 렌터카 공항점' })
+    fireEvent.click(within(sheet).getByRole('button', { name: '닫기' }))
+    await waitFor(() => expect(path(router)).toBe(`/trips/trip-jeju/settlement/${JEJU.minji}`))
+  })
+
+  it('본인 개인 결제 행도 같은 시트로 연다', async () => {
+    const { router } = await openMember(JEJU.junyong)
+    fireEvent.click(list(/개인 결제 2건/).getAllByRole('button')[0])
+    await waitFor(() => expect(path(router)).toBe(`/trips/trip-jeju/settlement/${JEJU.junyong}/payments/jeju-cu`))
+    expect(await screen.findByRole('dialog', { name: 'CU 제주공항점' })).toBeTruthy()
+  })
+
+  it('남의 「비공개」 줄은 누를 수 없다', async () => {
+    await openMember(JEJU.minji)
+    const privateRow = screen.getByRole('heading', { name: '개인 결제 3건' }).parentElement!
+    expect(within(privateRow).queryByRole('button')).toBeNull()
+  })
+
+  it('탈퇴한 멤버 상세를 주소로 열면 서버 404 → 정산 요약으로', async () => {
+    seedJejuSettlement({ withdrawn: true })
+    const { router } = renderApp(`/trips/trip-jeju/settlement/${JEJU_WITHDRAWN}`)
+    await waitFor(() => expect(path(router)).toBe('/trips/trip-jeju/settlement'))
   })
 
   it('‹ → 정산 요약(바로 연 주소여도)', async () => {

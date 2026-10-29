@@ -1,4 +1,4 @@
-import type { PlaceInput, TripDetailResponse } from '@yeojeong/shared'
+import type { TripDetailResponse } from '@yeojeong/shared'
 
 // 여정 생성·참여·여정 정보 플로우의 요청·응답 타입(기능명세 6-3 trips·groups·invites). 서버(S2A)와 같은 정의는 @yeojeong/shared에서 가져온다.
 export type {
@@ -7,8 +7,8 @@ export type {
   EndPreviewResponse,
   InvitePreview,
   JoinTripResponse,
-  Place,
   PlaceInput,
+  SupportedCurrency,
   TripEditableField,
   TripPermissions,
   UpdateTripRequest,
@@ -22,9 +22,10 @@ export type { EndTripResponse } from '@yeojeong/shared'
 /** 여정 만들기·수정 폼 값. budget은 숫자만 남긴 문자열("1200000") */
 export interface TripFormValues {
   groupName: string
-  place: PlaceInput | null
-  /** 임시: 장소 목록에서 고른 장소의 통화(서버 S5에서 만들기 currency 필수). 자유 입력·통화 고르기 화면이 들어오면 바꾼다 */
-  currency?: string
+  /** 여행 장소 자유 입력(앞뒤 공백은 보낼 때 뺀다, 1~40자) */
+  place: string
+  /** 현지 통화 ISO 4217. 만들기는 기본값 없음(null) */
+  currency: string | null
   startDate: string
   endDate: string
   budget: string

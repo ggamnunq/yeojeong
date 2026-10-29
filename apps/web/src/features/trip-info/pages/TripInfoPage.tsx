@@ -5,27 +5,27 @@ import { keys } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useShellCta } from '../../../app/shellCta'
 import { readLastTripId, rememberTripId, tripQuery, useTripDetail } from '../../../app/trip'
-import { Dialog, formatKrw } from '../../../ds'
+import { Dialog } from '../../../ds'
 import { endPreviewQuery, useDeleteGroup, useEndTrip, useStartTrip } from '../../trips/api'
 import { copyInviteCode, shareInvite } from '../../trips/invite'
 import {
   formatRouteDate,
-  isStartPeriodOver,
+  startAction,
   todayKst,
   tripDayIndex,
   tripHero,
-  tripMetaLine,
+  tripMetaRest,
   tripPermissions,
 } from '../../trips/rules'
 import type { NavState, TripInfo } from '../../trips/types'
-import { InviteCodeRow, MemberAvatars, TextLink, TripHeroCard } from '../components'
+import { InviteCodeRow, MemberAvatars, TextLink, TripHeroCard, TripMeta } from '../components'
 
 type OpenDialog = 'start' | 'end' | 'delete' | null
 
 /**
  * 여정 정보 탭(셸 안 본문). 단계로 화면이 바뀐다.
  * - 시작 전(HF-16): 출발까지 D-n · 경로 · 그룹원 · 초대코드 · (그룹장) 「여정 시작」 → HF-17 · 「그룹 삭제」(Danger)
- *   종료일이 지난 시작 전 여정(Q-26): 그룹장은 「기간 수정」, 멤버는 시작 버튼 없음
+ *   종료일이 지난 시작 전 여정(Q-26, 서버 startBlockReason = PERIOD_OVER): 그룹장은 「기간 수정」, 멤버는 시작 버튼 없음
  * - 진행 중(HF-23): 여행 중 Day n / m · 그룹원 + 「추가」 · 초대코드 · (그룹장) 「여정 종료하기」 → HF-24
  * - 종료 후: 도착한 경로, 읽기 전용(초대코드·추가·버튼·연필 없음)
  * 버튼 노출은 서버 permissions로 정한다.
@@ -37,8 +37,7 @@ export default function TripInfoPage() {
   const today = todayKst()
   const permissions = tripPermissions(trip, today)
   const hero = tripHero(trip, today)
-  const leader = trip.me.role === 'LEADER'
-  const periodOver = isStartPeriodOver(trip, today)
+  const action = startAction(trip)
   const tripId = trip.tripId
 
   const [dialog, setDialog] = useState<OpenDialog>(null)
@@ -49,15 +48,23 @@ export default function TripInfoPage() {
   const deleteGroup = useDeleteGroup()
 
   const goToEdit = () => navigate(paths.tripEdit(tripId), { state: { from: 'info' } satisfies NavState })
+  // 그룹장 · 시작 전: 하단 가로 2버튼(왼쪽 「그룹 삭제」 Danger-weak · 오른쪽 「여정 시작」, 기간이 지났으면 「기간 수정」). 멤버는 없음
+  const deleteSecondary = permissions.canDeleteGroup
+    ? { label: '그룹 삭제', type: 'danger-weak' as const, onClick: () => setDialog('delete') }
+    : undefined
   useShellCta(
-    leader && trip.status === 'UPCOMING'
-      ? periodOver
-        ? { label: '기간 수정', onClick: goToEdit, ...(permissions.canDeleteGroup && { secondary: { label: '그룹 삭제', onClick: () => setDialog('delete') } }) }
-        : { label: '여정 시작', disabled: !permissions.canStart, onClick: () => setDialog('start'), ...(permissions.canDeleteGroup && { secondary: { label: '그룹 삭제', onClick: () => setDialog('delete') } }) }
-      : null,
+    action === 'edit-period'
+      ? { label: '기간 수정', onClick: goToEdit, secondary: deleteSecondary }
+      : action === 'start'
+        ? { label: '여정 시작', disabled: !permissions.canStart, onClick: () => setDialog('start'), secondary: deleteSecondary }
+        : null,
   )
   const refreshTrip = () => queryClient.fetchQuery({ ...tripQuery(tripId), staleTime: 0 }).catch(() => undefined)
   const close = () => setDialog(null)
+  // 서버 응답을 기다리는 동안(확인 버튼 Loading)은 취소·ESC로 닫지 않는다
+  const cancelUnless = (pending: boolean) => () => {
+    if (!pending) close()
+  }
 
   const confirmStart = () => {
     if (start.isPending) return
@@ -139,7 +146,7 @@ export default function TripInfoPage() {
           end={formatRouteDate(trip.endDate)}
           days={trip.days}
           current={trip.status === 'ONGOING' ? tripDayIndex(trip, today) : undefined}
-          meta={trip.status === 'UPCOMING' ? tripMetaLine(trip) : `${trip.placeLabel} · 예산 ${formatKrw(trip.budgetKrw)}`}
+          meta={<TripMeta place={trip.placeLabel} rest={tripMetaRest(trip)} />}
           onEdit={permissions.canEdit ? goToEdit : undefined}
         />
       </div>
@@ -169,7 +176,8 @@ export default function TripInfoPage() {
         title="여정을 시작할까요?"
         message="시작 후에는 그룹을 삭제할 수 없어요"
         confirmLabel="시작하기"
-        onCancel={close}
+        confirmState={start.isPending ? 'loading' : 'default'}
+        onCancel={cancelUnless(start.isPending)}
         onConfirm={confirmStart}
       />
       <Dialog
@@ -177,7 +185,8 @@ export default function TripInfoPage() {
         title="여정을 종료할까요?"
         message={pendingCount > 0 ? `미확정 ${pendingCount}건은 개인으로 처리돼요` : null}
         confirmLabel="종료하기"
-        onCancel={close}
+        confirmState={end.isPending ? 'loading' : 'default'}
+        onCancel={cancelUnless(end.isPending)}
         onConfirm={confirmEnd}
       />
       <Dialog
@@ -186,7 +195,8 @@ export default function TripInfoPage() {
         title="그룹을 삭제할까요?"
         message="모든 멤버에게서 사라져요"
         confirmLabel="삭제"
-        onCancel={close}
+        confirmState={deleteGroup.isPending ? 'loading' : 'default'}
+        onCancel={cancelUnless(deleteGroup.isPending)}
         onConfirm={confirmDelete}
       />
     </div>

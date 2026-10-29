@@ -72,8 +72,8 @@ export const handlers: HttpHandler[] = [
     const { denied } = endedTrip(tripId)
     if (denied) return denied
     const row = memberViews(tripId).rows.find((r) => r.member.membershipId === membershipId)
-    // 정산 대상(M)이 아닌 멤버십은 없는 것으로 본다
-    if (!row) return mockError('NOT_FOUND', 404)
+    // 정산 대상(M)이 아닌 멤버십은 없는 것으로 본다. 탈퇴한 멤버는 정산 행에는 남지만 상세는 열 수 없다(서버 404, HF-44)
+    if (!row || row.member.isWithdrawn) return mockError('NOT_FOUND', 404)
     const isMe = membershipId === myMembershipId(tripId)
     const body: SettlementMemberExpenses = {
       ...row,

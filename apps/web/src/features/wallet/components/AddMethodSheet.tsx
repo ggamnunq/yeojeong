@@ -1,4 +1,3 @@
-import { withLoading } from '../../../app/loadingCta'
 import { BottomSheet, SheetContentOption } from '../../../ds'
 
 export type AddMethodSheetProps = {
@@ -16,7 +15,7 @@ export function AddMethodSheet({ open, onClose, onConnect, pending = false }: Ad
       open={open}
       onClose={onClose}
       title="계좌·카드 추가"
-      cta={withLoading({ label: '연결', onClick: onConnect }, pending)}
+      cta={{ label: '연결', onClick: onConnect, state: pending ? 'loading' : 'default' }}
     >
       <SheetContentOption options={[{ value: 'TOSS', title: '토스로 불러오기' }]} value="TOSS" aria-label="불러올 곳" />
     </BottomSheet>

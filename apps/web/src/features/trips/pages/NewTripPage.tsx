@@ -18,7 +18,7 @@ export default function NewTripPage() {
     create.mutate(
       {
         groupName: values.groupName,
-        place: values.place!,
+        place: { label: values.place },
         currency: values.currency!,
         startDate: values.startDate,
         endDate: values.endDate,

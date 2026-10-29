@@ -15,6 +15,7 @@ import {
 } from '../api'
 import { connectPrompt } from './connectPrompt'
 import { paths, safeReturnTo } from './paths'
+import { readSignupReturnTo } from './signupReturnTo'
 import { ErrorScreen, LoadingScreen } from './states'
 
 /** 가입 동의(WF-04) 항목. 이 중 하나라도 다시 받아야 하면 /reconsent로 보낸다. 연동 3건은 지갑 화면이 시트로 받는다 */
@@ -101,13 +102,17 @@ export function RequireGuest() {
   )
 }
 
-/** 가입 티켓이 있는 사람만(WF-03·04). 미로그인 → /login, 가입 끝남 → / */
+/**
+ * 가입 티켓이 있는 사람만(WF-03·04). 미로그인 → /login, 가입 끝남 → /.
+ * 가입을 그만두고(WF-03 ‹ = 로그아웃) 로그인으로 가면 돌아올 경로를 다시 붙인다(화면명세 A 머리 v0.5.8)
+ */
 export function RequireSignup() {
   return (
     <SessionGate>
       {(session) => {
         if (session.signupRequired) return <Outlet />
-        return <Navigate replace to={session.isAuthenticated ? paths.splash() : paths.login()} />
+        if (session.isAuthenticated) return <Navigate replace to={paths.splash()} />
+        return <Navigate replace to={paths.login(readSignupReturnTo() ?? undefined)} />
       }}
     </SessionGate>
   )

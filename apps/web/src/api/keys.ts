@@ -50,8 +50,8 @@ export const keys = {
 
   /** GET /invites/:code */
   invite: (code: string) => ['invites', code] as const,
-  /** GET /places?query= */
-  places: (query: string) => ['places', query] as const,
+  /** GET /currencies(여정 통화로 고를 수 있는 통화, 서버 고정 목록) */
+  currencies: ['currencies'] as const,
 
   consents: {
     /** GET /consents/documents?stage= */

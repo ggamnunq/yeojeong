@@ -6,7 +6,8 @@ import {
   type ConsentId,
 } from '@yeojeong/shared'
 import { HttpResponse, type HttpHandler } from 'msw'
-import type { Me } from '../../api'
+import type { SignupResponse } from '@yeojeong/shared'
+import { safeReturnTo } from '../../app/paths'
 import { db, meOf } from '../../mocks/data'
 import { api, mockError, noContent, type NoContent } from '../../mocks/utils'
 import type {
@@ -49,10 +50,13 @@ export function mockConsentDocuments(stage: 'SIGNUP' | 'FIN_LINK'): ConsentDocum
 }
 
 const SESSION_KEY = 'yj:mock:session'
+const SIGNUP_RETURN_TO_KEY = 'yj:mock:signupReturnTo'
 
 function persistSession() {
   try {
     localStorage.setItem(SESSION_KEY, db.session)
+    if (db.signupReturnTo) localStorage.setItem(SIGNUP_RETURN_TO_KEY, db.signupReturnTo)
+    else localStorage.removeItem(SIGNUP_RETURN_TO_KEY)
   } catch {
     // 저장소가 없는 환경
   }
@@ -111,14 +115,16 @@ export const handlers: HttpHandler[] = [
     } catch {
       // 저장소가 없는 환경
     }
-    const returnTo = new URL(request.url).searchParams.get('returnTo')
+    // 서버와 같다: 로그인 시작 때 받은 returnTo를 거른다. 기존 회원은 그곳으로 302, 신규 회원은 가입 대기에 담고 302 /signup/nickname
+    const returnTo = safeReturnTo(new URL(request.url).searchParams.get('returnTo'))
     db.session = existing ? 'AUTHENTICATED' : 'SIGNUP_REQUIRED'
+    db.signupReturnTo = existing ? null : returnTo
     persistSession()
     const body: MockKakaoResponse = { redirect: existing ? (returnTo ?? '/') : '/signup/nickname' }
     return HttpResponse.json(body)
   }),
 
-  api.post<Me, SignupRequest>('/api/auth/signup', async ({ request }) => {
+  api.post<SignupResponse, SignupRequest>('/api/auth/signup', async ({ request }) => {
     if (db.session !== 'SIGNUP_REQUIRED') {
       return mockError('UNAUTHENTICATED', 401, undefined, '가입 시간이 지났어요. 다시 로그인해 주세요')
     }
@@ -132,8 +138,12 @@ export const handlers: HttpHandler[] = [
     db.meUserId = id
     db.lastViewedTripId = null
     db.session = 'AUTHENTICATED'
+    // 가입을 마친 뒤 갈 곳(가입 대기에 담긴 returnTo). 응답에 싣고 가입 대기와 함께 지운다
+    const returnTo = db.signupReturnTo
+    db.signupReturnTo = null
     persistSession()
-    return HttpResponse.json(meOf(id), { status: 201 })
+    const result: SignupResponse = { ...meOf(id), returnTo }
+    return HttpResponse.json(result, { status: 201 })
   }),
 
   api.post<NoContent, ReconsentRequest>('/api/auth/reconsent', async ({ request }) => {
@@ -152,6 +162,7 @@ export const handlers: HttpHandler[] = [
 
   api.post<NoContent>('/api/auth/logout', () => {
     db.session = 'ANONYMOUS'
+    db.signupReturnTo = null
     db.consentRequired = null
     persistSession()
     return noContent()

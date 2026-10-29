@@ -6,6 +6,7 @@ import {
   findTrip,
   memberSummary,
   MOCK_NOW,
+  SUPPORTED_CURRENCIES,
   tripDetail,
   type MockTrip,
 } from '../../mocks/data'
@@ -15,6 +16,7 @@ import {
   addDays,
   daysBetween,
   GROUP_NAME_MAX_LENGTH,
+  PLACE_LABEL_MAX_LENGTH,
   TRIP_BUDGET_MAX_KRW,
   TRIP_EDITABLE_FIELDS,
   TRIP_MAX_DAYS,
@@ -29,8 +31,8 @@ import type {
   EndTripResponse,
   InvitePreview,
   JoinTripResponse,
-  Place,
   PlaceInput,
+  SupportedCurrency,
   TripEditableField,
   TripInfo,
   UpdateTripRequest,
@@ -46,34 +48,6 @@ import type {
 
 const MOCK_TODAY = MOCK_NOW.slice(0, 10)
 
-const PLACES: Place[] = [
-  { countryCode: 'JP', countryName: '일본', city: '오사카', label: '일본 오사카', currency: 'JPY' },
-  { countryCode: 'JP', countryName: '일본', city: '도쿄', label: '일본 도쿄', currency: 'JPY' },
-  { countryCode: 'JP', countryName: '일본', city: '교토', label: '일본 교토', currency: 'JPY' },
-  { countryCode: 'JP', countryName: '일본', city: '후쿠오카', label: '일본 후쿠오카', currency: 'JPY' },
-  { countryCode: 'JP', countryName: '일본', city: '삿포로', label: '일본 삿포로', currency: 'JPY' },
-  { countryCode: 'JP', countryName: '일본', city: '오키나와', label: '일본 오키나와', currency: 'JPY' },
-  { countryCode: 'TW', countryName: '대만', city: '타이베이', label: '대만 타이베이', currency: 'TWD' },
-  { countryCode: 'TH', countryName: '태국', city: '방콕', label: '태국 방콕', currency: 'THB' },
-  { countryCode: 'TH', countryName: '태국', city: '치앙마이', label: '태국 치앙마이', currency: 'THB' },
-  { countryCode: 'VN', countryName: '베트남', city: '다낭', label: '베트남 다낭', currency: 'VND' },
-  { countryCode: 'VN', countryName: '베트남', city: '하노이', label: '베트남 하노이', currency: 'VND' },
-  { countryCode: 'VN', countryName: '베트남', city: '호찌민', label: '베트남 호찌민', currency: 'VND' },
-  { countryCode: 'SG', countryName: '싱가포르', city: '싱가포르', label: '싱가포르', currency: 'SGD' },
-  { countryCode: 'HK', countryName: '홍콩', city: '홍콩', label: '홍콩', currency: 'HKD' },
-  { countryCode: 'PH', countryName: '필리핀', city: '세부', label: '필리핀 세부', currency: 'PHP' },
-  { countryCode: 'US', countryName: '미국', city: '뉴욕', label: '미국 뉴욕', currency: 'USD' },
-  { countryCode: 'US', countryName: '미국', city: '호놀룰루', label: '미국 호놀룰루', currency: 'USD' },
-  { countryCode: 'FR', countryName: '프랑스', city: '파리', label: '프랑스 파리', currency: 'EUR' },
-  { countryCode: 'GB', countryName: '영국', city: '런던', label: '영국 런던', currency: 'GBP' },
-  { countryCode: 'AU', countryName: '호주', city: '시드니', label: '호주 시드니', currency: 'AUD' },
-  { countryCode: 'KR', countryName: '대한민국', city: '서울', label: '서울', currency: 'KRW' },
-  { countryCode: 'KR', countryName: '대한민국', city: '부산', label: '부산', currency: 'KRW' },
-  { countryCode: 'KR', countryName: '대한민국', city: '제주', label: '제주', currency: 'KRW' },
-  { countryCode: 'KR', countryName: '대한민국', city: '강릉', label: '강릉', currency: 'KRW' },
-  { countryCode: 'KR', countryName: '대한민국', city: '경주', label: '경주', currency: 'KRW' },
-  { countryCode: 'KR', countryName: '대한민국', city: '여수', label: '여수', currency: 'KRW' },
-]
 
 // 개발 서버 전용 시나리오(쉼표로 여러 개): localStorage 'yj:mock:trips' =
 //   'none' 여정 없음 · 'busan-leader' 부산(시작 전)을 준용이 그룹장으로 · 'expired' 부산 종료일이 지남(Q-26)
@@ -100,13 +74,11 @@ const domainError = {
   alreadyMember: () => mockError('ALREADY_MEMBER'),
 }
 
-/** 서버 TripDetail 응답(S2A): 부록 B + permissions · todayDayIndex · city */
+/** 서버 TripDetail 응답(S2A): 부록 B + permissions · todayDayIndex · city(자유 입력 장소면 null) */
 function tripResponse(trip: MockTrip): TripInfo {
   const detail: TripInfo = tripDetail(trip)
-  const place = PLACES.find((p) => p.label === trip.placeLabel)
   return {
     ...detail,
-    city: place?.city ?? null,
     todayDayIndex: trip.status === 'ONGOING' ? tripDayIndex(detail, MOCK_TODAY) : null,
     permissions: tripPermissions(detail, MOCK_TODAY),
   }
@@ -120,10 +92,21 @@ function validationFailed(fields: FieldError[]) {
 
 const isDate = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
 
+/** 서버와 같다: 앞뒤 공백을 빼고 1~40자(S5) */
 function validatePlace(place: PlaceInput | undefined, fields: FieldError[]) {
-  if (!place || !PLACES.some((p) => p.countryCode === place.countryCode && p.label === place.label)) {
-    fields.push({ path: 'place', code: 'isDefined', message: '장소를 골라 주세요' })
-  }
+  const label = typeof place?.label === 'string' ? place.label.trim() : ''
+  if (label.length < 1) fields.push({ path: 'place.label', code: 'isLength', message: '여행 장소를 입력해 주세요' })
+  else if (label.length > PLACE_LABEL_MAX_LENGTH) fields.push({ path: 'place.label', code: 'isLength', message: '여행 장소는 40자까지예요' })
+}
+
+/** 서버와 같다: 필수, 목록 안 통화(대소문자·공백은 정리) */
+function normalizeCurrency(currency: unknown): string | null {
+  return typeof currency === 'string' ? currency.trim().toUpperCase() : null
+}
+function validateCurrency(currency: unknown, fields: FieldError[]) {
+  const code = normalizeCurrency(currency)
+  if (!code) fields.push({ path: 'currency', code: 'isIn', message: '통화를 골라 주세요' })
+  else if (!SUPPORTED_CURRENCIES.some((c) => c.code === code)) fields.push({ path: 'currency', code: 'isIn', message: '지원하지 않는 통화예요' })
 }
 
 function validatePeriod(start: unknown, end: unknown, fields: FieldError[], { checkStart = true } = {}) {
@@ -192,14 +175,10 @@ function checkInvite(raw: string): { denied: Response; trip?: undefined } | { de
 // ── 핸들러 ────────────────────────────────────────────────────────
 
 export const handlers: HttpHandler[] = [
-  api.get<Place[]>('/api/places', ({ request }) => {
+  api.get<SupportedCurrency[]>('/api/currencies', () => {
     const denied = denyUnlessAuthenticated()
     if (denied) return denied
-    const query = (new URL(request.url).searchParams.get('query') ?? '').trim()
-    const items = query
-      ? PLACES.filter((p) => [p.label, p.city ?? '', p.countryName].some((text) => text.includes(query)))
-      : PLACES
-    return HttpResponse.json(items.slice(0, 20))
+    return HttpResponse.json([...SUPPORTED_CURRENCIES])
   }),
 
   api.post<CreateTripResponse, CreateTripRequest>('/api/trips', async ({ request }) => {
@@ -209,19 +188,19 @@ export const handlers: HttpHandler[] = [
     const fields: FieldError[] = []
     validateGroupName(body.groupName, fields)
     validatePlace(body.place, fields)
+    validateCurrency(body.currency, fields)
     validatePeriod(body.startDate, body.endDate, fields)
     validateBudget(body.budgetKrw, fields)
     if (fields.length > 0) return validationFailed(fields)
 
-    const place = PLACES.find((p) => p.countryCode === body.place!.countryCode && p.label === body.place!.label)!
     const id = shortId()
     const trip: MockTrip = {
       tripId: `trip-${id}`,
       groupId: `group-${id}`,
       groupName: body.groupName!.trim(),
-      placeLabel: place.label,
-      countryCode: place.countryCode,
-      currency: place.currency,
+      placeLabel: body.place!.label.trim(),
+      countryCode: null,
+      currency: normalizeCurrency(body.currency)!,
       startDate: body.startDate!,
       endDate: body.endDate!,
       budgetKrw: body.budgetKrw!,
@@ -247,15 +226,17 @@ export const handlers: HttpHandler[] = [
     const current = { groupName: trip.groupName, currency: trip.currency, startDate: trip.startDate, endDate: trip.endDate, budgetKrw: trip.budgetKrw }
     const changed = (field: TripEditableField) => {
       if (body[field] === undefined) return false
-      if (field === 'place') return body.place!.label !== trip.placeLabel || body.place!.countryCode !== trip.countryCode
+      if (field === 'place') return body.place!.label.trim() !== trip.placeLabel
+      if (field === 'currency') return normalizeCurrency(body.currency) !== trip.currency
       return body[field] !== current[field]
     }
-    const locked = (['groupName', 'place', 'startDate', 'endDate', 'budgetKrw'] as const).filter((f) => changed(f) && !editable.includes(f))
+    const locked = (['groupName', 'place', 'currency', 'startDate', 'endDate', 'budgetKrw'] as const).filter((f) => changed(f) && !editable.includes(f))
     if (locked.length > 0) return domainError.phase({ lockedFields: locked })
 
     const fields: FieldError[] = []
     if (body.groupName !== undefined) validateGroupName(body.groupName, fields)
     if (body.place !== undefined) validatePlace(body.place, fields)
+    if (body.currency !== undefined) validateCurrency(body.currency, fields)
     if (body.budgetKrw !== undefined) validateBudget(body.budgetKrw, fields)
     const start = body.startDate ?? trip.startDate
     const end = body.endDate ?? trip.endDate
@@ -269,10 +250,16 @@ export const handlers: HttpHandler[] = [
 
     if (body.groupName !== undefined) trip.groupName = body.groupName.trim()
     if (body.place !== undefined) {
-      const place = PLACES.find((p) => p.label === body.place!.label)!
-      // 통화는 처음 만들 때 정한 값을 유지한다(FR-302 수락 기준 1: 교토로 바꿔도 JPY)
-      trip.placeLabel = place.label
-      trip.countryCode = place.countryCode
+      const label = body.place.label.trim()
+      // 장소를 바꿔도 통화는 그대로(S5). label이 바뀌면 옛 countryCode는 비운다
+      if (label !== trip.placeLabel) trip.countryCode = null
+      trip.placeLabel = label
+    }
+    if (body.currency !== undefined) {
+      const code = normalizeCurrency(body.currency)!
+      // 통화가 바뀌면 고정 환율은 결제 시점 환율로 되돌린다(FR-302)
+      if (code !== trip.currency && trip.fxPolicy === 'FIXED') trip.fxPolicy = 'SPOT_AT_PAYMENT'
+      trip.currency = code
     }
     trip.startDate = start
     trip.endDate = end

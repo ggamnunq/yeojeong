@@ -1,6 +1,6 @@
 import { clsx } from 'clsx'
 import { useId, type ReactNode } from 'react'
-import { Avatar, CardHeroTone, Icon, orderMembers, RowTone, type RouteProgressPhase } from '../../ds'
+import { Avatar, CardHeroTone, Icon, LeaderCrown, orderMembers, RowTone, type RouteProgressPhase } from '../../ds'
 import { focusRing, touchTarget } from '../../ds/styles'
 import type { MemberSummary, TripStatus } from '../../api'
 import { formatInviteCode } from '../trips/rules'
@@ -19,7 +19,7 @@ export type TripHeroCardProps = {
   end: string
   days: number
   current?: number
-  meta: string
+  meta: ReactNode
   /** 그룹장 연필(여정 정보 수정) */
   onEdit?: () => void
 }
@@ -35,6 +35,19 @@ export function TripHeroCard({ status, label, value, suffix, start, end, days, c
       route={{ phase: PHASE[status], start, end, days, current }}
       meta={meta}
     />
+  )
+}
+
+/**
+ * 영웅 카드 메타 한 줄 "오사카 · 3박 4일 · 예산 ₩1,200,000"(화면명세 0-5 v0.5.8).
+ * 장소는 사용자가 적은 글자 그대로라 길 수 있다 — 장소 부분만 한 줄 말줄임, 뒤의 기간·예산은 남긴다.
+ */
+export function TripMeta({ place, rest }: { place: string; rest: string }) {
+  return (
+    <span className="flex min-w-0 whitespace-nowrap">
+      <span className="min-w-0 truncate">{place}</span>
+      <span className="shrink-0">&nbsp;·&nbsp;{rest}</span>
+    </span>
   )
 }
 
@@ -64,8 +77,8 @@ export function MemberAvatars({ members, onAdd }: MemberAvatarsProps) {
         {ordered.map((m) => (
           <li key={m.membershipId} className="flex max-w-18 min-w-12 shrink-0 flex-col items-center gap-2">
             <Avatar name={m.nickname} src={m.profileImageUrl} joinOrder={m.joinOrder} me={m.isMe} size="l" alt="" />
-            <span className="flex max-w-full items-center gap-0.5">
-              {m.role === 'LEADER' && <Icon name="crown" size={14} label="그룹장" className="shrink-0 text-warning-500" />}
+            <span className="flex max-w-full items-center gap-1">
+              {m.role === 'LEADER' && <LeaderCrown />}
               <span className="truncate text-body-s-strong text-primary">{m.nickname}</span>
               {m.isMe && <span className="sr-only">(나)</span>}
             </span>
@@ -78,8 +91,17 @@ export function MemberAvatars({ members, onAdd }: MemberAvatarsProps) {
               onClick={onAdd}
               className={clsx('group flex w-full flex-col items-center gap-2 rounded-md select-none', focusRing)}
             >
-              <span className="grid size-12 place-items-center rounded-full bg-subtle transition-colors group-active:bg-pressed">
-                <Icon name="user-add" size={20} className="text-icon-default" />
+              {/* HF-23: 진한 사람 + 오른쪽 아래 채운 ⊕ 배지 */}
+              <span className="relative grid size-12 place-items-center rounded-full bg-subtle transition-colors group-active:bg-pressed">
+                <span className="relative">
+                  <Icon name="user" size={24} className="text-icon-default" />
+                  <span
+                    aria-hidden
+                    className="absolute -right-1 -bottom-0.5 grid size-3.5 place-items-center rounded-full bg-icon-default ring-2 ring-bg-subtle"
+                  >
+                    <Icon name="plus" size={12} className="text-icon-inverse" />
+                  </span>
+                </span>
               </span>
               <span className="text-body-s-strong text-secondary">추가</span>
             </button>

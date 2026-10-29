@@ -18,7 +18,10 @@ export const handlers: HttpHandler[] = [
             }),
           }
         : db.session === 'SIGNUP_REQUIRED'
-          ? { status: 'SIGNUP_REQUIRED', signupDraft: { kakaoNickname: '준용', profileImageUrl: null } }
+          ? {
+              status: 'SIGNUP_REQUIRED',
+              signupDraft: { kakaoNickname: '준용', profileImageUrl: null, returnTo: db.signupReturnTo },
+            }
           : { status: 'ANONYMOUS' }
     return HttpResponse.json(body)
   }),

@@ -99,7 +99,10 @@ export function MemberPanel({ open, onClose, trip }: MemberPanelProps) {
         title={`${kickTarget?.nickname ?? ''}님을 내보낼까요?`}
         message="부담한 금액은 정산에 남아요"
         confirmLabel="내보내기"
-        onCancel={() => setKickTarget(null)}
+        confirmState={kick.isPending ? 'loading' : 'default'}
+        onCancel={() => {
+          if (!kick.isPending) setKickTarget(null)
+        }}
         onConfirm={confirmKick}
       />
       <Dialog
@@ -108,7 +111,10 @@ export function MemberPanel({ open, onClose, trip }: MemberPanelProps) {
         title="그룹에서 나갈까요?"
         message={leaveMessage(trip)}
         confirmLabel="나가기"
-        onCancel={() => setLeaving(false)}
+        confirmState={leave.isPending ? 'loading' : 'default'}
+        onCancel={() => {
+          if (!leave.isPending) setLeaving(false)
+        }}
         onConfirm={confirmLeave}
       />
     </>

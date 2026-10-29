@@ -1,3 +1,4 @@
+import { clsx } from 'clsx'
 import { isRouteErrorResponse, useLocation, useNavigate, useRouteError } from 'react-router'
 import { Button, EmptyState } from '../ds'
 import { ErrorFallback } from './ErrorFallback'
@@ -8,12 +9,14 @@ import { paths } from './paths'
 export type StateScreenProps = {
   /** true면 셸 안 본문 자리만 채운다(min-h-svh 없음) */
   inset?: boolean
+  /** inset일 때 좌우 거터 20을 스스로 둔다(거터 없는 앱 셸 본문 — HF-18 첫 로딩) */
+  gutter?: boolean
 }
 
 const SKELETON_ROWS = 6
 
 /** 첫 로딩 스켈레톤. 리스트 행 6개 모양 */
-export function LoadingScreen({ inset = false }: StateScreenProps) {
+export function LoadingScreen({ inset = false, gutter = false }: StateScreenProps) {
   return (
     <div
       role="status"
@@ -21,7 +24,7 @@ export function LoadingScreen({ inset = false }: StateScreenProps) {
       aria-busy="true"
       className={
         inset
-          ? 'flex flex-col gap-4 py-5'
+          ? clsx('flex flex-col gap-4 py-5', gutter && 'px-gutter')
           : 'mx-auto flex min-h-svh w-full max-w-screen-width flex-col gap-4 bg-canvas px-gutter py-5'
       }
     >

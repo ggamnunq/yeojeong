@@ -7,19 +7,19 @@ import type {
   EndTripResponse,
   InvitePreview,
   JoinTripResponse,
-  Place,
+  SupportedCurrency,
   TripInfo,
   UpdateTripRequest,
 } from './types'
 
 // 여정 생성·참여·여정 정보의 쿼리·뮤테이션(기능명세 6-3). 여정을 바꾸면 keys.trips.detail(tripId)를, 목록이 바뀌면 keys.trips.list를 무효화한다.
 
-/** GET /places?query= (장소 검색 시트) */
-export const placesQuery = (query: string) =>
+/** GET /currencies (현지 통화 시트). KRW가 맨 앞, 나머지는 서버 순서 그대로. 거의 바뀌지 않는다 */
+export const currenciesQuery = () =>
   queryOptions({
-    queryKey: keys.places(query),
-    queryFn: ({ signal }) => apiFetch<Place[]>(`/places?query=${encodeURIComponent(query)}`, { signal }),
-    staleTime: 5 * 60_000,
+    queryKey: keys.currencies,
+    queryFn: ({ signal }) => apiFetch<SupportedCurrency[]>('/currencies', { signal }),
+    staleTime: 60 * 60_000,
   })
 
 /** GET /invites/:code. 오류 문구는 화면이 입력란에 보여 준다(silent) */

@@ -4,7 +4,6 @@ import { keys } from '../../../api'
 import { paths, safeReturnTo } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
-import { withLoading } from '../../../app/loadingCta'
 import { SheetContentConsent, ShellOnboarding } from '../../../ds'
 import { consentDocumentsQuery, postLogout, postReconsent, visibleConsents } from '../api'
 import { useConsentChecks, useConsentItems } from '../consent'
@@ -63,14 +62,12 @@ export default function ReconsentPage() {
   return (
     <ShellOnboarding
       back={false}
-      cta={withLoading(
-        {
+      cta={{
           label: COPY.agree,
           disabled: !consent.requiredDone || logout.isPending,
           onClick: () => agree.mutate({ agreements: consent.agreements(), method: consent.method }),
-        },
-        agree.isPending,
-      )}
+          state: agree.isPending ? 'loading' : 'default',
+        }}
     >
       <h1 className="text-h1 text-primary">{COPY.reconsentTitle}</h1>
       <SheetContentConsent

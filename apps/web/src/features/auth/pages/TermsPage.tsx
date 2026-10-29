@@ -4,8 +4,8 @@ import { Link, Navigate } from 'react-router'
 import { errorMessage, fieldErrors, isApiError, keys, type SessionResponse } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
+import { rememberSignupReturnTo } from '../../../app/signupReturnTo'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
-import { withLoading } from '../../../app/loadingCta'
 import { SheetContentConsent, ShellOnboarding } from '../../../ds'
 import { toast } from '../../../notifications'
 import { consentDocumentsQuery, postSignup, visibleConsents } from '../api'
@@ -34,7 +34,9 @@ export default function TermsPage() {
 
   const signup = useMutation({
     mutationFn: postSignup,
-    onSuccess: (me) => {
+    onSuccess: ({ returnTo, ...me }) => {
+      // 가입을 마친 뒤 갈 곳(서버 값이 기준). WF-05 「나중에」·WF-08 「여정으로 가기」가 꺼내 쓴다
+      rememberSignupReturnTo(returnTo)
       // 세션을 로그인 상태로 바꾼 뒤 WF-05(RequireAuth)로 간다. 이동(lazy 화면 로딩)이 끝나기 전에 이 화면이
       // 새 세션으로 다시 그려져도 '/'로 보내면 안 되므로 이 화면은 RequireSignup 대신 아래에서 직접 가드한다.
       queryClient.setQueryData<SessionResponse>(keys.session, { status: 'AUTHENTICATED', user: me })
@@ -86,7 +88,7 @@ export default function TermsPage() {
     <ShellOnboarding
       progress={2}
       onBack={back}
-      cta={withLoading({ label: COPY.next, onClick: submit, disabled: !consent.requiredDone }, signup.isPending)}
+      cta={{ label: COPY.next, onClick: submit, disabled: !consent.requiredDone, state: signup.isPending ? 'loading' : 'default' }}
     >
       <h1 className="sr-only">약관 동의</h1>
       <h2 className="text-h1 text-primary">{COPY.termsTitle}</h2>

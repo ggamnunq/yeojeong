@@ -1,10 +1,12 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Toast, ToastViewport } from '../ds'
+import { onModalOpen, Toast, ToastViewport } from '../ds'
 import { toastStore, useToasts, type ToastStore } from './store'
 import { useTopModalDialog } from './topModalDialog'
 
-// 토스트 큐를 DS Toast + ToastViewport로 그린다. 앱에 하나만 둔다(main.tsx).
+// 토스트 큐를 DS Toast + ToastViewport로 그린다. 앱에 하나만 둔다(RootLayout).
+// 자리(화면명세 0-4 v0.5.8): 하단 내비 위 16 · 내비 없으면 하단 CTA 위 16 · 둘 다 없으면 안전영역 위 16 — 지금 그려진 Screen이 알려 준 구성(anchor="auto").
+// 시트·다이얼로그가 열리면 떠 있던 토스트는 바로 닫는다(시트 안 동작의 결과 토스트는 연 뒤에 뜨니 영향 없음).
 //
 // 열린 BottomSheet·Dialog(네이티브 <dialog> 최상위 레이어) 위에도 보이고 눌리게 하려고 두 가지를 같이 쓴다.
 // 1. popover="manual" + showPopover()로 토스트 층을 최상위 레이어에 올린다(z-index로는 dialog 위에 못 올라간다).
@@ -12,7 +14,7 @@ import { useTopModalDialog } from './topModalDialog'
 //    보이기만 하고 눌리지 않으며(누르면 아래 시트의 딤이 눌린다) 스크린 리더에서도 빠진다.
 
 export type ToastHostProps = {
-  /** 하단 내비가 있는 화면이면 내비 위 16, 없으면 화면 아래 16. 기본 true */
+  /** Screen이 없는 화면(로딩·오류)일 때만 쓴다: 하단 내비가 있는 레이아웃이면 내비 위 16, 아니면 화면 아래 16. 기본 true */
   aboveNav?: boolean
   /** 테스트용. 기본은 앱 전체 큐 */
   store?: ToastStore
@@ -21,12 +23,19 @@ export type ToastHostProps = {
 export function ToastHost({ aboveNav = true, store = toastStore }: ToastHostProps) {
   const toasts = useToasts(store)
   const active = toasts.length > 0
+  useEffect(
+    () =>
+      onModalOpen((kind) => {
+        if (kind === 'sheet' || kind === 'dialog') store.dismissAll()
+      }),
+    [store],
+  )
   const modal = useTopModalDialog(active)
   if (!active) return null
 
   return createPortal(
     <TopLayer>
-      <ToastViewport aboveNav={aboveNav}>
+      <ToastViewport anchor="auto" aboveNav={aboveNav}>
         {toasts.map((t) => (
           <Toast
             key={t.id}

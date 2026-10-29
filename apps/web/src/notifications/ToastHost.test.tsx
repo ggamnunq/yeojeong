@@ -41,10 +41,13 @@ describe('ToastHost', () => {
     render(<ToastHost store={store} />)
     act(() => {
       store.show('success', '초대코드를 복사했어요')
+    })
+    expect(screen.getByRole('status').textContent).toBe('초대코드를 복사했어요')
+    act(() => {
       store.show('error', '저장하지 못했어요')
     })
-
-    expect(screen.getByRole('status').textContent).toBe('초대코드를 복사했어요')
+    // 한 번에 하나: 앞 토스트를 바로 바꾼다
+    expect(screen.queryByRole('status')).toBeNull()
     expect(screen.getByRole('alert').textContent).toBe('저장하지 못했어요')
     expect(layer()?.parentElement).toBe(document.body)
     // jsdom에는 Popover API가 없어 일반 고정 층으로 그린다
@@ -98,7 +101,7 @@ describe('ToastHost', () => {
     }
   })
 
-  it('모달 시트가 열려 있으면 그 dialog 안으로 옮겨 그리고, 닫히면 body로 돌아온다', async () => {
+  it('시트·다이얼로그가 열리면 떠 있던 토스트는 바로 닫는다(화면명세 0-4 v0.5.8)', async () => {
     render(<SheetDemo />)
     act(() => {
       store.show('info', '공동 지출로 바꿨어요')
@@ -106,10 +109,21 @@ describe('ToastHost', () => {
     expect(layer()?.parentElement).toBe(document.body)
 
     fireEvent.click(screen.getByRole('button', { name: '시트 열기' }))
-    // MutationObserver가 open 속성 변화를 알려 준 뒤
+    await act(async () => {})
+    expect(document.querySelector('dialog')!.open).toBe(true)
+    expect(layer()).toBeNull()
+  })
+
+  it('시트가 열린 뒤 뜬 토스트는 그 dialog 안에 그리고, 시트가 닫히면 body로 돌아온다', async () => {
+    render(<SheetDemo />)
+    fireEvent.click(screen.getByRole('button', { name: '시트 열기' }))
     await act(async () => {})
     const dialog = document.querySelector('dialog')!
-    expect(dialog.open).toBe(true)
+    act(() => {
+      store.show('info', '공동 지출로 바꿨어요')
+    })
+    // MutationObserver가 open 속성 변화를 알려 준 뒤
+    await act(async () => {})
     expect(layer()?.parentElement).toBe(dialog)
     expect(dialog.contains(screen.getByRole('status'))).toBe(true)
 

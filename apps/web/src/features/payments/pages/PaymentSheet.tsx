@@ -3,7 +3,6 @@ import { clsx } from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
 import { handleApiError, isApiError, isNoActivePaymentMethod, keys, type MemberSummary } from '../../../api'
-import { withLoading } from '../../../app/loadingCta'
 import { paths } from '../../../app/paths'
 import { useTripDetail } from '../../../app/trip'
 import {
@@ -23,7 +22,9 @@ import {
   detailLine,
   initialDraft,
   participantCandidates,
+  kst,
   perPersonText,
+  refundDetailLine,
   remainderLabel,
   sheetCta,
   sheetMode,
@@ -44,11 +45,12 @@ const COPY = {
 
 /**
  * 결제 상세 시트(/trips/:tripId/payments/:expenseId, 화면명세 부록 A).
+ * 멤버별 결제 내역(HF-26) 위에서도 같은 시트를 연다(/trips/:tripId/settlement/:membershipId/payments/:expenseId) — 닫으면 HF-26으로.
  * 결제자 · 진행 중 = 편집(HF-20·21·31·35~37), 비결제자·결제자 나감 = 읽기 전용(HF-38), 종료 후 = 잠금(HF-39), 환불 묶음 = HF-41.
  * 낙관적 업데이트는 하지 않는다 — 저장 응답을 받은 뒤 닫고 여정 키 전체를 무효화한다.
  */
 export default function PaymentSheet() {
-  const { expenseId = '' } = useParams()
+  const { expenseId = '', membershipId } = useParams()
   const trip = useTripDetail()
   const navigate = useNavigate()
   const location = useLocation()
@@ -61,6 +63,7 @@ export default function PaymentSheet() {
     if (closed.current) return
     closed.current = true
     if ((location.state as { fromList?: boolean } | null)?.fromList) navigate(-1)
+    else if (membershipId) navigate(paths.settlementMember(trip.tripId, membershipId), { replace: true })
     else navigate({ pathname: paths.payments(trip.tripId), search: location.search }, { replace: true })
   }
 
@@ -176,14 +179,12 @@ function SheetView({ detail, preview, onClose }: SheetViewProps) {
         onClose={onClose}
         cta={
           cta
-            ? withLoading(
-                {
+            ? {
                   label: cta.label,
                   disabled: cta.disabled || (sharedDisabled && draft.type === 'shared'),
                   onClick: () => run(cta.action),
-                },
-                classify.isPending && !confirmOpen,
-              )
+                  state: (classify.isPending && !confirmOpen) ? 'loading' : 'default',
+                }
             : undefined
         }
       >
@@ -209,7 +210,10 @@ function SheetView({ detail, preview, onClose }: SheetViewProps) {
         open={confirmOpen}
         type="shared-to-personal"
         message={noMethods ? COPY.deletesOnPersonal : undefined}
-        onCancel={() => setConfirmOpen(false)}
+        confirmState={classify.isPending && confirmOpen ? 'loading' : 'default'}
+        onCancel={() => {
+          if (!classify.isPending) setConfirmOpen(false)
+        }}
         onConfirm={() => submit('TO_PERSONAL', { status: 'PERSONAL', version, confirmSharedToPersonal: true })}
       />
 
@@ -284,6 +288,25 @@ function ReadBody({ detail, locked }: { detail: PaymentDetail; locked: boolean }
   const participants = orderMembers((detail.participants ?? []).map(toPerson))
   const line = <DetailText line={detailLine(detail)} duplicate={detail.flags.duplicateSuspected} />
 
+  // 공동 환불 묶음(HF-41): DS SheetContent/ReadOnly Type=Refund(결제·취소 톤 블록 + 결제자 · 부담 인원 · 1인)
+  if (detail.refunds.length > 0 && detail.status === 'SHARED') {
+    const refunds = [...detail.refunds].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
+    return (
+      <div className="flex flex-col gap-5">
+        <SheetContentReadOnly
+          type="refund"
+          amount={detail.krwAmount}
+          detail={refundDetailLine(detail)}
+          payment={{ time: kst(detail.occurredAt).time, amount: detail.grossKrwAmount }}
+          refunds={refunds.map((r) => ({ time: kst(r.occurredAt).time, amount: Math.abs(r.krwAmount) }))}
+          payer={payer}
+          participants={participants}
+          perPerson={detail.perPersonKrw !== null ? formatKrw(detail.perPersonKrw) : undefined}
+        />
+        {locked && <LockedButton />}
+      </div>
+    )
+  }
   if (detail.refunds.length > 0) {
     return (
       <div className="flex flex-col gap-5">

@@ -11,7 +11,7 @@ export default function PaymentsRoute() {
   return (
     <>
       <h2 className="sr-only">결제내역</h2>
-      <Suspense fallback={<LoadingScreen inset />}>
+      <Suspense fallback={<LoadingScreen inset gutter />}>
         <PaymentsPage />
       </Suspense>
     </>

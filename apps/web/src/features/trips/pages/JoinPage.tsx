@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { handleApiError, isApiError } from '../../../api'
 import { paths } from '../../../app/paths'
-import { withLoading } from '../../../app/loadingCta'
 import { AvatarStack, Input, RouteProgress, ShellSub } from '../../../ds'
 import { toast } from '../../../notifications'
 import { invitePreviewQuery, useJoinTrip } from '../api'
@@ -87,7 +86,7 @@ export default function JoinPage() {
         title: '초대코드로 참여',
         onBack: () => (location.key === 'default' ? navigate(paths.splash(), { replace: true }) : navigate(-1)),
       }}
-      cta={withLoading({ label: '참여하기', onClick: submit, disabled: !data || errorText !== null }, join.isPending)}
+      cta={{ label: '참여하기', onClick: submit, disabled: !data || errorText !== null, state: join.isPending ? 'loading' : 'default' }}
     >
       <Input
         label="초대코드"
@@ -126,7 +125,8 @@ function InviteCard({ preview }: { preview: InvitePreview }) {
   return (
     <section aria-label="여정 미리보기" className="mt-6 flex flex-col rounded-xl bg-subtle px-5 pt-6 pb-5">
       <h2 className="text-h2 text-primary">{preview.groupName}</h2>
-      <p className="mt-0.5 text-body-s text-secondary">{preview.placeLabel}</p>
+      {/* 장소는 사용자가 적은 글자 그대로 — 길면 한 줄 말줄임(0-5) */}
+      <p className="mt-0.5 truncate text-body-s text-secondary">{preview.placeLabel}</p>
       <RouteProgress
         className="mt-5"
         phase={ongoing ? 'ongoing' : 'upcoming'}

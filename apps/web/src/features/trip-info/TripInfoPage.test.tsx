@@ -1,8 +1,8 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { http } from 'msw'
+import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { apiFetch } from '../../api'
-import { db, findTrip, TRIP, USER } from '../../mocks/data'
+import { db, findTrip, TRIP, tripDetail, USER } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { mockError } from '../../mocks/utils'
 import { renderApp } from '../../test/render'
@@ -14,6 +14,9 @@ const path = (router: ReturnType<typeof renderApp>['router']) => router.state.lo
 const button = (name: string) => screen.queryByRole('button', { name })
 // 셸의 그룹원 패널(닫힌 dialog)에도 초대코드·인원 글자가 있어 본문(main)으로 좁힌다
 const main = () => within(screen.getByRole('main'))
+/** 영웅 카드 메타 한 줄(장소 · 기간 · 예산이 따로 그려져 문단 전체 글자로 찾는다) */
+const metaLine = (text: string) =>
+  screen.getByText((_, el) => el?.tagName === 'P' && el.textContent?.replace(/\s+/g, ' ') === text)
 const expirebusan = () => Object.assign(findTrip(TRIP.busan)!, { startDate: '2026-11-01', endDate: '2026-11-02' })
 
 describe('HF-16 시작 전 여정 정보', () => {
@@ -24,7 +27,7 @@ describe('HF-16 시작 전 여정 정보', () => {
     expect(screen.getByText('D-44')).toBeTruthy()
     expect(screen.getByRole('img', { name: '출발 전' })).toBeTruthy()
     expect(screen.getByText('12.27 (일)')).toBeTruthy()
-    expect(screen.getByText('부산 · 1박 2일 · 예산 ₩600,000')).toBeTruthy()
+    expect(metaLine('부산 · 1박 2일 · 예산 ₩600,000')).toBeTruthy()
     expect(screen.getByRole('heading', { name: '그룹원 3명' })).toBeTruthy()
     expect(main().getByText('B8N-4RT')).toBeTruthy()
     expect(button('여정 정보 수정')).toBeTruthy()
@@ -120,6 +123,20 @@ describe('Q-26 종료일이 지난 시작 전 여정', () => {
     expect(button('기간 수정')).toBeNull()
   })
 
+  it('판단은 서버 startBlockReason으로만: 날짜가 남아 보여도 PERIOD_OVER면 「기간 수정」', async () => {
+    makeMeLeader(TRIP.busan)
+    server.use(
+      http.get('/api/trips/trip-busan', () => {
+        const real = tripDetail(findTrip(TRIP.busan)!)
+        return HttpResponse.json({ ...real, permissions: { ...real.permissions, canStart: false, startBlockReason: 'PERIOD_OVER' } })
+      }),
+    )
+    renderApp('/trips/trip-busan/info')
+    expect(await screen.findByRole('button', { name: '기간 수정' })).toBeTruthy()
+    expect(button('여정 시작')).toBeNull()
+    expect(screen.getByRole('button', { name: '그룹 삭제' })).toBeTruthy()
+  })
+
   it('서버도 시작을 거부한다(409)', async () => {
     makeMeLeader(TRIP.busan)
     expirebusan()
@@ -137,7 +154,7 @@ describe('HF-23 진행 중 여정 정보', () => {
     expect(screen.getByText('Day 2')).toBeTruthy()
     expect(screen.getByText('/ 4')).toBeTruthy()
     expect(screen.getByRole('img', { name: '4일 중 2일차' })).toBeTruthy()
-    expect(screen.getByText('일본 오사카 · 예산 ₩1,200,000')).toBeTruthy()
+    expect(metaLine('오사카 · 예산 ₩1,200,000')).toBeTruthy()
     expect(screen.getByRole('heading', { name: '그룹원 4명' })).toBeTruthy()
     expect(button('추가')).toBeTruthy()
     expect(main().getByText('K7M-2QX')).toBeTruthy()
@@ -163,6 +180,16 @@ describe('HF-23 진행 중 여정 정보', () => {
     await waitFor(() => expect(nav.share).toHaveBeenCalledWith(expect.objectContaining({ text: '오사카 3박 4일 초대코드 K7M-2QX' })))
     fireEvent.click(screen.getByRole('button', { name: '초대코드 복사' }))
     await waitFor(() => expect(toastMessages()).toContain('복사했어요'))
+    // 초대코드 옆 「복사」는 코드만
+    expect(nav.writeText).toHaveBeenLastCalledWith('K7M-2QX')
+  })
+
+  it('「추가」는 공유를 못 하면 공유와 같은 내용(초대코드 문구 + 참여 링크)을 복사한다(QA HF-23)', async () => {
+    const nav = stubNavigator({ share: false })
+    renderApp('/trips/trip-osaka/info')
+    fireEvent.click(await screen.findByRole('button', { name: '추가' }))
+    await waitFor(() => expect(toastMessages()).toContain('복사했어요'))
+    expect(nav.writeText).toHaveBeenCalledWith(`오사카 3박 4일 초대코드 K7M-2QX\n${window.location.origin}/join?code=K7M2QX`)
   })
 
   it('HF-24 「여정 종료하기」 → end-preview 미확정 건수 → 종료 → 정산 탭, 미확정은 개인으로', async () => {
