@@ -14,7 +14,7 @@ import { kst } from '../../payments/rules'
 import { cardImportKeys } from '../api'
 import { ImportErrorScreen } from '../components'
 import { COPY } from '../copy'
-import { useFlowNav, type CardImportFlowState } from '../flow'
+import { useFlowNav } from '../flow'
 import { buildFetchRequest, useCardImportConfig, useFetchCardApprovals, useImportWalletEntries } from '../hooks'
 import {
   classifyFetchError,
@@ -360,10 +360,10 @@ export default function FlowPage() {
   if (isApiError(config.error) && config.error.code === 'NOT_FOUND') return <Navigate replace to={paths.wallet()} />
   // 동의가 없으면(철회·재동의 필요) 자격 증명을 받지 않고 WF-51로
   if (config.data && !config.data.consent.valid) {
-    return <Navigate replace to={paths.walletImport()} state={{ cardImportFlow: true } satisfies CardImportFlowState} />
+    return <Navigate replace to={paths.walletImport()} state={flow.navState()} />
   }
   if (config.data && !org) {
-    return <Navigate replace to={paths.walletImportIssuer()} state={{ cardImportFlow: true } satisfies CardImportFlowState} />
+    return <Navigate replace to={paths.walletImportIssuer()} state={flow.navState()} />
   }
   if (!org || !limits || !range || !config.data) {
     return (

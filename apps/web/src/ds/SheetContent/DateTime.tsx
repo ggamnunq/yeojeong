@@ -242,8 +242,12 @@ function TimeField({
       // 칸을 누르면 전체 선택(바로 덮어쓰기)
       onFocus={(e) => e.currentTarget.select()}
       onClick={(e) => e.currentTarget.select()}
-      // 1자리로 떠나면 앞에 0("5" → "05")
-      onBlur={() => value.length === 1 && onChange(`0${value}`)}
+      // 1자리로 떠나면 앞에 0("5" → "05"). 값은 칸의 지금 글자로 본다 — 시를 2자리 치면 같은 이벤트 안에서 분으로 포커스를 옮겨
+      // 이 blur가 다시 그리기 전에 불리므로, 직전 렌더 값(value = "1")을 쓰면 방금 친 "15"를 "01"로 덮어쓴다
+      onBlur={(e) => {
+        const digits = timeDigits(e.currentTarget.value)
+        if (digits.length === 1) onChange(`0${digits}`)
+      }}
       className={clsx(
         // Figma 칸 라운드 10은 토큰에 없는 원값이다
         'h-11 w-14 rounded-[10px] border-[1.5px] bg-subtle text-center text-body-l text-primary caret-brand outline-hidden transition-shadow',

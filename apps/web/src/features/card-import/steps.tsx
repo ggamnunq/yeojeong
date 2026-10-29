@@ -7,6 +7,7 @@ import {
   DateHeader,
   EmptyState,
   Icon,
+  IllustEmptyTrip,
   Input,
   RowField,
   RowPick,
@@ -322,7 +323,8 @@ export function EmptyStep({ orgName, onBack, onManual, onChangeRange }: { orgNam
         primary: { label: COPY.changeRange, onClick: onChangeRange },
       }}
     >
-      <EmptyState type="no-payments" title={COPY.empty} message="" className="flex-1 justify-center" />
+      {/* HF-56b: HF-09와 같은 구성(일러스트 144 → 제목 H2, 설명 없음) · 남은 높이의 세로 가운데 */}
+      <EmptyState type="illust" illust={<IllustEmptyTrip size={144} />} title={COPY.empty} className="flex-1 justify-center" />
     </ShellSub>
   )
 }

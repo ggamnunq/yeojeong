@@ -43,7 +43,7 @@ export type SheetContentDateRangeProps = DateRangeLimits & {
   today?: YmdDate
   /** Figma CTA: 하단 "확인". 객체를 주면 켜진다 — 시트 자체 CTA는 끄고 이것을 쓴다 */
   cta?: SheetContentDateRangeCta
-  /** 칩 라벨. 기본 출발일 · 도착일 */
+  /** 칩 라벨이자 달력 날짜 버튼이 읽는 시작·끝 이름("11월 12일 목요일, 시작일"). 기본 출발일 · 도착일 */
   startLabel?: string
   endLabel?: string
   className?: string
@@ -163,6 +163,8 @@ export function SheetContentDateRange({
                     today={d === today}
                     selectable={isDateSelectable(d, field, value, limits)}
                     tabbable={d === tabStop}
+                    startLabel={startLabel}
+                    endLabel={endLabel}
                     onPick={choose}
                   />
                 ),
@@ -233,6 +235,8 @@ function Day({
   today,
   selectable,
   tabbable,
+  startLabel,
+  endLabel,
   onPick,
 }: {
   date: YmdDate
@@ -240,6 +244,9 @@ function Day({
   today: boolean
   selectable: boolean
   tabbable: boolean
+  /** 칩 라벨과 같은 말(출발일·도착일 / 시작일·종료일)로 읽는다 */
+  startLabel: string
+  endLabel: string
   onPick: (date: YmdDate) => void
 }) {
   const { start, end } = value
@@ -250,7 +257,7 @@ function Day({
   const inside = range && date > start && date < end
   // 범위 띠: 안쪽 날은 칸 전체, 시작은 오른쪽 반, 끝은 왼쪽 반(주가 바뀌면 끊긴다)
   const band = inside ? 'inset-x-0' : range && isStart ? 'right-0 left-1/2' : range && isEnd ? 'right-1/2 left-0' : null
-  const role = isStart && isEnd ? '출발일·도착일' : isStart ? '출발일' : isEnd ? '도착일' : null
+  const role = isStart && isEnd ? `${startLabel}·${endLabel}` : isStart ? startLabel : isEnd ? endLabel : null
 
   return (
     <div role="gridcell" aria-selected={selected || inside} className="relative h-10 flex-1">

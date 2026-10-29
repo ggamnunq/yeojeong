@@ -128,6 +128,69 @@ test.describe('카드 내역 불러오기(W7)', () => {
     await expect(page.getByRole('link', { name: '동의 관리' })).toHaveCount(0)
   })
 
+  test('WF-51 동의 행 ›: 앱 안에서 전문을 열고 ‹로 WF-51에 돌아온다(체크 유지 · 새로고침 없음)', async ({ page }) => {
+    await useMockScenario(page, { cardImport: true })
+    await page.goto('/wallet')
+    await page.getByRole('button', { name: '불러오기', exact: true }).click()
+    await page.getByText('[필수] 카드 내역 조회 동의').click()
+    const check = page.getByRole('checkbox', { name: /카드 내역 조회 동의/ })
+    await expect(check).toBeChecked()
+    // 전체 새로고침이면 이 표시가 사라진다
+    await page.evaluate(() => Object.assign(window, { __noReload: true }))
+    await page.getByRole('link', { name: '카드 내역 조회 동의 전문' }).click()
+    await expect(page).toHaveURL(/\/consents\/CARD_IMPORT$/)
+    await page.getByRole('button', { name: '뒤로 가기' }).click()
+    await expect(page).toHaveURL(/\/wallet\/import$/)
+    await expect(page.getByText('카드사 로그인 정보')).toBeVisible()
+    await expect(check).toBeChecked()
+    expect(await page.evaluate(() => (window as unknown as { __noReload?: boolean }).__noReload)).toBe(true)
+    await page.getByRole('button', { name: '계속' }).click()
+    await expect(page.getByRole('heading', { name: '카드사 선택' })).toBeVisible()
+  })
+
+  test('동의가 남은 채 WF-53 · 56에서 새로고침 · 떠났다 돌아오기 → 빈 WF-53이 아니라 WF-51부터', async ({ page }) => {
+    await useMockScenario(page, { cardImport: true, cardImportConsent: true })
+    const toLoginConsented = async () => {
+      await page.goto('/wallet')
+      await page.getByRole('button', { name: '불러오기', exact: true }).click()
+      // 동의가 남아 있어 체크 행 없이 바로 계속
+      await expect(page.getByText('고른 결제만')).toBeVisible()
+      await expect(page.getByText('[필수] 카드 내역 조회 동의')).toHaveCount(0)
+      await page.getByRole('button', { name: '계속' }).click()
+      await page.getByRole('button', { name: /신한카드/ }).click()
+      await expect(page.getByLabel('아이디')).toBeVisible()
+    }
+    const expectStart = async () => {
+      await expect(page).toHaveURL(/\/wallet\/import$/)
+      await expect(page.getByText('카드사 로그인 정보')).toBeVisible()
+      await expect(page.getByLabel('아이디')).toHaveCount(0)
+    }
+
+    // WF-53 새로고침(목 동의 유지 — 새로고침해도 동의가 남아 체크 행이 없다)
+    await toLoginConsented()
+    await page.reload()
+    await expectStart()
+    await expect(page.getByText('[필수] 카드 내역 조회 동의')).toHaveCount(0)
+    // WF-51에서 다시 이어진다
+    await page.getByRole('button', { name: '계속' }).click()
+    await page.getByRole('button', { name: /신한카드/ }).click()
+    await expect(page.getByLabel('아이디')).toBeVisible()
+
+    // WF-56 결과에서 새로고침
+    await login(page, 'junyong88')
+    await expect(page.getByText('전체 선택')).toBeVisible()
+    await page.reload()
+    await expectStart()
+    await expect(page.getByText('다카시마야 난바점')).toHaveCount(0)
+
+    // WF-53에서 다른 문서로 떠났다가 뒤로(bfcache든 새로 불러오든)
+    await toLoginConsented()
+    await page.getByLabel('아이디').fill('junyong88')
+    await page.goto('/licenses')
+    await page.goBack()
+    await expectStart()
+  })
+
   test('기능이 꺼져 있으면 진입점이 없다 · 동의가 없으면 "동의 관리"도 없다', async ({ page }) => {
     await useMockScenario(page)
     await page.goto('/wallet')
