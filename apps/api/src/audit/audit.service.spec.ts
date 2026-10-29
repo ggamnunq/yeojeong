@@ -16,6 +16,9 @@ function setup(env: Record<string, string> = {}) {
 
 describe('AuditService', () => {
   beforeAll(() => Logger.overrideLogger(false));
+  // 테스트 기본 env(test/env.ts)의 키가 ConfigService보다 먼저 읽히지 않게 지운다
+  beforeEach(() => vi.stubEnv('AUDIT_HMAC_KEY', undefined));
+  afterEach(() => vi.unstubAllEnvs());
 
   it('hashes the IP with HMAC only when a key is configured', () => {
     const withKey = setup({ AUDIT_HMAC_KEY: KEY }).service;

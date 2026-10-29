@@ -182,6 +182,9 @@ describe('Auth (e2e)', () => {
       });
       expect(consent.userRefHash).toMatch(/^[0-9a-f]{64}$/);
       expect(consent.userRefHash).not.toBe(created.body.id);
+      // 접속 IP는 평문 없이 HMAC만 남긴다
+      expect(consent.ip).toBeUndefined();
+      expect(consent.ipHash).toMatch(/^[0-9a-f]{64}$/);
     }
     // 세션 토큰은 해시만 저장한다
     const token = cookieValue(session).split('=')[1];

@@ -11,6 +11,7 @@ import {
   type FieldError,
 } from '@yeojeong/shared';
 import type { Request } from 'express';
+import { AuditService } from '../audit/audit.service.js';
 import { AuthConfig } from '../common/auth/auth-config.js';
 import {
   ConsentCatalog,
@@ -54,6 +55,7 @@ export class ConsentsService {
   constructor(
     private readonly catalog: ConsentCatalog,
     private readonly config: AuthConfig,
+    private readonly audit: AuditService,
   ) {}
 
   async documents(stage: ConsentStage): Promise<ConsentDocumentSummary[]> {
@@ -129,7 +131,10 @@ export class ConsentsService {
     };
   }
 
-  /** 동의 이력 행. 같은 (사용자, 항목, 버전)이 이미 있으면 건너뛴다(append-only, 수정하지 않는다) */
+  /**
+   * 동의 이력 행. 같은 (사용자, 항목, 버전)이 이미 있으면 건너뛴다(append-only, 수정하지 않는다).
+   * 접속 IP는 평문으로 남기지 않고 HMAC(AUDIT_HMAC_KEY)만 남긴다. 키가 없으면 ipHash도 NULL이다.
+   */
   async record(
     db: Prisma.TransactionClient,
     input: {
@@ -148,7 +153,7 @@ export class ConsentsService {
         consentId: doc.consentId,
         version: doc.version,
         agreed: true,
-        ip: input.evidence.ip,
+        ipHash: this.audit.hashIp(input.evidence.ip),
         ua: input.evidence.ua,
         screen: input.screen,
         method: input.method,

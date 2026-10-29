@@ -43,8 +43,13 @@ export class AuditService {
     this.ipKey = key;
   }
 
+  /** AUDIT_HMAC_KEY가 있어 IP를 해시로 남길 수 있는지 */
+  get ipHashEnabled(): boolean {
+    return this.ipKey !== null;
+  }
+
   /**
-   * 접속 IP의 HMAC-SHA256(hex 64자). IPv4는 경우의 수가 적어 키 없는 해시는 되돌릴 수 있으므로
+   * 접속 IP의 HMAC-SHA256(hex 64자). 접근 기록(access_logs)과 동의 기록(user_consents)이 같은 키를 쓴다. IPv4는 경우의 수가 적어 키 없는 해시는 되돌릴 수 있으므로
    * AUDIT_HMAC_KEY가 없으면 NULL을 돌려준다(남기지 않는다).
    */
   hashIp(ip: string | null | undefined): string | null {
