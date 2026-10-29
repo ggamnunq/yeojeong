@@ -19,6 +19,9 @@ export const DEFAULT_CODEF_DAILY_CALL_BUDGET = 100;
 export const CODEF_CALLS_PER_FETCH = 4;
 /** 추가 인증 이어가기 시도 상한(같은 토큰) */
 export const TWO_WAY_MAX_ATTEMPTS = 3;
+/** 연속 실패로 세는 결과(카드사 로그인 정보가 틀렸다) */
+export type LoginFailureCode =
+  'CARD_LOGIN_FAILED' | 'CARD_NUMBER_INVALID' | 'CARD_PASSWORD_INVALID';
 /** 조회 잠금 수명: CODEF 조회 제한 시간(30초) + 계정 삭제 재시도 + 여유. 그 안에 요청이 끝나면 바로 푼다 */
 const LOCK_TTL_MS = 3 * 60 * 1000;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -202,12 +205,16 @@ export class CardImportLimits {
   }
 
   /**
-   * 로그인 실패를 센다(30분이 지난 이전 실패는 새로 센다). 3회째면 쿨다운 예외, 아니면 CARD_LOGIN_FAILED { failedAttempts }를 던진다
+   * 로그인 실패를 센다(30분이 지난 이전 실패는 새로 센다). 3회째면 쿨다운 예외, 아니면 code { failedAttempts }를 던진다.
+   * 아이디·비밀번호(CARD_LOGIN_FAILED)·카드번호(CARD_NUMBER_INVALID)·카드 비밀번호(CARD_PASSWORD_INVALID) 실패를 같은 행에서 센다.
+   * 카드 비밀번호 실패는 CARD_PASSWORD_FAILURES(2)회째부터 바로 쿨다운이다 — 현대카드는 카드 비밀번호 3회 오류면 계정이 잠긴다
+   * (KR_CD_P_002 현대카드 특이사항). 쿨다운 판정(checkLoginCooldown)이 같은 기준을 보도록 행의 failures를 FAILURES로 올린다
    */
   async loginFailed(
     userId: string,
     organization: string,
     now = new Date(),
+    code: LoginFailureCode = 'CARD_LOGIN_FAILED',
   ): Promise<never> {
     const windowStart = new Date(
       now.getTime() - CARD_IMPORT_LOGIN_LIMIT.WINDOW_SECONDS * 1000,
@@ -220,7 +227,18 @@ export class CardImportLimits {
                         THEN 1 ELSE card_import_login_failures.failures + 1 END,
         last_failed_at = EXCLUDED.last_failed_at
       RETURNING failures`;
-    const failures = row?.failures ?? 1;
+    let failures = row?.failures ?? 1;
+    if (
+      code === 'CARD_PASSWORD_INVALID' &&
+      failures >= CARD_IMPORT_LOGIN_LIMIT.CARD_PASSWORD_FAILURES &&
+      failures < CARD_IMPORT_LOGIN_LIMIT.FAILURES
+    ) {
+      await this.prisma.cardImportLoginFailure.update({
+        where: { userId_organization: { userId, organization } },
+        data: { failures: CARD_IMPORT_LOGIN_LIMIT.FAILURES },
+      });
+      failures = CARD_IMPORT_LOGIN_LIMIT.FAILURES;
+    }
     if (failures >= CARD_IMPORT_LOGIN_LIMIT.FAILURES) {
       throw AppException.of('CARD_IMPORT_LOGIN_COOLDOWN', {
         details: retryDetails(
@@ -231,7 +249,7 @@ export class CardImportLimits {
         ),
       });
     }
-    throw AppException.of('CARD_LOGIN_FAILED', {
+    throw AppException.of(code, {
       details: { failedAttempts: failures },
     });
   }

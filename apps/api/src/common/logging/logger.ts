@@ -58,6 +58,7 @@ export const SENSITIVE_BODY_KEYS = [
   'authToken',
   'cardNo',
   'loginCardNo',
+  'cardNumber',
   'cardPassword',
   'encryptedCardPassword',
   'itemToken',

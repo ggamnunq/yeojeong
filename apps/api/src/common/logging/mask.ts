@@ -32,8 +32,10 @@ const SENSITIVE = [
   'captchaImage',
   'authToken',
   'itemToken',
+  // 카드번호·카드 비밀번호(S8c 현대·하나): 서버 필드 loginCardNo·encryptedCardPassword, CODEF 본문 loginCardNo·cardPassword·cardNo, 화면 이름 cardNumber
   'cardNo',
   'loginCardNo',
+  'cardNumber',
   'cardPassword',
   'birthDate',
   'identity',

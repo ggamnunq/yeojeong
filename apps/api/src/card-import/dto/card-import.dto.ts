@@ -6,6 +6,8 @@ import {
   CARD_IMPORT_ITEM_STATUS_VALUES,
   CARD_IMPORT_RANGE_BASIS_VALUES,
   CARD_IMPORT_TWO_WAY_METHOD_VALUES,
+  CARD_NUMBER_MAX_DIGITS,
+  CARD_NUMBER_MIN_DIGITS,
   MANUAL_MEMO_MAX_LENGTH,
   type CardApprovalBlockReason,
   type CardApprovalItem,
@@ -55,6 +57,10 @@ const ORG_CODES = CARD_IMPORT_ORGANIZATIONS.map((o) => o.code);
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const IMPORT_KEY = /^[0-9a-f]{64}$/;
+/** 숫자만 14~19자리(Luhn은 서비스가 isValidCardNumber로 본다) */
+const CARD_NUMBER = new RegExp(
+  `^\\d{${CARD_NUMBER_MIN_DIGITS},${CARD_NUMBER_MAX_DIGITS}}$`,
+);
 
 // ─── 요청 ───
 
@@ -106,17 +112,18 @@ export class FetchCardApprovalsDto implements FetchCardApprovalsRequest {
   to: string;
 
   @ApiPropertyOptional({
-    example: '9410123412341934',
+    example: '4111111111111111',
     description:
-      '현대·하나(requiresCardNo)만: 카드번호 전체(저장·기록하지 않는다)',
+      '현대·하나(requiresCardNo)만: 카드번호 전체(숫자만 14~19자리, Luhn). CODEF가 원문으로 받아 그대로 넘긴다 — 저장·기록·응답하지 않는다',
   })
   @IsOptional()
-  @Matches(/^\d{14,16}$/, { message: '카드번호를 다시 확인해 주세요' })
+  @IsString({ message: '카드번호를 다시 확인해 주세요' })
+  @Matches(CARD_NUMBER, { message: '카드번호를 다시 확인해 주세요' })
   loginCardNo?: string;
 
   @ApiPropertyOptional({
     description:
-      '현대·하나(requiresCardNo)만: 카드 비밀번호 앞 2자리를 publicKey로 암호화한 base64',
+      '현대·하나(requiresCardNo)만: 카드 비밀번호(현대 4자리·하나 앞 2자리 — cardPasswordDigits)를 publicKey로 암호화한 base64',
   })
   @IsOptional()
   @IsString({ message: '다시 시도해 주세요' })
@@ -222,6 +229,15 @@ export class CardImportOrganizationDto implements CardImportOrganization {
 
   @ApiProperty({ description: '현대·하나: 카드번호·카드 비밀번호가 더 필요' })
   requiresCardNo: boolean;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    example: 4,
+    description:
+      'requiresCardNo 카드사의 카드 비밀번호 자리수(현대 4, 하나 앞 2자리), 그 밖 null',
+  })
+  cardPasswordDigits: number | null;
 }
 
 export class CardImportDefaultRangeDto {

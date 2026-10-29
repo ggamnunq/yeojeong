@@ -3,6 +3,7 @@ import {
   CARD_IMPORT_MAX_RANGE_DAYS,
   MANUAL_DEFAULT_MERCHANT_NAME,
   WALLET_ENTRY_FIELD_VALUES,
+  isValidCardNumber,
   type CardApprovalItem,
   type CardImportConfig,
   type CardImportOrganization,
@@ -30,6 +31,10 @@ import { clock } from '../payments/clock'
 //   아이디 "down"    → 503 CARD_COMPANY_UNAVAILABLE
 //   아이디 "empty"   → OK, 결과 0건
 //   아이디 "slow"    → 3초 뒤 OK(WF-55 불러오는 중 · 취소 확인용)
+//   현대·하나(S8c): 카드번호(loginCardNo)·카드 비밀번호 암호문이 없거나 다른 카드사에 보내면 400 VALIDATION_FAILED(loginCardNo),
+//     카드번호 형식(숫자 14~19자리·Luhn)이 틀리면 400 VALIDATION_FAILED(loginCardNo · cardNumber). 목은 카드번호를 어디에도 남기지 않는다.
+//     아이디 "badcard" → 400 CARD_NUMBER_INVALID { failedAttempts }(로그인 실패와 같이 센다, 3회째 쿨다운)
+//     아이디 "badpin"  → 400 CARD_PASSWORD_INVALID { failedAttempts: 1 } → 2회째 429 CARD_IMPORT_LOGIN_COOLDOWN(서버와 같다)
 //   그 밖            → OK(Figma HF-56 샘플: 전액 취소 2행·비슷한 기록·추가됨·부분 취소·기간 밖·원 승인 없는 취소)
 //   하루 10회를 넘기면 429 CARD_IMPORT_RATE_LIMITED. 저장은 itemToken이 결과 그대로일 때만(아니면 410 CARD_IMPORT_RESULT_EXPIRED)
 // 동의: 처음에는 CARD_IMPORT 동의가 없다(config.consent.valid = false). POST /api/consents stage CARD_IMPORT로 동의한다.
@@ -41,15 +46,17 @@ export const MOCK_CARD_IMPORT_PUBLIC_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuFPgSgkAEsbOoTX2kotcegNR/fM1MWrvLyPrwenmTnwNbNCAgComam+T1RE7mWXu6ghBMHTyw++46jTvJZrXkkXWIoKxHCyAlm4Q4dM4/4fiJ0QgSKJDtSlgA22CVy8IR8mBo4akYE01qGksUbOrXJ/7NhlOZziZjzTsd5qMzPw9k0cJmX1XOey12+4b6iqOUTMqRAp8jkr4/azrqeLCGh9PWOfb3ixxth4fTM+REKowR1PGVZ1gHV7uVvLQeA6aRTEaDzGSiwb/xiDMx9DnRxuytje2n7yP4fJgY2KqxzEVJg13QeAmXH5yi7jgWDUaARA5+MXAeA6pQVcmqwtpOQIDAQAB'
 export const MOCK_TWO_WAY_CODE = '123456'
 
-// 서버와 같다: 현대·하나(카드번호 전체 필요)는 1차에서 뺐다
+// 서버와 같다(9곳, 화면 순서). 현대·하나는 카드번호 전체 + 카드 비밀번호(현대 4자리·하나 앞 2자리)가 더 필요하다(S8c)
 const ORGANIZATIONS: CardImportOrganization[] = [
-  { code: '0301', name: 'KB국민카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
-  { code: '0303', name: '삼성카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
-  { code: '0304', name: 'NH농협카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
-  { code: '0305', name: 'BC카드', maxRangeDays: 60, maxLookbackDays: 270, requiresCardNo: false },
-  { code: '0306', name: '신한카드', maxRangeDays: 90, maxLookbackDays: 180, requiresCardNo: false },
-  { code: '0309', name: '우리카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
-  { code: '0311', name: '롯데카드', maxRangeDays: 92, maxLookbackDays: 180, requiresCardNo: false },
+  { code: '0301', name: 'KB국민카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0302', name: '현대카드', maxRangeDays: 90, maxLookbackDays: 90, requiresCardNo: true, cardPasswordDigits: 4 },
+  { code: '0303', name: '삼성카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0304', name: 'NH농협카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0305', name: 'BC카드', maxRangeDays: 60, maxLookbackDays: 270, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0306', name: '신한카드', maxRangeDays: 90, maxLookbackDays: 180, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0309', name: '우리카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0311', name: '롯데카드', maxRangeDays: 92, maxLookbackDays: 180, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0313', name: '하나카드', maxRangeDays: 90, maxLookbackDays: 365, requiresCardNo: true, cardPasswordDigits: 2 },
 ]
 
 /** 테스트에서 처음 상태로(resetMockDb도 같은 값으로 되돌린다) */
@@ -230,6 +237,21 @@ export const handlers: HttpHandler[] = [
     if (!org || !body.encryptedPassword || !body.loginId) {
       return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'organization', message: '불러올 수 없는 카드사예요' }] })
     }
+    const cardFields = Boolean(body.loginCardNo || body.encryptedCardPassword)
+    if (org.requiresCardNo ? !body.loginCardNo || !body.encryptedCardPassword : cardFields) {
+      return mockError('VALIDATION_FAILED', 400, {
+        fields: [
+          {
+            path: 'loginCardNo',
+            code: org.requiresCardNo ? 'required' : 'notAllowed',
+            message: org.requiresCardNo ? `${org.name}는 카드번호와 카드 비밀번호가 필요해요` : '이 카드사는 카드번호를 받지 않아요',
+          },
+        ],
+      })
+    }
+    if (org.requiresCardNo && !isValidCardNumber(body.loginCardNo ?? '')) {
+      return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'loginCardNo', code: 'cardNumber', message: '카드번호를 다시 확인해 주세요' }] })
+    }
     if (!body.twoWay) {
       if (state().startedToday >= 10) return mockError('CARD_IMPORT_RATE_LIMITED', 429, retryAfter(3600))
       state().startedToday += 1
@@ -242,6 +264,14 @@ export const handlers: HttpHandler[] = [
       state().loginFailures += 1
       if (state().loginFailures >= 3) return mockError('CARD_IMPORT_LOGIN_COOLDOWN', 429, retryAfter(1800))
       return mockError('CARD_LOGIN_FAILED', 400, { failedAttempts: state().loginFailures })
+    }
+    if (body.loginId === 'badcard' || body.loginId === 'badpin') {
+      state().loginFailures += 1
+      const limit = body.loginId === 'badpin' ? 2 : 3
+      if (state().loginFailures >= limit) return mockError('CARD_IMPORT_LOGIN_COOLDOWN', 429, retryAfter(1800))
+      return mockError(body.loginId === 'badpin' ? 'CARD_PASSWORD_INVALID' : 'CARD_NUMBER_INVALID', 400, {
+        failedAttempts: state().loginFailures,
+      })
     }
     if (body.loginId === 'locked') return mockError('CARD_ACCOUNT_ACTION_REQUIRED')
     if (body.loginId === 'down') return mockError('CARD_COMPANY_UNAVAILABLE')

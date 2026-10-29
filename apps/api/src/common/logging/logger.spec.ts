@@ -75,6 +75,62 @@ describe('createLogger', () => {
     });
   });
 
+  it('masks card numbers and card passwords under every key spelling (S8c 현대·하나)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    const PAN = '4111111111111111';
+    logger.error(
+      {
+        dto: {
+          organization: '0302',
+          loginCardNo: PAN,
+          encryptedCardPassword: 'leak-card-cipher',
+        },
+      },
+      '요청 DTO',
+    );
+    logger.error(
+      {
+        codefRequest: {
+          loginCardNo: PAN,
+          cardPassword: 'leak-card-pw',
+          cardNo: PAN,
+        },
+      },
+      'CODEF 본문',
+    );
+    logger.error(
+      { form: { cardNumber: PAN, card_number: PAN, 'Login-Card-No': PAN } },
+      '화면 이름',
+    );
+    const cause = Object.assign(new Error('inner'), { loginCardNo: PAN });
+    logger.error({ err: new Error('outer', { cause }) }, '에러 원인');
+
+    expect(output).not.toContain(PAN);
+    expect(output).not.toContain('leak-');
+    const lines = output
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(lines[0]).toMatchObject({
+      dto: {
+        organization: '0302',
+        loginCardNo: '[REDACTED]',
+        encryptedCardPassword: '[REDACTED]',
+      },
+    });
+    expect(lines[1]).toMatchObject({
+      codefRequest: {
+        loginCardNo: '[REDACTED]',
+        cardPassword: '[REDACTED]',
+        cardNo: '[REDACTED]',
+      },
+    });
+  });
+
   it('masks by key at any depth: CODEF bodies, arrays, error causes and err.body (S8 review L1)', () => {
     let output = '';
     const logger = createLogger(

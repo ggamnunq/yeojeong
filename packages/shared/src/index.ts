@@ -26,6 +26,7 @@ export * from './domain.js';
 export * from './consents.js';
 export * from './money.js';
 export * from './invite-code.js';
+export * from './card-number.js';
 export * from './nickname.js';
 export type * from './api.js';
 export * from './api/trips.js';

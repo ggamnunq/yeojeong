@@ -3,6 +3,7 @@ import { isApiError } from '../../api'
 import { formatKrw, MINUS } from '../../ds'
 import { addDays, type DateRangeValue, type YmdDate } from '../../ds/SheetContent/rules'
 import { formatDateLabel, formatOriginal, kst } from '../payments/rules'
+import { CardLoginInputError } from './cardLogin'
 import { CardImportKeyPinError } from './crypto'
 
 // 카드 내역 불러오기 화면 규칙(화면명세 L절 · 기능명세 4-12). 화면 없이 테스트한다.
@@ -12,15 +13,27 @@ import { CardImportKeyPinError } from './crypto'
 /** 카드사 중성 마크(WF-52): 서버가 이니셜을 주지 않아 기관 코드로 정한다. 모르는 코드는 이름 첫 글자 */
 const ORG_MARKS: Record<string, string> = {
   '0301': 'KB',
+  '0302': '현',
   '0303': '삼',
   '0304': 'NH',
   '0305': 'BC',
   '0306': '신',
   '0309': '우',
   '0311': '롯',
+  '0313': '하',
 }
 
 export const orgMark = (org: Pick<CardImportOrganization, 'code' | 'name'>) => ORG_MARKS[org.code] ?? org.name.slice(0, 1)
+
+/**
+ * 카드번호·카드 비밀번호 입력칸(HF-53 변형)이 화면에 생겼는가. 서버는 현대·하나(requiresCardNo)를 내려 주지만(S8c)
+ * 입력칸 디자인이 확정되기 전에는 목록·로그인 화면에서 뺀다(입력칸 없이 고르면 400이 난다). 입력칸을 붙이면 true로 바꾼다
+ */
+export const CARD_NUMBER_LOGIN_SCREEN_READY: boolean = false
+
+/** 화면에 보일 카드사(서버 순서 유지). 카드번호 입력칸이 아직 없으면 requiresCardNo 카드사를 뺀다 */
+export const visibleOrganizations = <T extends Pick<CardImportOrganization, 'requiresCardNo'>>(organizations: readonly T[]): T[] =>
+  organizations.filter((o) => CARD_NUMBER_LOGIN_SCREEN_READY || !o.requiresCardNo)
 
 // ── 기간(WF-53 기간 한도) ─────────────────────────────────────────
 
@@ -156,6 +169,10 @@ export type ErrorScreenKind = 'unavailable' | 'action' | 'rate' | 'daily'
 
 export type FetchFailure =
   | { to: 'login-failed'; attempts: number }
+  /** 카드번호(현대·하나)가 맞지 않다. attempts = 서버 연속 실패 수(보내기 전 입력 검사에서 걸렸으면 0) */
+  | { to: 'card-number-invalid'; attempts: number }
+  /** 카드 비밀번호가 맞지 않다. 서버는 2회째부터 쿨다운(현대 3회 오류면 계정 잠김) */
+  | { to: 'card-password-invalid'; attempts: number }
   | { to: 'login-cooldown'; until: string }
   | { to: 'error'; kind: ErrorScreenKind; retryAfter?: string }
   | { to: 'in-progress' }
@@ -178,12 +195,17 @@ const sameKstDay = (a: number, b: number) => kst(a).date === kst(b).date
  */
 export function classifyFetchError(error: unknown, now: number): FetchFailure {
   if (error instanceof CardImportKeyPinError) return { to: 'error', kind: 'unavailable' }
+  if (error instanceof CardLoginInputError) {
+    return { to: error.field === 'cardNumber' ? 'card-number-invalid' : 'card-password-invalid', attempts: 0 }
+  }
   if (!isApiError(error)) return { to: 'error', kind: 'unavailable' }
   switch (error.code) {
-    case 'CARD_LOGIN_FAILED': {
-      const attempts = Number(detail(error, 'failedAttempts'))
-      return { to: 'login-failed', attempts: Number.isFinite(attempts) ? attempts : 1 }
-    }
+    case 'CARD_LOGIN_FAILED':
+      return { to: 'login-failed', attempts: failedAttempts(error) }
+    case 'CARD_NUMBER_INVALID':
+      return { to: 'card-number-invalid', attempts: failedAttempts(error) }
+    case 'CARD_PASSWORD_INVALID':
+      return { to: 'card-password-invalid', attempts: failedAttempts(error) }
     case 'CARD_IMPORT_LOGIN_COOLDOWN': {
       const until = retryAt(error, now)
       return { to: 'login-cooldown', until }
@@ -213,12 +235,20 @@ export function classifyFetchError(error: unknown, now: number): FetchFailure {
       return { to: 'retry-toast' }
     case 'VALIDATION_FAILED': {
       const message = rangeMessage(error)
-      return message ? { to: 'range', message } : { to: 'retry-toast' }
+      if (message) return { to: 'range', message }
+      // 서버 형식 검사(카드번호 Luhn·자리수, 카드 필드 누락 — 경로 loginCardNo). 암호문 길이 오류는 다시 시도(retry-toast)
+      return fieldPaths(error).includes('loginCardNo') ? { to: 'card-number-invalid', attempts: 0 } : { to: 'retry-toast' }
     }
     default:
       // CARD_COMPANY_UNAVAILABLE · CARD_IMPORT_FAILED · CARD_TWO_WAY_UNSUPPORTED · 연결 실패 · 시간 초과 · 그 밖
       return { to: 'error', kind: 'unavailable' }
   }
+}
+
+/** 서버 연속 실패 수(details.failedAttempts), 없으면 1 */
+function failedAttempts(error: unknown): number {
+  const attempts = Number(detail(error, 'failedAttempts'))
+  return Number.isFinite(attempts) ? attempts : 1
 }
 
 /** 한도 해제 시각(ISO). details.retryAfter → retryAfterSec → 30분 뒤 */
@@ -227,6 +257,12 @@ function retryAt(error: unknown, now: number): string {
   if (typeof iso === 'string' && !Number.isNaN(Date.parse(iso))) return iso
   const sec = Number(detail(error, 'retryAfterSec') ?? (isApiError(error) ? error.retryAfterSec : undefined))
   return new Date(now + (Number.isFinite(sec) && sec > 0 ? sec : 1800) * 1000).toISOString()
+}
+
+/** VALIDATION_FAILED details.fields의 경로들 */
+function fieldPaths(error: unknown): string[] {
+  const fields = detail(error, 'fields')
+  return Array.isArray(fields) ? (fields as { path?: unknown }[]).flatMap((f) => (typeof f.path === 'string' ? [f.path] : [])) : []
 }
 
 /** 기간 검증 실패(from·to) 문구 — 서버 메시지 대신 우리 문구 */

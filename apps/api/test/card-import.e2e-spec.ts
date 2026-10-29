@@ -66,6 +66,9 @@ const PUBLIC_KEY = generateKeyPairSync('rsa', { modulusLength: 2048 })
   .publicKey.export({ type: 'spki', format: 'der' })
   .toString('base64');
 const PASSWORD_CIPHERTEXT = randomBytes(256).toString('base64');
+/** 현대·하나: Luhn이 맞는 테스트 카드번호(실제 카드 아님) · 카드 비밀번호 암호문(256바이트) */
+const CARD_NUMBER = '5555555555554444';
+const CARD_PASSWORD_CIPHERTEXT = randomBytes(256).toString('base64');
 const TWO_WAY_CODE = '987654';
 
 /** CARD_IMPORT만 실제 동의 기록으로 판정하고, 가입 동의는 통과시킨다(픽스처 사용자는 가입 동의 행이 없다) */
@@ -363,31 +366,38 @@ describe.skipIf(!databaseUrl)(
         },
         consent: { valid: false, missing: ['CARD_IMPORT'] },
       });
-      // 현대·하나(카드번호 전체 필요)는 1차에서 뺐다
-      expect(body.organizations.map((o) => o.code)).toEqual([
-        '0301',
-        '0303',
-        '0304',
-        '0305',
-        '0306',
-        '0309',
-        '0311',
+      // 9곳(화면 순서). 현대·하나는 카드번호·카드 비밀번호(현대 4자리·하나 앞 2자리)가 더 필요하다(S8c)
+      expect(
+        body.organizations.map((o) => [
+          o.code,
+          o.requiresCardNo,
+          o.cardPasswordDigits,
+        ]),
+      ).toEqual([
+        ['0301', false, null],
+        ['0302', true, 4],
+        ['0303', false, null],
+        ['0304', false, null],
+        ['0305', false, null],
+        ['0306', false, null],
+        ['0309', false, null],
+        ['0311', false, null],
+        ['0313', true, 2],
       ]);
-      expect(body.organizations.every((o) => !o.requiresCardNo)).toBe(true);
 
       const denied = await fetchAs(seed, '준용').expect(403);
       expect(denied.body.code).toBe('CONSENT_REQUIRED');
       expect(http.calls).toHaveLength(0);
 
       await consent(seed, '준용').expect(201);
-      // 현대·하나는 거절(400, CODEF 호출 없음)
+      // 현대·하나에 카드 필드가 없거나, 다른 카드사에 카드 필드를 보내면 400(CODEF 호출 없음)
       for (const organization of ['0302', '0313']) {
-        await fetchAs(seed, '준용', {
-          organization,
-          loginCardNo: '9410123412341934',
-          encryptedCardPassword: PASSWORD_CIPHERTEXT,
-        }).expect(400);
+        await fetchAs(seed, '준용', { organization }).expect(400);
       }
+      await fetchAs(seed, '준용', {
+        loginCardNo: CARD_NUMBER,
+        encryptedCardPassword: CARD_PASSWORD_CIPHERTEXT,
+      }).expect(400);
       expect(http.calls).toHaveLength(0);
       const txBefore = await prisma.transaction.count({ where: { userId } });
       const callsBefore = http.calls.length;
@@ -478,6 +488,145 @@ describe.skipIf(!databaseUrl)(
         '18000',
       ]) {
         expect(logOutput).not.toContain(secret);
+      }
+    });
+
+    it('logs in to Hyundai·Hana with the card number and encrypted card password, leaving them nowhere but the CODEF request (S8c)', async () => {
+      const seed = await seedOngoing(['준용']);
+      const userId = seed.members['준용'].userId;
+      await consent(seed, '준용').expect(201);
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () =>
+          codefResult('CF-00000', approvals()),
+      };
+      logOutput = '';
+      const callsBefore = http.calls.length;
+      const responses: unknown[] = [];
+      for (const organization of ['0302', '0313']) {
+        const res = await fetchAs(seed, '준용', {
+          organization,
+          loginCardNo: CARD_NUMBER,
+          encryptedCardPassword: CARD_PASSWORD_CIPHERTEXT,
+        }).expect(200);
+        expect(res.body.status).toBe('OK');
+        responses.push(res.body);
+      }
+      // CODEF로만 원문 카드번호·카드 비밀번호 암호문이 갔다(KR_CD_P_002 loginCardNo·cardPassword)
+      const sent = http.calls.slice(callsBefore);
+      expect(sent.map((c) => c.body.organization)).toEqual(['0302', '0313']);
+      for (const call of sent) {
+        expect(call.body).toMatchObject({
+          loginType: '1',
+          id: LOGIN_ID,
+          password: PASSWORD_CIPHERTEXT,
+          loginCardNo: CARD_NUMBER,
+          cardPassword: CARD_PASSWORD_CIPHERTEXT,
+        });
+      }
+      // 응답·로그·DB(접근 기록·실패 카운터·잠금·이어가기·지갑) 어디에도 없다
+      const db = JSON.stringify(
+        await Promise.all([
+          prisma.accessLog.findMany({ where: { userId } }),
+          prisma.cardImportLoginFailure.findMany({ where: { userId } }),
+          prisma.cardImportLock.findMany({ where: { userId } }),
+          prisma.cardImportTwoWaySession.findMany({ where: { userId } }),
+          prisma.transaction.findMany({ where: { userId } }),
+          prisma.codefPendingDeletion.findMany(),
+        ]),
+      );
+      const everything = JSON.stringify(responses) + logOutput + db;
+      for (const secret of [
+        CARD_NUMBER,
+        CARD_NUMBER.slice(0, 8),
+        CARD_PASSWORD_CIPHERTEXT,
+        LOGIN_ID,
+      ]) {
+        expect(everything).not.toContain(secret);
+      }
+      expect(logOutput).toContain('/api/card-import/fetch');
+    });
+
+    it('rejects malformed card numbers without echoing them and maps CODEF card errors, cooling down after 2 card password failures (S8c)', async () => {
+      const seed = await seedOngoing(['준용', '민지']);
+      await consent(seed, '준용').expect(201);
+      await consent(seed, '민지').expect(201);
+      logOutput = '';
+      const callsBefore = http.calls.length;
+      // 형식 오류(Luhn·자리수·구분자·문자)는 CODEF에 가지 않는다
+      const malformed = [
+        '5555555555554445',
+        '4242424242426',
+        '5555-5555-5555-4444',
+        `${CARD_NUMBER}x`,
+      ];
+      const bodies: unknown[] = [];
+      for (const loginCardNo of malformed) {
+        const res = await fetchAs(seed, '준용', {
+          organization: '0302',
+          loginCardNo,
+          encryptedCardPassword: CARD_PASSWORD_CIPHERTEXT,
+        }).expect(400);
+        expect(res.body.code).toBe('VALIDATION_FAILED');
+        bodies.push(res.body);
+      }
+      expect(http.calls.length).toBe(callsBefore);
+
+      // CODEF 카드번호 오류 → CARD_NUMBER_INVALID(연속 실패 1회)
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-13103', {}),
+      };
+      const cardNo = await fetchAs(seed, '준용', {
+        organization: '0313',
+        loginCardNo: CARD_NUMBER,
+        encryptedCardPassword: CARD_PASSWORD_CIPHERTEXT,
+      }).expect(400);
+      expect(cardNo.body).toMatchObject({
+        code: 'CARD_NUMBER_INVALID',
+        message: '카드번호를 다시 확인해 주세요',
+        details: { failedAttempts: 1 },
+      });
+
+      // 카드 비밀번호 오류 → CARD_PASSWORD_INVALID, 2회째는 바로 쿨다운(현대: 3회 오류면 계정 잠김)
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-13121', {}),
+      };
+      const hyundai = {
+        organization: '0302',
+        loginCardNo: CARD_NUMBER,
+        encryptedCardPassword: CARD_PASSWORD_CIPHERTEXT,
+      };
+      const first = await fetchAs(seed, '민지', hyundai).expect(400);
+      expect(first.body).toMatchObject({
+        code: 'CARD_PASSWORD_INVALID',
+        message: '카드 비밀번호를 다시 확인해 주세요',
+        details: { failedAttempts: 1 },
+      });
+      const second = await fetchAs(seed, '민지', hyundai).expect(429);
+      expect(second.body.code).toBe('CARD_IMPORT_LOGIN_COOLDOWN');
+      expect(second.body.details.retryAfterSec).toBeGreaterThan(1700);
+      // 쿨다운 중에는 CODEF에 가지 않는다
+      const callsAfter = http.calls.length;
+      const third = await fetchAs(seed, '민지', hyundai).expect(429);
+      expect(third.body.code).toBe('CARD_IMPORT_LOGIN_COOLDOWN');
+      expect(http.calls.length).toBe(callsAfter);
+
+      // CODEF 카드 비밀번호 횟수 초과 → 카드사에서 풀어야 함
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-13122', {}),
+      };
+      const exceeded = await fetchAs(seed, '준용', hyundai).expect(409);
+      expect(exceeded.body.code).toBe('CARD_ACCOUNT_ACTION_REQUIRED');
+
+      const everything =
+        JSON.stringify([bodies, cardNo.body, first.body, second.body]) +
+        logOutput;
+      for (const secret of [
+        ...malformed,
+        CARD_NUMBER,
+        CARD_PASSWORD_CIPHERTEXT,
+        LOGIN_ID,
+      ]) {
+        expect(everything).not.toContain(secret);
       }
     });
 

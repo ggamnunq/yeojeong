@@ -1,6 +1,6 @@
 # 카드 승인내역 불러오기 (`src/card-import`, S8)
 
-카드사 아이디·비밀번호로 개인 카드 승인내역을 CODEF에서 **한 번** 조회해 응답으로만 돌려주고, 사용자가 고른 건만 지갑에 저장한다(`POST /api/wallet/entries/import`, `src/wallet`).
+카드사 아이디·비밀번호(현대·하나는 + 카드번호·카드 비밀번호)로 개인 카드 승인내역을 CODEF에서 **한 번** 조회해 응답으로만 돌려주고, 사용자가 고른 건만 지갑에 저장한다(`POST /api/wallet/entries/import`, `src/wallet`).
 원칙: **우리 서버에는 개인정보를 남기지 않는다.** 토스 연동(`src/payment-methods`·`transactions`)과는 별개 모듈이다.
 
 ## 흐름
@@ -8,9 +8,9 @@
 ```
 화면                                  서버(card-import)                         CODEF
 GET  /api/card-import/config   ──▶  공개키·지문·카드사·기간·동의·남은 횟수
-(비밀번호를 공개키로 RSA PKCS#1 v1.5 암호화 — 브라우저)
+(비밀번호·카드 비밀번호를 공개키로 RSA PKCS#1 v1.5 암호화 — 브라우저, 공개키 지문 고정 경유)
 POST /api/consents (CARD_IMPORT, 최초 1회)
-POST /api/card-import/fetch    ──▶  잠금(동시 1건) → 한도 → 예산 ─────────▶  approval-list(아이디 + 암호문)
+POST /api/card-import/fetch    ──▶  잠금(동시 1건) → 한도 → 예산 ─────────▶  approval-list(아이디 + 암호문, 현대·하나 + loginCardNo·cardPassword)
                                ◀──  OK: 결과(무저장) + 항목별 itemToken  ◀──  CF-00000
                                ◀──  TWO_WAY_REQUIRED: twoWayToken(암호화) ◀──  CF-03002(문자 인증)
 POST /api/card-import/fetch(+twoWay {token, code}) ─▶ 같은 본문 + is2Way·twoWayInfo·smsAuthNo ─▶
@@ -29,7 +29,8 @@ POST /api/wallet/entries/import ─▶  itemToken 검증 → CARD_IMPORT 지갑 
 |---|---|---|
 | 카드사 아이디(`loginId`) | DB·로그·접근 기록·응답·에러 | 요청 지역 변수로 CODEF에만 전달. 로거 redaction(`common/logging/logger.ts` `SENSITIVE_BODY_KEYS`), 검증 에러는 값을 되돌리지 않는다(`validationError.value=false`), e2e로 확인 |
 | 비밀번호 | 서버는 원문을 받지 않는다. 암호문도 저장·로그 안 함 | 브라우저 암호화(`apps/web/src/features/card-import/crypto.ts`) |
-| 카드번호 전체·카드 비밀번호(현대·하나) | 1차는 받지 않는다(`CARD_NUMBER_LOGIN_ENABLED = false` — 두 카드사를 config에서 빼고 fetch는 400). 켜면 비밀번호와 같은 규칙 | `codef/codef.constants.ts` |
+| 카드번호 전체(현대·하나 `loginCardNo`) | DB·로그·접근 기록·응답·에러·loginRef·importKey·itemToken·추가 인증 토큰. **CODEF가 원문으로 받아(암호화 표시 없음) 우리 서버를 HTTPS로 거쳐 간다** — 요청 지역 변수로 CODEF에만 전달 | 형식 검증(숫자만 14~19자리 + Luhn, `@yeojeong/shared` `isValidCardNumber`)·검증 에러에 값 없음·마스킹 키(`loginCardNo`·`cardNo`·`cardNumber`), e2e로 응답·로그·DB 확인. PCI DSS 적용 범위 가능성은 법률 자문 L-25 |
+| 카드 비밀번호(현대 4자리·하나 앞 2자리) | 서버는 원문을 받지 않는다. 암호문(`encryptedCardPassword`)도 저장·로그 안 함 | 브라우저에서 비밀번호와 같은 공개키로 암호화(`apps/web/src/features/card-import/hooks.ts` `buildFetchRequest`), 서버는 모듈러스 길이만 검사 |
 | 조회 결과(가맹점·금액·승인번호·승인 일시) | DB·로그 | 응답으로만. 로그는 건수·결과 코드만 |
 | 승인번호 원문·카드번호(끝 4자리 포함)·카드 이름·가맹점 주소·사업자번호 | 응답에도 없다 | `approval-normalizer.ts`가 버린다. 중복 판정은 `importKey`(HMAC) |
 | connectedId | DB·로그 | direct는 만들지 않음. account는 지역 변수. **예외**: 삭제 3회 실패분만 암호화해 삭제 대기 큐(삭제 재시도에만 쓰고 조회에 쓰지 않음, 사용자 ID 없음) |
@@ -42,8 +43,8 @@ POST /api/wallet/entries/import ─▶  itemToken 검증 → CARD_IMPORT 지갑 
 
 | 메서드·경로 | 요청 | 응답 | 에러 |
 |---|---|---|---|
-| `GET /api/card-import/config` | — | `CardImportConfig { enabled, publicKey, publicKeyFingerprint, organizations[{code,name,maxRangeDays,maxLookbackDays,requiresCardNo}](7곳 — 현대·하나 제외), maxRangeDays: 92, maxLookbackDays: 365, defaultRange{from,to,basis,tripId}, consent, twoWayTimeoutSeconds: 160, remainingToday }` | 404(꺼짐) |
-| `POST /api/card-import/fetch` | `{ organization, loginId, encryptedPassword, from, to, loginCardNo?, encryptedCardPassword?, twoWay?: {token, code} }` | 200 `{status:'OK', organization, from, to, items: CardApprovalItem[]}` · 200 `{status:'TWO_WAY_REQUIRED', twoWayToken, method:'SMS', expiresAt}` | 400 `VALIDATION_FAILED`·`CARD_LOGIN_FAILED{failedAttempts}`·`CARD_TWO_WAY_INVALID`·`CARD_PASSWORD_ENCRYPTION_INVALID`, 403 `CONSENT_REQUIRED`·`CSRF_REJECTED`, 404, 409 `CARD_IMPORT_IN_PROGRESS`·`CARD_ACCOUNT_ACTION_REQUIRED`·`CARD_TWO_WAY_UNSUPPORTED`, 410 `CARD_TWO_WAY_EXPIRED`, 429 `CARD_IMPORT_RATE_LIMITED`·`CARD_IMPORT_LOGIN_COOLDOWN`(`details{retryAfter(ISO UTC), retryAfterSec}` + `Retry-After`), 502 `CARD_IMPORT_FAILED`, 503 `CARD_COMPANY_UNAVAILABLE`·`CARD_IMPORT_DAILY_LIMIT` |
+| `GET /api/card-import/config` | — | `CardImportConfig { enabled, publicKey, publicKeyFingerprint, organizations[{code,name,maxRangeDays,maxLookbackDays,requiresCardNo,cardPasswordDigits}](9곳, 화면 순서 — 현대 requiresCardNo·4자리, 하나 requiresCardNo·2자리), maxRangeDays: 92, maxLookbackDays: 365, defaultRange{from,to,basis,tripId}, consent, twoWayTimeoutSeconds: 160, remainingToday }` | 404(꺼짐) |
+| `POST /api/card-import/fetch` | `{ organization, loginId, encryptedPassword, from, to, loginCardNo?, encryptedCardPassword?, twoWay?: {token, code} }` | 200 `{status:'OK', organization, from, to, items: CardApprovalItem[]}` · 200 `{status:'TWO_WAY_REQUIRED', twoWayToken, method:'SMS', expiresAt}` | 400 `VALIDATION_FAILED`·`CARD_LOGIN_FAILED{failedAttempts}`·`CARD_NUMBER_INVALID{failedAttempts}`·`CARD_PASSWORD_INVALID{failedAttempts}`·`CARD_TWO_WAY_INVALID`·`CARD_PASSWORD_ENCRYPTION_INVALID`, 403 `CONSENT_REQUIRED`·`CSRF_REJECTED`, 404, 409 `CARD_IMPORT_IN_PROGRESS`·`CARD_ACCOUNT_ACTION_REQUIRED`·`CARD_TWO_WAY_UNSUPPORTED`, 410 `CARD_TWO_WAY_EXPIRED`, 429 `CARD_IMPORT_RATE_LIMITED`·`CARD_IMPORT_LOGIN_COOLDOWN`(`details{retryAfter(ISO UTC), retryAfterSec}` + `Retry-After`), 502 `CARD_IMPORT_FAILED`, 503 `CARD_COMPANY_UNAVAILABLE`·`CARD_IMPORT_DAILY_LIMIT` |
 | `POST /api/wallet/entries/import` | `{ items: [{importKey, itemToken, occurredAt, amount, currency, merchantName, krwAmount, tripId?}] }`(1~200) | 201 `{ items[{importKey, created, entry: WalletEntry}], created, skipped, linked }` | 400 `VALIDATION_FAILED`, 403, 404, 410 `CARD_IMPORT_RESULT_EXPIRED{invalidIndexes}`, 503 `FX_RATE_UNAVAILABLE` |
 | `GET /api/consents/status?stage=CARD_IMPORT` · `POST /api/consents {stage:'CARD_IMPORT', screen:'HF-51'}` | 기존 동의 API | `ConsentStatusResponse` | 동의 ID별 게이트: FIN_* = accountLink, CARD_IMPORT = 이 사용자의 cardImport(꺼지면 404) |
 | `GET /api/consents/revocable` | — | `RevocableConsent[] {consentId, title, version, agreedAt, docUrl}` | 플래그와 무관 |
@@ -63,7 +64,9 @@ POST /api/wallet/entries/import ─▶  itemToken 검증 → CARD_IMPORT 지갑 
 ## 입력 검사
 
 - 암호문(`encryptedPassword`·`encryptedCardPassword`)은 base64를 풀었을 때 **공개키 모듈러스 길이(2048비트 = 256바이트)**와 같을 때만 받는다(평문·다른 키로 만든 값 거절). 공개키가 RSA SPKI가 아니면 부팅을 멈춘다.
-- `loginCardNo`·`encryptedCardPassword`는 그 카드사가 요구하고(`requiresCardNo`) `CARD_NUMBER_LOGIN_ENABLED`일 때만 받는다. 아니면 400.
+- `loginCardNo`·`encryptedCardPassword`는 그 카드사가 요구하고(`requiresCardNo`) `CARD_NUMBER_LOGIN_ENABLED`일 때만 받는다(둘 다 필요). 아니면 400(`loginCardNo` notAllowed·required).
+- `loginCardNo`는 숫자만 14~19자리 + Luhn(62로 시작하는 은련 카드는 Luhn 제외 — 비준수 번호가 발급돼 있다). 공백·하이픈은 화면이 빼고 보낸다. 틀리면 400(`loginCardNo` cardNumber). 에러에는 값을 넣지 않는다.
+- account 모드에서 현대·하나는 승인내역 요청에 `loginCardNo`·`cardPassword`를 함께 넣는다(계정 등록 본문에는 넣지 않는다 — CODEF 문서로 확인하지 못해 운영 direct 기본을 유지한다).
 - CODEF 응답 본문은 5MB까지만 읽는다(넘으면 `CARD_IMPORT_FAILED`).
 
 ## 로그 마스킹
@@ -76,7 +79,7 @@ pino `redact` 경로 목록에 더해 `common/logging/mask.ts`가 **키 이름�
 |---|---|---|---|
 | 사용자당 동시 1건 | 조회 요청 동안(최대 3분) | `card_import_locks`(user_id, expires_at) | 409 `CARD_IMPORT_IN_PROGRESS` |
 | 사용자 횟수 | 10분 3회, KST 하루 10회. 새 조회만 센다(추가 인증 이어가기·우리 서버가 거절한 요청은 안 셈, CODEF까지 간 실패는 셈). **잠금 안에서 CODEF 호출 전에** START 기록을 쓰고, 기록 실패면 조회하지 않는다(fail closed). 결과(건수·결과 코드)는 끝난 뒤 같은 행에 채운다(실패하면 결과를 돌려주지 않는다) | 접근 기록 `FETCH_CARD_APPROVALS` `details.step = START` | 429 `CARD_IMPORT_RATE_LIMITED` |
-| 로그인 연속 실패 | 같은 사용자·기관 30분 안 3회째 실패 응답부터 30분 | `card_import_login_failures`(user_id, organization, failures, last_failed_at) | 400 `CARD_LOGIN_FAILED{failedAttempts}` → 429 `CARD_IMPORT_LOGIN_COOLDOWN` |
+| 로그인 연속 실패 | 같은 사용자·기관 30분 안 3회째 실패 응답부터 30분. 카드번호 오류도 같이 센다. **카드 비밀번호 오류는 2회째부터** 쿨다운(현대: 카드 비밀번호 3회 오류면 계정 잠김) | `card_import_login_failures`(user_id, organization, failures, last_failed_at) | 400 `CARD_LOGIN_FAILED`·`CARD_NUMBER_INVALID`·`CARD_PASSWORD_INVALID` `{failedAttempts}` → 429 `CARD_IMPORT_LOGIN_COOLDOWN` |
 | 서비스 일일 CODEF 예산 | `CODEF_DAILY_CALL_BUDGET`(기본 100). 새 조회마다 4(조회 1 + 이어가기 3, 또는 등록 1 + 조회 1)를 **원자적으로 예약**(`INSERT … ON CONFLICT DO UPDATE … WHERE calls + 4 <= budget RETURNING`)하고, 끝나면 쓰지 않은 만큼 돌려준다. 이어가기는 예약 범위에서 1씩 쓴다. 계정 삭제는 예약과 무관하게 늘 보내고 따로 센다 | `codef_daily_usage`(day, calls), 이어가기 `card_import_two_way_sessions.calls_left` | 503 `CARD_IMPORT_DAILY_LIMIT` |
 | remainingToday | min(10 − 오늘 시작한 조회 수, floor(남은 예산 / 4)) | — | config |
 | OAuth 토큰 | 메모리 캐시(1주일 유효, 만료 1시간 전 재발급) | — | — |
@@ -88,7 +91,9 @@ pino `redact` 경로 목록에 더해 `common/logging/mask.ts`가 **키 이름�
 | CODEF | 뜻 | 우리 코드 |
 |---|---|---|
 | CF-12800·12801·12803·12861·12877·12899 | 아이디·비밀번호 오류, 로그인 실패 | `CARD_LOGIN_FAILED`(400) |
-| CF-12802·12834·12207·12830·12833·12108 | 비밀번호 오류 횟수 초과·잠김·반복 로그인 제한·1일 횟수 초과·재설정·카드 소지 확인 | `CARD_ACCOUNT_ACTION_REQUIRED`(409) |
+| CF-13100·13101·13102·13103·13104 | 카드번호 미입력·일치하는 카드 없음·관련 오류·잘못 입력·형식 오류(현대·하나) | `CARD_NUMBER_INVALID`(400, 연속 실패로 센다) |
+| CF-13120·13121·13123·13124·13125 | 카드 비밀번호 미입력·오류·형식·자릿수·관련 오류 | `CARD_PASSWORD_INVALID`(400, 2회째 쿨다운) |
+| CF-12802·12834·12207·12830·12833·12108·13122 | 비밀번호 오류 횟수 초과·잠김·반복 로그인 제한·1일 횟수 초과·재설정·카드 소지 확인·카드 비밀번호 오류 횟수 초과 | `CARD_ACCOUNT_ACTION_REQUIRED`(409) |
 | CF-12041·12003·12100·12101·12104·12106·12202 | 이용 시간 아님(점검)·기관 오류·접속 폭주·일시 제한·통신 시간 초과 | `CARD_COMPANY_UNAVAILABLE`(503) |
 | CF-12001·03003·12102 | 입력 시간 초과·2-way 정보 불일치·추가 인증 취소 | `CARD_TWO_WAY_EXPIRED`(410) |
 | CF-12872 | 인증 미완료 | `CARD_TWO_WAY_INVALID`(400) |
@@ -118,5 +123,6 @@ CODEF가 준 메시지는 화면에 넘기지 않는다. 로그는 경로·결�
 - 경로: `/v1/account/create`·`/v1/account/delete`(EasyCodefConstant), 승인내역 `/v1/kr/card/p/account/approval-list`(KR_CD_P_002).
 - 비밀번호: RSA PKCS#1 v1.5, base64 — easycodefpy `util.py`(`PKCS1_v1_5`), codef-node(`RSA_PKCS1_PADDING`, SPKI 공개키).
 - 기관 코드·카드사별 기간: KR_CD_P_002 입력부 안내, CODEF "파라미터 상세보기" 시트(`codef/codef.constants.ts` 주석).
+- 현대·하나 카드번호 로그인(2026-10-30 확인, `codef/codef.constants.ts` 주석): `loginCardNo` = 카드번호(원문, RSA 표시 없음, 예시 숫자 16자리 하이픈 없음), `cardPassword` = RSA 암호화 카드 비밀번호 — 현대 4자리, 하나 앞 2자리. 둘 다 아이디 로그인 필수. 현대는 카드 비밀번호 3회 오류 시 계정 잠김(CF-12834), 미입력 CF-12401. 추가 인증 없음. 조회 기간 현대 최근 3개월, 하나 최근 18개월(3개월 단위). 출처: `admin.codef.io/dev-guide-menu/api-input-param/KR_CD_P_002?mode=real`·`menu-detail/KR_CD_P_002?mode=real`(inputNote)·`sample/KR_CD_P_002/in?mode=real`, "파라미터 상세보기" 시트 history(2025-10-30 현대 추가, 2026-10-08 하나 추가)·[로그인] 탭, 에러 목록 `errCode-list/0/2000`.
 - 추가 인증: CF-03002 + `data.method`·`jobIndex`·`threadIndex`·`jti`·`twoWayTimestamp`, 이어가기 = 원래 파라미터 + `is2Way`·`twoWayInfo` + 인증값(add-auth 가이드, easycodef-node `TwoWayProductTest.js`). 이 상품은 문자(`smsAuthNo`)뿐, 2-way 타임아웃 170초. 샌드박스는 추가 인증을 지원하지 않는다.
 - 샌드박스: 입력과 무관한 고정 응답(값 마스킹) — 테스트 fixture `test/fixtures/codef-approvals.ts`. 테스트는 실제 네트워크를 쓰지 않는다(`test/fakes/codef-http.ts`).

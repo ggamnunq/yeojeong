@@ -49,6 +49,7 @@ export class CardImportController {
     summary: '카드 승인내역 조회(저장하지 않음)',
     description:
       '카드사 아이디 + RSA로 암호화한 비밀번호로 CODEF에서 한 번 조회해 응답으로만 돌려준다. 로그인 정보·결과는 서버에 남지 않는다. ' +
+      '현대·하나(requiresCardNo)는 카드번호 전체(loginCardNo, 원문)와 RSA로 암호화한 카드 비밀번호(encryptedCardPassword)를 더 보낸다. ' +
       '추가 인증이 필요하면 status TWO_WAY_REQUIRED + twoWayToken → 같은 본문에 twoWay {token, code}를 더해 다시 보낸다. ' +
       '사용자당 10분 5회(추가 인증 이어가기는 세지 않는다). CARD_IMPORT 동의가 없으면 403 CONSENT_REQUIRED.',
   })
@@ -57,6 +58,8 @@ export class CardImportController {
     400,
     'VALIDATION_FAILED',
     'CARD_LOGIN_FAILED',
+    'CARD_NUMBER_INVALID',
+    'CARD_PASSWORD_INVALID',
     'CARD_TWO_WAY_INVALID',
     'CARD_PASSWORD_ENCRYPTION_INVALID',
   )
@@ -67,7 +70,12 @@ export class CardImportController {
     'CARD_TWO_WAY_UNSUPPORTED',
   )
   @ApiErrorResponse(410, 'CARD_TWO_WAY_EXPIRED')
-  @ApiErrorResponse(429, 'CARD_IMPORT_RATE_LIMITED', 'RATE_LIMITED')
+  @ApiErrorResponse(
+    429,
+    'CARD_IMPORT_RATE_LIMITED',
+    'CARD_IMPORT_LOGIN_COOLDOWN',
+    'RATE_LIMITED',
+  )
   @ApiErrorResponse(502, 'CARD_IMPORT_FAILED')
   @ApiErrorResponse(503, 'CARD_COMPANY_UNAVAILABLE')
   // 사용자당 10분 5회는 서비스가 접근 기록으로 센다(인스턴스 여럿이어도 같은 기준). IP 기본 제한(분당 120회)은 전역

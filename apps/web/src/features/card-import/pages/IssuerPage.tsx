@@ -9,10 +9,10 @@ import { toast } from '../../../notifications'
 import { COPY } from '../copy'
 import { useFlowNav } from '../flow'
 import { useCardImportConfig } from '../hooks'
-import { orgMark } from '../rules'
+import { orgMark, visibleOrganizations } from '../rules'
 
 /**
- * WF-52 카드사 선택: 세로 목록(서버 응답 순서, 7곳). 행 = 중성 마크 40(회색 원 + 이니셜) + 이름 + ›, 행 간격 8.
+ * WF-52 카드사 선택: 세로 목록(서버 응답 순서, 9곳 — 카드번호 입력칸 전에는 현대·하나를 뺀 7곳, visibleOrganizations). 행 = 중성 마크 40(회색 원 + 이니셜) + 이름 + ›, 행 간격 8.
  * 공식 로고·브랜드색은 쓰지 않는다. 탭 즉시 WF-53. config를 못 받으면 Toast + WF-51
  */
 export default function IssuerPage() {
@@ -29,7 +29,7 @@ export default function IssuerPage() {
     <ShellSub header={{ title: COPY.issuerTitle, onBack: () => flow.go(paths.walletImport()) }} gutter={false}>
       {config.data ? (
         <ul className="flex flex-col gap-2">
-          {config.data.organizations.map((org) => (
+          {visibleOrganizations(config.data.organizations).map((org) => (
             <li key={org.code}>
               <button
                 type="button"

@@ -26,6 +26,7 @@ import {
   CARD_IMPORT_ORGANIZATIONS,
   CARD_NUMBER_LOGIN_ENABLED,
   CODEF_PATHS,
+  mapCodefError,
   organizationOf,
 } from './codef/codef.constants.js';
 import { TwoWayTokenSealer } from './two-way-token.js';
@@ -42,6 +43,11 @@ const BUDGET_DAY = new Date('2026-11-13T00:00:00Z');
 const LOGIN_ID = 'my-card-login-id';
 /** 모듈러스와 같은 256바이트 암호문(모양만) */
 const CIPHERTEXT = randomBytes(256).toString('base64');
+/** 카드 비밀번호 암호문(모양만, 256바이트) */
+const CARD_CIPHERTEXT = randomBytes(256).toString('base64');
+/** Luhn이 맞는 테스트 카드번호(Mastercard 테스트 번호) · 검사 숫자만 틀린 번호 */
+const PAN = '5555555555554444';
+const BAD_LUHN = '5555555555554445';
 
 function setup(
   routes: Record<string, CodefRoute>,
@@ -96,12 +102,13 @@ function setup(
     }),
     closeTwoWay: vi.fn().mockResolvedValue(undefined),
     recordCodefCall: vi.fn().mockResolvedValue(undefined),
-    loginFailed: vi.fn(() =>
-      Promise.reject(
-        AppException.of('CARD_LOGIN_FAILED', {
-          details: { failedAttempts: 1 },
-        }),
-      ),
+    loginFailed: vi.fn(
+      (_user: string, _org: string, _now: Date, code = 'CARD_LOGIN_FAILED') =>
+        Promise.reject(
+          AppException.of(code as 'CARD_LOGIN_FAILED', {
+            details: { failedAttempts: 1 },
+          }),
+        ),
     ),
   };
   const remover = new CodefAccountRemover(client, prisma as never, env);
@@ -403,7 +410,12 @@ describe('CardImportService.fetch (direct)', () => {
       code: 'CARD_LOGIN_FAILED',
       details: { failedAttempts: 1 },
     });
-    expect(limits.loginFailed).toHaveBeenCalledWith(USER, '0306', NOW);
+    expect(limits.loginFailed).toHaveBeenCalledWith(
+      USER,
+      '0306',
+      NOW,
+      'CARD_LOGIN_FAILED',
+    );
     expect(release).toHaveBeenCalledTimes(1);
     expect(http.calls).toHaveLength(1);
   });
@@ -424,36 +436,205 @@ describe('CardImportService.fetch (direct)', () => {
     expect(limits.reserveFetch).not.toHaveBeenCalled();
   });
 
-  it('rejects Hyundai and Hana while card-number login is disabled', async () => {
+  it('offers all 9 card companies in screen order, Hyundai·Hana with card login rules (S8c)', () => {
+    expect(CARD_NUMBER_LOGIN_ENABLED).toBe(true);
+    expect(
+      CARD_IMPORT_ORGANIZATIONS.map((o) => [
+        o.code,
+        o.requiresCardNo,
+        o.cardPasswordDigits,
+      ]),
+    ).toEqual([
+      ['0301', false, null],
+      ['0302', true, 4],
+      ['0303', false, null],
+      ['0304', false, null],
+      ['0305', false, null],
+      ['0306', false, null],
+      ['0309', false, null],
+      ['0311', false, null],
+      ['0313', true, 2],
+    ]);
+    // 현대 최근 3개월(1회 90일) · 하나 최근 18개월(1회 3개월 → 우리 상한 365일)
+    expect(organizationOf('0302')).toMatchObject({
+      maxRangeDays: 90,
+      maxLookbackDays: 90,
+    });
+    expect(organizationOf('0313')).toMatchObject({
+      maxRangeDays: 90,
+      maxLookbackDays: 365,
+    });
+  });
+
+  it('sends the card number and the encrypted card password only for Hyundai·Hana, keeping them out of keys, tokens and results (S8c)', async () => {
     const { service, http } = setup({
+      [CODEF_PATHS.CARD_APPROVAL_LIST]: () =>
+        codefResult('CF-00000', [DOC_SAMPLE_ROW]),
+    });
+    const hashed: string[] = [];
+    const hasher = (service as unknown as { importKeys: ImportKeyHasher })
+      .importKeys;
+    const original = hasher.hash.bind(hasher);
+    vi.spyOn(hasher, 'hash').mockImplementation((material: string) => {
+      hashed.push(material);
+      return original(material);
+    });
+    for (const organization of ['0302', '0313']) {
+      const res = await service.fetch(
+        USER,
+        request({
+          organization,
+          from: '2026-11-12',
+          loginCardNo: PAN,
+          encryptedCardPassword: CARD_CIPHERTEXT,
+        }),
+        NOW,
+      );
+      expect(res.status).toBe('OK');
+      expect(http.calls.at(-1)?.body).toMatchObject({
+        organization,
+        loginType: '1',
+        id: LOGIN_ID,
+        password: CIPHERTEXT,
+        loginCardNo: PAN,
+        cardPassword: CARD_CIPHERTEXT,
+      });
+      // 응답(결과·itemToken)에 카드번호·카드 비밀번호 암호문이 없다
+      expect(JSON.stringify(res)).not.toContain(PAN);
+      expect(JSON.stringify(res)).not.toContain(CARD_CIPHERTEXT);
+    }
+    // loginRef·importKey 재료에 카드번호가 없다(itemToken은 importKey·결과 값으로만 서명한다)
+    expect(hashed.length).toBeGreaterThan(0);
+    for (const material of hashed) {
+      expect(material).not.toContain(PAN);
+      expect(material).not.toContain(PAN.slice(-4));
+    }
+    // 다른 카드사 요청 본문에는 카드 필드가 없다
+    await service.fetch(USER, request(), NOW);
+    expect(http.calls.at(-1)?.body).not.toHaveProperty('loginCardNo');
+    expect(http.calls.at(-1)?.body).not.toHaveProperty('cardPassword');
+  });
+
+  it('rejects Hyundai·Hana without card fields, card fields for other companies and malformed card numbers without echoing them (S8c)', async () => {
+    const { service, http, limits } = setup({
       [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-00000', []),
     });
-    expect(CARD_NUMBER_LOGIN_ENABLED).toBe(false);
-    expect(CARD_IMPORT_ORGANIZATIONS.map((o) => o.code)).toEqual([
-      '0301',
-      '0303',
-      '0304',
-      '0305',
-      '0306',
-      '0309',
-      '0311',
-    ]);
-    for (const organization of ['0302', '0313']) {
-      expect(
-        await codeOf(
-          service.fetch(
-            USER,
-            request({
-              organization,
-              loginCardNo: '9410123412341934',
-              encryptedCardPassword: 'Q0FSRFBBU1NXT1JELUNJUEhFUg==',
-            }),
-            NOW,
-          ),
-        ),
-      ).toBe('VALIDATION_FAILED');
+    const cases: [Partial<FetchCardApprovalsRequest>, string][] = [
+      [{ organization: '0302' }, 'required'],
+      [{ organization: '0313', loginCardNo: PAN }, 'required'],
+      [
+        { organization: '0302', encryptedCardPassword: CARD_CIPHERTEXT },
+        'required',
+      ],
+      [
+        {
+          organization: '0306',
+          loginCardNo: PAN,
+          encryptedCardPassword: CARD_CIPHERTEXT,
+        },
+        'notAllowed',
+      ],
+      [
+        { organization: '0301', encryptedCardPassword: CARD_CIPHERTEXT },
+        'notAllowed',
+      ],
+      // Luhn 오류 · 13자리 · 20자리
+      [
+        {
+          organization: '0302',
+          loginCardNo: BAD_LUHN,
+          encryptedCardPassword: CARD_CIPHERTEXT,
+        },
+        'cardNumber',
+      ],
+      [
+        {
+          organization: '0313',
+          loginCardNo: '4242424242426',
+          encryptedCardPassword: CARD_CIPHERTEXT,
+        },
+        'cardNumber',
+      ],
+      [
+        {
+          organization: '0313',
+          loginCardNo: `${PAN}0000`,
+          encryptedCardPassword: CARD_CIPHERTEXT,
+        },
+        'cardNumber',
+      ],
+      // 카드 비밀번호 암호문이 모듈러스 길이가 아니다(평문 "1234"를 base64로 보낸 경우)
+      [
+        {
+          organization: '0302',
+          loginCardNo: PAN,
+          encryptedCardPassword: Buffer.from('1234').toString('base64'),
+        },
+        'ciphertext',
+      ],
+    ];
+    for (const [over, code] of cases) {
+      const error = (await service
+        .fetch(USER, request(over), NOW)
+        .catch((e: unknown) => e)) as AppException;
+      expect(error.code).toBe('VALIDATION_FAILED');
+      const fields = (
+        error.details as { fields: { path: string; code: string }[] }
+      ).fields;
+      expect(fields.map((f) => f.code)).toContain(code);
+      const text = JSON.stringify([error, error.message, error.details]);
+      for (const value of [PAN, BAD_LUHN, '4242424242426', CARD_CIPHERTEXT]) {
+        expect(text).not.toContain(value);
+      }
     }
     expect(http.calls).toHaveLength(0);
+    expect(limits.acquire).not.toHaveBeenCalled();
+  });
+
+  it('maps CODEF card number and card password errors and counts them as login failures (S8c)', async () => {
+    expect(
+      ['CF-13100', 'CF-13101', 'CF-13102', 'CF-13103', 'CF-13104'].map(
+        mapCodefError,
+      ),
+    ).toEqual(Array(5).fill('CARD_NUMBER_INVALID'));
+    expect(
+      ['CF-13120', 'CF-13121', 'CF-13123', 'CF-13124', 'CF-13125'].map(
+        mapCodefError,
+      ),
+    ).toEqual(Array(5).fill('CARD_PASSWORD_INVALID'));
+    expect(mapCodefError('CF-13122')).toBe('CARD_ACCOUNT_ACTION_REQUIRED');
+    expect(mapCodefError('CF-12834')).toBe('CARD_ACCOUNT_ACTION_REQUIRED');
+
+    for (const [codefCode, ours] of [
+      ['CF-13103', 'CARD_NUMBER_INVALID'],
+      ['CF-13121', 'CARD_PASSWORD_INVALID'],
+    ] as const) {
+      const { service, limits, release } = setup({
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult(codefCode, {}),
+      });
+      const error = (await service
+        .fetch(
+          USER,
+          request({
+            organization: '0302',
+            from: '2026-11-12',
+            loginCardNo: PAN,
+            encryptedCardPassword: CARD_CIPHERTEXT,
+          }),
+          NOW,
+        )
+        .catch((e: unknown) => e)) as AppException;
+      expect(error.code).toBe(ours);
+      expect(JSON.stringify([error, error.details])).not.toContain(PAN);
+      expect(limits.loginFailed).toHaveBeenCalledWith(USER, '0302', NOW, ours);
+      expect(limits.finishAttempt).toHaveBeenCalledWith('attempt-log-id', {
+        organization: '0302',
+        count: 0,
+        result: ours,
+        step: 'START',
+      });
+      expect(release).toHaveBeenCalledTimes(1);
+    }
   });
 
   it('rejects ciphertexts that are not exactly the key modulus long and stray card fields (L2·L8)', async () => {

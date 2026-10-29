@@ -14,6 +14,7 @@ import {
   type FetchCardApprovalsRequest,
   type FetchCardApprovalsResponse,
   type FieldError,
+  isValidCardNumber,
 } from '@yeojeong/shared';
 import { ConsentChecker } from '../common/auth/index.js';
 import { AppException, ValidationFailedError } from '../common/errors/index.js';
@@ -331,8 +332,13 @@ export class CardImportService {
           session !== null &&
           session.attempts < TWO_WAY_MAX_ATTEMPTS &&
           session.callsLeft > 0;
-        if (mapped === 'CARD_LOGIN_FAILED') {
-          await this.limits.loginFailed(userId, org.code, now);
+        // 아이디·비밀번호·카드번호·카드 비밀번호 오류는 같은 연속 실패로 센다(카드사 계정·카드 잠김 예방)
+        if (
+          mapped === 'CARD_LOGIN_FAILED' ||
+          mapped === 'CARD_NUMBER_INVALID' ||
+          mapped === 'CARD_PASSWORD_INVALID'
+        ) {
+          await this.limits.loginFailed(userId, org.code, now, mapped);
         }
         throw AppException.of(mapped);
       }
@@ -401,6 +407,7 @@ export class CardImportService {
 
   /**
    * 카드번호 로그인 필드: 지금 받는 카드사가 그것을 요구할 때만(현대·하나, CARD_NUMBER_LOGIN_ENABLED) 받는다. 아니면 400.
+   * 카드번호는 숫자 14~19자리 + Luhn(isValidCardNumber)일 때만 받는다. 에러에는 값을 넣지 않는다(경로·코드·고정 문구만).
    * 암호문은 공개키 모듈러스 길이(2048비트 = 256바이트)와 같은 길이일 때만 받는다(평문·다른 키로 만든 값 거절)
    */
   private checkLoginFields(
@@ -421,6 +428,17 @@ export class CardImportService {
         path: 'loginCardNo',
         code: 'required',
         message: `${org.name}는 카드번호와 카드 비밀번호가 필요해요`,
+      });
+    }
+    if (
+      cardLogin &&
+      request.loginCardNo !== undefined &&
+      !isValidCardNumber(request.loginCardNo)
+    ) {
+      errors.push({
+        path: 'loginCardNo',
+        code: 'cardNumber',
+        message: '카드번호를 다시 확인해 주세요',
       });
     }
     const expected = this.codefConfig.modulusBytes;
@@ -459,7 +477,8 @@ export class CardImportService {
             id: request.loginId,
             password: request.encryptedPassword,
           }),
-      // 현대·하나 아이디 로그인: 카드번호 전체 + 카드 비밀번호(RSA) — KR_CD_P_002 입력부
+      // 현대·하나 아이디 로그인: 카드번호 전체(원문 — CODEF가 암호화 없이 받는다) + 카드 비밀번호(RSA) — KR_CD_P_002 입력부.
+      // 이 본문은 CODEF 호출에만 쓰고 로그·저장하지 않는다. 카드번호는 loginRef·importKey·itemToken 재료에도 넣지 않는다
       ...(request.loginCardNo && request.encryptedCardPassword
         ? {
             loginCardNo: request.loginCardNo,

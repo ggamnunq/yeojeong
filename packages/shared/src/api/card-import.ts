@@ -18,9 +18,11 @@ export const CARD_IMPORT_DEFAULT_RANGE_DAYS = 7;
 export const CARD_IMPORT_FETCH_LIMIT = { COUNT: 3, WINDOW_SECONDS: 600, DAILY: 10 } as const;
 /**
  * 같은 사용자·같은 카드사 로그인 연속 실패: WINDOW_SECONDS 안에 FAILURES회째 실패하면 그 응답부터 COOLDOWN_SECONDS 동안
- * 429 CARD_IMPORT_LOGIN_COOLDOWN { retryAfter(ISO), retryAfterSec }(카드사 계정 잠김 예방). 1·2회째는 400 CARD_LOGIN_FAILED { failedAttempts }
+ * 429 CARD_IMPORT_LOGIN_COOLDOWN { retryAfter(ISO), retryAfterSec }(카드사 계정 잠김 예방). 1·2회째는 400 CARD_LOGIN_FAILED { failedAttempts }.
+ * 카드번호 오류(CARD_NUMBER_INVALID)도 같은 횟수로 센다. 카드 비밀번호 오류(CARD_PASSWORD_INVALID)는 CARD_PASSWORD_FAILURES회째부터 바로 쿨다운이다 —
+ * 현대카드는 카드 비밀번호 3회 오류면 계정이 잠기고(KR_CD_P_002 현대카드 특이사항), 카드 비밀번호 오류 횟수는 다른 경로(ATM 등)와 합쳐질 수 있다
  */
-export const CARD_IMPORT_LOGIN_LIMIT = { FAILURES: 3, WINDOW_SECONDS: 1800, COOLDOWN_SECONDS: 1800 } as const;
+export const CARD_IMPORT_LOGIN_LIMIT = { FAILURES: 3, CARD_PASSWORD_FAILURES: 2, WINDOW_SECONDS: 1800, COOLDOWN_SECONDS: 1800 } as const;
 /** "비슷한 기록" 판정: 같은 통화·같은 금액의 직접 입력 지갑 항목이 승인 시각 ±N분 안에 있으면 similarManualEntryId */
 export const CARD_IMPORT_SIMILAR_WINDOW_MINUTES = 30;
 /** 한 번에 저장할 수 있는 최대 건수(POST /api/wallet/entries/import) */
@@ -41,11 +43,15 @@ export interface CardImportOrganization {
   /** 이 카드사가 조회할 수 있는 가장 오래된 날 = 오늘 - maxLookbackDays */
   maxLookbackDays: number;
   /**
-   * 아이디 로그인에 카드번호·카드 비밀번호가 더 필요한 카드사(현대·하나). true면 화면이 loginCardNo(카드번호 전체)와
-   * encryptedCardPassword(카드 비밀번호 앞 2자리를 비밀번호와 같은 방식으로 암호화)를 더 받는다.
-   * 1차는 이런 카드사를 config에 내리지 않는다(서버 CARD_NUMBER_LOGIN_ENABLED = false → 늘 false)
+   * 아이디 로그인에 카드번호·카드 비밀번호가 더 필요한 카드사(현대·하나). true면 화면이 loginCardNo(카드번호 전체, 숫자만)와
+   * encryptedCardPassword(카드 비밀번호 cardPasswordDigits자리를 비밀번호와 같은 방식으로 암호화)를 더 받는다. false인 카드사에 보내면 400
    */
   requiresCardNo: boolean;
+  /**
+   * requiresCardNo 카드사의 카드 비밀번호 자리수: 현대 4(전체), 하나 2(앞 2자리). 그 밖은 null.
+   * 출처: CODEF KR_CD_P_002 입력부 cardPassword("현대카드 아이디로그인(필수): 카드 비밀번호 4자리", "하나카드 아이디로그인(필수): 카드 비밀번호 앞 2자리")
+   */
+  cardPasswordDigits: number | null;
 }
 
 export const CARD_IMPORT_RANGE_BASIS_VALUES = ["ONGOING_TRIP", "RECENT_DAYS"] as const;
@@ -90,9 +96,12 @@ export interface CardImportRetryDetails extends Record<string, unknown> {
   retryAfterSec: number;
 }
 
-/** 400 CARD_LOGIN_FAILED의 details */
+/** 400 CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID의 details */
 export interface CardLoginFailedDetails extends Record<string, unknown> {
-  /** 같은 사용자·카드사의 최근 30분 연속 실패 수(1·2). 3회째는 CARD_IMPORT_LOGIN_COOLDOWN */
+  /**
+   * 같은 사용자·카드사의 최근 30분 연속 실패 수(로그인·카드번호·카드 비밀번호 실패를 함께 센다). 3회째는 CARD_IMPORT_LOGIN_COOLDOWN,
+   * 카드 비밀번호 실패는 2회째부터 CARD_IMPORT_LOGIN_COOLDOWN(CARD_IMPORT_LOGIN_LIMIT)
+   */
   failedAttempts: number;
 }
 
@@ -106,7 +115,7 @@ export interface CardImportTwoWayInput {
 
 /**
  * POST /api/card-import/fetch — 카드사 아이디·비밀번호로 개인 카드 승인내역을 한 번 조회한다(저장하지 않는다).
- * 추가 인증을 이어서 보낼 때도 같은 loginId·encryptedPassword·organization·from·to를 다시 보낸다(서버는 아무것도 기억하지 않는다)
+ * 추가 인증을 이어서 보낼 때도 같은 loginId·encryptedPassword(·loginCardNo·encryptedCardPassword)·organization·from·to를 다시 보낸다(서버는 아무것도 기억하지 않는다)
  */
 export interface FetchCardApprovalsRequest {
   /** CardImportOrganization.code */
@@ -119,9 +128,13 @@ export interface FetchCardApprovalsRequest {
   from: string;
   /** 조회 종료일 "YYYY-MM-DD"(KST, 오늘까지) */
   to: string;
-  /** requiresCardNo 카드사만: 카드번호 전체(숫자 14~16자리). 서버는 CODEF로 넘기기만 하고 저장·기록하지 않는다 */
+  /**
+   * requiresCardNo 카드사만: 카드번호 전체(숫자만 14~19자리, Luhn — isValidCardNumber. 공백·하이픈 없이).
+   * CODEF가 이 값은 암호화하지 않은 원문으로 받는다(KR_CD_P_002 loginCardNo — RSA 표시 없음, 예시 "6253123456780000").
+   * 서버는 이 요청 안에서 CODEF로 넘기기만 하고 저장·기록·응답하지 않는다
+   */
   loginCardNo?: string;
-  /** requiresCardNo 카드사만: 카드 비밀번호(앞 2자리)를 config.publicKey로 암호화한 base64 */
+  /** requiresCardNo 카드사만: 카드 비밀번호(cardPasswordDigits자리)를 config.publicKey로 RSA PKCS#1 v1.5 암호화한 base64 */
   encryptedCardPassword?: string;
   /** TWO_WAY_REQUIRED 뒤 이어서 보낼 때만 */
   twoWay?: CardImportTwoWayInput;

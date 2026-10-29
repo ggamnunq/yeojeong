@@ -1,6 +1,7 @@
 import type { CardApprovalItem } from '@yeojeong/shared'
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '../../api'
+import { CardLoginInputError } from './cardLogin'
 import { CardImportKeyPinError } from './crypto'
 import {
   classifyFetchError,
@@ -17,6 +18,7 @@ import {
   resultMeta,
   selectAllState,
   toggleAll,
+  visibleOrganizations,
 } from './rules'
 
 const BC = { code: '0305', name: 'BC카드', maxRangeDays: 60, maxLookbackDays: 270 }
@@ -175,5 +177,41 @@ describe('조회 실패 → 화면(L-0 표)', () => {
       message: '이보다 이전 내역은 불러올 수 없어요',
     })
     expect(classifyFetchError(apiError('VALIDATION_FAILED', 400, { fields: [{ path: 'loginId' }] }), now)).toEqual({ to: 'retry-toast' })
+  })
+})
+
+describe('현대·하나 카드번호 로그인(S8c)', () => {
+  const now = Date.parse('2026-11-13T06:30:00Z')
+  it('marks Hyundai and Hana and hides them until the card input screen exists', () => {
+    expect(orgMark({ code: '0302', name: '현대카드' })).toBe('현')
+    expect(orgMark({ code: '0313', name: '하나카드' })).toBe('하')
+    const orgs = [
+      { code: '0301', requiresCardNo: false },
+      { code: '0302', requiresCardNo: true },
+      { code: '0306', requiresCardNo: false },
+      { code: '0313', requiresCardNo: true },
+    ]
+    expect(visibleOrganizations(orgs).map((o) => o.code)).toEqual(['0301', '0306'])
+  })
+
+  it('maps card number and card password failures, local input errors and server format errors', () => {
+    expect(classifyFetchError(apiError('CARD_NUMBER_INVALID', 400, { failedAttempts: 1 }), now)).toEqual({
+      to: 'card-number-invalid',
+      attempts: 1,
+    })
+    expect(classifyFetchError(apiError('CARD_PASSWORD_INVALID', 400, { failedAttempts: 1 }), now)).toEqual({
+      to: 'card-password-invalid',
+      attempts: 1,
+    })
+    expect(classifyFetchError(new CardLoginInputError('cardNumber'), now)).toEqual({ to: 'card-number-invalid', attempts: 0 })
+    expect(classifyFetchError(new CardLoginInputError('cardPassword'), now)).toEqual({ to: 'card-password-invalid', attempts: 0 })
+    expect(
+      classifyFetchError(apiError('VALIDATION_FAILED', 400, { fields: [{ path: 'loginCardNo', code: 'cardNumber' }] }), now),
+    ).toEqual({ to: 'card-number-invalid', attempts: 0 })
+    // 암호문 길이 오류는 다시 시도
+    expect(
+      classifyFetchError(apiError('VALIDATION_FAILED', 400, { fields: [{ path: 'encryptedCardPassword', code: 'ciphertext' }] }), now),
+    ).toEqual({ to: 'retry-toast' })
+    expect(classifyFetchError(apiError('CARD_ACCOUNT_ACTION_REQUIRED', 409), now)).toEqual({ to: 'error', kind: 'action' })
   })
 })
