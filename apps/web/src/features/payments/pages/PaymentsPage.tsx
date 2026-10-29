@@ -1,11 +1,12 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
+import { clsx } from 'clsx'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { keys, type ExpenseListParams } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { useTripDetail } from '../../../app/trip'
-import { Callout } from '../../../ds'
+import { Callout, Icon } from '../../../ds'
 import { FinConsentSheet } from '../../auth/components/FinConsentSheet'
 import { paymentMethodsQuery } from '../../wallet/api'
 import { useManualSync } from '../../wallet/useManualSync'
@@ -124,10 +125,16 @@ export default function PaymentsPage() {
         setPullDistance(0)
       }}
     >
+      {/* 당겨서 새로고침 표시는 스피너만(글자 없음, 화면명세 0-6 v0.5.8). 당기는 만큼 돌고, 동기화 중이면 계속 돈다 */}
       {ongoing && (pullDistance > 0 || sync.isPending) && (
-        <p role="status" className="h-8 text-center text-caption text-tertiary">
-          {sync.isPending ? '새로고침 중' : pullDistance >= 56 ? '놓아서 새로고침' : '당겨서 새로고침'}
-        </p>
+        <div role="status" aria-label={sync.isPending ? '새로고침 중' : '당겨서 새로고침'} className="flex h-10 items-center justify-center">
+          <span
+            className={clsx('grid', sync.isPending && 'animate-spin motion-reduce:animate-none')}
+            style={sync.isPending ? undefined : { transform: `rotate(${Math.round((pullDistance / 56) * 270)}deg)` }}
+          >
+            <Icon name="refresh" size={20} className={pullDistance >= 56 || sync.isPending ? 'text-icon-brand' : 'text-icon-subtle'} />
+          </span>
+        </div>
       )}
       {ongoing && trip.me.connectionExpired && (
         <div className="px-gutter pt-2">

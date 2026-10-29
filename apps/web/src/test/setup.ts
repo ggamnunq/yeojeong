@@ -16,6 +16,7 @@ afterEach(() => {
   connectPrompt.close()
   try {
     localStorage.clear()
+    sessionStorage.clear()
   } catch {
     // 저장소가 없는 환경
   }

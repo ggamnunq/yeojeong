@@ -88,8 +88,8 @@ function MeContent({ nickname, profileImageUrl }: { nickname: string; profileIma
           <span className="truncate text-body-m-strong text-primary">내 지갑</span>
           {counts !== null && <span className="truncate text-caption text-tertiary">{counts}</span>}
         </span>
-        {/* 연결 만료(WF-30). DS Tag에 만료 변형이 없어 중립 회색 칩(미확정과 같은 모양)에 문구만 바꾼다 */}
-        {methods.data?.hasExpiredConnection && <Tag type="pending" size="s" label="연결 만료" className="shrink-0" />}
+        {/* 연결 만료(WF-30): Tag Type=Warning(기본 문구 "연결 만료") */}
+        {methods.data?.hasExpiredConnection && <Tag type="warning" size="s" className="shrink-0" />}
         <Icon name="chevron-right" size={20} className="shrink-0 text-icon-subtle" />
       </Link>
 

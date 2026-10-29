@@ -86,8 +86,15 @@ const TIMELINE_TYPE = { SHARED: 'shared', PERSONAL: 'personal', PENDING: 'pendin
   TimelineItemType
 >
 
-// TimelineItem Position=First(v1.4 #24)가 코드에 없어 첫 노드 위 레일만 숨긴다(DS 추가 요청)
-const FIRST_NODE = '[&>span:nth-child(2)>span:first-child]:invisible'
+/**
+ * TimelineItem Position(DS v1.6): 첫 노드 first(위 레일 없음) · 마지막 last(아래 레일 없음) · 나머지 middle.
+ * 노드가 하나뿐이면 Figma에 위아래 모두 없는 변형이 없어 last로 그리고 위 레일만 숨긴다
+ */
+function nodePosition(index: number, count: number): { position: 'first' | 'middle' | 'last'; className?: string } {
+  if (count === 1) return { position: 'last', className: '[&>span:nth-child(2)>span:first-child]:invisible' }
+  if (index === 0) return { position: 'first' }
+  return { position: index === count - 1 ? 'last' : 'middle' }
+}
 
 export type TimelineViewProps = {
   query: ExpensesResult
@@ -125,8 +132,7 @@ export function TimelineView({ query, days, day, today, nowTime, onDayChange, on
                 <TimelineItem
                   style="plain"
                   type={TIMELINE_TYPE[item.status]}
-                  position={index === items.length - 1 && !showNow ? 'last' : 'middle'}
-                  className={index === 0 ? FIRST_NODE : undefined}
+                  {...nodePosition(index, items.length + (showNow ? 1 : 0))}
                   time={kst(item.occurredAt).time}
                   merchant={item.merchantName}
                   meta={<TimelineMeta item={item} />}
@@ -141,8 +147,7 @@ export function TimelineView({ query, days, day, today, nowTime, onDayChange, on
                 <TimelineItem
                   style="plain"
                   type="now"
-                  position="last"
-                  className={items.length === 0 ? FIRST_NODE : undefined}
+                  {...nodePosition(items.length, items.length + 1)}
                   time={nowTime}
                   merchant="지금"
                 />

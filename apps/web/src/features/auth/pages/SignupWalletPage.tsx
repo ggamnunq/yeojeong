@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react'
+import { Navigate } from 'react-router'
 import { paths } from '../../../app/paths'
+import { isSignupConnected, markSignupConnected, readSignupReturnTo, takeSignupReturnTo } from '../../../app/signupReturnTo'
 import { Icon, IllustLinking, ShellOnboarding, type IconName } from '../../../ds'
 import { FinConsentSheet } from '../components/FinConsentSheet'
 import { COPY } from '../copy'
@@ -13,12 +16,21 @@ const LABELS: { icon: IconName; label: string }[] = [
 export default function SignupWalletPage() {
   const { state, navigate, location } = useFlowState()
   const sheetOpen = state.finConsentSheet === true
+  // 연결을 마친 뒤(WF-08) 뒤로 가기로 왔으면 WF-08 「여정으로 가기」와 같은 곳으로(화면명세 WF-08 v0.5.8)
+  const [connectedExit] = useState(() => (isSignupConnected() ? (readSignupReturnTo() ?? paths.splash()) : null))
+  useEffect(() => {
+    if (!connectedExit) return
+    markSignupConnected(false)
+    takeSignupReturnTo()
+  }, [connectedExit])
 
-  // 연결·동의 없이 진입 라우팅(대부분 WF-09). 가입은 끝났으니 ‹도 같은 곳으로 간다
-  const leave = () => navigate(paths.splash(), { replace: true })
+  // 연결 없이 가입 끝: 로그인 전에 열려던 경로(공유 링크 등), 없으면 진입 라우팅(대부분 WF-09). 가입은 끝났으니 ‹도 같은 곳으로 간다
+  const leave = () => navigate(takeSignupReturnTo() ?? paths.splash(), { replace: true })
   // 시트는 history 항목 하나: 열 때 push(뒤로 가기 = 닫기), 전문을 보고 돌아와도 열린 채로 남는다
   const openSheet = () => navigate(`${location.pathname}${location.search}`, { state: { finConsentSheet: true } })
   const closeSheet = () => navigate(-1)
+
+  if (connectedExit) return <Navigate replace to={connectedExit} />
 
   return (
     <ShellOnboarding

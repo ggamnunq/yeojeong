@@ -55,7 +55,7 @@ describe('정산 요약(HF-25)', () => {
     await waitFor(() => expect(path(router)).toBe(`/trips/trip-jeju/settlement/${JEJU.minji}`))
   })
 
-  it('진행 중으로 판정되면(409) 여정을 다시 받아 그 단계의 탭으로', async () => {
+  it('진행 중으로 판정되면(409) 여정을 다시 받아 현황 탭으로(WF-25 딥링크 규칙)', async () => {
     server.use(
       http.get('/api/trips/:tripId/settlement', () => {
         db.trips.find((t) => t.tripId === TRIP.jeju)!.status = 'ONGOING'
@@ -63,7 +63,21 @@ describe('정산 요약(HF-25)', () => {
       }),
     )
     const { router } = renderApp('/trips/trip-jeju/settlement')
-    await waitFor(() => expect(path(router)).toBe('/trips/trip-jeju/payments'))
+    await waitFor(() => expect(path(router)).toBe('/trips/trip-jeju/stats'))
+  })
+
+  it('진행 중 여정에 /settlement로 바로 오면 정산 API를 부르기 전에 현황 탭으로 바꾼다(HF-25)', async () => {
+    let called = false
+    server.use(
+      http.get('/api/trips/:tripId/settlement', () => {
+        called = true
+        return mockError('TRIP_PHASE_INVALID')
+      }),
+    )
+    const { router } = renderApp('/trips/trip-osaka/settlement')
+    await waitFor(() => expect(path(router)).toBe('/trips/trip-osaka/stats'))
+    expect(router.state.historyAction).toBe('REPLACE')
+    expect(called).toBe(false)
   })
 })
 

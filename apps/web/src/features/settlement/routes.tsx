@@ -8,5 +8,12 @@ export const routes: AppRoute[] = [
     layout: 'trip-page',
     path: '/trips/:tripId/settlement/:membershipId',
     Component: lazy(() => import('./pages/SettlementMemberPage')),
+    // HF-26 위 결제 상세 시트(잠금 상세). 닫으면 HF-26 그대로(결제내역 탭으로 가지 않는다)
+    children: [
+      {
+        path: '/trips/:tripId/settlement/:membershipId/payments/:expenseId',
+        Component: lazy(() => import('../payments/pages/PaymentSheet')),
+      },
+    ],
   },
 ]

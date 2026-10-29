@@ -1,3 +1,4 @@
+import { TRIP_EDITABLE_FIELDS, type SupportedCurrency } from '@yeojeong/shared'
 import type {
   ConsentId,
   ExpenseListItem,
@@ -20,14 +21,38 @@ import { WITHDRAWN_NICKNAME } from '../app/person'
 
 export const MOCK_NOW = '2026-11-13T18:34:00+09:00'
 
+/** GET /api/currencies(서버 apps/api trips/currencies.ts와 같은 순서·이름: KRW 맨 앞) */
+const currency = (code: string, name: string, unitName: string, displayUnit = 1): SupportedCurrency => ({ code, name, unitName, displayUnit })
+export const SUPPORTED_CURRENCIES: readonly SupportedCurrency[] = [
+  currency('KRW', '대한민국 원', '원'),
+  currency('JPY', '일본 엔', '엔', 100),
+  currency('USD', '미국 달러', '달러'),
+  currency('EUR', '유로', '유로'),
+  currency('GBP', '영국 파운드', '파운드'),
+  currency('CNY', '중국 위안', '위안'),
+  currency('TWD', '대만 달러', '대만 달러'),
+  currency('HKD', '홍콩 달러', '홍콩 달러'),
+  currency('SGD', '싱가포르 달러', '싱가포르 달러'),
+  currency('AUD', '호주 달러', '호주 달러'),
+  currency('NZD', '뉴질랜드 달러', '뉴질랜드 달러'),
+  currency('CAD', '캐나다 달러', '캐나다 달러'),
+  currency('CHF', '스위스 프랑', '스위스 프랑'),
+  currency('THB', '태국 바트', '바트'),
+  currency('VND', '베트남 동', '동', 100),
+  currency('IDR', '인도네시아 루피아', '루피아', 100),
+  currency('PHP', '필리핀 페소', '페소'),
+  currency('MYR', '말레이시아 링깃', '링깃'),
+]
+
 export type MockUser = { id: string; nickname: string; profileImageUrl: string | null }
 
 export type MockTrip = {
   tripId: string
   groupId: string
   groupName: string
+  /** 자유 입력 장소(서버 S5). 옛 행만 countryCode가 있다 */
   placeLabel: string
-  countryCode: string
+  countryCode: string | null
   currency: string
   startDate: string
   endDate: string
@@ -125,7 +150,7 @@ const trips: MockTrip[] = [
     tripId: TRIP.osaka,
     groupId: 'group-osaka',
     groupName: '오사카 3박 4일',
-    placeLabel: '일본 오사카',
+    placeLabel: '오사카',
     countryCode: 'JP',
     currency: 'JPY',
     startDate: '2026-11-12',
@@ -262,6 +287,8 @@ const expenses: MockExpense[] = [
 
 export type MockDb = {
   session: 'AUTHENTICATED' | 'SIGNUP_REQUIRED' | 'ANONYMOUS'
+  /** 가입 대기(SIGNUP_REQUIRED)에 담긴 돌아갈 경로(서버 yj_signup 쿠키의 r). 로그인 시작 returnTo를 서버 규칙으로 거른 값 */
+  signupReturnTo: string | null
   /** 채우면 세션 응답에 재동의 필요 항목을 싣고 로그인 API는 403 CONSENT_REQUIRED를 준다 */
   consentRequired: ConsentId[] | null
   meUserId: string
@@ -277,6 +304,7 @@ export type MockDb = {
 export function createMockDb(): MockDb {
   return structuredClone({
     session: 'AUTHENTICATED',
+    signupReturnTo: null,
     consentRequired: null,
     meUserId: USER.junyong,
     lastViewedTripId: TRIP.osaka,
@@ -389,13 +417,8 @@ export function tripDetail(trip: MockTrip, viewerUserId = db.meUserId): TripDeta
   const hasExpired = db.paymentMethods.some((p) => p.userId === viewerUserId && p.status === 'EXPIRED')
   const leader = me.role === 'LEADER'
   const open = trip.status !== 'ENDED'
-  const editableFields = leader
-    ? trip.status === 'UPCOMING'
-      ? (['groupName', 'place', 'startDate', 'endDate', 'budgetKrw'] as const)
-      : trip.status === 'ONGOING'
-        ? (['groupName', 'budgetKrw', 'endDate'] as const)
-        : []
-    : []
+  // 서버와 같은 단계별 수정 항목(shared TRIP_EDITABLE_FIELDS — 시작 전에는 통화도)
+  const editableFields = leader ? TRIP_EDITABLE_FIELDS[trip.status] : []
   // 서버 startBlockReason과 같은 순서: 그룹장 → 시작 전 → 종료일이 지나지 않음
   const startBlockReason = !leader
     ? ('NOT_LEADER' as const)
@@ -433,7 +456,7 @@ export function tripDetail(trip: MockTrip, viewerUserId = db.meUserId): TripDeta
       .filter((e) => e.tripId === trip.tripId && e.actorUserId !== viewerUserId && !e.seenBy.includes(viewerUserId))
       .map(({ id, type, payload }) => ({ id, type, payload })),
     version: trip.version,
-    city: trip.placeLabel.split(' ').at(-1) ?? null,
+    city: null,
     todayDayIndex:
       trip.status === 'ONGOING' && today >= trip.startDate && today <= trip.endDate
         ? dateDiff(today, trip.startDate) + 1

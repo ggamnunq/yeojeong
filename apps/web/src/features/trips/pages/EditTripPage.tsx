@@ -73,6 +73,7 @@ function EditTripForm({ trip, today }: { trip: TripInfo; today: string }) {
       title="여정 수정"
       submitLabel="저장"
       initial={initial}
+      editableFields={editableFields}
       today={today}
       busy={update.isPending}
       serverErrors={serverErrors}

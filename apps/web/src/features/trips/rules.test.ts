@@ -9,10 +9,11 @@ import {
   formatRouteDate,
   formValuesOf,
   inviteInputChars,
-  isStartPeriodOver,
+  currencyLabel,
   isTripFormValid,
   periodError,
   periodLimits,
+  startAction,
   todayKst,
   tripHero,
   tripMetaLine,
@@ -85,10 +86,11 @@ describe('기간 검증(FR-201 · Q-29 추천안)', () => {
     expect(periodError({ startDate: '2026-11-12', endDate: '2026-11-16' }, ongoing, TODAY)).toBeNull()
   })
 
-  it('네 칸이 모두 유효해야 만들 수 있다', () => {
+  it('다섯 칸(그룹명 · 여행 장소 · 현지 통화 · 기간 · 예산)이 모두 유효해야 만들 수 있다', () => {
     const values: TripFormValues = {
       groupName: ' 오사카 3박 4일 ',
-      place: { countryCode: 'JP', city: '오사카', label: '일본 오사카' },
+      place: ' 오사카 ',
+      currency: 'JPY',
       startDate: '2026-11-20',
       endDate: '2026-11-23',
       budget: '1200000',
@@ -96,7 +98,11 @@ describe('기간 검증(FR-201 · Q-29 추천안)', () => {
     expect(isTripFormValid(values, create, TODAY)).toBe(true)
     expect(isTripFormValid(EMPTY_TRIP_FORM, create, TODAY)).toBe(false)
     expect(isTripFormValid({ ...values, groupName: '   ' }, create, TODAY)).toBe(false)
-    expect(isTripFormValid({ ...values, place: null }, create, TODAY)).toBe(false)
+    expect(isTripFormValid({ ...values, place: '   ' }, create, TODAY)).toBe(false)
+    expect(isTripFormValid({ ...values, place: '가'.repeat(41) }, create, TODAY)).toBe(false)
+    expect(isTripFormValid({ ...values, place: '가'.repeat(40) }, create, TODAY)).toBe(true)
+    // 통화는 기본값이 없다
+    expect(isTripFormValid({ ...values, currency: null }, create, TODAY)).toBe(false)
     expect(isTripFormValid({ ...values, budget: '' }, create, TODAY)).toBe(false)
     expect(isTripFormValid({ ...values, endDate: '2026-11-19' }, create, TODAY)).toBe(false)
   })
@@ -112,9 +118,29 @@ describe('수정 요청 본문', () => {
       budgetKrw: 1_500_000,
       version: 3,
     })
-    // 진행 중에는 장소·시작일을 보내지 않는다
-    const moved = { ...initial, place: { countryCode: 'JP', city: '교토', label: '일본 교토' }, startDate: '2026-11-11' }
+    // 진행 중 기본 항목에는 장소·통화·시작일이 없다
+    const moved = { ...initial, place: '교토', currency: 'USD', startDate: '2026-11-11' }
     expect(tripUpdateBody(initial, moved, editable, 3)).toBeNull()
+  })
+
+  it('장소는 { label }만(앞뒤 공백 제거), 통화는 editableFields에 있을 때만 보낸다', () => {
+    const initial = formValuesOf(detail(TRIP.busan))
+    const changed = { ...initial, place: ' 부산 해운대 ', currency: 'JPY' }
+    expect(tripUpdateBody(initial, changed, TRIP_EDITABLE_FIELDS.UPCOMING, 0)).toEqual({
+      place: { label: '부산 해운대' },
+      currency: 'JPY',
+      version: 0,
+    })
+    expect(tripUpdateBody(initial, changed, ['groupName', 'place'], 0)).toEqual({ place: { label: '부산 해운대' }, version: 0 })
+    // 공백만 바뀐 장소는 바뀐 것이 아니다
+    expect(tripUpdateBody(initial, { ...initial, place: ' 부산 ' }, TRIP_EDITABLE_FIELDS.UPCOMING, 0)).toBeNull()
+  })
+
+  it('통화 표시 "JPY · 일본 엔"(목록 전이면 코드만)', () => {
+    const list = [{ code: 'JPY', name: '일본 엔', unitName: '엔', displayUnit: 100 }]
+    expect(currencyLabel('JPY', list)).toBe('JPY · 일본 엔')
+    expect(currencyLabel('JPY', undefined)).toBe('JPY')
+    expect(currencyLabel(null, list)).toBeUndefined()
   })
 })
 
@@ -139,18 +165,23 @@ describe('권한·단계(spec README §5 · 기능명세 4-8)', () => {
     })
   })
 
-  it('시작 전 그룹장: 전 항목 수정·시작·삭제. 종료일이 지났으면 시작 불가(Q-26)', () => {
+  it('시작 전 그룹장: 전 항목 수정·시작·삭제. 종료일이 지났으면(서버 PERIOD_OVER) 「기간 수정」(Q-26)', () => {
     asLeader(TRIP.busan)
-    expect(tripPermissions(detail(TRIP.busan), TODAY)).toMatchObject({ canEdit: true, canStart: true, canDeleteGroup: true })
     const upcoming = detail(TRIP.busan)
-    const expired = {
-      ...upcoming,
-      startDate: '2026-11-01',
-      endDate: '2026-11-02',
-      permissions: { ...upcoming.permissions, canStart: false },
-    }
-    expect(isStartPeriodOver(expired, TODAY)).toBe(true)
-    expect(tripPermissions(expired, TODAY)).toMatchObject({ canStart: false, canDeleteGroup: true })
+    expect(tripPermissions(upcoming, TODAY)).toMatchObject({ canEdit: true, canStart: true, canDeleteGroup: true })
+    expect(startAction(upcoming)).toBe('start')
+    const expired = { ...upcoming, permissions: { ...upcoming.permissions, canStart: false, startBlockReason: 'PERIOD_OVER' as const } }
+    expect(startAction(expired)).toBe('edit-period')
+    // 기기 시계가 아니라 서버 값으로만 정한다: 날짜가 지나 보여도 서버가 시작 가능하다면 「여정 시작」
+    expect(startAction({ ...upcoming, endDate: '2026-11-01' } as typeof upcoming)).toBe('start')
+    // 과도기(필드 없음): 그룹장 · 시작 전 · canStart=false면 기간 경과로 본다
+    const legacy = { ...upcoming, permissions: { ...upcoming.permissions, canStart: false, startBlockReason: undefined } }
+    expect(startAction(legacy as unknown as typeof upcoming)).toBe('edit-period')
+  })
+
+  it('멤버 · 진행 중에는 시작 버튼 자체가 없다', () => {
+    expect(startAction(detail(TRIP.busan))).toBeNull()
+    expect(startAction(detail(TRIP.osaka))).toBeNull()
   })
 
   it('종료 후: 읽기 전용(수정·초대 없음)', () => {
@@ -178,7 +209,8 @@ describe('영웅 카드', () => {
     expect(tripHero(detail(TRIP.jeju), TODAY)).toEqual({ label: '종료', value: '2박 3일' })
   })
 
-  it('메타 한 줄 "일본 오사카 · 예산 ₩1,200,000"', () => {
-    expect(tripMetaLine(detail(TRIP.osaka))).toBe('일본 오사카 · 3박 4일 · 예산 ₩1,200,000')
+  it('메타 한 줄: 시작 전 "부산 · 1박 2일 · 예산 ₩600,000" · 진행 중 "오사카 · 예산 ₩1,200,000"', () => {
+    expect(tripMetaLine(detail(TRIP.busan))).toBe('부산 · 1박 2일 · 예산 ₩600,000')
+    expect(tripMetaLine(detail(TRIP.osaka))).toBe('오사카 · 예산 ₩1,200,000')
   })
 })

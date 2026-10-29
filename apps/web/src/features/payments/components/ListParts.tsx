@@ -1,6 +1,6 @@
 import { clsx } from 'clsx'
 import type { ReactNode } from 'react'
-import { Callout, Icon, SegmentedControl } from '../../../ds'
+import { Callout, Chip, DateHeader, Icon, SegmentedControl } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import type { PaymentsView } from '../types'
 
@@ -26,48 +26,36 @@ export function ControlRow({ pendingCount, filterOn, onToggleFilter, view, onVie
     <div className="flex items-center justify-between gap-3 px-5 pb-0.5">
       {pendingCount > 0 ? (
         filterOn ? (
-          <button
-            type="button"
-            aria-pressed
+          // 미확정만 보기 중: Chip Removable(선택 + 오른쪽 ✕). 누르면 필터를 푼다
+          <Chip
+            removable
+            selected
+            label={label}
             aria-label={`${label}, 미확정만 보기 해제`}
-            onClick={onToggleFilter}
-            className={clsx(
-              'flex h-9 min-w-0 items-center gap-1 rounded-full border border-focus bg-brand-subtle px-3 text-label-m text-brand',
-              focusRing,
-            )}
-          >
-            <span className="truncate">{label}</span>
-            <span aria-hidden>✕</span>
-          </button>
+            onChange={onToggleFilter}
+            className="min-w-0"
+          />
         ) : (
           <Callout tone="pending" style="inline" label={label} aria-pressed={false} onClick={onToggleFilter} />
         )
       ) : (
         <span />
       )}
-      {/* Figma SegmentedControl Size=S(176×40)는 코드에 없어 폭만 맞춘다(높이 44 그대로) */}
-      <div className="w-44 shrink-0">
-        <SegmentedControl
-          aria-label="보기"
-          labels={['리스트', '타임라인']}
-          selected={view === 'list' ? 'first' : 'second'}
-          onChange={(selected) => onViewChange(selected === 'first' ? 'list' : 'timeline')}
-        />
-      </div>
+      <SegmentedControl
+        size="s"
+        className="shrink-0"
+        aria-label="보기"
+        labels={['리스트', '타임라인']}
+        selected={view === 'list' ? 'first' : 'second'}
+        onChange={(selected) => onViewChange(selected === 'first' ? 'list' : 'timeline')}
+      />
     </div>
   )
 }
 
-/** DateHeader Style=Plain(v1.4 #23): 띠 없음 · Day 3차 글자 · 합계 없음(C-07). DS DateHeader는 bg/canvas 띠 + 보라 Day라 여기서 조합한다 */
+/** 날짜 헤더: DS DateHeader Style=Plain(띠 없음 · Day 3차 글자 · 합계 없음, C-07) */
 export function PlainDateHeader({ date, day }: { date: ReactNode; day: ReactNode }) {
-  return (
-    <div className="flex items-center gap-2 px-5 pt-4 pb-2">
-      <h3 className="flex min-w-0 items-center gap-2">
-        <span className="truncate text-label-m text-primary">{date}</span>
-        <span className="shrink-0 text-caption text-tertiary">{day}</span>
-      </h3>
-    </div>
-  )
+  return <DateHeader style="plain" date={date} day={day} />
 }
 
 /** 목록 맨 아래 "기간 외 결제 추가 ›" 진입 행(WF-45, bg/subtle · radius 16) */

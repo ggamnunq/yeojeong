@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId } from 'react'
-import { Navigate, useLocation, useNavigate, useParams } from 'react-router'
+import { Suspense, useEffect, useId } from 'react'
+import { Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router'
 import { isApiError, keys, type ExpenseListItem } from '../../../api'
 import { paths } from '../../../app/paths'
 import { useTripDetail } from '../../../app/trip'
@@ -11,7 +11,8 @@ import { CardsSkeleton, InlineError, SectionLabel } from '../ui'
 import { memberState, originalAmountText, paymentDateMeta, settlementText, toPerson, toPersonAt } from '../view'
 
 // WF-26·44 / HF-26 멤버별 결제 내역(Sub 셸, 내비 없음). 영웅 = 그 사람의 ±(받을 돈·보낼 돈) + 프사,
-// 공동 결제 n건(PaymentRow, 탭 → 결제 상세 시트), 개인 결제는 남이면 건수만 "비공개"(C-02), 본인이면 목록.
+// 공동 결제 n건(PaymentRow), 개인 결제는 남이면 건수만 "비공개"(C-02, 누를 수 없음), 본인이면 목록.
+// 공동 결제 행 · 본인 개인 결제 행 탭 → 이 화면 위 결제 상세 시트(하위 라우트 …/payments/:expenseId, v0.5.8). 닫으면 이 화면 그대로.
 export default function SettlementMemberPage() {
   const trip = useTripDetail()
   const { membershipId = '' } = useParams()
@@ -66,6 +67,10 @@ export default function SettlementMemberPage() {
       ) : (
         <MemberContent data={data} left={left} />
       )}
+      {/* 결제 상세 시트(잠금 상세). chunk를 받는 동안 이 화면을 스켈레톤으로 바꾸지 않게 안쪽에서 받는다 */}
+      <Suspense fallback={null}>
+        <Outlet />
+      </Suspense>
     </ShellSub>
   )
 }
@@ -141,10 +146,11 @@ function MemberContent({ data, left }: { data: SettlementMemberExpenses; left: b
   )
 }
 
-/** 결제 행 목록. 공동 = 부담 인원 스택, 개인 = 「개인」 태그. 탭 → 결제 상세 시트(결제내역 플로우의 시트 라우트) */
+/** 결제 행 목록. 공동 = 부담 인원 스택, 개인 = 「개인」 태그. 탭 → 이 화면 위 결제 상세 시트(정산 하위 라우트) */
 function PaymentList({ items, labelledBy }: { items: ExpenseListItem[]; labelledBy: string }) {
   const trip = useTripDetail()
   const navigate = useNavigate()
+  const { membershipId = '' } = useParams()
   return (
     <ul aria-labelledby={labelledBy}>
       {items.map((e) => {
@@ -160,7 +166,7 @@ function PaymentList({ items, labelledBy }: { items: ExpenseListItem[]; labelled
               originalAmount={originalAmountText(e.originalAmount, e.originalCurrency)}
               participants={e.participants ? orderMembers(e.participants.map((p) => toPerson(p))) : undefined}
               changed={e.flags.changed}
-              onClick={() => navigate(paths.payment(trip.tripId, e.id))}
+              onClick={() => navigate(paths.settlementPayment(trip.tripId, membershipId, e.id), { state: { fromList: true } })}
             />
           </li>
         )

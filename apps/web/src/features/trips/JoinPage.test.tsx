@@ -18,7 +18,7 @@ describe('HF-12 초대코드로 참여 /join', () => {
     renderApp('/join?code=T4K9YP')
     expect(await screen.findByRole('heading', { name: '도쿄 먹방 여행' })).toBeTruthy()
     expect(codeInput().value).toBe('T4K-9YP')
-    expect(screen.getByText('일본 도쿄')).toBeTruthy()
+    expect(screen.getByText('도쿄')).toBeTruthy()
     expect(screen.getByText('12.03 (목)')).toBeTruthy()
     expect(screen.getByText('3명 참여 중')).toBeTruthy()
     expect(screen.getByRole('img', { name: '태현, 민지 외 1명' })).toBeTruthy()

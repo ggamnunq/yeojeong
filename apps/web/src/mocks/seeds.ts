@@ -134,7 +134,7 @@ const demo = (trip: Omit<MockTrip, 'fxPolicy' | 'version'>, members: Omit<MockMe
 
 const DEMO_TRIPS: DemoTrip[] = [
   demo(
-    { tripId: 'trip-tokyo', groupId: 'group-tokyo', groupName: '도쿄 먹방 여행', placeLabel: '일본 도쿄', countryCode: 'JP', currency: 'JPY', startDate: '2026-12-03', endDate: '2026-12-06', budgetKrw: 1_500_000, status: 'UPCOMING', inviteCode: 'T4K9YP' },
+    { tripId: 'trip-tokyo', groupId: 'group-tokyo', groupName: '도쿄 먹방 여행', placeLabel: '도쿄', countryCode: null, currency: 'JPY', startDate: '2026-12-03', endDate: '2026-12-06', budgetKrw: 1_500_000, status: 'UPCOMING', inviteCode: 'T4K9YP' },
     [
       { membershipId: 'mem-tokyo-taehyeon', userId: USER.taehyeon, role: 'LEADER', joinOrder: 1, leftAt: null },
       { membershipId: 'mem-tokyo-minji', userId: USER.minji, role: 'MEMBER', joinOrder: 2, leftAt: null },
@@ -142,14 +142,14 @@ const DEMO_TRIPS: DemoTrip[] = [
     ],
   ),
   demo(
-    { tripId: 'trip-danang', groupId: 'group-danang', groupName: '다낭 가족여행', placeLabel: '베트남 다낭', countryCode: 'VN', currency: 'VND', startDate: '2026-11-11', endDate: '2026-11-15', budgetKrw: 2_000_000, status: 'ONGOING', inviteCode: 'D7N3QA' },
+    { tripId: 'trip-danang', groupId: 'group-danang', groupName: '다낭 가족여행', placeLabel: '다낭', countryCode: null, currency: 'VND', startDate: '2026-11-11', endDate: '2026-11-15', budgetKrw: 2_000_000, status: 'ONGOING', inviteCode: 'D7N3QA' },
     [
       { membershipId: 'mem-danang-minji', userId: USER.minji, role: 'LEADER', joinOrder: 1, leftAt: null },
       { membershipId: 'mem-danang-taehyeon', userId: USER.taehyeon, role: 'MEMBER', joinOrder: 2, leftAt: null },
     ],
   ),
   demo(
-    { tripId: 'trip-taipei', groupId: 'group-taipei', groupName: '타이베이 주말', placeLabel: '대만 타이베이', countryCode: 'TW', currency: 'TWD', startDate: '2026-12-12', endDate: '2026-12-13', budgetKrw: 500_000, status: 'UPCOMING', inviteCode: 'X2P8RW' },
+    { tripId: 'trip-taipei', groupId: 'group-taipei', groupName: '타이베이 주말', placeLabel: '타이베이', countryCode: null, currency: 'TWD', startDate: '2026-12-12', endDate: '2026-12-13', budgetKrw: 500_000, status: 'UPCOMING', inviteCode: 'X2P8RW' },
     [
       { membershipId: 'mem-taipei-subin', userId: USER.subin, role: 'LEADER', joinOrder: 1, leftAt: null },
       { membershipId: 'mem-taipei-junyong', userId: USER.junyong, role: 'MEMBER', joinOrder: 2, leftAt: '2026-11-01T10:00:00+09:00', leaveReason: 'KICKED' },

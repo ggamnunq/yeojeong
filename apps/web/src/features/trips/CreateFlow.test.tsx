@@ -5,7 +5,7 @@ import { db } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { mockError } from '../../mocks/utils'
 import { renderApp } from '../../test/render'
-import { stubNavigator, toastMessages, setupMockToday } from './test-utils'
+import { dayButton, stubNavigator, toastMessages, setupMockToday } from './test-utils'
 
 setupMockToday()
 
@@ -14,21 +14,22 @@ const submitButton = () => screen.getByRole('button', { name: '여정 만들기'
 
 async function fillForm({ start = '2026-11-20', end = '2026-11-23' } = {}) {
   fireEvent.change(await screen.findByLabelText('그룹명'), { target: { value: '오사카 3박 4일' } })
+  fireEvent.change(screen.getByLabelText('여행 장소'), { target: { value: '오사카' } })
 
-  fireEvent.click(screen.getByRole('button', { name: /^장소/ }))
-  const placeSheet = await screen.findByRole('dialog', { name: '장소' })
-  fireEvent.click(await within(placeSheet).findByRole('button', { name: /^오사카/ }))
-  await waitFor(() => expect(screen.getByRole('button', { name: /^장소/ }).textContent).toContain('일본 오사카'))
+  fireEvent.click(screen.getByRole('button', { name: /^현지 통화/ }))
+  const currencySheet = await screen.findByRole('dialog', { name: '현지 통화' })
+  fireEvent.click(await within(currencySheet).findByRole('button', { name: 'JPY · 일본 엔' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: /^현지 통화/ }).textContent).toContain('JPY · 일본 엔'))
 
   fireEvent.click(screen.getByRole('button', { name: /^기간/ }))
   const periodSheet = await screen.findByRole('dialog', { name: '기간' })
-  fireEvent.change(within(periodSheet).getByLabelText('출발일'), { target: { value: start } })
-  fireEvent.change(within(periodSheet).getByLabelText('도착일'), { target: { value: end } })
+  fireEvent.click(dayButton(periodSheet, start))
+  fireEvent.click(dayButton(periodSheet, end))
   return periodSheet
 }
 
 describe('HF-10 여정 생성 /trips/new', () => {
-  it('네 칸이 모두 유효해야 「여정 만들기」가 켜지고, 예산은 "₩1,200,000"으로 보인다', async () => {
+  it('다섯 칸이 모두 유효해야 「여정 만들기」가 켜지고, 예산은 "₩1,200,000"으로 보인다', async () => {
     renderApp('/trips/new')
     expect(await screen.findByRole('heading', { name: '새 여정' })).toBeTruthy()
     expect(submitButton().disabled).toBe(true)
@@ -46,10 +47,39 @@ describe('HF-10 여정 생성 /trips/new', () => {
     expect(submitButton().disabled).toBe(false)
   })
 
-  it('종료일이 시작일보다 빠르면 기간 시트에 오류, 확인 비활성', async () => {
+  it('현지 통화는 기본값 없이 "선택" · 서버 순서(KRW 맨 앞) · 고르면 시트가 바로 닫힌다', async () => {
     renderApp('/trips/new')
-    const periodSheet = await fillForm({ start: '2026-11-20', end: '2026-11-18' })
-    expect(within(periodSheet).getByText('종료일을 확인해 주세요')).toBeTruthy()
+    const picker = await screen.findByRole('button', { name: /^현지 통화/ })
+    expect(picker.textContent).toContain('선택')
+    fireEvent.click(picker)
+    const sheet = await screen.findByRole('dialog', { name: '현지 통화' })
+    const rows = await within(sheet).findAllByRole('button', { name: /^[A-Z]{3} · / })
+    expect(rows.slice(0, 3).map((r) => r.textContent)).toEqual(['KRW · 대한민국 원', 'JPY · 일본 엔', 'USD · 미국 달러'])
+    fireEvent.click(within(sheet).getByRole('button', { name: 'KRW · 대한민국 원' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '현지 통화' })).toBeNull())
+    expect(picker.textContent).toContain('KRW · 대한민국 원')
+  })
+
+  it('여행 장소는 자유 입력(40자 제한), 공백만이면 만들 수 없다', async () => {
+    renderApp('/trips/new')
+    const periodSheet = await fillForm()
+    fireEvent.click(within(periodSheet).getByRole('button', { name: '확인' }))
+    fireEvent.change(screen.getByLabelText('예산'), { target: { value: '1200000' } })
+    expect(submitButton().disabled).toBe(false)
+    const place = screen.getByLabelText('여행 장소') as HTMLInputElement
+    expect(place.maxLength).toBe(40)
+    fireEvent.change(place, { target: { value: '   ' } })
+    expect(submitButton().disabled).toBe(true)
+  })
+
+  it('기간은 31일을 넘게 고를 수 없다(달력에서 막힘)', async () => {
+    renderApp('/trips/new')
+    fireEvent.click(await screen.findByRole('button', { name: /^기간/ }))
+    const periodSheet = await screen.findByRole('dialog', { name: '기간' })
+    fireEvent.click(dayButton(periodSheet, '2026-11-01'))
+    expect(dayButton(periodSheet, '2026-11-30').getAttribute('aria-disabled')).toBeNull()
+    fireEvent.click(within(periodSheet).getByRole('button', { name: '다음 달' }))
+    expect(dayButton(periodSheet, '2026-12-02').getAttribute('aria-disabled')).toBe('true')
     expect((within(periodSheet).getByRole('button', { name: '확인' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
@@ -62,7 +92,14 @@ describe('HF-10 여정 생성 /trips/new', () => {
 
     expect(await screen.findByRole('heading', { name: '여정을 만들었어요' })).toBeTruthy()
     const created = db.trips.at(-1)!
-    expect(created).toMatchObject({ groupName: '오사카 3박 4일', currency: 'JPY', status: 'UPCOMING', budgetKrw: 1_200_000 })
+    expect(created).toMatchObject({
+      groupName: '오사카 3박 4일',
+      placeLabel: '오사카',
+      countryCode: null,
+      currency: 'JPY',
+      status: 'UPCOMING',
+      budgetKrw: 1_200_000,
+    })
     expect(path(router)).toBe(`/trips/${created.tripId}/created`)
     expect(screen.getByText(`${created.inviteCode.slice(0, 3)}-${created.inviteCode.slice(3)}`)).toBeTruthy()
 
@@ -90,6 +127,30 @@ describe('HF-10 여정 생성 /trips/new', () => {
     fireEvent.change(screen.getByLabelText('예산'), { target: { value: '1000000' } })
     expect(screen.queryByText('예산을 확인해 주세요')).toBeNull()
   })
+
+  it('서버 오류 경로 currency·place.label은 현지 통화·여행 장소 칸에 붙는다', async () => {
+    server.use(
+      http.post('/api/trips', () =>
+        mockError('VALIDATION_FAILED', 400, {
+          fields: [
+            { path: 'place.label', code: 'isLength', message: '여행 장소는 40자까지예요' },
+            { path: 'currency', code: 'isIn', message: '지원하지 않는 통화예요' },
+          ],
+        }),
+      ),
+    )
+    renderApp('/trips/new')
+    const periodSheet = await fillForm()
+    fireEvent.click(within(periodSheet).getByRole('button', { name: '확인' }))
+    fireEvent.change(screen.getByLabelText('예산'), { target: { value: '1200000' } })
+    fireEvent.click(submitButton())
+
+    expect(await screen.findByText('지원하지 않는 통화예요')).toBeTruthy()
+    expect(screen.getByText('여행 장소는 40자까지예요')).toBeTruthy()
+    // 첫 오류 칸(여행 장소)에 포커스
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('여행 장소')))
+    expect(screen.getByRole('button', { name: /^현지 통화/ }).getAttribute('aria-invalid')).toBe('true')
+  })
 })
 
 describe('HF-11 생성 완료 /trips/:tripId/created', () => {
@@ -113,12 +174,12 @@ describe('HF-11 생성 완료 /trips/:tripId/created', () => {
     })
   })
 
-  it('공유: Web Share가 없으면 복사로 대신한다', async () => {
+  it('공유: Web Share가 없으면 같은 내용(문구 + 참여 링크 두 줄)을 복사한다', async () => {
     const nav = stubNavigator({ share: false })
     renderApp('/trips/trip-osaka/created')
     fireEvent.click(await screen.findByRole('button', { name: '공유' }))
     await waitFor(() => expect(toastMessages()).toContain('복사했어요'))
-    expect(nav.writeText).toHaveBeenCalledWith('K7M-2QX')
+    expect(nav.writeText).toHaveBeenCalledWith(`오사카 3박 4일 초대코드 K7M-2QX\n${window.location.origin}/join?code=K7M2QX`)
   })
 
   it('주소로 바로 들어와도 「여정으로 가기」 · ✕는 여정 정보로', async () => {

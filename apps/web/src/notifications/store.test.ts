@@ -16,35 +16,51 @@ afterEach(() => {
 describe('토스트 큐', () => {
   it('기본 3초, 오류는 5초 뒤 닫힌다', () => {
     store.show('success', '저장했어요')
-    store.show('error', '저장하지 못했어요')
-
     vi.advanceTimersByTime(TOAST_DURATION_MS - 1)
-    expect(messages()).toEqual(['저장했어요', '저장하지 못했어요'])
+    expect(messages()).toEqual(['저장했어요'])
     vi.advanceTimersByTime(1)
+    expect(messages()).toEqual([])
+
+    store.show('error', '저장하지 못했어요')
+    vi.advanceTimersByTime(TOAST_ERROR_DURATION_MS - 1)
     expect(messages()).toEqual(['저장하지 못했어요'])
-    vi.advanceTimersByTime(TOAST_ERROR_DURATION_MS - TOAST_DURATION_MS)
+    vi.advanceTimersByTime(1)
     expect(messages()).toEqual([])
   })
 
   it('durationMs로 시간을 바꾸고, Infinity면 직접 닫을 때까지 남는다', () => {
     const short = store.show('info', '짧게', { durationMs: 500 })!
-    const sticky = store.show('info', '계속', { durationMs: Infinity })!
     expect(store.getSnapshot().find((t) => t.id === short)?.durationMs).toBe(500)
+    vi.advanceTimersByTime(500)
+    expect(messages()).toEqual([])
 
+    const sticky = store.show('info', '계속', { durationMs: Infinity })!
     vi.advanceTimersByTime(60_000)
     expect(messages()).toEqual(['계속'])
     store.dismiss(sticky)
     expect(messages()).toEqual([])
   })
 
-  it('동시에 최대 2개. 넘치면 가장 오래된 것을 닫는다', () => {
+  it('한 번에 하나. 새 토스트가 오면 앞 토스트를 바로 바꾼다(화면명세 0-4)', () => {
     store.show('info', '하나')
     store.show('info', '둘')
     store.show('info', '셋')
-    expect(messages()).toEqual(['둘', '셋'])
+    expect(messages()).toEqual(['셋'])
 
     // 밀려난 토스트의 타이머는 남지 않는다
-    expect(vi.getTimerCount()).toBe(2)
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
+  it('dismissAll은 떠 있는 토스트만 닫고 중복 방지 기록은 남긴다(시트·다이얼로그를 열 때)', () => {
+    store.show('success', '저장했어요')
+    store.dismissAll()
+    expect(messages()).toEqual([])
+    expect(vi.getTimerCount()).toBe(0)
+    // 같은 토스트가 곧바로 다시 오면 띄우지 않는다
+    expect(store.show('success', '저장했어요')).toBeUndefined()
+    vi.advanceTimersByTime(TOAST_DEDUPE_MS)
+    store.show('success', '저장했어요')
+    expect(messages()).toEqual(['저장했어요'])
   })
 
   it('같은 토스트가 떠 있거나 방금 떴으면 다시 띄우지 않는다', () => {
@@ -65,7 +81,8 @@ describe('토스트 큐', () => {
   it('같은 문구라도 종류나 dedupeKey가 다르면 따로 띄운다', () => {
     store.show('info', '같은 문구')
     store.show('error', '같은 문구')
-    expect(messages()).toHaveLength(2)
+    // 둘 다 띄워지고(하나씩이라 뒤엣것이 남는다) 중복으로 버려지지 않았다
+    expect(store.getSnapshot().map((t) => t.type)).toEqual(['error'])
 
     store.clear()
     store.show('error', 'A', { dedupeKey: 'NETWORK_ERROR' })

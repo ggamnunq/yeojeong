@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http } from 'msw'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { keys, type SessionResponse } from '../../api'
@@ -7,6 +7,7 @@ import { server } from '../../mocks/server'
 import { mockError } from '../../mocks/utils'
 import { toastStore } from '../../notifications/store'
 import { renderApp } from '../../test/render'
+import { writeAttemptContext } from '../wallet/connect'
 import { browser } from './browser'
 
 type Router = ReturnType<typeof renderApp>['router']
@@ -359,6 +360,94 @@ describe('WF-05 토스 지갑 연동 안내 · WF-05b 연동 동의 시트', () 
     fireEvent.click(within(sheet).getByRole('button', { name: '닫기' }))
     await waitFor(() => expect(router.state.location.state).toBeFalsy())
     expect(router.state.location.pathname).toBe('/signup/wallet')
+  })
+})
+
+describe('returnTo 보존 — 신규 회원 가입 단계를 거쳐도 공유 링크로 돌아간다(QA ③ HF-12)', () => {
+  const JOIN = '/join?code=T4K9YP'
+
+  /** 비로그인 /join?code= → 로그인(returnTo) → 카카오(목: 신규) → 닉네임 */
+  async function startAsNewMember() {
+    vi.stubEnv('VITE_MOCK_API', '1')
+    db.session = 'ANONYMOUS'
+    vi.spyOn(browser, 'assign').mockImplementation(() => {})
+    const app = renderApp(JOIN)
+    await waitFor(() => expect(where(app.router)).toBe(`/login?returnTo=${encodeURIComponent(JOIN)}`))
+    fireEvent.click(await screen.findByRole('button', { name: '카카오 로그인' }))
+    await waitFor(() => expect(where(app.router)).toBe('/signup/nickname'))
+    await screen.findByRole('textbox', { name: '닉네임' })
+    return app
+  }
+
+  async function finishTerms(router: Router) {
+    fireEvent.click(button('다음'))
+    await screen.findByRole('checkbox', { name: '[필수] 서비스 이용약관' })
+    fireEvent.click(checkbox('전체 동의'))
+    await waitFor(() => expect((button('다음') as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(button('다음'))
+    await waitFor(() => expect(where(router)).toBe('/signup/wallet'))
+  }
+
+  it('세션 signupDraft.returnTo · 가입 응답 returnTo를 들고 닉네임 → 약관 → 토스 안내 「나중에」 → /join?code=', async () => {
+    const signup = record('post', '/api/auth/signup')
+    const { router, queryClient } = await startAsNewMember()
+    expect(queryClient.getQueryData<SessionResponse>(keys.session)?.signupDraft?.returnTo).toBe(JOIN)
+    await finishTerms(router)
+    expect(signup).toHaveLength(1)
+    fireEvent.click(await screen.findByRole('button', { name: '나중에' }))
+    await waitFor(() => expect(where(router)).toBe(JOIN))
+    // 참여 화면이 코드를 들고 미리보기를 연다
+    expect(await screen.findByRole('region', { name: '여정 미리보기' })).toBeTruthy()
+  })
+
+  it('토스 연결까지 마치면 WF-08 「여정으로 가기」가 /join?code=로', async () => {
+    const { router } = await startAsNewMember()
+    await finishTerms(router)
+    // 연결 흐름(WF-05b~07)은 지갑 테스트가 본다. 여기서는 가입 목적 시도의 WF-08로 바로 간다
+    writeAttemptContext('attempt-signup', { purpose: 'SIGNUP', result: { accounts: 1, cards: 2 } as never })
+    await router.navigate('/wallet/connect/done?attempt=attempt-signup', { replace: true })
+    fireEvent.click(await screen.findByRole('button', { name: '여정으로 가기' }))
+    await waitFor(() => expect(where(router)).toBe(JOIN))
+  })
+
+  it('WF-08에서 브라우저 뒤로 가기 = 버튼과 같다(토스 안내로 돌아가지 않음, HF-08)', async () => {
+    db.session = 'AUTHENTICATED'
+    sessionStorage.setItem('yj:signup:returnTo', JOIN)
+    writeAttemptContext('attempt-signup', { purpose: 'SIGNUP', result: { accounts: 1, cards: 2 } as never })
+    const { router } = renderApp('/signup/wallet')
+    await screen.findByRole('heading', { name: '토스 지갑을 연결해 주세요' })
+    await router.navigate('/wallet/connect/done?attempt=attempt-signup')
+    await screen.findByRole('heading', { name: '연결 완료' })
+    // 뒤로 가기 차단은 화면이 그려진 다음 효과에서 걸린다(사람이 누르기 전에 끝난다)
+    await act(async () => {})
+    await router.navigate(-1)
+    await waitFor(() => expect(where(router)).toBe(JOIN))
+    expect(screen.queryByRole('heading', { name: '토스 지갑을 연결해 주세요' })).toBeNull()
+  })
+
+  it('닉네임에서 ‹로 가입을 그만두면 로그인 주소에 returnTo를 다시 붙인다', async () => {
+    const { router } = await startAsNewMember()
+    fireEvent.click(button('뒤로 가기'))
+    await waitFor(() => expect(where(router)).toBe(`/login?returnTo=${encodeURIComponent(JOIN)}`))
+  })
+
+  it('returnTo가 없으면(null) 기존처럼 진입 라우팅', async () => {
+    db.session = 'SIGNUP_REQUIRED'
+    db.signupReturnTo = null
+    const { router } = renderApp('/signup/nickname')
+    await screen.findByRole('textbox', { name: '닉네임' })
+    await finishTerms(router)
+    fireEvent.click(await screen.findByRole('button', { name: '나중에' }))
+    // 새 회원은 소속 여정이 없어 여정 없음(WF-09)
+    await waitFor(() => expect(router.state.location.pathname).toBe('/trips'))
+  })
+
+  it('같은 origin 상대 경로만 받는다', async () => {
+    const { safeReturnTo } = await import('../../app/paths')
+    expect(safeReturnTo('/join?code=T4K9YP')).toBe('/join?code=T4K9YP')
+    for (const bad of ['//evil.com', '/\\evil.com', 'https://evil.com', '/api/auth/logout', '/a\nb', '']) {
+      expect(safeReturnTo(bad)).toBeNull()
+    }
   })
 })
 

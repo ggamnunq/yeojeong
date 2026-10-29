@@ -2,11 +2,11 @@ import { useSyncExternalStore } from 'react'
 import type { ToastType } from '../ds'
 
 // 헤드리스 토스트 큐. 어디서든 toast.error('…')로 띄우고, ToastHost가 구독해서 그린다.
-// 동시에 최대 2개(새 토스트가 오면 가장 오래된 것을 닫는다), 기본 3초·오류 5초 뒤 자동으로 닫힌다.
+// 한 번에 하나(새 토스트가 오면 앞 토스트를 바로 바꾼다, 화면명세 0-4 v0.5.8), 기본 3초·오류 5초 뒤 자동으로 닫힌다.
 
 export const TOAST_DURATION_MS = 3000
 export const TOAST_ERROR_DURATION_MS = 5000
-export const TOAST_MAX_VISIBLE = 2
+export const TOAST_MAX_VISIBLE = 1
 /** 같은 토스트가 이 시간 안에 다시 오면 띄우지 않는다 */
 export const TOAST_DEDUPE_MS = 2000
 
@@ -117,6 +117,14 @@ export function createToastStore({ maxVisible = TOAST_MAX_VISIBLE, dedupeMs = TO
       if (!timer || timer.handle !== undefined) return
       runTimer(id, timer)
     },
+    /** 떠 있는 토스트를 모두 닫는다. 중복 방지 기록은 남긴다(시트를 열 때 — 같은 토스트가 곧바로 다시 뜨지 않게) */
+    dismissAll() {
+      if (toasts.length === 0) return
+      for (const id of [...timers.keys()]) clearTimer(id)
+      toasts = []
+      emit()
+    },
+    /** 모두 닫고 중복 방지 기록까지 지운다(로그아웃·테스트 초기화) */
     clear() {
       for (const id of [...timers.keys()]) clearTimer(id)
       toasts = []
@@ -141,6 +149,7 @@ export const toast = {
   info: (message: string, options?: ToastOptions) => toastStore.show('info', message, options),
   error: (message: string, options?: ToastOptions) => toastStore.show('error', message, options),
   dismiss: (id: number) => toastStore.dismiss(id),
+  dismissAll: () => toastStore.dismissAll(),
   clear: () => toastStore.clear(),
 }
 

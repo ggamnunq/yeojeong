@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
-import { apiFetch, keys, type ConsentStage, type Me } from '../../api'
+import type { SignupResponse } from '@yeojeong/shared'
+import { apiFetch, keys, type ConsentStage } from '../../api'
 import { safeReturnTo } from '../../app/paths'
 import type {
   ConsentDocument,
@@ -26,7 +27,8 @@ export const visibleConsents = (docs: readonly ConsentDocument[] | undefined) =>
 /** 전문 링크. 서버 docUrl이 같은 origin 경로일 때만 쓴다 */
 export const consentDocHref = (doc: ConsentDocument) => (doc.hasDetail ? safeReturnTo(doc.docUrl) : null)
 
-export const postSignup = (body: SignupRequest) => apiFetch<Me>('/auth/signup', { body })
+/** POST /api/auth/signup. 응답 returnTo = 가입을 마친 뒤 갈 곳(없으면 null → 진입 라우팅) */
+export const postSignup = (body: SignupRequest) => apiFetch<SignupResponse>('/auth/signup', { body })
 
 export const postReconsent = (body: ReconsentRequest) => apiFetch<void>('/auth/reconsent', { body })
 

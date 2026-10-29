@@ -1,32 +1,36 @@
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { withLoading } from '../../../app/loadingCta'
-import { Input, ShellSub } from '../../../ds'
+import { Input, InputPicker, ShellSub } from '../../../ds'
+import { currenciesQuery } from '../api'
 import {
   budgetDigits,
+  currencyLabel,
   editableFieldsOf,
   formatBudgetInput,
   formatPeriodInput,
   GROUP_NAME_MAX_LENGTH,
   isTripFormValid,
   periodError,
+  PLACE_LABEL_MAX_LENGTH,
   tripUpdateBody,
   type TripFormMode,
 } from '../rules'
-import type { TripFormValues } from '../types'
+import type { TripEditableField, TripFormValues } from '../types'
+import { CurrencySheet } from './CurrencySheet'
 import { PeriodSheet } from './PeriodSheet'
 import { PickerField } from './PickerField'
-import { PlaceSheet } from './PlaceSheet'
 
-// HF-10 여정 생성 폼(+ 수정 모드). 그룹명 · 장소 · 기간 · 예산 네 칸, 헬퍼 문구 없음. 통화는 장소로 정해져 묻지 않는다.
-// 수정 모드는 단계별로 고칠 수 있는 칸만 열고(진행 중: 그룹명 · 예산 · 종료일), 값이 바뀌었을 때만 저장할 수 있다.
+// HF-10 여정 생성 폼(+ 수정 모드). 그룹명 · 여행 장소(자유 입력) · 현지 통화(시트) · 기간(시트) · 예산 다섯 칸, 헬퍼 문구 없음.
+// 통화는 장소로 정하지 않고 사용자가 고른다(기본값 없음). 수정 모드는 서버 permissions.editableFields의 칸만 열고, 값이 바뀌었을 때만 저장할 수 있다.
 
 /** 서버 검증 실패 경로(fieldErrors 키) → 폼 칸 */
-type FieldKey = 'groupName' | 'place' | 'period' | 'budgetKrw'
-const FIELD_ORDER: readonly FieldKey[] = ['groupName', 'place', 'period', 'budgetKrw']
+type FieldKey = 'groupName' | 'place' | 'currency' | 'period' | 'budgetKrw'
+const FIELD_ORDER: readonly FieldKey[] = ['groupName', 'place', 'currency', 'period', 'budgetKrw']
 
 function fieldKeyOf(path: string): FieldKey | null {
   if (path === 'groupName') return 'groupName'
   if (path === 'place' || path.startsWith('place.')) return 'place'
+  if (path === 'currency') return 'currency'
   if (path === 'startDate' || path === 'endDate') return 'period'
   if (path === 'budgetKrw') return 'budgetKrw'
   return null
@@ -49,6 +53,8 @@ export type TripFormProps = {
   /** 버튼: "여정 만들기" · "저장" */
   submitLabel: string
   initial: TripFormValues
+  /** 수정 모드: 서버 permissions.editableFields. 없으면 단계 기본값 */
+  editableFields?: readonly TripEditableField[]
   today: string
   busy?: boolean
   /** 서버 검증 실패(fieldErrors 결과). 바뀌면 첫 오류 칸에 포커스 */
@@ -62,6 +68,7 @@ export function TripForm({
   title,
   submitLabel,
   initial,
+  editableFields,
   today,
   busy = false,
   serverErrors,
@@ -71,11 +78,13 @@ export function TripForm({
   const formId = useId()
   const formRef = useRef<HTMLFormElement>(null)
   const [values, setValues] = useState(initial)
-  const [sheet, setSheet] = useState<'place' | 'period' | null>(null)
+  const [sheet, setSheet] = useState<'currency' | 'period' | null>(null)
   // 서버 오류가 온 뒤 사용자가 고친 칸(그 칸의 서버 문구는 지운다)
   const [edited, setEdited] = useState<{ source?: Record<string, string>; keys: FieldKey[] }>({ keys: [] })
 
-  const editable = editableFieldsOf(mode)
+  const editable = editableFieldsOf(mode, editableFields)
+  // 통화 표시 이름("JPY · 일본 엔"). 시트와 같은 쿼리라 한 번만 받는다
+  const currencies = useQuery({ ...currenciesQuery(), enabled: values.currency !== null || sheet === 'currency' })
   const can = (field: (typeof editable)[number]) => editable.includes(field)
 
   const errors = serverFieldErrors(serverErrors, edited.source === serverErrors ? edited.keys : [])
@@ -97,13 +106,13 @@ export function TripForm({
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (canSubmit && !busy) onSubmit({ ...values, groupName: values.groupName.trim() })
+    if (canSubmit && !busy) onSubmit({ ...values, groupName: values.groupName.trim(), place: values.place.trim() })
   }
 
   return (
     <ShellSub
       header={{ title, onBack }}
-      cta={withLoading({ label: submitLabel, htmlType: 'submit', form: formId, disabled: !canSubmit }, busy)}
+      cta={{ label: submitLabel, htmlType: 'submit', form: formId, disabled: !canSubmit, state: busy ? 'loading' : 'default' }}
     >
       <form id={formId} ref={formRef} noValidate onSubmit={submit} className="flex flex-col gap-6">
         <Input
@@ -120,16 +129,30 @@ export function TripForm({
           helper={errors.groupName}
           onChange={(e) => update({ groupName: e.target.value }, 'groupName')}
         />
-        <PickerField
+        <Input
           name="place"
-          label="장소"
-          placeholder="도시 검색"
-          icon="marker"
-          value={values.place?.label}
+          label="여행 장소"
+          placeholder="예) 오사카"
+          // 40자를 넘으면 입력을 막는다(문구·카운터 없음)
+          maxLength={PLACE_LABEL_MAX_LENGTH}
+          autoComplete="off"
           disabled={!can('place')}
-          error={errors.place}
-          onOpen={() => setSheet('place')}
+          value={values.place}
+          error={Boolean(errors.place)}
+          helper={errors.place}
+          onChange={(e) => update({ place: e.target.value }, 'place')}
         />
+        <InputPicker
+          name="currency"
+          label="현지 통화"
+          placeholder="선택"
+          value={currencyLabel(values.currency, currencies.data)}
+          disabled={!can('currency')}
+          error={Boolean(errors.currency)}
+          helper={errors.currency}
+          onClick={() => setSheet('currency')}
+        />
+        {/* 기간은 HF-10대로 달력 아이콘만(⌄ 없음) 붙는 입력 모양이라 InputPicker 대신 PickerField */}
         <PickerField
           name="period"
           label="기간"
@@ -154,12 +177,12 @@ export function TripForm({
         />
       </form>
 
-      <PlaceSheet
-        open={sheet === 'place'}
-        selected={values.place}
+      <CurrencySheet
+        open={sheet === 'currency'}
+        selected={values.currency}
         onClose={() => setSheet(null)}
-        onSelect={(place, currency) => {
-          update({ place, currency }, 'place')
+        onSelect={(currency) => {
+          update({ currency }, 'currency')
           setSheet(null)
         }}
       />
