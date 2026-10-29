@@ -12,6 +12,7 @@ import {
 } from '@yeojeong/shared';
 import { Transform, Type } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -24,8 +25,9 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { TRIP_CURRENCY_CODES } from '../currencies.js';
 
-// 요청 본문 DTO. 형식만 여기서 보고, 날짜 범위·국가 지원 여부·단계별 허용 항목은 서비스(trip-rules.ts)가 본다.
+// 요청 본문 DTO. 형식·지원 통화는 여기서 보고, 날짜 범위·단계별 허용 항목은 서비스(trip-rules.ts)가 본다.
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -34,23 +36,62 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_MESSAGE = '날짜는 YYYY-MM-DD 형식이에요';
 
 export class PlaceInputDto implements PlaceInput {
-  @ApiProperty({ example: 'JP', description: 'ISO 3166-1 alpha-2. 국내 KR' })
-  @Matches(/^[A-Z]{2}$/, { message: '국가 코드를 다시 확인해 주세요' })
-  countryCode: string;
+  @ApiProperty({
+    example: '제주 + 부산',
+    maxLength: PLACE_LABEL_MAX_LENGTH,
+    description: '자유 입력. 앞뒤 공백을 빼고 1~40자',
+  })
+  @Transform(trim)
+  @IsString({ message: '여행 장소를 입력해 주세요' })
+  @Length(1, PLACE_LABEL_MAX_LENGTH, {
+    message: ({ value }) =>
+      typeof value === 'string' && value.length > 0
+        ? `여행 장소는 ${PLACE_LABEL_MAX_LENGTH}자까지예요`
+        : '여행 장소를 입력해 주세요',
+  })
+  label: string;
 
-  @ApiPropertyOptional({ example: '오사카', nullable: true, maxLength: 40 })
+  @ApiPropertyOptional({
+    type: String,
+    example: 'JP',
+    nullable: true,
+    deprecated: true,
+    description:
+      '옛 장소 목록 호환. 받으면 저장만 하고 통화 판단에는 쓰지 않는다',
+  })
+  @IsOptional()
+  @Matches(/^[A-Z]{2}$/, { message: '국가 코드를 다시 확인해 주세요' })
+  countryCode?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    example: '오사카',
+    nullable: true,
+    maxLength: PLACE_LABEL_MAX_LENGTH,
+    deprecated: true,
+    description: '옛 장소 목록 호환. 받으면 저장만 한다',
+  })
   @IsOptional()
   @Transform(trim)
   @IsString({ message: '도시를 다시 확인해 주세요' })
   @MaxLength(PLACE_LABEL_MAX_LENGTH, { message: '도시는 40자까지예요' })
   city?: string | null;
-
-  @ApiProperty({ example: '일본 오사카', maxLength: 40 })
-  @Transform(trim)
-  @IsString({ message: '여행 장소를 골라 주세요' })
-  @Length(1, PLACE_LABEL_MAX_LENGTH, { message: '여행 장소를 골라 주세요' })
-  label: string;
 }
+
+/** 여정 통화. 빠지면 '통화를 골라 주세요', 목록 밖이면 '지원하지 않는 통화예요'(한 필드에 오류 하나) */
+const currencyMessage = ({ value }: { value: unknown }) =>
+  value === undefined || value === null || value === ''
+    ? '통화를 골라 주세요'
+    : '지원하지 않는 통화예요';
+
+const CURRENCY_PROPERTY = {
+  example: 'JPY',
+  enum: TRIP_CURRENCY_CODES,
+  description: 'ISO 4217. GET /api/currencies 목록 중 하나(국내 여행은 KRW)',
+} as const;
+
+const upperTrim = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim().toUpperCase() : value;
 
 export class CreateTripDto implements CreateTripRequest {
   @ApiProperty({ example: '오사카 3박 4일', maxLength: GROUP_NAME_MAX_LENGTH })
@@ -60,10 +101,15 @@ export class CreateTripDto implements CreateTripRequest {
   groupName: string;
 
   @ApiProperty({ type: PlaceInputDto })
-  @IsObject({ message: '여행 장소를 골라 주세요' })
+  @IsObject({ message: '여행 장소를 입력해 주세요' })
   @ValidateNested()
   @Type(() => PlaceInputDto)
   place: PlaceInputDto;
+
+  @ApiProperty(CURRENCY_PROPERTY)
+  @Transform(upperTrim)
+  @IsIn(TRIP_CURRENCY_CODES, { message: currencyMessage })
+  currency: string;
 
   @ApiProperty({ example: '2026-11-12', description: 'KST 날짜' })
   @Matches(DATE_PATTERN, { message: DATE_MESSAGE })
@@ -107,10 +153,19 @@ export class UpdateTripDto extends TripVersionDto implements UpdateTripRequest {
 
   @ApiPropertyOptional({ type: PlaceInputDto, description: '시작 전에만' })
   @IsOptional()
-  @IsObject({ message: '여행 장소를 골라 주세요' })
+  @IsObject({ message: '여행 장소를 입력해 주세요' })
   @ValidateNested()
   @Type(() => PlaceInputDto)
   place?: PlaceInputDto;
+
+  @ApiPropertyOptional({
+    ...CURRENCY_PROPERTY,
+    description: `${CURRENCY_PROPERTY.description}. 시작 전에만. 바뀌면 고정 환율은 결제 시점 환율로 돌아간다`,
+  })
+  @IsOptional()
+  @Transform(upperTrim)
+  @IsIn(TRIP_CURRENCY_CODES, { message: currencyMessage })
+  currency?: string;
 
   @ApiPropertyOptional({ example: '2026-11-12', description: '시작 전에만' })
   @IsOptional()

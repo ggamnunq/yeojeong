@@ -152,8 +152,10 @@ export interface TripEventView {
 }
 
 export interface TripDetail extends TripListItem {
+  /** 사용자가 적은 여행 장소 */
   placeLabel: string;
-  countryCode: string;
+  /** 옛 장소 목록으로 만든 여정만 값이 있다. 새 여정은 null */
+  countryCode: string | null;
   currency: string;
   budgetKrw: number;
   nights: number;

@@ -158,8 +158,8 @@ export function TripForm({
         open={sheet === 'place'}
         selected={values.place}
         onClose={() => setSheet(null)}
-        onSelect={(place) => {
-          update({ place }, 'place')
+        onSelect={(place, currency) => {
+          update({ place, currency }, 'place')
           setSheet(null)
         }}
       />

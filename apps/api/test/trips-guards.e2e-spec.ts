@@ -32,7 +32,8 @@ describe('S2A trips·groups guards (e2e)', () => {
   const today = kstDate(new Date());
   const validTrip = {
     groupName: '오사카 3박 4일',
-    place: { countryCode: 'JP', city: '오사카', label: '일본 오사카' },
+    place: { label: '오사카' },
+    currency: 'JPY',
     startDate: today,
     endDate: addDays(today, 3),
     budgetKrw: 1_200_000,
@@ -78,6 +79,7 @@ describe('S2A trips·groups guards (e2e)', () => {
           'groupName:isLength',
           'place.countryCode:matches',
           'place.label:isLength',
+          'currency:isIn',
           'startDate:matches',
           'endDate:matches',
           'budgetKrw:min',
@@ -88,15 +90,55 @@ describe('S2A trips·groups guards (e2e)', () => {
       await post({ ...validTrip, budgetKrw: 1_000_000_001 }).expect(400);
     });
 
-    it('checks the country and the period before touching the DB', async () => {
+    it('requires a free-text place and a supported currency', async () => {
+      const fields = (res: request.Response) =>
+        res.body.details.fields as {
+          path: string;
+          code: string;
+          message: string;
+        }[];
+      const { currency: _omit, ...noCurrency } = validTrip;
+      expect(fields(await post(noCurrency).expect(400))).toEqual([
+        { path: 'currency', code: 'isIn', message: '통화를 골라 주세요' },
+      ]);
       expect(
-        codes(
+        fields(await post({ ...validTrip, currency: 'ZZZ' }).expect(400)),
+      ).toEqual([
+        { path: 'currency', code: 'isIn', message: '지원하지 않는 통화예요' },
+      ]);
+      // 지원 목록 밖(환율 표에 없는 통화)도 400
+      await post({ ...validTrip, currency: 'MOP' }).expect(400);
+      expect(
+        fields(
+          await post({ ...validTrip, place: { label: '   ' } }).expect(400),
+        ),
+      ).toEqual([
+        {
+          path: 'place.label',
+          code: 'isLength',
+          message: '여행 장소를 입력해 주세요',
+        },
+      ]);
+      expect(
+        fields(
           await post({
             ...validTrip,
-            place: { countryCode: 'ZZ', label: '어딘가' },
+            place: { label: '가'.repeat(41) },
           }).expect(400),
         ),
-      ).toEqual(['place.countryCode:unsupportedCountry']);
+      ).toEqual([
+        {
+          path: 'place.label',
+          code: 'isLength',
+          message: '여행 장소는 40자까지예요',
+        },
+      ]);
+      expect(
+        codes(await post({ ...validTrip, place: undefined }).expect(400)),
+      ).toContain('place:isObject');
+    });
+
+    it('checks the period before touching the DB', async () => {
       expect(
         codes(
           await post({ ...validTrip, endDate: addDays(today, -1) }).expect(400),
@@ -277,6 +319,30 @@ describe('S2A trips·groups guards (e2e)', () => {
         .expect((r) => expect(r.body.code).toBe('INVITE_CODE_INVALID'));
     }
     await request(server()).post('/api/invites/ABC/join').set(h).expect(404);
+  });
+
+  it('lists the supported currencies with KRW first', async () => {
+    const h = auth.headers(auth.addUser());
+    await request(server()).get('/api/currencies').expect(401);
+    const res = await request(server())
+      .get('/api/currencies')
+      .set(h)
+      .expect(200);
+    expect(res.body[0]).toEqual({
+      code: 'KRW',
+      name: '대한민국 원',
+      unitName: '원',
+      displayUnit: 1,
+    });
+    expect(res.body).toContainEqual({
+      code: 'JPY',
+      name: '일본 엔',
+      unitName: '엔',
+      displayUnit: 100,
+    });
+    expect(
+      (res.body as { code: string }[]).filter((c) => c.code === 'KRW'),
+    ).toHaveLength(1);
   });
 
   it('searches places', async () => {

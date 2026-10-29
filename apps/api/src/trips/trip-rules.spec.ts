@@ -9,6 +9,7 @@ import {
   tripPermissions,
   tripShell,
   type TripSnapshot,
+  startBlockReason,
 } from './trip-rules.js';
 
 const codesOf = (errors: { path: string; code?: string }[]) =>
@@ -107,13 +108,14 @@ describe('planTripUpdate (단계별 수정 가능 항목, FR-302·Q-14)', () => 
     status,
     groupName: '오사카 3박 4일',
     place: { countryCode: 'JP', city: '오사카', label: '일본 오사카' },
+    currency: 'JPY',
     startDate: '2026-11-12',
     endDate: '2026-11-15',
     budgetKrw: 1_200_000,
   });
   const kyoto = { countryCode: 'JP', city: '교토', label: '일본 교토' };
 
-  it('lets everything change before the start and keeps JPY for another Japanese city', () => {
+  it('lets everything change before the start and keeps the currency when only the place changes', () => {
     const plan = planTripUpdate(
       base('UPCOMING'),
       {
@@ -141,21 +143,59 @@ describe('planTripUpdate (단계별 수정 가능 항목, FR-302·Q-14)', () => 
     });
   });
 
-  it('changes the currency with the country', () => {
+  it('takes a free-text place and clears the old list fields when the label changes', () => {
     const plan = planTripUpdate(
       base('UPCOMING'),
-      { place: { countryCode: 'KR', label: '부산', city: '부산' } },
+      { place: { label: '제주 + 부산' } },
       '2026-10-28',
     );
-    expect(plan.next.currency).toBe('KRW');
-    const bad = planTripUpdate(
+    expect(plan.changed).toEqual(['place']);
+    expect(plan.next.place).toEqual({
+      label: '제주 + 부산',
+      countryCode: null,
+      city: null,
+    });
+    // 장소가 바뀌어도 통화는 따로 고른 값 그대로(국가로 정하지 않는다)
+    expect(plan.next.currency).toBe('JPY');
+  });
+
+  it('keeps the old list fields of a legacy trip when only the label is sent unchanged', () => {
+    const plan = planTripUpdate(
+      base('ONGOING'),
+      { place: { label: '일본 오사카' } },
+      '2026-11-13',
+    );
+    expect(plan).toMatchObject({ changed: [], lockedFields: [] });
+    expect(plan.next.place).toEqual(base('ONGOING').place);
+  });
+
+  it('changes the currency only before the start, like the place', () => {
+    const upcoming = planTripUpdate(
       base('UPCOMING'),
-      { place: { countryCode: 'ZZ', label: '?' } },
+      { currency: 'KRW' },
       '2026-10-28',
     );
-    expect(codesOf(bad.fieldErrors)).toEqual([
-      'place.countryCode:unsupportedCountry',
-    ]);
+    expect(upcoming.changed).toEqual(['currency']);
+    expect(upcoming.next.currency).toBe('KRW');
+    expect(upcoming.next.place).toEqual(base('UPCOMING').place);
+
+    const ongoing = planTripUpdate(
+      base('ONGOING'),
+      { currency: 'KRW', budgetKrw: 1 },
+      '2026-11-13',
+    );
+    expect(ongoing.changed).toEqual(['budgetKrw']);
+    expect(ongoing.lockedFields).toEqual(['currency']);
+    expect(ongoing.next.currency).toBe('JPY');
+
+    // 같은 값이면 진행 중에도 받아 준다
+    expect(
+      planTripUpdate(base('ONGOING'), { currency: 'JPY' }, '2026-11-13'),
+    ).toMatchObject({ changed: [], lockedFields: [] });
+    expect(
+      planTripUpdate(base('ENDED'), { currency: 'USD' }, '2026-11-20')
+        .lockedFields,
+    ).toEqual(['currency']);
   });
 
   it('allows only groupName·budget·endDate while ongoing', () => {
@@ -297,11 +337,13 @@ describe('tripShell / tripPermissions (FR-001, 권한표 5-1)', () => {
       editableFields: [
         'groupName',
         'place',
+        'currency',
         'startDate',
         'endDate',
         'budgetKrw',
       ],
       canStart: true,
+      startBlockReason: null,
       canEnd: false,
       canDeleteGroup: true,
       canKick: true,
@@ -314,6 +356,7 @@ describe('tripShell / tripPermissions (FR-001, 권한표 5-1)', () => {
     ).toMatchObject({
       editableFields: ['groupName', 'budgetKrw', 'endDate'],
       canStart: false,
+      startBlockReason: 'NOT_UPCOMING',
       canEnd: true,
       canDeleteGroup: false,
       canKick: true,
@@ -338,6 +381,7 @@ describe('tripShell / tripPermissions (FR-001, 권한표 5-1)', () => {
       canEdit: false,
       editableFields: [],
       canStart: false,
+      startBlockReason: 'NOT_LEADER',
       canEnd: false,
       canDeleteGroup: false,
       canKick: false,
@@ -355,8 +399,25 @@ describe('tripShell / tripPermissions (FR-001, 권한표 5-1)', () => {
         role: 'LEADER',
         autoEndAt,
         now: late,
-      }).canStart,
-    ).toBe(false);
+      }),
+    ).toMatchObject({ canStart: false, startBlockReason: 'PERIOD_OVER' });
+  });
+
+  it('gives the start block reason in the start API order (403 role → 409 phase → 409 period)', () => {
+    const late = new Date('2026-11-16T00:00:00+09:00');
+    const reason = (status: TripStatus, role: 'LEADER' | 'MEMBER', at: Date) =>
+      startBlockReason({ status, role, autoEndAt, now: at });
+    expect(reason('UPCOMING', 'LEADER', now)).toBeNull();
+    // 23:59:59 KST(autoEndAt) 직전까지는 시작할 수 있고, 그 순간부터 PERIOD_OVER
+    expect(
+      reason('UPCOMING', 'LEADER', new Date(autoEndAt.getTime() - 1)),
+    ).toBeNull();
+    expect(reason('UPCOMING', 'LEADER', autoEndAt)).toBe('PERIOD_OVER');
+    expect(reason('UPCOMING', 'LEADER', late)).toBe('PERIOD_OVER');
+    expect(reason('UPCOMING', 'MEMBER', late)).toBe('NOT_LEADER');
+    expect(reason('ONGOING', 'MEMBER', now)).toBe('NOT_LEADER');
+    expect(reason('ONGOING', 'LEADER', late)).toBe('NOT_UPCOMING');
+    expect(reason('ENDED', 'LEADER', now)).toBe('NOT_UPCOMING');
   });
 });
 

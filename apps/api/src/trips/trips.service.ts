@@ -23,7 +23,6 @@ import {
   kstStartOfDay,
   parseDateOnly,
 } from './kst.js';
-import { currencyOf } from './places.js';
 import {
   TripVersionMismatch,
   isUniqueViolation,
@@ -36,12 +35,7 @@ import {
   nextEventSeqs,
   requireActiveMembership,
 } from './trip-locks.js';
-import {
-  canStartTrip,
-  checkTripPeriod,
-  planTripUpdate,
-  unsupportedCountry,
-} from './trip-rules.js';
+import { canStartTrip, checkTripPeriod, planTripUpdate } from './trip-rules.js';
 import { compareTripListItems, toTripListItem } from './trip-views.js';
 
 /** 초대코드가 우연히 겹칠 때 다시 뽑는 횟수(31^6 공간이라 2번째에서 끝난다) */
@@ -59,21 +53,20 @@ export class TripsService {
     private readonly events: DomainEventPublisher,
   ) {}
 
-  /** FR-201: Group + Trip(UPCOMING) + 그룹장 Membership(joinOrder 1)을 한 트랜잭션으로 만든다 */
+  /**
+   * FR-201: Group + Trip(UPCOMING) + 그룹장 Membership(joinOrder 1)을 한 트랜잭션으로 만든다.
+   * 장소는 자유 입력, 통화는 사용자가 고른다(DTO가 지원 통화인지 봤다). place.countryCode·city는 옛 화면 호환으로 저장만 한다
+   */
   async create(
     user: AuthUser,
     dto: CreateTripDto,
     now = new Date(),
   ): Promise<CreateTripResponse> {
-    const currency = currencyOf(dto.place.countryCode);
-    const errors = [
-      ...(currency ? [] : [unsupportedCountry('place.countryCode')]),
-      ...checkTripPeriod(dto.startDate, dto.endDate, {
-        today: kstDate(now),
-        checkStartPast: true,
-      }),
-    ];
-    if (errors.length > 0 || !currency) throw new ValidationFailedError(errors);
+    const errors = checkTripPeriod(dto.startDate, dto.endDate, {
+      today: kstDate(now),
+      checkStartPast: true,
+    });
+    if (errors.length > 0) throw new ValidationFailedError(errors);
 
     for (let attempt = 1; ; attempt++) {
       const inviteCode = this.codes.next();
@@ -87,9 +80,9 @@ export class TripsService {
             data: {
               groupId: group.id,
               placeLabel: dto.place.label,
-              countryCode: dto.place.countryCode,
+              countryCode: dto.place.countryCode ?? null,
               city: dto.place.city ?? null,
-              currency,
+              currency: dto.currency,
               startDate: parseDateOnly(dto.startDate)!,
               endDate: parseDateOnly(dto.endDate)!,
               startAt: kstStartOfDay(dto.startDate),
@@ -230,6 +223,7 @@ export class TripsService {
               city: current.city,
               label: current.placeLabel,
             },
+            currency: current.currency,
             startDate: dateOnly(current.startDate),
             endDate: dateOnly(current.endDate),
             budgetKrw: current.budgetKrw,
@@ -254,12 +248,11 @@ export class TripsService {
           data.placeLabel = next.place.label;
           data.countryCode = next.place.countryCode;
           data.city = next.place.city;
-          data.currency = next.currency!;
-          // 시작 전이라 환산된 결제가 없다. 통화가 바뀌면 고정 환율은 의미가 없어 기본값으로 돌린다
-          if (
-            next.currency !== current.currency &&
-            current.fxPolicy === 'FIXED'
-          ) {
+        }
+        if (changed.includes('currency')) {
+          data.currency = next.currency;
+          // 시작 전에만 바꿀 수 있어 환산된 결제가 없다. 통화가 바뀌면 고정 환율은 의미가 없어 기본값으로 돌린다
+          if (current.fxPolicy === 'FIXED') {
             data.fxPolicy = 'SPOT_AT_PAYMENT';
             data.fxFixedRate = null;
           }

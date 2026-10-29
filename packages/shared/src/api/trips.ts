@@ -8,7 +8,7 @@ import type { EndReason, TripStatus } from '../domain.js';
 export const TRIP_MEMBER_LIMIT = 20;
 /** 그룹명(= 화면의 여정 이름) 최대 글자 수 */
 export const GROUP_NAME_MAX_LENGTH = 20;
-/** 장소 표시 이름·도시 최대 글자 수 */
+/** 여행 장소(자유 입력)·도시 최대 글자 수 */
 export const PLACE_LABEL_MAX_LENGTH = 40;
 /** 여정 기간 최대 일수(시작일·종료일 포함). 미결 Q-29 추천안 */
 export const TRIP_MAX_DAYS = 31;
@@ -22,6 +22,7 @@ export const INVITE_PREVIEW_MEMBER_LIMIT = 4;
 export const TRIP_EDITABLE_FIELD_VALUES = [
   'groupName',
   'place',
+  'currency',
   'startDate',
   'endDate',
   'budgetKrw',
@@ -40,16 +41,32 @@ export const TRIP_EDITABLE_FIELDS: Readonly<
   ENDED: [],
 };
 
-/** 장소 입력. 목록(GET /api/places)에서 고른 값을 그대로 보낸다. 통화는 서버가 국가로 정한다 */
+/**
+ * 여행 장소. 사용자가 자유롭게 적는다("오사카", "제주 + 부산"). 통화는 장소와 따로 고른다(currency).
+ * countryCode·city는 옛 클라이언트(장소 목록) 호환용으로만 받아서 저장한다. 새 화면은 label만 보낸다.
+ */
 export interface PlaceInput {
-  /** ISO 3166-1 alpha-2. 국내는 KR */
-  countryCode: string;
-  city?: string | null;
-  /** 표시용 "일본 오사카" */
+  /** 앞뒤 공백을 뺀 1~40자 */
   label: string;
+  /** @deprecated ISO 3166-1 alpha-2. 받으면 저장만 하고 통화 판단에는 쓰지 않는다 */
+  countryCode?: string | null;
+  /** @deprecated 받으면 저장만 한다 */
+  city?: string | null;
 }
 
-/** GET /api/places */
+/** GET /api/currencies 한 항목. 여정 통화로 고를 수 있는 통화(서버 고정 목록, KRW가 맨 앞) */
+export interface SupportedCurrency {
+  /** ISO 4217 "JPY" */
+  code: string;
+  /** 고르기 화면 표시 "JPY · 일본 엔"의 "일본 엔" */
+  name: string;
+  /** 금액·환율 표기 "100엔 = 919.20원"의 "엔" */
+  unitName: string;
+  /** 고시 단위(JPY·VND·IDR = 100) */
+  displayUnit: number;
+}
+
+/** @deprecated GET /api/places. 장소가 자유 입력이 되어 새 화면은 쓰지 않는다 */
 export interface Place {
   countryCode: string;
   countryName: string;
@@ -63,6 +80,8 @@ export interface Place {
 export interface CreateTripRequest {
   groupName: string;
   place: PlaceInput;
+  /** ISO 4217. GET /api/currencies 목록 중 하나(국내 여행은 KRW). 기본값 없음 */
+  currency: string;
   startDate: string;
   endDate: string;
   budgetKrw: number;
@@ -100,13 +119,30 @@ export interface TripShell {
   lockedTabs: TripTab[];
 }
 
+export const TRIP_START_BLOCK_REASON_VALUES = [
+  'NOT_LEADER',
+  'NOT_UPCOMING',
+  'PERIOD_OVER',
+] as const;
+/**
+ * 여정을 시작할 수 없는 이유(POST /api/trips/:tripId/start의 거부 사유와 같은 순서로 판단).
+ * NOT_LEADER 403 → NOT_UPCOMING 409 → PERIOD_OVER 409(종료일 23:59:59 KST가 지남, 미결 Q-26)
+ */
+export type TripStartBlockReason =
+  (typeof TRIP_START_BLOCK_REASON_VALUES)[number];
+
 /** 버튼 노출용 권한 플래그. 서버는 같은 규칙을 요청마다 다시 확인한다 */
 export interface TripPermissions {
   /** 연필(여정 정보 수정). editableFields가 비면 false */
   canEdit: boolean;
   editableFields: TripEditableField[];
-  /** 그룹장 · 시작 전 · 종료일이 지나지 않음(미결 Q-26) */
+  /** 그룹장 · 시작 전 · 종료일이 지나지 않음(미결 Q-26). startBlockReason === null과 같다 */
   canStart: boolean;
+  /**
+   * 시작할 수 없는 이유. null이면 시작할 수 있다. 서버 시계(KST)로 판단하므로 화면은 기기 시계로 다시 계산하지 않는다
+   * (예: PERIOD_OVER면 그룹장에게 「기간 수정」을 보여 준다)
+   */
+  startBlockReason: TripStartBlockReason | null;
   canEnd: boolean;
   canDeleteGroup: boolean;
   canKick: boolean;
@@ -135,6 +171,8 @@ export interface TripDetailResponse extends TripDetail {
 export interface UpdateTripRequest {
   groupName?: string;
   place?: PlaceInput;
+  /** 시작 전에만. 통화가 바뀌면 고정 환율(FIXED)은 결제 시점 환율로 돌아간다 */
+  currency?: string;
   startDate?: string;
   endDate?: string;
   budgetKrw?: number;

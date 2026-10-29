@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { GroupsModule } from '../groups/groups.module.js';
 import { AutoEndJobController } from './auto-end-job.controller.js';
+import { CurrenciesController } from './currencies.controller.js';
 import { InviteCodeGenerator } from './invite-code.generator.js';
 import { PlacesController } from './places.controller.js';
 import { TripEndService } from './trip-end.service.js';
@@ -18,6 +19,7 @@ import { TripsService } from './trips.service.js';
     TripsController,
     MyTripsController,
     PlacesController,
+    CurrenciesController,
     AutoEndJobController,
   ],
   providers: [TripsService, TripEndService, InviteCodeGenerator],

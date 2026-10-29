@@ -7,10 +7,10 @@ import {
   type TripEditableField,
   type TripPermissions,
   type TripShell,
+  type TripStartBlockReason,
   type TripStatus,
 } from '@yeojeong/shared';
 import { addDays, diffDays, parseDateOnly } from './kst.js';
-import { currencyOf } from './places.js';
 
 // 여정·멤버 규칙 중 DB 없이 판단할 수 있는 것(단위 테스트 대상). 근거는 기능명세 3-1·3-4·4-7·4-8, FR-201·302·305.
 
@@ -82,15 +82,19 @@ export function checkTripPeriod(
 }
 
 export interface PlaceValue {
-  countryCode: string;
-  city: string | null;
+  /** 사용자가 적은 여행 장소 */
   label: string;
+  /** 옛 장소 목록 호환(저장만 한다). 새 여정은 null */
+  countryCode: string | null;
+  city: string | null;
 }
 
 export interface TripSnapshot {
   status: TripStatus;
   groupName: string;
   place: PlaceValue;
+  /** ISO 4217 */
+  currency: string;
   startDate: string;
   endDate: string;
   budgetKrw: number;
@@ -98,7 +102,9 @@ export interface TripSnapshot {
 
 export interface TripUpdateInput {
   groupName?: string;
-  place?: { countryCode: string; city?: string | null; label: string };
+  place?: { label: string; countryCode?: string | null; city?: string | null };
+  /** 형식·지원 여부는 DTO가 이미 봤다 */
+  currency?: string;
   startDate?: string;
   endDate?: string;
   budgetKrw?: number;
@@ -111,11 +117,31 @@ export interface TripUpdatePlan {
   lockedFields: TripEditableField[];
   /** 값 검증 실패 → 400 VALIDATION_FAILED */
   fieldErrors: FieldError[];
-  next: TripSnapshot & { currency: string | null };
+  next: TripSnapshot;
+}
+
+/**
+ * 보낸 장소를 지금 값과 비교할 값으로 바꾼다. 새 화면은 label만 보낸다.
+ * countryCode·city를 생략하면 label이 같을 때는 지금 값을 그대로 두고(옛 여정을 그대로 저장해도 바뀐 것이 아니다),
+ * label이 바뀌면 옛 목록 값이 더는 장소를 설명하지 않으므로 비운다.
+ */
+function nextPlaceOf(
+  current: PlaceValue,
+  input: NonNullable<TripUpdateInput['place']>,
+): PlaceValue {
+  const sameLabel = input.label === current.label;
+  const pick = (sent: string | null | undefined, now: string | null) =>
+    sent !== undefined ? sent : sameLabel ? now : null;
+  return {
+    label: input.label,
+    countryCode: pick(input.countryCode, current.countryCode),
+    city: pick(input.city, current.city),
+  };
 }
 
 /**
  * PATCH /api/trips/:tripId의 변경 계획(FR-302). 잠긴 항목도 지금 값과 같으면 받아 준다(폼이 전체를 보내도 되게).
+ * 장소와 통화는 따로 바뀐다(장소를 바꿔도 통화는 그대로). 통화는 장소처럼 시작 전에만 바꿀 수 있다.
  * 종료일을 바꾸면 autoEndAt, 시작일을 바꾸면 startAt을 호출자가 다시 계산한다.
  */
 export function planTripUpdate(
@@ -126,20 +152,19 @@ export function planTripUpdate(
   const allowed = TRIP_EDITABLE_FIELDS[current.status];
   const changed: TripEditableField[] = [];
   const lockedFields: TripEditableField[] = [];
-  const nextPlace: PlaceValue | undefined = input.place && {
-    countryCode: input.place.countryCode,
-    city: input.place.city ?? null,
-    label: input.place.label,
-  };
+  const nextPlace: PlaceValue | undefined =
+    input.place && nextPlaceOf(current.place, input.place);
 
   const differs: Record<TripEditableField, boolean> = {
     groupName:
       input.groupName !== undefined && input.groupName !== current.groupName,
     place:
       nextPlace !== undefined &&
-      (nextPlace.countryCode !== current.place.countryCode ||
-        nextPlace.city !== current.place.city ||
-        nextPlace.label !== current.place.label),
+      (nextPlace.label !== current.place.label ||
+        nextPlace.countryCode !== current.place.countryCode ||
+        nextPlace.city !== current.place.city),
+    currency:
+      input.currency !== undefined && input.currency !== current.currency,
     startDate:
       input.startDate !== undefined && input.startDate !== current.startDate,
     endDate: input.endDate !== undefined && input.endDate !== current.endDate,
@@ -151,12 +176,13 @@ export function planTripUpdate(
     (allowed.includes(field) ? changed : lockedFields).push(field);
   }
 
-  const next = {
+  const next: TripSnapshot = {
     status: current.status,
     groupName: changed.includes('groupName')
       ? input.groupName!
       : current.groupName,
     place: changed.includes('place') ? nextPlace! : current.place,
+    currency: changed.includes('currency') ? input.currency! : current.currency,
     startDate: changed.includes('startDate')
       ? input.startDate!
       : current.startDate,
@@ -164,17 +190,9 @@ export function planTripUpdate(
     budgetKrw: changed.includes('budgetKrw')
       ? input.budgetKrw!
       : current.budgetKrw,
-    currency: currencyOf(
-      changed.includes('place')
-        ? nextPlace!.countryCode
-        : current.place.countryCode,
-    ),
   };
 
   const fieldErrors: FieldError[] = [];
-  if (changed.includes('place') && next.currency === null) {
-    fieldErrors.push(unsupportedCountry('place.countryCode'));
-  }
   if (changed.includes('startDate') || changed.includes('endDate')) {
     fieldErrors.push(
       ...checkTripPeriod(next.startDate, next.endDate, {
@@ -188,14 +206,6 @@ export function planTripUpdate(
     );
   }
   return { changed, lockedFields, fieldErrors, next };
-}
-
-export function unsupportedCountry(path: string): FieldError {
-  return {
-    path,
-    code: 'unsupportedCountry',
-    message: '지원하지 않는 여행지예요',
-  };
 }
 
 /** 앱 셸(FR-001): 단계별 기본 탭·잠금·2번 탭 */
@@ -223,6 +233,22 @@ export function canStartTrip(autoEndAt: Date, now: Date): boolean {
   return now.getTime() < autoEndAt.getTime();
 }
 
+/**
+ * 여정을 시작할 수 없는 이유. 시작 API와 같은 순서로 본다:
+ * MembershipGuard(NOT_LEADER 403) → TripStatusGuard(NOT_UPCOMING 409) → 서비스의 canStartTrip(PERIOD_OVER 409)
+ */
+export function startBlockReason(input: {
+  status: TripStatus;
+  role: MemberRole;
+  autoEndAt: Date;
+  now: Date;
+}): TripStartBlockReason | null {
+  if (input.role !== 'LEADER') return 'NOT_LEADER';
+  if (input.status !== 'UPCOMING') return 'NOT_UPCOMING';
+  if (!canStartTrip(input.autoEndAt, input.now)) return 'PERIOD_OVER';
+  return null;
+}
+
 /** 버튼 노출용 권한(기능명세 README 5-1, 4-8) */
 export function tripPermissions(input: {
   status: TripStatus;
@@ -230,14 +256,15 @@ export function tripPermissions(input: {
   autoEndAt: Date;
   now: Date;
 }): TripPermissions {
-  const { status, now } = input;
+  const { status } = input;
   const leader = input.role === 'LEADER';
   const editableFields = leader ? [...TRIP_EDITABLE_FIELDS[status]] : [];
+  const blocked = startBlockReason(input);
   return {
     canEdit: editableFields.length > 0,
     editableFields,
-    canStart:
-      leader && status === 'UPCOMING' && canStartTrip(input.autoEndAt, now),
+    canStart: blocked === null,
+    startBlockReason: blocked,
     canEnd: leader && status === 'ONGOING',
     canDeleteGroup: leader && status === 'UPCOMING',
     canKick: leader && status !== 'ENDED',

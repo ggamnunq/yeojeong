@@ -5,6 +5,7 @@ import {
   MEMBER_ROLE_VALUES,
   TRIP_EDITABLE_FIELD_VALUES,
   TRIP_EVENT_TYPE_VALUES,
+  TRIP_START_BLOCK_REASON_VALUES,
   TRIP_STATUS_VALUES,
   TRIP_TAB_VALUES,
   type AutoEndJobResponse,
@@ -18,6 +19,7 @@ import {
   type MyTripsResponse,
   type Place,
   type Profile,
+  type SupportedCurrency,
   type TripDetailResponse,
   type TripEditableField,
   type TripEventType,
@@ -25,6 +27,7 @@ import {
   type TripListItem,
   type TripPermissions,
   type TripShell,
+  type TripStartBlockReason,
   type TripStatus,
   type TripTab,
 } from '@yeojeong/shared';
@@ -162,8 +165,16 @@ class TripPermissionsDto implements TripPermissions {
   @ApiProperty({ enum: TRIP_EDITABLE_FIELD_VALUES, isArray: true })
   editableFields: TripEditableField[];
 
-  @ApiProperty()
+  @ApiProperty({ description: 'startBlockReason === null' })
   canStart: boolean;
+
+  @ApiProperty({
+    enum: TRIP_START_BLOCK_REASON_VALUES,
+    nullable: true,
+    description:
+      '시작할 수 없는 이유(시작 API 거부 사유와 같은 순서: NOT_LEADER → NOT_UPCOMING → PERIOD_OVER). null이면 시작할 수 있다. 서버 시계(KST) 기준',
+  })
+  startBlockReason: TripStartBlockReason | null;
 
   @ApiProperty()
   canEnd: boolean;
@@ -188,16 +199,33 @@ export class TripDetailResponseDto
   extends TripListItemDto
   implements TripDetailResponse
 {
-  @ApiProperty({ example: '일본 오사카' })
+  @ApiProperty({
+    example: '제주 + 부산',
+    description: '사용자가 적은 여행 장소',
+  })
   placeLabel: string;
 
-  @ApiProperty({ example: 'JP' })
-  countryCode: string;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: null,
+    description:
+      '옛 장소 목록으로 만든 여정만 값이 있다(ISO 3166-1). 새 여정은 null',
+  })
+  countryCode: string | null;
 
-  @ApiProperty({ type: String, nullable: true, example: '오사카' })
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: null,
+    description: '옛 장소 목록으로 만든 여정만 값이 있다',
+  })
   city: string | null;
 
-  @ApiProperty({ example: 'JPY' })
+  @ApiProperty({
+    example: 'JPY',
+    description: 'ISO 4217. 여정을 만들 때 고른 통화',
+  })
   currency: string;
 
   @ApiProperty({ example: 1200000 })
@@ -288,6 +316,7 @@ export class EndTripResponseDto implements EndTripResponse {
   autoPersonalizedCount: number;
 }
 
+/** @deprecated 장소가 자유 입력이 되어 새 화면은 GET /api/places를 쓰지 않는다 */
 export class PlaceDto implements Place {
   @ApiProperty({ example: 'JP' })
   countryCode: string;
@@ -303,6 +332,20 @@ export class PlaceDto implements Place {
 
   @ApiProperty({ example: 'JPY' })
   currency: string;
+}
+
+export class SupportedCurrencyDto implements SupportedCurrency {
+  @ApiProperty({ example: 'JPY', description: 'ISO 4217' })
+  code: string;
+
+  @ApiProperty({ example: '일본 엔', description: '표시 "JPY · 일본 엔"' })
+  name: string;
+
+  @ApiProperty({ example: '엔', description: '금액·환율 표기의 단위 이름' })
+  unitName: string;
+
+  @ApiProperty({ example: 100, description: '고시 단위(JPY·VND·IDR = 100)' })
+  displayUnit: number;
 }
 
 export class AutoEndJobResponseDto implements AutoEndJobResponse {

@@ -9,7 +9,8 @@ import type { Place, PlaceInput } from '../types'
 export type PlaceSheetProps = {
   open: boolean
   selected: PlaceInput | null
-  onSelect: (place: PlaceInput) => void
+  /** currency: 고른 장소의 통화(만들기 요청의 currency로 보낸다) */
+  onSelect: (place: PlaceInput, currency: string) => void
   onClose: () => void
 }
 
@@ -55,7 +56,7 @@ function PlaceSearch({ selected, onSelect }: Pick<PlaceSheetProps, 'selected' | 
                 type={isSelected(place, selected) ? 'selected' : 'value'}
                 title={place.city ?? place.label}
                 subtitle={place.countryName}
-                onClick={() => onSelect({ countryCode: place.countryCode, city: place.city, label: place.label })}
+                onClick={() => onSelect({ countryCode: place.countryCode, city: place.city, label: place.label }, place.currency)}
               />
             </li>
           ))}
