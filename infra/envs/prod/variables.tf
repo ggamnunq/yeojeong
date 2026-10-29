@@ -145,3 +145,59 @@ variable "enable_exim_fx" {
   type        = bool
   default     = false
 }
+
+# ── 카드 승인내역 불러오기(S8, CODEF 일회성 조회) ──
+
+variable "enable_codef" {
+  description = "CODEF 키 연결. true면 Secret Manager yeojeong-codef-client-id·yeojeong-codef-client-secret·yeojeong-codef-public-key를 CODEF_CLIENT_ID·CODEF_CLIENT_SECRET·CODEF_PUBLIC_KEY로 연결한다(시크릿이 먼저 있어야 한다). 키가 없으면 feature_card_import와 무관하게 기능이 꺼진다"
+  type        = bool
+  default     = false
+}
+
+variable "codef_env" {
+  description = "CODEF 환경(CODEF_ENV): sandbox(고정 샘플) · development(데모 키, 실제 카드사) · production(정식 키)"
+  type        = string
+  default     = "sandbox"
+
+  validation {
+    condition     = contains(["sandbox", "development", "production"], var.codef_env)
+    error_message = "codef_env는 sandbox, development, production 중 하나여야 합니다."
+  }
+}
+
+variable "feature_card_import" {
+  description = "카드 승인내역 불러오기 공개 단계(FEATURE_CARD_IMPORT): off(기본) · allowlist(card_import_allowed_user_ids 사용자만, 운영자 실테스트) · on(전체 공개 — 법률 자문 L-25 뒤에만)"
+  type        = string
+  default     = "off"
+
+  validation {
+    condition     = contains(["off", "allowlist", "on"], var.feature_card_import)
+    error_message = "feature_card_import는 off, allowlist, on 중 하나여야 합니다."
+  }
+}
+
+variable "card_import_allowed_user_ids" {
+  description = "feature_card_import = allowlist일 때 켜 줄 사용자 ID(UUID) 목록(CARD_IMPORT_ALLOWED_USER_IDS). 비밀은 아니지만 terraform.tfvars로만 넣고 커밋하지 않는다"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for id in var.card_import_allowed_user_ids :
+      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))
+    ])
+    error_message = "card_import_allowed_user_ids는 사용자 UUID 목록이어야 합니다."
+  }
+}
+
+variable "codef_daily_call_budget" {
+  description = "서비스 전체 CODEF API 일일 호출 예산(CODEF_DAILY_CALL_BUDGET, KST 날짜 기준). 계정 등록·조회·추가 인증·삭제를 모두 센다. 남은 예산이 4 미만이면 새 조회를 막는다(삭제는 항상 보낸다)"
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.codef_daily_call_budget >= 0 && floor(var.codef_daily_call_budget) == var.codef_daily_call_budget
+    error_message = "codef_daily_call_budget는 0 이상의 정수여야 합니다."
+  }
+}
+

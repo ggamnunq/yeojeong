@@ -37,6 +37,12 @@ locals {
       path        = "/api/internal/jobs/settlements"
       paused      = false
     }
+    codef_cleanup = {
+      description = "CODEF 계정 삭제 재시도(카드 승인내역 불러오기, account 모드에서만 행이 생긴다)"
+      schedule    = "*/10 * * * *"
+      path        = "/api/internal/jobs/codef-cleanup"
+      paused      = !var.enable_codef
+    }
     purge = {
       description = "보존 기간이 지난 데이터 파기"
       schedule    = "0 4 * * *"

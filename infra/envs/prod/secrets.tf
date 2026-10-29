@@ -114,6 +114,11 @@ locals {
   external_secret_env = merge(
     var.enable_kakao_unlink ? { KAKAO_ADMIN_KEY = "yeojeong-kakao-admin-key" } : {},
     var.enable_exim_fx ? { EXIM_API_KEY = "yeojeong-exim-api-key" } : {},
+    var.enable_codef ? {
+      CODEF_CLIENT_ID     = "yeojeong-codef-client-id"
+      CODEF_CLIENT_SECRET = "yeojeong-codef-client-secret"
+      CODEF_PUBLIC_KEY    = "yeojeong-codef-public-key"
+    } : {},
   )
 }
 
