@@ -137,7 +137,7 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
-      # 기능 플래그로 켠 외부 시크릿(KAKAO_ADMIN_KEY, EXIM_API_KEY, CODEF_*)
+      # 기능 플래그로 켠 외부 시크릿(KAKAO_ADMIN_KEY, EXIM_API_KEY, CODEF_*, ADMIN_*)
       dynamic "env" {
         for_each = local.external_secret_env
         content {

@@ -10,6 +10,20 @@ export const AUDIT_ACTION_VALUES = [
   'PURGE_FINANCIAL_DATA',
   /** 카카오 쪽 "연결 끊기" 알림을 받아 세션을 폐기했다(기능명세 7-1, 미결 Q-32 기본안) */
   'KAKAO_UNLINKED',
+  // ─ 관리자(src/admin). user_id = 관리자 행위자 ID(아이디에서 만든 UUID — users 행 없음), 개인정보취급자 접속 기록 ─
+  /** 관리자 로그인 성공 */
+  'ADMIN_LOGIN',
+  /** 관리자 로그인 실패. details.reason = BAD_CREDENTIALS | RATE_LIMITED(입력한 아이디는 남기지 않는다) */
+  'ADMIN_LOGIN_FAILED',
+  'ADMIN_LOGOUT',
+  /** 회원 목록 열람. details = 건수·검색 종류(NONE|NICKNAME|USER_ID)·정렬·페이지(검색어 원문은 남기지 않는다) */
+  'ADMIN_VIEW_USERS',
+  /** 회원 상세 열람. resourceId = 회원 ID */
+  'ADMIN_VIEW_USER',
+  /** 회원 탈퇴 처리. resourceId = 회원 ID, details = 사유·결과(PENDING → DELETED | 에러 코드) */
+  'ADMIN_WITHDRAW_USER',
+  /** CODEF 호출 현황 열람 */
+  'ADMIN_VIEW_CODEF_USAGE',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTION_VALUES)[number];
 
@@ -22,5 +36,9 @@ export const AUDIT_RESOURCE_TYPE_VALUES = [
   'PAYMENT_CONNECTION',
   'CONNECTION_ATTEMPT',
   'SETTLEMENT',
+  /** 관리자 로그인·로그아웃(resourceId 없음) */
+  'ADMIN',
+  /** 관리자 CODEF 호출 현황(resourceId 없음) */
+  'CODEF_USAGE',
 ] as const;
 export type AuditResourceType = (typeof AUDIT_RESOURCE_TYPE_VALUES)[number];

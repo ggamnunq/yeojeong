@@ -140,6 +140,12 @@ variable "kakao_app_id" {
   }
 }
 
+variable "enable_admin" {
+  description = "운영자 관리자 페이지(/admin). true면 Secret Manager yeojeong-admin-username·yeojeong-admin-password-hash·yeojeong-admin-totp-secret을 ADMIN_USERNAME·ADMIN_PASSWORD_HASH·ADMIN_TOTP_SECRET으로 연결한다(시크릿 셋이 먼저 있어야 한다). 끄면(기본) /api/admin/* 전체가 404"
+  type        = bool
+  default     = false
+}
+
 variable "enable_exim_fx" {
   description = "한국수출입은행 환율. true면 Secret Manager yeojeong-exim-api-key를 EXIM_API_KEY로 연결한다(시크릿이 먼저 있어야 한다). 연결되면 환율 소스가 koreaexim+erapi(미고시 통화만 ExchangeRate-API)가 된다"
   type        = bool

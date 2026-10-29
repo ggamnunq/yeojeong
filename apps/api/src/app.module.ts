@@ -4,6 +4,7 @@ import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AccountModule } from './account/account.module.js';
+import { AdminModule } from './admin/admin.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import {
   AuthCoreModule,
@@ -59,6 +60,7 @@ import { WalletModule } from './wallet/wallet.module.js';
     PaymentMethodsModule,
     WalletModule,
     CardImportModule,
+    AdminModule,
   ],
   providers: [
     { provide: APP_PIPE, useValue: createValidationPipe() },

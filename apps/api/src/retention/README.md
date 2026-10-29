@@ -51,6 +51,7 @@
 | 10  | `ACCOUNT_DELETIONS`       | AccountDeletion             | `completedAt` + 3년, 처리 안 된 요청은 `requestedAt` + 3년 | 삭제                        | 5,000행    |
 | 11  | `CARD_IMPORT_COUNTERS`    | CardImportLoginFailure · CodefDailyUsage · CardImportLock | 로그인 실패 `lastFailedAt` + 7일, CODEF 일일 호출 수 `day` + 7일, 잠금은 `expiresAt` 지남(S8) | 삭제 | 전부 |
 | 12  | `CODEF_PENDING_DELETIONS` | CodefPendingDeletion | `createdAt` + 30일(넘으면 버리고 error 로그). 남은 행이 있으면 매일 error 로그(S8) | 삭제 | 전부 |
+| 13  | `ADMIN_SESSIONS`          | AdminSession · AdminLoginThrottle | 관리자 세션은 `expiresAt` 지남·`revokedAt` 있음·`lastSeenAt` + 30분 지남, 로그인·재인증 시도 제한 카운터(IP·전체·장치·세션)는 `windowStartedAt` + 1일(ADMIN, `src/admin`). TOTP 재사용 금지 카운터(`admin_totp_counters`, 관리자당 1행)는 지우지 않는다 | 삭제 | 전부 |
 
 - "하위 기록 일체" = ExpenseChangeLog → Expense(ExpenseShare·취소 자식 CASCADE) → Settlement(멤버·송금안 CASCADE) → TripEvent → Trip → Membership → Group. 이 여정의 결제에만 쓰인 거래 원본과, 그 거래를 가리키는 동일 사용자 중복 행(결제가 없는 것)도 지운다. 겹치는 다른 여정이 쓰는 거래는 남긴다.
 - 상한에 걸리면 `hasMore: true`이고 다음 실행이 이어서 지운다.

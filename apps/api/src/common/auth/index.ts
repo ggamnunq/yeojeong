@@ -8,6 +8,7 @@ export type {
 } from './auth-context.js';
 export { AuthConfig } from './auth-config.js';
 export {
+  IS_ADMIN_ROUTE_KEY,
   LOGIN_STATE_COOKIE,
   SESSION_COOKIE,
   SIGNUP_COOKIE,

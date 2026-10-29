@@ -82,6 +82,7 @@ documents() {}
 - 남의 리소스는 403이 아니라 404로 숨긴다. 결제처럼 여정 안의 리소스는 서비스에서 `tripId` 조건을 함께 걸어 조회한다(ID만으로 조회하지 않는다).
 - 가드는 요청 시점의 값으로 막는 1차 관문이다. 상태를 바꾸는 서비스는 트랜잭션 안에서 Trip 행을 잠그고(`FOR SHARE`/`FOR UPDATE`) 단계와 멤버십을 다시 확인한다(기능명세 8-3).
 - `@SkipConsentCheck()`는 재동의 전에도 열려야 하는 라우트(재동의, 탈퇴·삭제 요청)에만 쓴다.
+- 관리자 라우트(`/api/admin/*`)는 사용자 세션과 섞지 않는다. `src/admin`의 `@AdminOnly()`·`@AdminPublic()`이 `AuthGuard`·`ConsentGuard`를 건너뛰고 관리자 쿠키(`__Host-yj_admin`)만 보는 `AdminSessionGuard`를 붙인다. 다른 모듈은 이 데코레이터를 쓰지 않는다(`src/admin/README.md`).
 
 ### 로그인·가입 (auth, users, consents 모듈)
 
@@ -139,6 +140,7 @@ documents() {}
 | `KAKAO_ADMIN_KEY`                         | Secret Manager(사용자가 gcloud로 생성, `yeojeong-kakao-admin-key`) | 선택. 없으면 연결 끊기 알림 404. Terraform `enable_kakao_unlink` |
 | `KAKAO_APP_ID`                            | Cloud Run 일반 env(`kakao_app_id`)     | 선택. 연결 끊기 알림 app_id 확인         |
 | `EXIM_API_KEY`                            | Secret Manager(사용자가 gcloud로 생성, `yeojeong-exim-api-key`) | 선택. 있으면 환율 소스 koreaexim+erapi(미고시 통화 TWD·VND·PHP는 ExchangeRate-API, 키 없음). Terraform `enable_exim_fx` |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `ADMIN_TOTP_SECRET` | Secret Manager(사용자가 gcloud로 생성, `yeojeong-admin-username`·`yeojeong-admin-password-hash`·`yeojeong-admin-totp-secret`) | 선택. 셋 다 있어야 관리자 페이지가 켜진다(없으면 `/api/admin/*` 404). 해시는 `admin:hash`, TOTP 시크릿은 `admin:totp`. Terraform `enable_admin`. `src/admin/README.md` |
 
 ### 내부 잡 인증
 

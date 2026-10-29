@@ -211,6 +211,34 @@ export const CARD_IMPORT_ERRORS = {
   },
 } as const satisfies Record<string, ErrorDefinition>;
 
+/** 운영자 관리자 페이지(ADMIN). 사용자 세션의 UNAUTHENTICATED와 섞이지 않게 코드를 따로 둔다(화면 전역 401 처리기가 카카오 로그인으로 보내지 않게) */
+export const ADMIN_ERRORS = {
+  /** 관리자 세션이 없거나 만료(유휴 30분·절대 8시간)·폐기됐다 */
+  ADMIN_UNAUTHENTICATED: { status: 401, message: '관리자 로그인이 필요해요' },
+  /** 아이디·비밀번호·인증 코드(TOTP) 중 무엇이 틀렸는지 알려 주지 않는다 */
+  ADMIN_LOGIN_FAILED: {
+    status: 401,
+    message: '아이디, 비밀번호 또는 인증 코드가 맞지 않아요',
+  },
+  /** 로그인 시도 제한(IP당·서비스 전체). details: { retryAfter(ISO UTC), retryAfterSec } + Retry-After */
+  ADMIN_LOGIN_RATE_LIMITED: {
+    status: 429,
+    message: '로그인 시도가 너무 많아요. 잠시 후 다시 시도해 주세요',
+  },
+  /** 파괴적 조치의 재인증(비밀번호 + 인증 코드)이 맞지 않다 */
+  ADMIN_STEP_UP_FAILED: {
+    status: 403,
+    message: '비밀번호 또는 인증 코드가 맞지 않아요',
+  },
+  /** 재인증 시도 제한(세션당). details: { retryAfter(ISO UTC), retryAfterSec } + Retry-After */
+  ADMIN_STEP_UP_RATE_LIMITED: {
+    status: 429,
+    message: '확인 시도가 너무 많아요. 잠시 후 다시 시도해 주세요',
+  },
+  /** 탈퇴 처리 확인용 닉네임이 회원 닉네임과 다르다 */
+  ADMIN_CONFIRM_MISMATCH: { status: 400, message: '닉네임이 맞지 않아요' },
+} as const satisfies Record<string, ErrorDefinition>;
+
 /**
  * API 서버가 아니라 화면(apps/web의 apiFetch)이나 앞단 Cloudflare Worker가 만드는 코드.
  * 서버 코드에서는 던지지 않는다. status는 같은 상황을 HTTP로 나타낸 값이고,
@@ -250,6 +278,7 @@ export const ERRORS = {
   ...FX_ERRORS,
   ...WALLET_ERRORS,
   ...CARD_IMPORT_ERRORS,
+  ...ADMIN_ERRORS,
 } as const satisfies Record<string, ErrorDefinition>;
 
 export type ErrorCode = keyof typeof ERRORS;

@@ -34,6 +34,7 @@ import { TwoWayTokenSealer } from './two-way-token.js';
     ImportKeyHasher,
     { provide: CODEF_FETCH, useValue: globalThis.fetch.bind(globalThis) },
   ],
-  exports: [CodefConfig, ItemTokenSigner],
+  // CardImportLimits: 관리자 CODEF 현황(src/admin)이 일일 예산 값을 읽는다
+  exports: [CodefConfig, ItemTokenSigner, CardImportLimits],
 })
 export class CardImportModule {}

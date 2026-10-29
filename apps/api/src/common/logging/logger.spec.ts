@@ -173,4 +173,26 @@ describe('createLogger', () => {
     expect(() => logger.info({ circular }, 'e')).not.toThrow();
     expect(output).toContain('[Circular]');
   });
+  it('redacts admin login credentials (username, password, passwordHash) at any depth (ADMIN)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    logger.warn(
+      {
+        dto: { username: 'ops-admin-xyz', password: 'pw-secret-123' },
+        err: Object.assign(new Error('boom'), {
+          cause: {
+            request: { userName: 'ops-admin-xyz', password_hash: 'scrypt$1$2' },
+          },
+        }),
+      },
+      '관리자 로그인 본문을 남긴 실수',
+    );
+    expect(output).toContain('[REDACTED]');
+    expect(output).not.toContain('ops-admin-xyz');
+    expect(output).not.toContain('pw-secret-123');
+    expect(output).not.toContain('scrypt$1$2');
+  });
 });

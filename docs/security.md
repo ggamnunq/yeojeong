@@ -80,6 +80,7 @@
 - 쿠키 인증을 쓰면 상태를 바꾸는 요청에 CSRF 방어를 붙인다. SameSite와 Origin 검사, 또는 CSRF 토큰을 쓴다.
   - 적용됨: 세션 쿠키 `yj_session`(httpOnly·SameSite=Lax·운영 Secure, DB에는 토큰 SHA-256만), 전역 `CsrfGuard`가 POST·PUT·PATCH·DELETE의 `Origin`(없으면 `Sec-Fetch-Site: same-origin`)을 `WEB_BASE_URL`과 비교한다. 카카오 로그인 state는 서명 쿠키로 검증한다. 자세한 내용은 `apps/api/README.md` "인증과 권한".
 - 모든 API는 기본이 로그인 필수다(`@Public()`만 예외). 여정·그룹 경로(`:tripId`, `:groupId`)는 멤버십 가드가 자동으로 걸리고 비멤버에게는 404를 준다.
+- 운영자 관리자 페이지(`/api/admin/*`, `/admin`)는 사용자 세션과 완전히 분리된 관리자 세션(`__Host-yj_admin`, HttpOnly·Secure·SameSite=Strict, 유휴 30분·절대 8시간, DB에 토큰 해시만)을 쓴다. 자격 증명은 env 아이디 + scrypt 해시 + TOTP 시크릿(2단계 인증 필수, 코드 재사용 금지)이고 셋 중 하나라도 없으면 전체 404(운영 기본 꺼짐). 로그인 시도는 DB 카운터로 IP(IPv6 /64)·전체를 제한하되 로그인에 성공했던 브라우저(서명된 장치 쿠키)는 전체 잠금에서 빠진다. 탈퇴 처리 같은 파괴적 조치는 비밀번호 + TOTP 재인증. 모든 열람·조치는 접근 기록(1년)에 남는다(fail closed). 자세한 내용은 `apps/api/src/admin/README.md`.
 
 ### 권한 검사 (IDOR)
 

@@ -20,6 +20,7 @@ import {
 } from '../errors/app-exception.js';
 import { IS_INTERNAL_JOB_KEY } from '../internal-job/internal-job.constants.js';
 import {
+  IS_ADMIN_ROUTE_KEY,
   IS_EXTERNAL_WEBHOOK_KEY,
   IS_PUBLIC_KEY,
   REQUIRED_CONSENTS_KEY,
@@ -93,6 +94,8 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     if (ctx.getType() !== 'http') return true;
+    // 관리자 라우트는 사용자 세션과 섞지 않는다(req.auth를 채우지 않음). 관리자 세션 가드가 따로 막는다(src/admin)
+    if (metadata<boolean>(this.reflector, IS_ADMIN_ROUTE_KEY, ctx)) return true;
     const http = ctx.switchToHttp();
     const req = http.getRequest<Request>();
     const state = await this.sessions.resolve(

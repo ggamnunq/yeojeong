@@ -364,6 +364,7 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
       'ACCOUNT_DELETIONS',
       'CARD_IMPORT_COUNTERS',
       'CODEF_PENDING_DELETIONS',
+      'ADMIN_SESSIONS',
     ]);
     expect(countOf(dry, 'SOFT_DELETED_GROUPS')).toBeGreaterThanOrEqual(1);
     expect(countOf(dry, 'SESSIONS')).toBeGreaterThanOrEqual(2);

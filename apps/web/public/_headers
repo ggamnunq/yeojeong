@@ -8,3 +8,11 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Cross-Origin-Opener-Policy: same-origin
   Strict-Transport-Security: max-age=31536000
+
+# 운영자 관리자 화면(/admin, SPA라 index.html이 응답한다): 색인 금지 + 캐시 금지. robots.txt에는 적지 않는다(경로를 광고하지 않게)
+/admin
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
+/admin/*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
