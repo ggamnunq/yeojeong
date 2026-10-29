@@ -72,6 +72,11 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       env {
+        name  = "PAYMENT_PROVIDER"
+        value = var.payment_provider
+      }
+
+      env {
         name  = "INTERNAL_JOB_OIDC_AUDIENCE"
         value = var.internal_job_oidc_audience
       }
