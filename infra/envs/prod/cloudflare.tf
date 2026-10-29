@@ -95,9 +95,9 @@ locals {
   ]
 }
 
+# name은 서브도메인용이다. apex(jinyeojeong.com)에 켤 때는 비워 둔다(넣으면 "must be a subdomains of" 400).
 resource "cloudflare_email_routing_dns" "web" {
   zone_id = local.zone_id
-  name    = var.domain
 
   lifecycle {
     precondition {
