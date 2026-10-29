@@ -30,7 +30,7 @@ function decodeMatrix(matrix: boolean[][]): string {
 }
 
 describe('초대 QR(W8)', () => {
-  const url = 'https://jinyeojeong.com/join?code=K7M2QX'
+  const url = 'https://jinyeojeong.com/join#code=K7M2QX'
 
   it('참여 링크를 그대로 담고, 실제 디코더로 다시 읽힌다(오류 정정 M · 여백 2모듈)', () => {
     const matrix = qrMatrix(url)

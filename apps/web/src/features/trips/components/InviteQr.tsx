@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 import { qrMatrix, qrPath } from '../qr'
 
 export type InviteQrProps = {
-  /** QR에 담을 글자(참여 링크 https://…/join?code=…) */
+  /** QR에 담을 글자(참여 링크 https://…/join#code=…) */
   value: string
   /** QR 그림 한 변(px, 타일 패딩·테두리 제외). 기본 200 */
   size?: number

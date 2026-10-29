@@ -7,6 +7,7 @@ import { server } from '../../mocks/server'
 import { mockError } from '../../mocks/utils'
 import { toastStore } from '../../notifications/store'
 import { renderApp } from '../../test/render'
+import { hasPendingInvite, rememberPendingInvite } from '../trips/pendingInvite'
 import { writeAttemptContext } from '../wallet/connect'
 import { browser } from './browser'
 
@@ -508,12 +509,14 @@ describe('재동의', () => {
     })
   })
 
-  it('로그아웃하면 로그인으로', async () => {
+  it('로그아웃하면 로그인으로(보관 중 초대도 버린다, W8 L2)', async () => {
     db.consentRequired = ['TOS', 'PRIVACY']
+    rememberPendingInvite('T4K9YP')
     const { router } = renderApp('/reconsent?required=TOS%2CPRIVACY')
     fireEvent.click(await screen.findByRole('button', { name: '로그아웃' }))
     await waitFor(() => expect(where(router)).toBe('/login'))
     expect(db.session).toBe('ANONYMOUS')
+    expect(hasPendingInvite()).toBe(false)
   })
 
   it('다시 받을 동의가 없으면 returnTo(없으면 진입 라우팅)로', async () => {

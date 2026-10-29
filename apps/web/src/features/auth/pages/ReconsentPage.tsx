@@ -5,6 +5,7 @@ import { paths, safeReturnTo } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { SheetContentConsent, ShellOnboarding } from '../../../ds'
+import { forgetInvites } from '../../trips/pendingInvite'
 import { consentDocumentsQuery, postLogout, postReconsent, visibleConsents } from '../api'
 import { useConsentChecks, useConsentItems } from '../consent'
 import { COPY } from '../copy'
@@ -46,6 +47,7 @@ export default function ReconsentPage() {
     mutationFn: postLogout,
     onSuccess: () => {
       queryClient.clear()
+      forgetInvites()
       navigate(paths.login(), { replace: true })
     },
   })

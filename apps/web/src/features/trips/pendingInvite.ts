@@ -1,6 +1,7 @@
 import { INVITE_CODE_INPUT_MAX_LENGTH, normalizeInviteCode } from '@yeojeong/shared'
 
-// QR·공유 링크(/join?code=…)로 들어온 초대(W8 · HF-62). 앱이 뜨기 전에 코드를 이 탭의 sessionStorage에 옮기고 주소에서 지운다.
+// QR·공유 링크(/join#code=…, 예전 /join?code=…)로 들어온 초대(W8 · HF-62). 앱이 뜨기 전에 코드를 이 탭의 sessionStorage에 옮기고 주소에서 지운다.
+// fragment는 문서 요청·Referer에 실리지 않는다(보안 리뷰 L1). 쿼리형은 하위 호환으로만 받는다.
 // - 주소창·기록·로그인 returnTo(→ 서버 /api/auth/kakao?returnTo=)에 코드가 남지 않는다. 코드는 그룹 참여 권한이다.
 // - 카카오 OAuth 왕복·가입 2단계(토스 외부 인증 포함)를 거쳐도 같은 탭이면 남는다(가입 returnTo와 같은 방식).
 // - 30분 지나면 버린다. 첫 화면에서 응답 시트를 띄울 때 꺼내면서 바로 지운다(한 번만 쓴다).
@@ -76,19 +77,27 @@ export function clearPendingInvite() {
   }
 }
 
+/** 주소의 fragment(#code=…) 또는 쿼리(?code=…)에서 초대코드 값. 둘 다 있으면 fragment. 없으면 null(빈 값은 '') */
+export function inviteCodeInLocation(location: Pick<Location, 'search' | 'hash'>): string | null {
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ''))
+  if (hash.has('code')) return hash.get('code') ?? ''
+  const search = new URLSearchParams(location.search)
+  return search.has('code') ? (search.get('code') ?? '') : null
+}
+
 /**
- * 앱 시작 때 한 번(라우터를 만들기 전): 주소가 /join?code=…면 코드를 보관하고 주소를 /(진입 라우팅)로 바꾼다.
+ * 앱 시작 때 한 번(라우터를 만들기 전): 주소가 /join#code=…(또는 예전 /join?code=…)면 코드를 보관하고 주소를 /(진입 라우팅)로 바꾼다.
  * 로그인 상태면 첫 화면 위에 응답 시트, 아니면 로그인 → (가입) → 첫 화면에서 같은 시트. 코드가 없거나 /join이 아니면 아무것도 하지 않는다
  */
 export function captureInviteLink(
-  location: Pick<Location, 'pathname' | 'search'> = window.location,
+  location: Pick<Location, 'pathname' | 'search' | 'hash'> = window.location,
   history: Pick<History, 'replaceState' | 'state'> = window.history,
   now = Date.now(),
 ): boolean {
   if (location.pathname.replace(/\/+$/, '') !== '/join') return false
-  const params = new URLSearchParams(location.search)
-  if (!params.has('code')) return false
-  const code = inviteCodeFromLink(params.get('code'))
+  const raw = inviteCodeInLocation(location)
+  if (raw === null) return false
+  const code = inviteCodeFromLink(raw)
   // 형식이 틀린 코드도 보관해 첫 화면에서 "초대코드를 다시 확인해 주세요"로 안내한다. 글자가 하나도 없으면 손으로 넣는 화면으로
   if (code) rememberPendingInvite(code, now)
   history.replaceState(null, '', code ? '/' : '/join')
@@ -129,4 +138,10 @@ export const activeInvite = {
     active = null
     emit()
   },
+}
+
+/** 로그아웃·세션 만료(401) 때: 보관함과 응답 중 초대를 모두 버린다 — 같은 탭의 다른 계정에 이전 초대 시트가 뜨지 않게(보안 리뷰 L2) */
+export function forgetInvites() {
+  clearPendingInvite()
+  activeInvite.clear()
 }

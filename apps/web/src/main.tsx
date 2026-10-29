@@ -14,7 +14,7 @@ async function enableMocking() {
   }
 }
 
-// QR·공유 링크(/join?code=…): 라우터가 주소를 읽기 전에 코드를 이 탭에 보관하고 주소에서 지운다(W8 · HF-62)
+// QR·공유 링크(/join#code=…, 예전 ?code=…): 라우터가 주소를 읽기 전에 코드를 이 탭에 보관하고 주소에서 지운다(W8 · HF-62)
 captureInviteLink()
 const router = createAppRouter()
 

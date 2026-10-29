@@ -50,7 +50,7 @@ export function inviteErrorText(error: unknown): string | null {
   return null
 }
 
-/** 참여 링크(같은 origin) "https://jinyeojeong.com/join?code=K7M2QX" */
+/** 참여 링크(같은 origin) "https://jinyeojeong.com/join#code=K7M2QX" — 코드는 fragment(서버로 가지 않는다) */
 export function joinUrl(code: string): string {
   return `${window.location.origin}${paths.join(code)}`
 }

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { INVITE_CODE_LENGTH, normalizeInviteCode } from '@yeojeong/shared'
 import { useEffect, useState } from 'react'
-import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router'
+import { Navigate, useLocation, useNavigate } from 'react-router'
 import { handleApiError, isApiError } from '../../../api'
 import { paths } from '../../../app/paths'
 import { AvatarStack, Input, RouteProgress, ShellSub } from '../../../ds'
@@ -9,28 +9,29 @@ import { toast } from '../../../notifications'
 import { invitePreviewQuery, useJoinTrip } from '../api'
 import { useDebouncedValue } from '../hooks'
 import { inviteErrorText } from '../invite'
-import { inviteCodeFromLink, rememberPendingInvite } from '../pendingInvite'
+import { inviteCodeFromLink, inviteCodeInLocation, rememberPendingInvite } from '../pendingInvite'
 import { COPY, daysBetween, formatInviteCode, formatRouteDate, inviteInputChars, todayKst } from '../rules'
 import type { InvitePreview } from '../types'
 
 // HF-12 초대코드로 참여(FR-203·204). 코드 없이 들어온 /join에서만(C-42). 6자가 차면 300ms 뒤 미리보기, 미리보기가 있을 때만 「참여하기」.
 // 참여하면 단계별 기본 탭(시작 전 → 여정 정보, 진행 중 → 결제내역). 이미 멤버면 그 여정으로 + "이미 참여한 여정이에요".
-// ?code=가 있으면(QR·공유 링크, 예전 returnTo) 코드를 이 탭에 보관하고 진입 라우팅 첫 화면으로 replace — 첫 화면 위 응답 시트(HF-62).
+// #code=(QR·공유 링크) 또는 예전 ?code=(옛 링크·returnTo)가 있으면 코드를 이 탭에 보관하고 진입 라우팅 첫 화면으로 replace — 첫 화면 위 응답 시트(HF-62).
 // 앱 밖에서 연 링크는 앱 시작 때 같은 일을 먼저 한다(pendingInvite.captureInviteLink).
 
-/** 붙여 넣은 참여 링크(…/join?code=K7M2QX)면 코드만 꺼낸다 */
+/** 붙여 넣은 참여 링크(…/join#code=K7M2QX · 예전 …/join?code=K7M2QX)면 코드만 꺼낸다 */
 function codeFromInput(value: string): string {
-  const fromLink = /[?&]code=([^&#\s]+)/.exec(value)?.[1]
+  const fromLink = /[?&#]code=([^&#\s]+)/.exec(value)?.[1]
   return inviteInputChars(fromLink ?? value)
 }
 
 export default function JoinPage() {
-  const [params] = useSearchParams()
-  if (params.has('code')) return <InviteLinkRedirect code={params.get('code')} />
+  const location = useLocation()
+  const linked = inviteCodeInLocation(location)
+  if (linked !== null) return <InviteLinkRedirect code={linked} />
   return <JoinForm />
 }
 
-/** /join?code=…: 코드를 보관하고(같은 코드면 다시 써도 같다) 주소에서 지우며 첫 화면으로. 글자가 없으면 코드 없는 /join */
+/** /join#code=… · 예전 ?code=…: 코드를 보관하고(같은 코드면 다시 써도 같다) 주소에서 지우며 첫 화면으로. 글자가 없으면 코드 없는 /join */
 function InviteLinkRedirect({ code }: { code: string | null }) {
   const [kept] = useState(() => (inviteCodeFromLink(code) ? rememberPendingInvite(code ?? '') : false))
   return <Navigate replace to={kept ? paths.splash() : paths.join()} />

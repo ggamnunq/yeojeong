@@ -3,7 +3,9 @@ import {
   activeInvite,
   captureInviteLink,
   clearPendingInvite,
+  forgetInvites,
   hasPendingInvite,
+  inviteCodeInLocation,
   inviteCodeFromLink,
   isInviteLandingPath,
   PENDING_INVITE_TTL_MS,
@@ -21,9 +23,9 @@ afterEach(() => {
 
 /** captureInviteLink에 넘길 주소·기록 대역 */
 function at(url: string) {
-  const { pathname, search } = new URL(url, 'https://jinyeojeong.com')
+  const { pathname, search, hash } = new URL(url, 'https://jinyeojeong.com')
   const history = { state: null, replaceState: vi.fn() }
-  return { location: { pathname, search }, history }
+  return { location: { pathname, search, hash }, history }
 }
 
 describe('참여 링크 코드 파싱', () => {
@@ -74,7 +76,21 @@ describe('보관(sessionStorage) · 만료 · 삭제', () => {
 })
 
 describe('앱 시작 때 링크 받기(captureInviteLink)', () => {
-  it('/join?code=…: 코드를 보관하고 주소를 /(진입 라우팅)로 바꿔 code 쿼리를 지운다', () => {
+  it('/join#code=…(QR·공유 링크): 코드를 보관하고 주소를 /(진입 라우팅)로 바꿔 fragment를 지운다', () => {
+    const { location, history } = at('/join#code=k7m-2qx')
+    expect(captureInviteLink(location, history, NOW)).toBe(true)
+    expect(history.replaceState).toHaveBeenCalledWith(null, '', '/')
+    expect(takePendingInvite(NOW)).toBe('K7M2QX')
+  })
+
+  it('fragment와 쿼리를 모두 읽는다(fragment 우선, 없으면 null)', () => {
+    expect(inviteCodeInLocation({ hash: '#code=T4K9YP', search: '?code=K7M2QX' })).toBe('T4K9YP')
+    expect(inviteCodeInLocation({ hash: '', search: '?code=K7M2QX' })).toBe('K7M2QX')
+    expect(inviteCodeInLocation({ hash: '#code=', search: '' })).toBe('')
+    expect(inviteCodeInLocation({ hash: '#top', search: '?utm=qr' })).toBeNull()
+  })
+
+  it('예전 /join?code=… 링크도 받는다(하위 호환): 코드를 보관하고 주소를 /로 바꿔 code 쿼리를 지운다', () => {
     const { location, history } = at('/join?code=k7m-2qx&utm=qr')
     expect(captureInviteLink(location, history, NOW)).toBe(true)
     expect(history.replaceState).toHaveBeenCalledWith(null, '', '/')
@@ -121,6 +137,15 @@ describe('응답 중 초대(activeInvite)', () => {
     activeInvite.clear()
     expect(seen).toEqual(['T4K9YP', null])
     off()
+  })
+
+  it('로그아웃·401(forgetInvites): 보관함과 응답 중 초대를 모두 버린다', () => {
+    rememberPendingInvite('T4K9YP', NOW)
+    expect(activeInvite.activate(NOW)).toBe('opened')
+    rememberPendingInvite('K7M2QX', NOW)
+    forgetInvites()
+    expect(activeInvite.get()).toBeNull()
+    expect(hasPendingInvite(NOW)).toBe(false)
   })
 
   it('첫 화면만 시트를 띄운다', () => {

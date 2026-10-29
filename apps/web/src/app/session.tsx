@@ -13,6 +13,7 @@ import {
   type Me,
   type SessionResponse,
 } from '../api'
+import { forgetInvites } from '../features/trips/pendingInvite'
 import { connectPrompt } from './connectPrompt'
 import { paths, safeReturnTo } from './paths'
 import { readSignupReturnTo } from './signupReturnTo'
@@ -145,6 +146,8 @@ export function SessionBridge() {
     const here = () => currentPath(latest.current.location)
     const offAuth = onUnauthenticated(() => {
       queryClient.clear()
+      // 다른 계정으로 다시 로그인해도 이전 초대 시트가 뜨지 않게(W8)
+      forgetInvites()
       if (AUTH_FREE_PATHS.some((p) => latest.current.location.pathname.startsWith(p))) return
       latest.current.navigate(paths.login(here()), { replace: true })
     })

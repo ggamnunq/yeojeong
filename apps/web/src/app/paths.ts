@@ -40,7 +40,11 @@ export const paths = {
 
   trips: () => '/trips',
   tripNew: () => '/trips/new',
-  join: (code?: string) => `/join${q({ code })}`,
+  /**
+   * 참여(HF-12). 초대 링크는 코드를 fragment에 싣는다(`/join#code=K7M2QX`, W8 보안 리뷰 L1) — 첫 문서 요청·Referer·크롤러에 코드가 실리지 않는다.
+   * 예전 `?code=` 링크도 받는다(pendingInvite.captureInviteLink · JoinPage)
+   */
+  join: (code?: string) => `/join${code ? `#code=${encodeURIComponent(code)}` : ''}`,
 
   /** 단계별 기본 탭으로 다시 보낸다 */
   trip: (tripId: string) => `/trips/${tripId}`,

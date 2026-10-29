@@ -32,12 +32,22 @@ describe('HF-12 초대코드로 참여 /join', () => {
     expect(joinButton().disabled).toBe(false)
   })
 
-  it('?code= 링크면 입력 화면 없이 코드를 보관하고 첫 화면으로(code 제거) → 응답 시트(C-42 · WF-62)', async () => {
-    const { router } = renderApp('/join?code=t4k-9yp')
+  it.each([['#code= 링크', '/join#code=t4k-9yp'], ['예전 ?code= 링크', '/join?code=t4k-9yp']])('%s면 입력 화면 없이 코드를 보관하고 첫 화면으로(code 제거) → 응답 시트(C-42 · WF-62)', async (_, url) => {
+    const { router } = renderApp(url)
     expect(await screen.findByRole('dialog', { name: '도쿄 먹방 여행에 참여할까요?' })).toBeTruthy()
     expect(router.state.location.search).toBe('')
+    expect(router.state.location.hash).toBe('')
     expect(path(router)).toBe('/trips/trip-osaka/payments')
     expect(screen.queryByLabelText('초대코드')).toBeNull()
+  })
+
+  it('참여 링크를 붙여 넣으면 코드만 남긴다(#code= · 예전 ?code=)', async () => {
+    renderApp('/join')
+    const input = await screen.findByLabelText('초대코드')
+    fireEvent.change(input, { target: { value: 'https://jinyeojeong.com/join#code=t4k9yp' } })
+    expect(codeInput().value).toBe('T4K-9YP')
+    fireEvent.change(input, { target: { value: 'https://jinyeojeong.com/join?code=d7n3qa' } })
+    expect(codeInput().value).toBe('D7N-3QA')
   })
 
   it('6자 미만이면 카드 없이 비활성, 입력은 대문자 + 3-3 하이픈', async () => {

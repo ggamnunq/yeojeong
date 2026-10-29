@@ -5,14 +5,14 @@ import { activeMembership, db } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { mockError } from '../../mocks/utils'
 import { renderApp } from '../../test/render'
-import { rememberPendingInvite } from './pendingInvite'
+import { activeInvite, hasPendingInvite, rememberPendingInvite } from './pendingInvite'
 import { qrMatrix, qrPath } from './qr'
 import { setupMockToday, stubNavigator, toastMessages } from './test-utils'
 
 setupMockToday()
 
 const path = (router: ReturnType<typeof renderApp>['router']) => router.state.location.pathname
-const joinLink = (code: string) => `${window.location.origin}/join?code=${code}`
+const joinLink = (code: string) => `${window.location.origin}/join#code=${code}`
 
 describe('HF-61 초대 QR 시트(W8)', () => {
   it('HF-11: [QR][복사][공유] 순서 · QR → 시트(참여 링크 QR · 코드) · 「링크 복사」는 공유 내용 그대로', async () => {
@@ -107,6 +107,15 @@ describe('HF-62 QR 진입 초대 응답 시트(W8)', () => {
     fireEvent.click(within(sheet).getByRole('button', { name: '참여하기' }))
     await waitFor(() => expect(toastMessages()).toContain('참여할 수 없는 여정이에요'))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: /참여할까요/ })).toBeNull())
+  })
+
+  it('세션이 끊기면(401) 응답 중·보관 중 초대를 모두 버린다 — 다른 계정으로 로그인해도 시트가 뜨지 않는다(보안 리뷰 L2)', async () => {
+    rememberPendingInvite('T4K9YP')
+    server.use(http.post('/api/invites/preview', () => mockError('UNAUTHENTICATED', 401)))
+    const { router } = renderApp('/trips/trip-osaka/payments')
+    await waitFor(() => expect(path(router)).toBe('/login'))
+    expect(activeInvite.get()).toBeNull()
+    expect(hasPendingInvite()).toBe(false)
   })
 
   it('이미 멤버면 시트 없이 그 여정으로 + "이미 참여한 여정이에요"', async () => {

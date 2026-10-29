@@ -3,7 +3,7 @@ import { useMockScenario } from './support'
 
 // W5C(웹 통합 3차): 여행 장소 자유 입력 · 현지 통화 · returnTo(신규 회원) · HF-08 뒤로 · HF-26 시트 · HF-25 딥링크 · 토스트 자리 · 목 시점 전환.
 
-const JOIN = '/join?code=T4K9YP'
+const JOIN = '/join#code=T4K9YP'
 
 /**
  * 비로그인으로 공유 링크를 열고 카카오(목: 신규 회원) → 닉네임 → 약관 → 토스 연결 안내까지. 시나리오는 ANONYMOUS로 먼저 건다.
