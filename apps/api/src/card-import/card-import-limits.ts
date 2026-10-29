@@ -3,8 +3,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CARD_IMPORT_FETCH_LIMIT,
+  CARD_IMPORT_LOCK_RISK_LIMIT,
+  CARD_IMPORT_LOCKOUT_ACK_LIMIT,
   CARD_IMPORT_LOGIN_LIMIT,
   type CardImportRetryDetails,
+  type CardLoginLockedDetails,
 } from '@yeojeong/shared';
 import { AppException } from '../common/errors/index.js';
 import { kstDate } from '../expenses/kst.js';
@@ -19,6 +22,13 @@ export const DEFAULT_CODEF_DAILY_CALL_BUDGET = 100;
 export const CODEF_CALLS_PER_FETCH = 4;
 /** 추가 인증 이어가기 시도 상한(같은 토큰) */
 export const TWO_WAY_MAX_ATTEMPTS = 3;
+/** 연속 실패로 세는 결과(카드사 로그인 정보가 틀렸다) */
+export type LoginFailureCode =
+  | 'CARD_LOGIN_FAILED'
+  | 'CARD_NUMBER_INVALID'
+  | 'CARD_PASSWORD_INVALID'
+  /** 현대·하나만: 매핑 밖 CODEF 오류(잠김 위험으로 센다, 응답은 502 그대로) */
+  | 'CARD_IMPORT_FAILED';
 /** 조회 잠금 수명: CODEF 조회 제한 시간(30초) + 계정 삭제 재시도 + 여유. 그 안에 요청이 끝나면 바로 푼다 */
 const LOCK_TTL_MS = 3 * 60 * 1000;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -147,13 +157,22 @@ export class CardImportLimits {
   }
 
   /** 새 조회 전(잠금 안): 사용자 횟수 → 로그인 쿨다운. 예산 예약은 reserveFetch */
+  /**
+   * 새 조회 시작 검사. lockRisk(현대·하나)면 일반 연속 실패 대신 잠김 위험 카운터를 본다:
+   * 2 이상이면 성공할 때까지 429 CARD_IMPORT_LOGIN_LOCKED(시간 제한 없음), 1이면 acknowledged가 있어야 한다(없으면 409)
+   */
   async checkStart(
     userId: string,
     organization: string,
     now = new Date(),
+    lockRisk?: { acknowledged: boolean },
   ): Promise<void> {
     await this.checkUserRate(userId, now);
-    await this.checkLoginCooldown(userId, organization, now);
+    if (lockRisk) {
+      await this.checkLockRisk(userId, organization, lockRisk.acknowledged);
+    } else {
+      await this.checkLoginCooldown(userId, organization, now);
+    }
   }
 
   private async checkUserRate(userId: string, now: Date) {
@@ -201,14 +220,43 @@ export class CardImportLimits {
     }
   }
 
+  private async checkLockRisk(
+    userId: string,
+    organization: string,
+    acknowledged: boolean,
+  ) {
+    const row = await this.prisma.cardImportLoginFailure.findUnique({
+      where: { userId_organization: { userId, organization } },
+      select: { lockRiskFailures: true, lockRiskLastFailedAt: true },
+    });
+    const failures = row?.lockRiskFailures ?? 0;
+    const decision = lockRiskDecision(failures, acknowledged);
+    if (decision === 'LOCKED') {
+      throw lockedError(failures, row?.lockRiskLastFailedAt ?? new Date(0));
+    }
+    if (decision === 'CONFIRM') {
+      throw AppException.of('CARD_LOCK_RISK_CONFIRM_REQUIRED', {
+        details: { failedAttempts: failures },
+      });
+    }
+  }
+
   /**
-   * 로그인 실패를 센다(30분이 지난 이전 실패는 새로 센다). 3회째면 쿨다운 예외, 아니면 CARD_LOGIN_FAILED { failedAttempts }를 던진다
+   * 로그인 실패를 센다(30분이 지난 이전 실패는 새로 센다). 3회째면 쿨다운 예외, 아니면 code { failedAttempts }를 던진다.
+   * 아이디·비밀번호(CARD_LOGIN_FAILED)·카드번호(CARD_NUMBER_INVALID)·카드 비밀번호(CARD_PASSWORD_INVALID) 실패를 같은 행에서 센다.
+   * lockRisk(현대·하나)면 같은 행의 잠김 위험 카운터(lock_risk_*)를 센다: 성공해야 0, 2회째부터 CARD_IMPORT_LOGIN_LOCKED.
+   * 현대카드는 카드 비밀번호 3회 오류면 계정이 잠긴다(KR_CD_P_002 현대카드 특이사항)
    */
   async loginFailed(
     userId: string,
     organization: string,
     now = new Date(),
+    code: LoginFailureCode = 'CARD_LOGIN_FAILED',
+    options: { lockRisk?: boolean } = {},
   ): Promise<never> {
+    if (options.lockRisk) {
+      return this.lockRiskFailed(userId, organization, now, code);
+    }
     const windowStart = new Date(
       now.getTime() - CARD_IMPORT_LOGIN_LIMIT.WINDOW_SECONDS * 1000,
     );
@@ -231,12 +279,97 @@ export class CardImportLimits {
         ),
       });
     }
-    throw AppException.of('CARD_LOGIN_FAILED', {
+    throw AppException.of(code, {
       details: { failedAttempts: failures },
     });
   }
 
-  /** 로그인에 성공하면(결과를 받았거나 추가 인증까지 갔으면) 연속 실패를 지운다 */
+  /** 현대·하나 잠김 위험 카운터 +1(시간으로 리셋하지 않는다). 2회째면 CARD_IMPORT_LOGIN_LOCKED, 아니면 code { failedAttempts } */
+  private async lockRiskFailed(
+    userId: string,
+    organization: string,
+    now: Date,
+    code: LoginFailureCode,
+  ): Promise<never> {
+    // last_failed_at도 함께 올린다(파기 배치 기준 — 마지막 실패 뒤 7일이면 행이 지워져 풀린다). 일반 카운터(failures)는 건드리지 않는다
+    const [row] = await this.prisma.$queryRaw<{ failures: number }[]>`
+      INSERT INTO card_import_login_failures
+        (user_id, organization, failures, last_failed_at, lock_risk_failures, lock_risk_last_failed_at)
+      VALUES (${userId}::uuid, ${organization}, 0, ${now}, 1, ${now})
+      ON CONFLICT (user_id, organization) DO UPDATE SET
+        lock_risk_failures = card_import_login_failures.lock_risk_failures + 1,
+        lock_risk_last_failed_at = EXCLUDED.lock_risk_last_failed_at,
+        last_failed_at = GREATEST(card_import_login_failures.last_failed_at, EXCLUDED.last_failed_at)
+      RETURNING lock_risk_failures AS failures`;
+    const failures = row?.failures ?? 1;
+    if (failures >= CARD_IMPORT_LOCK_RISK_LIMIT.FAILURES) {
+      throw lockedError(failures, now);
+    }
+    throw AppException.of(code, { details: { failedAttempts: failures } });
+  }
+
+  /**
+   * 잠김 해제 확인(현대·하나, POST /api/card-import/lockout/ack): 사용자가 카드사 홈페이지에서 로그인을 확인했다고 밝히면
+   * 그 카드사 잠김 위험 카운터를 0으로 한다. 순서: 카운터 2 미만이면 409 → 마지막 실패 30분 전이면 429 CARD_LOCKOUT_ACK_TOO_EARLY(retryAfter) →
+   * 오늘(KST) 2회 넘으면 429 CARD_LOCKOUT_ACK_DAILY_LIMIT. 0으로 바꾸기와 접근 기록(CARD_LOCKOUT_ACK, 기관 코드만)은 한 트랜잭션.
+   * 호출하는 쪽이 사용자 잠금(acquire) 안에서 부른다
+   */
+  async ackLockout(
+    userId: string,
+    organization: string,
+    now = new Date(),
+  ): Promise<void> {
+    const row = await this.prisma.cardImportLoginFailure.findUnique({
+      where: { userId_organization: { userId, organization } },
+      select: { lockRiskFailures: true, lockRiskLastFailedAt: true },
+    });
+    if (
+      !row ||
+      row.lockRiskFailures < CARD_IMPORT_LOCK_RISK_LIMIT.FAILURES ||
+      !row.lockRiskLastFailedAt
+    ) {
+      throw AppException.of('CARD_LOCKOUT_ACK_NOT_NEEDED');
+    }
+    const available = lockoutAckAvailableAt(row.lockRiskLastFailedAt);
+    if (available > now) {
+      throw AppException.of('CARD_LOCKOUT_ACK_TOO_EARLY', {
+        details: retryDetails(available, now),
+      });
+    }
+    const acksToday = await this.prisma.accessLog.count({
+      where: {
+        userId,
+        action: 'CARD_LOCKOUT_ACK',
+        at: { gte: new Date(kstDay(now).getTime() - KST_OFFSET_MS) },
+      },
+    });
+    if (acksToday >= CARD_IMPORT_LOCKOUT_ACK_LIMIT.DAILY) {
+      throw AppException.of('CARD_LOCKOUT_ACK_DAILY_LIMIT', {
+        details: retryDetails(nextKstMidnight(now), now),
+      });
+    }
+    await this.prisma.$transaction([
+      this.prisma.cardImportLoginFailure.updateMany({
+        where: {
+          userId,
+          organization,
+          lockRiskFailures: { gte: CARD_IMPORT_LOCK_RISK_LIMIT.FAILURES },
+        },
+        data: { lockRiskFailures: 0 },
+      }),
+      this.prisma.accessLog.create({
+        data: {
+          userId,
+          action: 'CARD_LOCKOUT_ACK',
+          resourceType: 'USER',
+          resourceId: userId,
+          details: { organization },
+        },
+      }),
+    ]);
+  }
+
+  /** 로그인에 성공하면(결과를 받았거나 추가 인증까지 갔으면) 연속 실패를 지운다(잠김 위험 카운터 포함) */
   async loginSucceeded(userId: string, organization: string): Promise<void> {
     await this.prisma.cardImportLoginFailure.deleteMany({
       where: { userId, organization },
@@ -455,4 +588,34 @@ export function cooldownUntil(
       CARD_IMPORT_LOGIN_LIMIT.COOLDOWN_SECONDS * 1000,
   );
   return until > now ? until : null;
+}
+
+/**
+ * 잠김 위험 카운터(현대·하나)로 새 조회를 어떻게 할지: 2 이상 = LOCKED(성공할 때까지, 시간 제한 없음),
+ * 1 = 확인(acknowledgeLockRisk) 없으면 CONFIRM, 0 = OK
+ */
+export function lockRiskDecision(
+  failures: number,
+  acknowledged: boolean,
+): 'OK' | 'CONFIRM' | 'LOCKED' {
+  if (failures >= CARD_IMPORT_LOCK_RISK_LIMIT.FAILURES) return 'LOCKED';
+  if (failures >= 1 && !acknowledged) return 'CONFIRM';
+  return 'OK';
+}
+
+/** 잠김 해제 확인(lockout/ack)을 받기 시작하는 시각 = 마지막 실패 + 30분 */
+export function lockoutAckAvailableAt(lastFailedAt: Date): Date {
+  return new Date(
+    lastFailedAt.getTime() +
+      CARD_IMPORT_LOCKOUT_ACK_LIMIT.COOLDOWN_SECONDS * 1000,
+  );
+}
+
+function lockedError(failures: number, lastFailedAt: Date): AppException {
+  const details: CardLoginLockedDetails = {
+    failedAttempts: failures,
+    action: 'CHECK_CARD_COMPANY_SITE',
+    ackAvailableAt: lockoutAckAvailableAt(lastFailedAt).toISOString(),
+  };
+  return AppException.of('CARD_IMPORT_LOGIN_LOCKED', { details });
 }

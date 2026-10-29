@@ -4,9 +4,11 @@ import {
   CARD_IMPORT_MAX_RANGE_DAYS,
   MANUAL_DEFAULT_MERCHANT_NAME,
   WALLET_ENTRY_FIELD_VALUES,
+  isValidCardNumber,
   type CardApprovalItem,
   type CardImportConfig,
   type CardImportOrganization,
+  type CardLockoutAckRequest,
   type ConsentStatusResponse,
   type ConsentSubmitRequest,
   type FetchCardApprovalsRequest,
@@ -31,6 +33,17 @@ import { clock } from '../payments/clock'
 //   아이디 "down"    → 503 CARD_COMPANY_UNAVAILABLE
 //   아이디 "empty"   → OK, 결과 0건
 //   아이디 "slow"    → 3초 뒤 OK(WF-55 불러오는 중 · 취소 확인용)
+//   현대·하나(S8c): 카드번호(loginCardNo)·카드 비밀번호 암호문이 없거나 다른 카드사에 보내면 400 VALIDATION_FAILED(loginCardNo),
+//     카드번호 형식(숫자 14~19자리·Luhn)이 틀리면 400 VALIDATION_FAILED(loginCardNo · cardNumber). 목은 카드번호를 어디에도 남기지 않는다.
+//     현대·하나의 로그인 실패(아이디 "wrong" · "badcard" · "badpin")는 잠김 위험 카운터로 센다(서버 CARD_IMPORT_LOCK_RISK_LIMIT와 같다):
+//       1회 → 400(CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID { failedAttempts: 1 }),
+//       그 뒤 새 조회는 acknowledgeLockRisk: true가 없으면 409 CARD_LOCK_RISK_CONFIRM_REQUIRED, 확인하고 또 틀리면
+//       429 CARD_IMPORT_LOGIN_LOCKED { failedAttempts, action: 'CHECK_CARD_COMPANY_SITE' }(retryAfter 없음, 이후 계속 잠김).
+//       성공해야만 0으로(서버는 7일 파기 배치로도 풀린다 — 목은 resetCardImportMock으로 되돌린다).
+//     잠김 해제 확인 POST /api/card-import/lockout/ack {organization}(현대·하나만, 아니면 400):
+//       카운터 2 미만 → 409 CARD_LOCKOUT_ACK_NOT_NEEDED · 잠긴 직후(목은 lockedAt + 30분 전) → 429 CARD_LOCKOUT_ACK_TOO_EARLY { retryAfter } ·
+//       오늘 2회 넘으면 429 CARD_LOCKOUT_ACK_DAILY_LIMIT { retryAfter } · 그 밖 204(카운터 0).
+//       목 시나리오: resetCardImportMock({ lockedMinutesAgo })로 잠긴 상태(카운터 2, 그만큼 전에 잠김)에서 시작한다
 //   그 밖            → OK(Figma HF-56 샘플: 전액 취소 2행·비슷한 기록·추가됨·부분 취소·기간 밖·원 승인 없는 취소)
 //   하루 10회를 넘기면 429 CARD_IMPORT_RATE_LIMITED. 저장은 itemToken이 결과 그대로일 때만(아니면 410 CARD_IMPORT_RESULT_EXPIRED)
 // 동의: 처음에는 CARD_IMPORT 동의가 없다(config.consent.valid = false). POST /api/consents stage CARD_IMPORT로 동의한다.
@@ -42,19 +55,21 @@ export const MOCK_CARD_IMPORT_PUBLIC_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuFPgSgkAEsbOoTX2kotcegNR/fM1MWrvLyPrwenmTnwNbNCAgComam+T1RE7mWXu6ghBMHTyw++46jTvJZrXkkXWIoKxHCyAlm4Q4dM4/4fiJ0QgSKJDtSlgA22CVy8IR8mBo4akYE01qGksUbOrXJ/7NhlOZziZjzTsd5qMzPw9k0cJmX1XOey12+4b6iqOUTMqRAp8jkr4/azrqeLCGh9PWOfb3ixxth4fTM+REKowR1PGVZ1gHV7uVvLQeA6aRTEaDzGSiwb/xiDMx9DnRxuytje2n7yP4fJgY2KqxzEVJg13QeAmXH5yi7jgWDUaARA5+MXAeA6pQVcmqwtpOQIDAQAB'
 export const MOCK_TWO_WAY_CODE = '123456'
 
-// 서버와 같다: 현대·하나(카드번호 전체 필요)는 1차에서 뺐다
+// 서버와 같다(9곳, 화면 순서). 현대·하나는 카드번호 전체 + 카드 비밀번호(현대 4자리·하나 앞 2자리)가 더 필요하다(S8c)
 const ORGANIZATIONS: CardImportOrganization[] = [
-  { code: '0301', name: 'KB국민카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
-  { code: '0303', name: '삼성카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
-  { code: '0304', name: 'NH농협카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
-  { code: '0305', name: 'BC카드', maxRangeDays: 60, maxLookbackDays: 270, requiresCardNo: false },
-  { code: '0306', name: '신한카드', maxRangeDays: 90, maxLookbackDays: 180, requiresCardNo: false },
-  { code: '0309', name: '우리카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false },
-  { code: '0311', name: '롯데카드', maxRangeDays: 92, maxLookbackDays: 180, requiresCardNo: false },
+  { code: '0301', name: 'KB국민카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0302', name: '현대카드', maxRangeDays: 90, maxLookbackDays: 90, requiresCardNo: true, cardPasswordDigits: 4 },
+  { code: '0303', name: '삼성카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0304', name: 'NH농협카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0305', name: 'BC카드', maxRangeDays: 60, maxLookbackDays: 270, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0306', name: '신한카드', maxRangeDays: 90, maxLookbackDays: 180, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0309', name: '우리카드', maxRangeDays: 92, maxLookbackDays: 365, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0311', name: '롯데카드', maxRangeDays: 92, maxLookbackDays: 180, requiresCardNo: false, cardPasswordDigits: null },
+  { code: '0313', name: '하나카드', maxRangeDays: 90, maxLookbackDays: 365, requiresCardNo: true, cardPasswordDigits: 2 },
 ]
 
 /** 테스트에서 처음 상태로(resetMockDb도 같은 값으로 되돌린다) */
-export function resetCardImportMock(options: { consented?: boolean } = {}) {
+export function resetCardImportMock(options: { consented?: boolean; lockedMinutesAgo?: number } = {}) {
   db.cardImportState = {
     consentAgreedAt: options.consented ? new Date().toISOString() : null,
     consentVersion: options.consented ? CONSENT_VERSION : null,
@@ -62,6 +77,9 @@ export function resetCardImportMock(options: { consented?: boolean } = {}) {
     requiredReconsent: true,
     startedToday: 0,
     loginFailures: 0,
+    lockRiskFailures: options.lockedMinutesAgo === undefined ? 0 : 2,
+    lockedAt: options.lockedMinutesAgo === undefined ? undefined : Date.now() - options.lockedMinutesAgo * 60_000,
+    lockoutAcksToday: 0,
     importedKeys: [],
     twoWayTokens: [],
     remaining: null,
@@ -236,6 +254,21 @@ export const handlers: HttpHandler[] = [
     if (!org || !body.encryptedPassword || !body.loginId) {
       return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'organization', message: '불러올 수 없는 카드사예요' }] })
     }
+    const cardFields = Boolean(body.loginCardNo || body.encryptedCardPassword)
+    if (org.requiresCardNo ? !body.loginCardNo || !body.encryptedCardPassword : cardFields) {
+      return mockError('VALIDATION_FAILED', 400, {
+        fields: [
+          {
+            path: 'loginCardNo',
+            code: org.requiresCardNo ? 'required' : 'notAllowed',
+            message: org.requiresCardNo ? `${org.name}는 카드번호와 카드 비밀번호가 필요해요` : '이 카드사는 카드번호를 받지 않아요',
+          },
+        ],
+      })
+    }
+    if (org.requiresCardNo && !isValidCardNumber(body.loginCardNo ?? '')) {
+      return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'loginCardNo', code: 'cardNumber', message: '카드번호를 다시 확인해 주세요' }] })
+    }
     if (!body.twoWay) {
       if (state().startedToday >= 10) return mockError('CARD_IMPORT_RATE_LIMITED', 429, retryAfter(3600))
       state().startedToday += 1
@@ -244,6 +277,31 @@ export const handlers: HttpHandler[] = [
     if (body.loginId === 'busy') return mockError('CARD_IMPORT_IN_PROGRESS')
     if (body.loginId === 'budget') return mockError('CARD_IMPORT_DAILY_LIMIT')
     if (body.loginId === 'limit') return mockError('CARD_IMPORT_RATE_LIMITED', 429, retryAfter(1800))
+    if (org.requiresCardNo) {
+      const lockRisk = state().lockRiskFailures ?? 0
+      const locked = (failedAttempts: number) =>
+        mockError('CARD_IMPORT_LOGIN_LOCKED', 429, {
+          failedAttempts,
+          action: 'CHECK_CARD_COMPANY_SITE',
+          ackAvailableAt: new Date((state().lockedAt ?? Date.now()) + 1_800_000).toISOString(),
+        })
+      if (lockRisk >= 2) return locked(lockRisk)
+      if (lockRisk >= 1 && body.acknowledgeLockRisk !== true) {
+        return mockError('CARD_LOCK_RISK_CONFIRM_REQUIRED', 409, { failedAttempts: lockRisk })
+      }
+      const failed = { wrong: 'CARD_LOGIN_FAILED', badcard: 'CARD_NUMBER_INVALID', badpin: 'CARD_PASSWORD_INVALID' } as const
+      const code = failed[body.loginId as keyof typeof failed]
+      if (code) {
+        state().lockRiskFailures = lockRisk + 1
+        if (lockRisk + 1 >= 2) {
+          state().lockedAt = Date.now()
+          return locked(lockRisk + 1)
+        }
+        return mockError(code, 400, { failedAttempts: lockRisk + 1 })
+      }
+      // 성공(결과를 받는 경우)만 0으로 — 카드사 쪽 문제(locked · down)는 그대로 둔다
+      if (body.loginId !== 'locked' && body.loginId !== 'down') state().lockRiskFailures = 0
+    }
     if (body.loginId === 'wrong') {
       state().loginFailures += 1
       if (state().loginFailures >= 3) return mockError('CARD_IMPORT_LOGIN_COOLDOWN', 429, retryAfter(1800))
@@ -304,6 +362,29 @@ export const handlers: HttpHandler[] = [
     })
     const created = result.filter((r) => r.created).length
     return HttpResponse.json({ items: result, created, skipped: result.length - created, linked: 0 }, { status: 201 })
+  }),
+
+  api.post<NoContent, CardLockoutAckRequest>('/api/card-import/lockout/ack', async ({ request }) => {
+    const denied = denyUnlessAuthenticated()
+    if (denied) return denied
+    const status = consentStatus()
+    if (!status.valid) return mockError('CONSENT_REQUIRED', 403, { missing: status.missing, required: status.required })
+    const { organization } = await request.json()
+    if (!ORGANIZATIONS.some((o) => o.code === organization && o.requiresCardNo)) {
+      return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'organization', code: 'isIn', message: '잠김을 풀 수 없는 카드사예요' }] })
+    }
+    if ((state().lockRiskFailures ?? 0) < 2) return mockError('CARD_LOCKOUT_ACK_NOT_NEEDED')
+    const available = (state().lockedAt ?? 0) + 1_800_000
+    if (available > Date.now()) return mockError('CARD_LOCKOUT_ACK_TOO_EARLY', 429, retryAfter(Math.ceil((available - Date.now()) / 1000)))
+    if ((state().lockoutAcksToday ?? 0) >= 2) {
+      // 다음 KST 자정(기기 시각 기준 — 한도 시각은 기기 시각을 쓴다)
+      const KST = 9 * 3_600_000
+      const midnight = Math.floor((Date.now() + KST) / DAY_MS) * DAY_MS + DAY_MS - KST
+      return mockError('CARD_LOCKOUT_ACK_DAILY_LIMIT', 429, retryAfter(Math.max(1, Math.ceil((midnight - Date.now()) / 1000))))
+    }
+    state().lockoutAcksToday = (state().lockoutAcksToday ?? 0) + 1
+    state().lockRiskFailures = 0
+    return noContent()
   }),
 
   // 동의 저장은 지갑 목(features/wallet/mocks.ts)이 FIN_LINK를 맡는다. 이 핸들러가 파일 순서상 먼저 돌고

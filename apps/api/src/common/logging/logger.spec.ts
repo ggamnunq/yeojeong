@@ -75,6 +75,181 @@ describe('createLogger', () => {
     });
   });
 
+  it('masks card numbers and card passwords under every key spelling (S8c 현대·하나)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    const PAN = '4111111111111111';
+    logger.error(
+      {
+        dto: {
+          organization: '0302',
+          loginCardNo: PAN,
+          encryptedCardPassword: 'leak-card-cipher',
+        },
+      },
+      '요청 DTO',
+    );
+    logger.error(
+      {
+        codefRequest: {
+          loginCardNo: PAN,
+          cardPassword: 'leak-card-pw',
+          cardNo: PAN,
+        },
+      },
+      'CODEF 본문',
+    );
+    logger.error(
+      { form: { cardNumber: PAN, card_number: PAN, 'Login-Card-No': PAN } },
+      '화면 이름',
+    );
+    const cause = Object.assign(new Error('inner'), { loginCardNo: PAN });
+    logger.error({ err: new Error('outer', { cause }) }, '에러 원인');
+
+    expect(output).not.toContain(PAN);
+    expect(output).not.toContain('leak-');
+    const lines = output
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(lines[0]).toMatchObject({
+      dto: {
+        organization: '0302',
+        loginCardNo: '[REDACTED]',
+        encryptedCardPassword: '[REDACTED]',
+      },
+    });
+    expect(lines[1]).toMatchObject({
+      codefRequest: {
+        loginCardNo: '[REDACTED]',
+        cardPassword: '[REDACTED]',
+        cardNo: '[REDACTED]',
+      },
+    });
+  });
+
+  it('masks card keys by token (cardNum · card_pin · resCardNo · pan) without over-masking look-alikes (S8c review 3)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    logger.error(
+      {
+        x: {
+          cardNum: 'leak-a',
+          card_pin: 'leak-b',
+          resCardNo: 'leak-c',
+          PAN: 'leak-d',
+          primary_account_number: 'leak-e',
+          myCardPw: 'leak-f',
+          company: 'keep-company',
+          japan: 'keep-japan',
+          expand: 'keep-expand',
+        },
+      },
+      'keys',
+    );
+    expect(output).not.toContain('leak-');
+    expect(output).toContain('keep-company');
+    expect(output).toContain('keep-japan');
+    expect(output).toContain('keep-expand');
+  });
+
+  it('blocks card numbers by value: messages, Error message·stack·cause and URL-encoded bodies (S8c review 3)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    const PAN = '5555555555554444';
+    const pans = [
+      PAN,
+      '5555 5555 5555 4444',
+      '5555-5555-5555-4444',
+      // Amex 4-6-5 · 13자리 Visa · 은련(62, Luhn 무관)
+      '3782 822463 10005',
+      '4222222222222',
+      '6253123456780001',
+    ];
+    // 카드번호가 든 에러를 그대로 남긴 실수
+    const cause = new Error(`inner ${pans[1]}`);
+    logger.error(new Error(`CODEF 요청 실패 loginCardNo=${PAN}`, { cause }));
+    logger.error({ err: new Error(`카드 ${pans[2]} 확인`) }, '에러 필드');
+    logger.warn(`메시지에 카드번호 ${pans[3]} 와 ${pans[4]}`);
+    logger.info('포맷 인자 %s', pans[5]);
+    logger.info(
+      {
+        payload: encodeURIComponent(JSON.stringify({ loginCardNo: PAN })),
+        note: `free text ${PAN}.`,
+      },
+      'URL 인코딩 본문',
+    );
+    for (const pan of pans) expect(output).not.toContain(pan);
+    expect(output).not.toContain(PAN.slice(0, 12));
+    expect(output).toContain('[PAN]');
+  });
+
+  it('decodes URL-encoded bodies leniently: a stray "100%" or bad UTF-8 does not keep the raw card number (S8c review N4)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    const PAN = '5555555555554444';
+    const encoded = encodeURIComponent(JSON.stringify({ loginCardNo: PAN }));
+    // decodeURIComponent는 이 문자열 전체에서 예외를 던진다(" 100% " · "%E0%A4" 잘린 UTF-8)
+    const mixed = [
+      `rate 100% done&${encoded}`,
+      `${encoded}%E0%A4&x=100%`,
+      `%ZZ${encoded}`,
+    ];
+    for (const value of mixed) {
+      expect(() => decodeURIComponent(value)).toThrow();
+      logger.info({ payload: value }, 'mixed');
+    }
+    expect(output).not.toContain(PAN);
+    expect(output.match(/\[PAN\]/g)).toHaveLength(3);
+    // 카드번호가 없으면 원문 그대로(관대한 디코딩 결과로 바꾸지 않는다)
+    output = '';
+    logger.info(
+      { payload: 'rate 100% done&a=%7B%22amount%22%3A18000%7D' },
+      'plain',
+    );
+    expect(output).toContain('rate 100% done&a=%7B%22amount%22%3A18000%7D');
+  });
+
+  it('keeps ordinary numbers: amounts, ids, timestamps, phone and masked card numbers (S8c review 3)', () => {
+    let output = '';
+    const logger = createLogger(
+      new ConfigService({ NODE_ENV: 'production', LOG_LEVEL: 'info' }),
+      { write: (line: string) => (output += line) },
+    );
+    const keep = [
+      '18000',
+      '1000000000000',
+      '1793000000000',
+      '20190620120117',
+      '11111111-1111-4111-8111-111111111111',
+      'a3f1c0de-1234-5678-9abc-def012345678',
+      '123-45-67890',
+      '010-1234-5678',
+      '9410********1934',
+      '69331111',
+      '12345678901234567890123',
+      'E2E-APPROVAL-0001',
+    ];
+    logger.info(
+      { values: keep, text: keep.join(' / ') },
+      `numbers ${keep.join(' ')}`,
+    );
+    for (const value of keep) expect(output).toContain(value);
+    expect(output).not.toContain('[PAN]');
+  });
+
   it('masks by key at any depth: CODEF bodies, arrays, error causes and err.body (S8 review L1)', () => {
     let output = '';
     const logger = createLogger(

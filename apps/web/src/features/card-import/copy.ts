@@ -23,6 +23,11 @@ export const COPY = {
   fetch: '불러오기',
   loginFailed: '아이디나 비밀번호가 맞지 않아요',
   loginLockWarning: '카드사에서 로그인이 잠길 수 있어요',
+  // 현대·하나 카드번호 로그인(S8c). 입력칸 문구는 HF-53 변형 디자인이 확정되면 다듬는다
+  cardNumberInvalid: '카드번호를 다시 확인해 주세요',
+  cardPasswordInvalid: '카드 비밀번호를 다시 확인해 주세요',
+  cardPasswordLockWarning: '한 번 더 틀리면 카드사에서 잠길 수 있어요',
+  loginLocked: '카드사 홈페이지에서 로그인 정보를 확인한 뒤 다시 시도해 주세요',
   cooldown: (hhmm: string) => `${hhmm} 이후 다시 시도해 주세요`,
   twoWayTitle: '추가 인증',
   twoWayCode: '인증번호',

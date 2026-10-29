@@ -18,9 +18,48 @@ export const CARD_IMPORT_DEFAULT_RANGE_DAYS = 7;
 export const CARD_IMPORT_FETCH_LIMIT = { COUNT: 3, WINDOW_SECONDS: 600, DAILY: 10 } as const;
 /**
  * 같은 사용자·같은 카드사 로그인 연속 실패: WINDOW_SECONDS 안에 FAILURES회째 실패하면 그 응답부터 COOLDOWN_SECONDS 동안
- * 429 CARD_IMPORT_LOGIN_COOLDOWN { retryAfter(ISO), retryAfterSec }(카드사 계정 잠김 예방). 1·2회째는 400 CARD_LOGIN_FAILED { failedAttempts }
+ * 429 CARD_IMPORT_LOGIN_COOLDOWN { retryAfter(ISO), retryAfterSec }(카드사 계정 잠김 예방). 1·2회째는 400 CARD_LOGIN_FAILED { failedAttempts }.
+ * 현대·하나(requiresCardNo)는 이 카운터 대신 더 엄한 CARD_IMPORT_LOCK_RISK_LIMIT를 쓴다
  */
 export const CARD_IMPORT_LOGIN_LIMIT = { FAILURES: 3, WINDOW_SECONDS: 1800, COOLDOWN_SECONDS: 1800 } as const;
+/**
+ * 카드번호 로그인 카드사(requiresCardNo — 현대·하나)의 잠김 위험 카운터(사용자·기관, 위 카운터와 따로 센다).
+ * 현대는 카드 비밀번호 3회 오류면 계정이 잠긴다(CODEF KR_CD_P_002 현대카드 특이사항) — 그래서 이 카드사들은 모든 로그인 실패
+ * (CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID)와 매핑 밖 CODEF 오류(CARD_IMPORT_FAILED, 미입력·토큰 오류 제외)를 센다.
+ * - 1회 실패 뒤 새 조회는 요청에 acknowledgeLockRisk: true가 있어야 한다(없으면 409 CARD_LOCK_RISK_CONFIRM_REQUIRED) —
+ *   화면이 "한 번 더 틀리면 잠길 수 있어요"를 확인받고 보낸다. acknowledgeLockRisk는 카운터가 1일 때만 의미가 있다.
+ * - FAILURES회째 실패 응답부터 429 CARD_IMPORT_LOGIN_LOCKED(시간 제한 없음, retryAfter 없음). 성공할 때까지 막는다.
+ * - 카운터는 로그인에 성공하거나, 사용자가 카드사 홈페이지에서 로그인을 확인했다고 밝힐 때(POST /api/card-import/lockout/ack,
+ *   CARD_IMPORT_LOCKOUT_ACK_LIMIT)만 0이 된다. 그 밖에 행은 마지막 실패 뒤 7일이 지나면 파기 배치(CARD_IMPORT_COUNTERS)가 지우므로
+ *   그때 풀린다(그 사이 사용자가 카드사에서 직접 확인했다고 본다)
+ */
+export const CARD_IMPORT_LOCK_RISK_LIMIT = { FAILURES: 2 } as const;
+/**
+ * POST /api/card-import/lockout/ack(잠김 해제 확인): 마지막 실패 뒤 COOLDOWN_SECONDS가 지나야 받는다(그 전엔 429 CARD_LOCKOUT_ACK_TOO_EARLY
+ * { retryAfter }), 사용자당 KST 하루 DAILY회(넘으면 429 CARD_LOCKOUT_ACK_DAILY_LIMIT { retryAfter = 다음 KST 자정 })
+ */
+export const CARD_IMPORT_LOCKOUT_ACK_LIMIT = { COOLDOWN_SECONDS: 1800, DAILY: 2 } as const;
+
+/**
+ * POST /api/card-import/lockout/ack — 현대·하나(requiresCardNo)에서 CARD_IMPORT_LOGIN_LOCKED가 난 뒤, 사용자가 카드사 홈페이지에서
+ * 로그인을 직접 확인했다고 밝히면 그 카드사 잠김 위험 카운터를 0으로 한다. 204.
+ * 400 VALIDATION_FAILED(현대·하나가 아니거나 CARD_NUMBER_LOGIN 꺼짐) · 409 CARD_LOCKOUT_ACK_NOT_NEEDED(카운터 2 미만) ·
+ * 429 CARD_LOCKOUT_ACK_TOO_EARLY { retryAfter }(마지막 실패 뒤 30분 전) · 429 CARD_LOCKOUT_ACK_DAILY_LIMIT(하루 2회 초과). 동의(CARD_IMPORT)·CSRF 필요
+ */
+export interface CardLockoutAckRequest {
+  /** CardImportOrganization.code(현대 0302 · 하나 0313) */
+  organization: string;
+}
+
+/** 429 CARD_IMPORT_LOGIN_LOCKED의 details. 화면은 action을 보고 안내 문구를 고른다(문구는 화면이 정한다) */
+export interface CardLoginLockedDetails extends Record<string, unknown> {
+  /** 잠김 위험 카운터(2 이상) */
+  failedAttempts: number;
+  /** 사용자가 할 일: 카드사 홈페이지에서 아이디·비밀번호·카드 비밀번호를 확인한다 */
+  action: 'CHECK_CARD_COMPANY_SITE';
+  /** 이 시각(ISO 8601 UTC)부터 "확인했어요"(POST /api/card-import/lockout/ack)를 받는다 = 마지막 실패 + 30분. 재시도 시각이 아니다 */
+  ackAvailableAt: string;
+}
 /** "비슷한 기록" 판정: 같은 통화·같은 금액의 직접 입력 지갑 항목이 승인 시각 ±N분 안에 있으면 similarManualEntryId */
 export const CARD_IMPORT_SIMILAR_WINDOW_MINUTES = 30;
 /** 한 번에 저장할 수 있는 최대 건수(POST /api/wallet/entries/import) */
@@ -41,11 +80,15 @@ export interface CardImportOrganization {
   /** 이 카드사가 조회할 수 있는 가장 오래된 날 = 오늘 - maxLookbackDays */
   maxLookbackDays: number;
   /**
-   * 아이디 로그인에 카드번호·카드 비밀번호가 더 필요한 카드사(현대·하나). true면 화면이 loginCardNo(카드번호 전체)와
-   * encryptedCardPassword(카드 비밀번호 앞 2자리를 비밀번호와 같은 방식으로 암호화)를 더 받는다.
-   * 1차는 이런 카드사를 config에 내리지 않는다(서버 CARD_NUMBER_LOGIN_ENABLED = false → 늘 false)
+   * 아이디 로그인에 카드번호·카드 비밀번호가 더 필요한 카드사(현대·하나). true면 화면이 loginCardNo(카드번호 전체, 숫자만)와
+   * encryptedCardPassword(카드 비밀번호 cardPasswordDigits자리를 비밀번호와 같은 방식으로 암호화)를 더 받는다. false인 카드사에 보내면 400
    */
   requiresCardNo: boolean;
+  /**
+   * requiresCardNo 카드사의 카드 비밀번호 자리수: 현대 4(전체), 하나 2(앞 2자리). 그 밖은 null.
+   * 출처: CODEF KR_CD_P_002 입력부 cardPassword("현대카드 아이디로그인(필수): 카드 비밀번호 4자리", "하나카드 아이디로그인(필수): 카드 비밀번호 앞 2자리")
+   */
+  cardPasswordDigits: number | null;
 }
 
 export const CARD_IMPORT_RANGE_BASIS_VALUES = ["ONGOING_TRIP", "RECENT_DAYS"] as const;
@@ -90,9 +133,12 @@ export interface CardImportRetryDetails extends Record<string, unknown> {
   retryAfterSec: number;
 }
 
-/** 400 CARD_LOGIN_FAILED의 details */
+/** 400 CARD_LOGIN_FAILED · CARD_NUMBER_INVALID · CARD_PASSWORD_INVALID, 409 CARD_LOCK_RISK_CONFIRM_REQUIRED의 details */
 export interface CardLoginFailedDetails extends Record<string, unknown> {
-  /** 같은 사용자·카드사의 최근 30분 연속 실패 수(1·2). 3회째는 CARD_IMPORT_LOGIN_COOLDOWN */
+  /**
+   * 같은 사용자·카드사의 연속 실패 수. 일반 카드사 = 최근 30분(3회째 쿨다운, CARD_IMPORT_LOGIN_LIMIT),
+   * 현대·하나 = 잠김 위험 카운터(성공해야 0, 2회째부터 CARD_IMPORT_LOGIN_LOCKED — CARD_IMPORT_LOCK_RISK_LIMIT)
+   */
   failedAttempts: number;
 }
 
@@ -106,7 +152,7 @@ export interface CardImportTwoWayInput {
 
 /**
  * POST /api/card-import/fetch — 카드사 아이디·비밀번호로 개인 카드 승인내역을 한 번 조회한다(저장하지 않는다).
- * 추가 인증을 이어서 보낼 때도 같은 loginId·encryptedPassword·organization·from·to를 다시 보낸다(서버는 아무것도 기억하지 않는다)
+ * 추가 인증을 이어서 보낼 때도 같은 loginId·encryptedPassword(·loginCardNo·encryptedCardPassword)·organization·from·to를 다시 보낸다(서버는 아무것도 기억하지 않는다)
  */
 export interface FetchCardApprovalsRequest {
   /** CardImportOrganization.code */
@@ -119,10 +165,19 @@ export interface FetchCardApprovalsRequest {
   from: string;
   /** 조회 종료일 "YYYY-MM-DD"(KST, 오늘까지) */
   to: string;
-  /** requiresCardNo 카드사만: 카드번호 전체(숫자 14~16자리). 서버는 CODEF로 넘기기만 하고 저장·기록하지 않는다 */
+  /**
+   * requiresCardNo 카드사만: 카드번호 전체(숫자만 14~19자리, Luhn — isValidCardNumber. 공백·하이픈 없이).
+   * CODEF가 이 값은 암호화하지 않은 원문으로 받는다(KR_CD_P_002 loginCardNo — RSA 표시 없음, 예시 "6253123456780000").
+   * 서버는 이 요청 안에서 CODEF로 넘기기만 하고 저장·기록·응답하지 않는다
+   */
   loginCardNo?: string;
-  /** requiresCardNo 카드사만: 카드 비밀번호(앞 2자리)를 config.publicKey로 암호화한 base64 */
+  /** requiresCardNo 카드사만: 카드 비밀번호(cardPasswordDigits자리)를 config.publicKey로 RSA PKCS#1 v1.5 암호화한 base64 */
   encryptedCardPassword?: string;
+  /**
+   * requiresCardNo 카드사만: 잠김 위험 카운터가 1이면(409 CARD_LOCK_RISK_CONFIRM_REQUIRED) 화면이
+   * "한 번 더 틀리면 카드사에서 잠길 수 있어요"를 확인받고 true로 다시 보낸다. 다른 카드사는 보지 않는다
+   */
+  acknowledgeLockRisk?: boolean;
   /** TWO_WAY_REQUIRED 뒤 이어서 보낼 때만 */
   twoWay?: CardImportTwoWayInput;
 }

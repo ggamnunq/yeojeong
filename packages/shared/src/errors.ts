@@ -149,7 +149,7 @@ export const CARD_IMPORT_ERRORS = {
     status: 400,
     message: '카드사 아이디나 비밀번호를 다시 확인해 주세요',
   },
-  /** 비밀번호 오류 횟수 초과·잠김·비밀번호 재설정·카드 소지 확인 등 카드사 홈페이지에서 풀어야 한다 */
+  /** 비밀번호·카드 비밀번호 오류 횟수 초과·잠김·비밀번호 재설정·카드 소지 확인 등 카드사 홈페이지에서 풀어야 한다 */
   CARD_ACCOUNT_ACTION_REQUIRED: {
     status: 409,
     message: '카드사 홈페이지에서 계정 상태를 확인해 주세요',
@@ -173,6 +173,54 @@ export const CARD_IMPORT_ERRORS = {
   CARD_TWO_WAY_UNSUPPORTED: {
     status: 409,
     message: '이 카드사는 지금 불러올 수 없어요',
+  },
+  /**
+   * 카드번호가 맞지 않다(현대·하나 카드번호 로그인: 미입력·형식·일치하는 카드 없음 — CODEF CF-13100~13104).
+   * details: CardLoginFailedDetails { failedAttempts }(로그인 실패와 같이 센다). 값은 돌려주지 않는다. 미입력(CF-13100)은 CARD_IMPORT_FAILED
+   */
+  CARD_NUMBER_INVALID: {
+    status: 400,
+    message: '카드번호를 다시 확인해 주세요',
+  },
+  /**
+   * 카드 비밀번호가 맞지 않다(현대 4자리·하나 앞 2자리: 오류·형식·자릿수 — CODEF CF-13121·13123~13125. 미입력 CF-13120은 CARD_IMPORT_FAILED).
+   * details: CardLoginFailedDetails { failedAttempts }. 잠김 위험 카운터 2회째부터는 CARD_IMPORT_LOGIN_LOCKED(CARD_IMPORT_LOCK_RISK_LIMIT)
+   */
+  CARD_PASSWORD_INVALID: {
+    status: 400,
+    message: '카드 비밀번호를 다시 확인해 주세요',
+  },
+  /**
+   * 현대·하나: 로그인 실패가 한 번 있어 한 번 더 틀리면 카드사 계정이 잠길 수 있다. 화면이 확인받고
+   * acknowledgeLockRisk: true로 다시 보낸다(CARD_IMPORT_LOCK_RISK_LIMIT). details: CardLoginFailedDetails { failedAttempts }. CODEF는 부르지 않았다
+   */
+  CARD_LOCK_RISK_CONFIRM_REQUIRED: {
+    status: 409,
+    message: '한 번 더 틀리면 카드사에서 잠길 수 있어요. 확인 후 다시 시도해 주세요',
+  },
+  /**
+   * 현대·하나: 로그인 실패가 2번 쌓여 성공할 때까지 막았다(시간 제한·retryAfter 없음 — 카드사 계정 잠김 예방).
+   * details: CardLoginLockedDetails { failedAttempts, action: 'CHECK_CARD_COMPANY_SITE', ackAvailableAt }.
+   * 풀리는 길: 로그인 성공 · 카드사에서 확인 후 POST /api/card-import/lockout/ack(마지막 실패 30분 뒤부터) · 마지막 실패 뒤 7일(파기 배치)
+   */
+  CARD_IMPORT_LOGIN_LOCKED: {
+    status: 429,
+    message: '카드사 홈페이지에서 로그인 정보를 확인한 뒤 다시 시도해 주세요',
+  },
+  /** 잠김 해제 확인(POST /api/card-import/lockout/ack)이 필요 없다: 그 카드사 잠김 위험 카운터가 2 미만이다 */
+  CARD_LOCKOUT_ACK_NOT_NEEDED: {
+    status: 409,
+    message: '지금은 다시 시도할 수 있어요',
+  },
+  /** 잠김 해제 확인이 이르다: 마지막 실패 뒤 30분이 지나야 받는다. details: CardImportRetryDetails { retryAfter = ackAvailableAt } */
+  CARD_LOCKOUT_ACK_TOO_EARLY: {
+    status: 429,
+    message: '잠시 후 다시 시도해 주세요',
+  },
+  /** 잠김 해제 확인은 사용자당 하루(KST) 2회까지. details: CardImportRetryDetails { retryAfter = 다음 KST 자정 } */
+  CARD_LOCKOUT_ACK_DAILY_LIMIT: {
+    status: 429,
+    message: '오늘은 더 해제할 수 없어요. 내일 다시 시도해 주세요',
   },
   /** 화면이 비밀번호를 올바르게 암호화하지 못했다(공개키가 바뀌었을 수 있다 — config를 다시 받는다) */
   CARD_PASSWORD_ENCRYPTION_INVALID: {

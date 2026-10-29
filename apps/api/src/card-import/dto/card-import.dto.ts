@@ -6,6 +6,8 @@ import {
   CARD_IMPORT_ITEM_STATUS_VALUES,
   CARD_IMPORT_RANGE_BASIS_VALUES,
   CARD_IMPORT_TWO_WAY_METHOD_VALUES,
+  CARD_NUMBER_MAX_DIGITS,
+  CARD_NUMBER_MIN_DIGITS,
   MANUAL_MEMO_MAX_LENGTH,
   type CardApprovalBlockReason,
   type CardApprovalItem,
@@ -16,6 +18,7 @@ import {
   type CardImportRangeBasis,
   type CardImportTwoWayInput,
   type CardImportTwoWayMethod,
+  type CardLockoutAckRequest,
   type FetchCardApprovalsRequest,
   type ImportWalletEntriesRequest,
   type ImportWalletEntriesResponse,
@@ -26,6 +29,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsISO8601,
@@ -47,14 +51,19 @@ import {
 } from '../../expenses/dto/manual-request.dto.js';
 import { SUPPORTED_CURRENCY_CODES } from '../../fx/currencies.js';
 import { WalletEntryDto } from '../../wallet/dto/wallet.dto.js';
-import { CARD_IMPORT_ORGANIZATIONS } from '../codef/codef.constants.js';
+import { ALL_CARD_ORGANIZATIONS } from '../codef/codef.constants.js';
 
 // 요청 본문 검증 오류는 값을 되돌려 주지 않는다(createValidationPipe: value=false). 아이디·암호문이 응답·로그에 실리지 않는다.
 
-const ORG_CODES = CARD_IMPORT_ORGANIZATIONS.map((o) => o.code);
+// 형식만 본다(9곳). 지금 받는지(env CARD_NUMBER_LOGIN)는 서비스가 본다
+const ORG_CODES = ALL_CARD_ORGANIZATIONS.map((o) => o.code);
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const IMPORT_KEY = /^[0-9a-f]{64}$/;
+/** 숫자만 14~19자리(Luhn은 서비스가 isValidCardNumber로 본다) */
+const CARD_NUMBER = new RegExp(
+  `^\\d{${CARD_NUMBER_MIN_DIGITS},${CARD_NUMBER_MAX_DIGITS}}$`,
+);
 
 // ─── 요청 ───
 
@@ -106,23 +115,32 @@ export class FetchCardApprovalsDto implements FetchCardApprovalsRequest {
   to: string;
 
   @ApiPropertyOptional({
-    example: '9410123412341934',
+    example: '4111111111111111',
     description:
-      '현대·하나(requiresCardNo)만: 카드번호 전체(저장·기록하지 않는다)',
+      '현대·하나(requiresCardNo)만: 카드번호 전체(숫자만 14~19자리, Luhn). CODEF가 원문으로 받아 그대로 넘긴다 — 저장·기록·응답하지 않는다',
   })
   @IsOptional()
-  @Matches(/^\d{14,16}$/, { message: '카드번호를 다시 확인해 주세요' })
+  @IsString({ message: '카드번호를 다시 확인해 주세요' })
+  @Matches(CARD_NUMBER, { message: '카드번호를 다시 확인해 주세요' })
   loginCardNo?: string;
 
   @ApiPropertyOptional({
     description:
-      '현대·하나(requiresCardNo)만: 카드 비밀번호 앞 2자리를 publicKey로 암호화한 base64',
+      '현대·하나(requiresCardNo)만: 카드 비밀번호(현대 4자리·하나 앞 2자리 — cardPasswordDigits)를 publicKey로 암호화한 base64',
   })
   @IsOptional()
   @IsString({ message: '다시 시도해 주세요' })
   @Length(16, 2048, { message: '다시 시도해 주세요' })
   @Matches(BASE64, { message: '다시 시도해 주세요' })
   encryptedCardPassword?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '현대·하나만: 409 CARD_LOCK_RISK_CONFIRM_REQUIRED 뒤 "한 번 더 틀리면 잠길 수 있어요"를 확인받고 true로 보낸다',
+  })
+  @IsOptional()
+  @IsBoolean({ message: '다시 시도해 주세요' })
+  acknowledgeLockRisk?: boolean;
 
   @ApiPropertyOptional({
     type: CardImportTwoWayDto,
@@ -133,6 +151,16 @@ export class FetchCardApprovalsDto implements FetchCardApprovalsRequest {
   @ValidateNested()
   @Type(() => CardImportTwoWayDto)
   twoWay?: CardImportTwoWayDto;
+}
+
+export class CardLockoutAckDto implements CardLockoutAckRequest {
+  @ApiProperty({
+    enum: ORG_CODES,
+    example: '0302',
+    description: '현대(0302)·하나(0313)만 받는다',
+  })
+  @IsIn(ORG_CODES, { message: '잠김을 풀 수 없는 카드사예요' })
+  organization: string;
 }
 
 export class ImportWalletEntryItemDto implements ImportWalletEntryItem {
@@ -222,6 +250,15 @@ export class CardImportOrganizationDto implements CardImportOrganization {
 
   @ApiProperty({ description: '현대·하나: 카드번호·카드 비밀번호가 더 필요' })
   requiresCardNo: boolean;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    example: 4,
+    description:
+      'requiresCardNo 카드사의 카드 비밀번호 자리수(현대 4, 하나 앞 2자리), 그 밖 null',
+  })
+  cardPasswordDigits: number | null;
 }
 
 export class CardImportDefaultRangeDto {

@@ -6,7 +6,7 @@ import {
   type Logger,
   type LoggerOptions,
 } from 'pino';
-import { maskLogObject } from './mask.js';
+import { maskLogObject, redactPan } from './mask.js';
 
 // Cloud Logging이 인식하는 severity 값
 const SEVERITY: Record<string, string> = {
@@ -58,6 +58,7 @@ export const SENSITIVE_BODY_KEYS = [
   'authToken',
   'cardNo',
   'loginCardNo',
+  'cardNumber',
   'cardPassword',
   'encryptedCardPassword',
   'itemToken',
@@ -103,6 +104,26 @@ export function createLogger(
     },
     // 경로 목록(redact)이 놓치는 깊이·배열·에러 원인까지 키 이름으로 한 번 더 가린다(common/logging/mask.ts)
     formatters: { log: (obj) => maskLogObject(obj) },
+    // 메시지 문자열(첫 문자열 인자·포맷 인자)의 카드번호 모양도 [PAN]으로(값 기반 차단, mask.ts redactPan)
+    hooks: {
+      logMethod(args, method) {
+        const masked = args.map((arg: unknown) =>
+          typeof arg === 'string' ? redactPan(arg) : arg,
+        ) as unknown[];
+        // logger.error(err)처럼 메시지 없이 에러만 넘기면 pino가 err.message를 메시지로 쓴다 — 가린 메시지를 직접 넘긴다
+        const [first, second] = masked;
+        const error =
+          first instanceof Error
+            ? first
+            : first && typeof first === 'object' && 'err' in first
+              ? (first as { err?: unknown }).err
+              : undefined;
+        if (error instanceof Error && typeof second !== 'string') {
+          masked.splice(1, 0, redactPan(error.message));
+        }
+        method.apply(this, masked as typeof args);
+      },
+    },
   };
 
   if (production) {

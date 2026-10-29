@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import {
   CARD_IMPORT_FETCH_TIMEOUT_MS,
   type CardImportConfig,
+  type CardLockoutAckRequest,
   type ConsentStatusResponse,
   type ConsentSubmitRequest,
   type FetchCardApprovalsRequest,
@@ -69,3 +70,13 @@ export const revocableConsentsQuery = () =>
 /** POST /consents/:consentId/withdraw — 204. 저장한 지갑 항목은 그대로 남는다 */
 export const withdrawConsent = (consentId: RevocableConsentId) =>
   apiFetch<void>(`/consents/${consentId}/withdraw`, { method: 'POST' })
+
+/**
+ * POST /card-import/lockout/ack — 현대·하나 잠김(CARD_IMPORT_LOGIN_LOCKED) 뒤 사용자가 카드사 홈페이지에서 로그인을 확인했다고 밝히면
+ * 그 카드사 잠김 위험 카운터를 0으로. 204. 409 CARD_LOCKOUT_ACK_NOT_NEEDED · 429 CARD_LOCKOUT_ACK_TOO_EARLY { retryAfter } ·
+ * 429 CARD_LOCKOUT_ACK_DAILY_LIMIT { retryAfter }. 카드 정보는 보내지 않는다(기관 코드만)
+ */
+export const ackCardLockout = (organization: string) => {
+  const body: CardLockoutAckRequest = { organization }
+  return apiFetch<void>('/card-import/lockout/ack', { body })
+}

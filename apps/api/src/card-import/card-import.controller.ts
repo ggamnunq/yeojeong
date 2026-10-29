@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpStatus,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import { CardImportConsentGuard } from './card-import-consent.guard.js';
 import { CardImportService } from './card-import.service.js';
 import {
   CardImportConfigDto,
+  CardLockoutAckDto,
   FetchCardApprovalsDto,
   FetchCardApprovalsResponseDto,
 } from './dto/card-import.dto.js';
@@ -49,6 +51,7 @@ export class CardImportController {
     summary: '카드 승인내역 조회(저장하지 않음)',
     description:
       '카드사 아이디 + RSA로 암호화한 비밀번호로 CODEF에서 한 번 조회해 응답으로만 돌려준다. 로그인 정보·결과는 서버에 남지 않는다. ' +
+      '현대·하나(requiresCardNo)는 카드번호 전체(loginCardNo, 원문)와 RSA로 암호화한 카드 비밀번호(encryptedCardPassword)를 더 보낸다. ' +
       '추가 인증이 필요하면 status TWO_WAY_REQUIRED + twoWayToken → 같은 본문에 twoWay {token, code}를 더해 다시 보낸다. ' +
       '사용자당 10분 5회(추가 인증 이어가기는 세지 않는다). CARD_IMPORT 동의가 없으면 403 CONSENT_REQUIRED.',
   })
@@ -57,6 +60,8 @@ export class CardImportController {
     400,
     'VALIDATION_FAILED',
     'CARD_LOGIN_FAILED',
+    'CARD_NUMBER_INVALID',
+    'CARD_PASSWORD_INVALID',
     'CARD_TWO_WAY_INVALID',
     'CARD_PASSWORD_ENCRYPTION_INVALID',
   )
@@ -65,9 +70,15 @@ export class CardImportController {
     409,
     'CARD_ACCOUNT_ACTION_REQUIRED',
     'CARD_TWO_WAY_UNSUPPORTED',
+    'CARD_LOCK_RISK_CONFIRM_REQUIRED',
   )
   @ApiErrorResponse(410, 'CARD_TWO_WAY_EXPIRED')
-  @ApiErrorResponse(429, 'CARD_IMPORT_RATE_LIMITED', 'RATE_LIMITED')
+  @ApiErrorResponse(
+    429,
+    'CARD_IMPORT_RATE_LIMITED',
+    'CARD_IMPORT_LOGIN_COOLDOWN',
+    'RATE_LIMITED',
+  )
   @ApiErrorResponse(502, 'CARD_IMPORT_FAILED')
   @ApiErrorResponse(503, 'CARD_COMPANY_UNAVAILABLE')
   // 사용자당 10분 5회는 서비스가 접근 기록으로 센다(인스턴스 여럿이어도 같은 기준). IP 기본 제한(분당 120회)은 전역
@@ -79,5 +90,33 @@ export class CardImportController {
     @Body() body: FetchCardApprovalsDto,
   ): Promise<FetchCardApprovalsResponse> {
     return this.cardImport.fetch(user.id, body);
+  }
+
+  @ApiOperation({
+    summary: '현대·하나 잠김 해제 확인',
+    description:
+      'CARD_IMPORT_LOGIN_LOCKED 뒤 사용자가 카드사 홈페이지에서 로그인을 확인했다고 밝히면 그 카드사 잠김 위험 카운터를 0으로 한다. ' +
+      '마지막 실패 30분 뒤부터, 사용자당 하루(KST) 2회. 접근 기록 CARD_LOCKOUT_ACK(기관 코드만).',
+  })
+  @ApiErrorResponse(400, 'VALIDATION_FAILED')
+  @ApiErrorResponse(403, 'CONSENT_REQUIRED', 'CSRF_REJECTED')
+  @ApiErrorResponse(
+    409,
+    'CARD_LOCKOUT_ACK_NOT_NEEDED',
+    'CARD_IMPORT_IN_PROGRESS',
+  )
+  @ApiErrorResponse(
+    429,
+    'CARD_LOCKOUT_ACK_TOO_EARLY',
+    'CARD_LOCKOUT_ACK_DAILY_LIMIT',
+  )
+  @UseGuards(CardImportConsentGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('lockout/ack')
+  ackLockout(
+    @CurrentUser() user: AuthUser,
+    @Body() body: CardLockoutAckDto,
+  ): Promise<void> {
+    return this.cardImport.ackLockout(user.id, body.organization);
   }
 }

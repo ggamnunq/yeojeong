@@ -158,6 +158,8 @@ export const ACCESS_ACTION_VALUES = [
   'FETCH_CARD_APPROVALS',
   /** 불러온 승인내역 중 고른 것을 지갑에 저장(S8). details = 건수만 */
   'IMPORT_CARD_APPROVALS',
+  /** 현대·하나 잠김 위험 해제(S8c): 사용자가 카드사 홈페이지에서 로그인을 확인했다고 밝혀 카운터를 0으로. details = 기관 코드만 */
+  'CARD_LOCKOUT_ACK',
 ] as const;
 /** 금융 데이터 접근 로그(AccessLog.action) */
 export type AccessAction = (typeof ACCESS_ACTION_VALUES)[number];

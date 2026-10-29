@@ -1,6 +1,7 @@
 import { createHash, createPublicKey } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { parseBooleanEnv } from '../../common/features.js';
 import {
   CODEF_API_HOSTS,
   CODEF_ENV_VALUES,
@@ -52,6 +53,11 @@ export class CodefConfig {
   readonly publicKeyFingerprint: string;
   /** RSA 모듈러스 바이트 수(2048비트 = 256). 암호문 길이 검사 기준. 키가 없으면 null */
   readonly modulusBytes: number | null;
+  /**
+   * env CARD_NUMBER_LOGIN(기본 false, FEATURE_CARD_IMPORT와 별개): 현대·하나 카드번호 로그인(카드번호 원문 경유)을 받을지.
+   * false면 config에서 두 카드사를 빼고 fetch는 400(organization)·카드 필드 400. 약관 0.2(카드번호 처리) 게시 전에는 켜지 않는다
+   */
+  readonly cardNumberLogin: boolean;
 
   constructor(config: ConfigService) {
     this.env = pick(
@@ -88,6 +94,11 @@ export class CodefConfig {
       config.get<string>('CODEF_PUBLIC_KEY') ?? '',
     );
     this.modulusBytes = rsaModulusBytes(this.publicKey);
+    this.cardNumberLogin = parseBooleanEnv(
+      'CARD_NUMBER_LOGIN',
+      config.get<string>('CARD_NUMBER_LOGIN'),
+      false,
+    );
     this.publicKeyFingerprint = this.publicKey
       ? createHash('sha256')
           .update(Buffer.from(this.publicKey, 'base64'))

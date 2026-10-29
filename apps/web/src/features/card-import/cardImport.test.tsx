@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiProvider, isApiError } from '../../api'
 import { server } from '../../mocks/server'
 import { createTestQueryClient } from '../../test/render'
-import { cardImportConfigQuery, fetchCardApprovals, importWalletEntries, revocableConsentsQuery, submitCardImportConsent, withdrawConsent } from './api'
+import { db } from '../../mocks/data'
+import { ackCardLockout, cardImportConfigQuery, fetchCardApprovals, importWalletEntries, revocableConsentsQuery, submitCardImportConsent, withdrawConsent } from './api'
 import { CardImportKeyPinError, encryptCardPassword, pinPolicy, publicKeyFingerprint } from './crypto'
+import { CardLoginInputError } from './cardLogin'
 import { buildFetchRequest, cardImportOf, useFetchCardApprovals } from './hooks'
 import { MOCK_CARD_IMPORT_PUBLIC_KEY, MOCK_TWO_WAY_CODE, resetCardImportMock } from './mocks'
 
@@ -169,6 +171,115 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     // 쿼리 캐시에는 조회 결과가 없다
     expect(client.getQueryCache().getAll()).toHaveLength(0)
     act(() => result.current.reset())
+  })
+
+  it('builds Hyundai·Hana requests: digits-only card number, encrypted card password, nothing else (S8c)', async () => {
+    const PAN = '5555555555554444'
+    const PIN = '4321'
+    const base = { publicKey: MOCK_CARD_IMPORT_PUBLIC_KEY, loginId: 'me', password: 'pw-plain', from: today, to: today }
+    const hyundai = { requiresCardNo: true, cardPasswordDigits: 4 }
+    const request = await buildFetchRequest({ ...base, organization: '0302', rule: hyundai, cardNumber: '5555-5555 5555-4444', cardPassword: PIN })
+    expect(Object.keys(request).sort()).toEqual(
+      ['encryptedCardPassword', 'encryptedPassword', 'from', 'loginCardNo', 'loginId', 'organization', 'to'].sort(),
+    )
+    expect(request.loginCardNo).toBe(PAN)
+    // 카드 비밀번호는 RSA 2048 암호문(256바이트)만, 원문·입력 이름(rule·cardNumber·cardPassword)은 요청에 없다
+    expect(atob(request.encryptedCardPassword ?? '')).toHaveLength(256)
+    expect(request.encryptedCardPassword).not.toBe(request.encryptedPassword)
+    expect(JSON.stringify(request)).not.toMatch(/4321|pw-plain|cardNumber|cardPassword"|rule|5555-5555/)
+
+    // 잠김 위험 확인은 카드번호 로그인 카드사만 요청에 싣는다
+    expect(
+      await buildFetchRequest({ ...base, organization: '0302', rule: hyundai, cardNumber: PAN, cardPassword: PIN, acknowledgeLockRisk: true }),
+    ).toMatchObject({ acknowledgeLockRisk: true })
+    expect(await buildFetchRequest({ ...base, organization: '0306', acknowledgeLockRisk: true })).not.toHaveProperty('acknowledgeLockRisk')
+    // 하나는 앞 2자리
+    const hana = { requiresCardNo: true, cardPasswordDigits: 2 }
+    await expect(buildFetchRequest({ ...base, organization: '0313', rule: hana, cardNumber: PAN, cardPassword: '43' })).resolves.toMatchObject({
+      loginCardNo: PAN,
+    })
+    // 형식이 틀리면 암호화·전송 전에 막는다(에러에 값이 없다)
+    const bad = [
+      { organization: '0313', rule: hana, cardNumber: PAN, cardPassword: PIN },
+      { organization: '0302', rule: hyundai, cardNumber: '5555555555554445', cardPassword: PIN },
+      { organization: '0302', rule: hyundai, cardPassword: PIN },
+      { organization: '0306', rule: { requiresCardNo: false, cardPasswordDigits: null }, cardNumber: PAN },
+      { organization: '0306', cardPassword: '12' },
+    ]
+    for (const over of bad) {
+      const error = await buildFetchRequest({ ...base, ...over }).catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(CardLoginInputError)
+      expect(String((error as Error).message)).not.toMatch(/5555|4321/)
+    }
+  })
+
+  it('covers Hyundai·Hana mock scenarios and keeps the card number out of caches and the remembered request (S8c)', async () => {
+    resetCardImportMock({ consented: true })
+    const client = createTestQueryClient()
+    const config = await client.fetchQuery(cardImportConfigQuery())
+    expect(config.organizations.map((o) => o.code)).toEqual(['0301', '0302', '0303', '0304', '0305', '0306', '0309', '0311', '0313'])
+    expect(config.organizations.filter((o) => o.requiresCardNo).map((o) => [o.code, o.cardPasswordDigits])).toEqual([
+      ['0302', 4],
+      ['0313', 2],
+    ])
+    const PAN = '5555555555554444'
+    const card = { loginCardNo: PAN, encryptedCardPassword: 'Q0lQSEVSVEVYVA==' }
+    expect(await errorCode(fetchCardApprovals({ ...body('me'), organization: '0302' }))).toBe('VALIDATION_FAILED')
+    expect(await errorCode(fetchCardApprovals({ ...body('me'), ...card }))).toBe('VALIDATION_FAILED')
+    expect(await errorCode(fetchCardApprovals({ ...body('me'), organization: '0313', ...card, loginCardNo: '5555555555554445' }))).toBe(
+      'VALIDATION_FAILED',
+    )
+    const ok = await fetchCardApprovals({ ...body('me'), organization: '0313', ...card })
+    expect(ok).toMatchObject({ status: 'OK', organization: '0313' })
+    expect(JSON.stringify(ok)).not.toContain(PAN)
+    expect(await errorCode(fetchCardApprovals({ ...body('badcard'), organization: '0302', ...card }))).toBe('CARD_NUMBER_INVALID')
+    resetCardImportMock({ consented: true })
+    // 잠김 위험: 1회 실패 → 확인 없이 409 → 확인하고 또 틀리면 429 잠금(성공할 때까지, 확인 값과 무관)
+    expect(await errorCode(fetchCardApprovals({ ...body('badpin'), organization: '0302', ...card }))).toBe('CARD_PASSWORD_INVALID')
+    expect(await errorCode(fetchCardApprovals({ ...body('me'), organization: '0302', ...card }))).toBe('CARD_LOCK_RISK_CONFIRM_REQUIRED')
+    expect(await errorCode(fetchCardApprovals({ ...body('badpin'), organization: '0302', ...card, acknowledgeLockRisk: true }))).toBe(
+      'CARD_IMPORT_LOGIN_LOCKED',
+    )
+    const locked = await fetchCardApprovals({ ...body('me'), organization: '0302', ...card, acknowledgeLockRisk: true }).catch((e: unknown) => e)
+    expect(locked).toMatchObject({ code: 'CARD_IMPORT_LOGIN_LOCKED', details: { failedAttempts: 2, action: 'CHECK_CARD_COMPANY_SITE' } })
+    expect((locked as { details?: Record<string, unknown> }).details).not.toHaveProperty('retryAfter')
+    resetCardImportMock({ consented: true })
+    expect(await errorCode(fetchCardApprovals({ ...body('wrong'), organization: '0313', ...card }))).toBe('CARD_LOGIN_FAILED')
+    expect((await fetchCardApprovals({ ...body('me'), organization: '0313', ...card, acknowledgeLockRisk: true })).status).toBe('OK')
+    // 성공하면 다시 확인 없이 보낼 수 있다
+    expect((await fetchCardApprovals({ ...body('me'), organization: '0313', ...card })).status).toBe('OK')
+
+    // hook: 결과(OK)를 받으면 요청(카드번호 포함)을 기억하지 않는다 — 이어가기를 부를 수 없다
+    resetCardImportMock({ consented: true })
+    const wrapper = ({ children }: { children: ReactNode }) => <ApiProvider client={client}>{children}</ApiProvider>
+    const { result } = renderHook(() => useFetchCardApprovals(), { wrapper })
+    const done = await act(() => result.current.start({ ...body('me'), organization: '0302', ...card }))
+    expect(done.status).toBe('OK')
+    await expect(result.current.continueTwoWay({ token: 't', code: MOCK_TWO_WAY_CODE })).rejects.toThrow('처음부터')
+    expect(client.getMutationCache().getAll()).toHaveLength(0)
+    expect(JSON.stringify(client.getQueryCache().getAll().map((q) => q.state))).not.toContain(PAN)
+    expect(JSON.stringify({ ...sessionStorage, ...localStorage }) + window.location.href).not.toContain(PAN)
+  })
+
+  it('covers the lockout ack scenarios: too early, released, not needed, daily limit (S8c)', async () => {
+    const card = { loginCardNo: '5555555555554444', encryptedCardPassword: 'Q0lQSEVSVEVYVA==' }
+    resetCardImportMock({ consented: true, lockedMinutesAgo: 1 })
+    expect(await errorCode(ackCardLockout('0306'))).toBe('VALIDATION_FAILED')
+    const early = await ackCardLockout('0302').catch((e: unknown) => e)
+    expect(early).toMatchObject({ code: 'CARD_LOCKOUT_ACK_TOO_EARLY', details: { retryAfter: expect.any(String) } })
+    resetCardImportMock({ consented: true, lockedMinutesAgo: 31 })
+    const locked = await fetchCardApprovals({ ...body('me'), organization: '0302', ...card }).catch((e: unknown) => e)
+    expect(locked).toMatchObject({ code: 'CARD_IMPORT_LOGIN_LOCKED', details: { ackAvailableAt: expect.any(String) } })
+    await ackCardLockout('0302')
+    expect(await errorCode(ackCardLockout('0302'))).toBe('CARD_LOCKOUT_ACK_NOT_NEEDED')
+    // 풀린 뒤에는 확인 없이 다시 조회할 수 있다
+    expect((await fetchCardApprovals({ ...body('me'), organization: '0302', ...card })).status).toBe('OK')
+    // 하루 2회까지
+    for (const expected of [null, 'CARD_LOCKOUT_ACK_DAILY_LIMIT']) {
+      db.cardImportState.lockRiskFailures = 2
+      db.cardImportState.lockedAt = Date.now() - 31 * 60_000
+      expect(await errorCode(ackCardLockout('0302'))).toBe(expected)
+    }
   })
 
   it('pins the CODEF public key fingerprint when the build provides one (L4)', async () => {

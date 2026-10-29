@@ -24,6 +24,7 @@ import {
   rangeErrorText,
   rangeLimits,
   toggleAll,
+  visibleOrganizations,
   type ErrorScreenKind,
 } from '../rules'
 import { EmptyStep, LoadingStep, LoginStep, ResultStep, TwoWayStep } from '../steps'
@@ -53,7 +54,8 @@ export default function FlowPage() {
   const importer = useImportWalletEntries()
   const trips = useMyTrips()
 
-  const org = config.data?.organizations.find((o) => o.code === issuer)
+  // 카드번호 입력칸이 아직 없으면 현대·하나는 고를 수 없다(visibleOrganizations — 주소로 바로 와도 같다)
+  const org = config.data ? visibleOrganizations(config.data.organizations).find((o) => o.code === issuer) : undefined
   const today = kst(clock.now()).date
   const limits = org ? rangeLimits(org, today) : null
 
@@ -224,6 +226,19 @@ export default function FlowPage() {
     switch (f.to) {
       case 'login-failed':
         setLoginError(f.attempts >= 2 ? COPY.loginLockWarning : COPY.loginFailed)
+        return setStep('login')
+      case 'card-number-invalid':
+        setLoginError(COPY.cardNumberInvalid)
+        return setStep('login')
+      case 'card-password-invalid':
+        setLoginError(f.attempts >= 1 ? COPY.cardPasswordLockWarning : COPY.cardPasswordInvalid)
+        return setStep('login')
+      case 'login-locked':
+        setLoginError(COPY.loginLocked)
+        return setStep('login')
+      case 'lock-risk-confirm':
+        // 확인 다이얼로그(acknowledgeLockRisk)는 카드번호 입력칸(HF-53 변형)과 함께 붙인다
+        setLoginError(COPY.cardPasswordLockWarning)
         return setStep('login')
       case 'login-cooldown':
         setCooldownUntil(f.until)
