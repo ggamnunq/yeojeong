@@ -10,7 +10,8 @@ const config = new CodefConfig(
     CODEF_ENV: 'development',
     CODEF_CLIENT_ID: 'id',
     CODEF_CLIENT_SECRET: 'secret',
-    CODEF_PUBLIC_KEY: '-----BEGIN PUBLIC KEY-----\nAAAA\nBBBB\n-----END PUBLIC KEY-----',
+    CODEF_PUBLIC_KEY:
+      '-----BEGIN PUBLIC KEY-----\nAAAA\nBBBB\n-----END PUBLIC KEY-----',
   }),
 );
 
@@ -19,14 +20,16 @@ describe('CodefClient', () => {
     expect(config.apiHost).toBe('https://development.codef.io');
     expect(config.publicKey).toBe('AAAABBBB');
     expect(config.loginMode).toBe('direct');
-    expect(() => new CodefConfig(new ConfigService({ CODEF_ENV: 'prod' }))).toThrow(
-      /CODEF_ENV/,
-    );
+    expect(
+      () => new CodefConfig(new ConfigService({ CODEF_ENV: 'prod' })),
+    ).toThrow(/CODEF_ENV/);
   });
 
   it('decodes plain and URL-encoded bodies (+ is a space)', () => {
     expect(decodeCodefBody('{"a":1}')).toEqual({ a: 1 });
-    expect(decodeCodefBody(encodeURIComponent('{"a":"b c"}'))).toEqual({ a: 'b c' });
+    expect(decodeCodefBody(encodeURIComponent('{"a":"b c"}'))).toEqual({
+      a: 'b c',
+    });
     expect(decodeCodefBody('%7B%22a%22%3A%22b+c%22%7D')).toEqual({ a: 'b c' });
   });
 
@@ -61,7 +64,8 @@ describe('CodefClient', () => {
 
   it('turns network failures and malformed bodies into CARD_IMPORT_FAILED without the cause', async () => {
     const http = codefHttpMock({
-      [CODEF_PATHS.CARD_APPROVAL_LIST]: () => new TypeError('fetch failed id=leak'),
+      [CODEF_PATHS.CARD_APPROVAL_LIST]: () =>
+        new TypeError('fetch failed id=leak'),
       [CODEF_PATHS.ACCOUNT_DELETE]: () => ({ nope: true }),
     });
     const client = new CodefClient(config, http.fetch);
@@ -71,7 +75,9 @@ describe('CodefClient', () => {
     expect(error).toBeInstanceOf(AppException);
     expect((error as AppException).code).toBe('CARD_IMPORT_FAILED');
     expect((error as Error).cause).toBeUndefined();
-    await expect(client.request(CODEF_PATHS.ACCOUNT_DELETE, {})).rejects.toMatchObject({
+    await expect(
+      client.request(CODEF_PATHS.ACCOUNT_DELETE, {}),
+    ).rejects.toMatchObject({
       code: 'CARD_IMPORT_FAILED',
     });
   });

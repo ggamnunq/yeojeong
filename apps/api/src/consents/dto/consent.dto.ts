@@ -64,7 +64,7 @@ export class AgreementsBodyDto {
 /** POST /api/consents로 받는 단계와, 단계마다 허용하는 화면 */
 export const SUBMIT_STAGE_SCREENS = {
   FIN_LINK: ['WF-05', 'WF-28', 'WF-42'],
-  CARD_IMPORT: ['CARD_IMPORT'],
+  CARD_IMPORT: ['HF-51'],
 } as const satisfies Record<
   ConsentSubmitRequest['stage'],
   readonly ConsentSubmitRequest['screen'][]
@@ -91,7 +91,7 @@ export class ConsentSubmitDto
   @ApiProperty({
     enum: SUBMIT_SCREENS,
     description:
-      '동의 시트를 띄운 화면. FIN_LINK = WF-05·WF-28·WF-42, CARD_IMPORT = CARD_IMPORT',
+      '동의 시트를 띄운 화면. FIN_LINK = WF-05·WF-28·WF-42, CARD_IMPORT = HF-51',
   })
   @IsIn(SUBMIT_SCREENS, { message: '화면 값이 올바르지 않아요' })
   screen: ConsentSubmitRequest['screen'];

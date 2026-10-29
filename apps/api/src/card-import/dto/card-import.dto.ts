@@ -3,12 +3,14 @@ import {
   CARD_APPROVAL_BLOCK_REASON_VALUES,
   CARD_CANCEL_STATE_VALUES,
   CARD_IMPORT_ITEMS_MAX,
+  CARD_IMPORT_ITEM_STATUS_VALUES,
   CARD_IMPORT_RANGE_BASIS_VALUES,
   CARD_IMPORT_TWO_WAY_METHOD_VALUES,
   MANUAL_MEMO_MAX_LENGTH,
   type CardApprovalBlockReason,
   type CardApprovalItem,
   type CardCancelState,
+  type CardImportItemStatus,
   type CardImportConfig,
   type CardImportOrganization,
   type CardImportRangeBasis,
@@ -104,6 +106,25 @@ export class FetchCardApprovalsDto implements FetchCardApprovalsRequest {
   to: string;
 
   @ApiPropertyOptional({
+    example: '9410123412341934',
+    description:
+      '현대·하나(requiresCardNo)만: 카드번호 전체(저장·기록하지 않는다)',
+  })
+  @IsOptional()
+  @Matches(/^\d{14,16}$/, { message: '카드번호를 다시 확인해 주세요' })
+  loginCardNo?: string;
+
+  @ApiPropertyOptional({
+    description:
+      '현대·하나(requiresCardNo)만: 카드 비밀번호 앞 2자리를 publicKey로 암호화한 base64',
+  })
+  @IsOptional()
+  @IsString({ message: '다시 시도해 주세요' })
+  @Length(16, 2048, { message: '다시 시도해 주세요' })
+  @Matches(BASE64, { message: '다시 시도해 주세요' })
+  encryptedCardPassword?: string;
+
+  @ApiPropertyOptional({
     type: CardImportTwoWayDto,
     description:
       'TWO_WAY_REQUIRED 뒤 이어서 보낼 때만(나머지 필드는 처음과 같게)',
@@ -119,6 +140,11 @@ export class ImportWalletEntryItemDto implements ImportWalletEntryItem {
   @IsString({ message: '불러온 결제 정보가 올바르지 않아요' })
   @Matches(IMPORT_KEY, { message: '불러온 결제 정보가 올바르지 않아요' })
   importKey: string;
+
+  @ApiProperty({ description: 'CardApprovalItem.itemToken(서버 서명, 30분)' })
+  @IsString({ message: '불러온 결제 정보가 올바르지 않아요' })
+  @MaxLength(200, { message: '불러온 결제 정보가 올바르지 않아요' })
+  itemToken: string;
 
   @ApiProperty({ example: '2026-11-13T14:10:00+09:00' })
   @IsISO8601({ strict: true }, { message: '결제 시각을 다시 확인해 주세요' })
@@ -141,17 +167,16 @@ export class ImportWalletEntryItemDto implements ImportWalletEntryItem {
   })
   merchantName: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     type: Number,
     nullable: true,
-    description: '카드사 원화',
+    description: 'CardApprovalItem.krwAmount(카드사 원화, 없으면 null)',
   })
-  @IsOptional()
   @ValidateIf((_, value) => value !== null)
   @IsInt({ message: '원화 금액이 올바르지 않아요' })
   @Min(0, { message: '원화 금액이 올바르지 않아요' })
   @Max(1_000_000_000_000, { message: '원화 금액이 올바르지 않아요' })
-  krwAmount?: number | null;
+  krwAmount: number | null;
 
   @ApiPropertyOptional({
     type: String,
@@ -194,6 +219,9 @@ export class CardImportOrganizationDto implements CardImportOrganization {
 
   @ApiProperty({ example: 180 })
   maxLookbackDays: number;
+
+  @ApiProperty({ description: '현대·하나: 카드번호·카드 비밀번호가 더 필요' })
+  requiresCardNo: boolean;
 }
 
 export class CardImportDefaultRangeDto {
@@ -217,6 +245,9 @@ export class CardImportConfigDto implements CardImportConfig {
   @ApiProperty({ description: 'CODEF RSA 공개키(base64 SPKI, 비밀 아님)' })
   publicKey: string;
 
+  @ApiProperty({ description: '공개키(DER) SHA-256 hex' })
+  publicKeyFingerprint: string;
+
   @ApiProperty({ type: [CardImportOrganizationDto] })
   organizations: CardImportOrganizationDto[];
 
@@ -234,6 +265,9 @@ export class CardImportConfigDto implements CardImportConfig {
 
   @ApiProperty({ example: 160 })
   twoWayTimeoutSeconds: number;
+
+  @ApiProperty({ example: 10, description: '오늘(KST) 남은 조회 횟수' })
+  remainingToday: number;
 }
 
 export class CardApprovalItemDto implements CardApprovalItem {
@@ -273,6 +307,13 @@ export class CardApprovalItemDto implements CardApprovalItem {
   @ApiProperty({ type: String, nullable: true })
   cardName: string | null;
 
+  @ApiProperty({
+    enum: CARD_IMPORT_ITEM_STATUS_VALUES,
+    description:
+      '화면 칩: ALREADY_IMPORTED > CANCELLED > SIMILAR > PARTIAL_CANCEL > NEW',
+  })
+  status: CardImportItemStatus;
+
   @ApiProperty({ enum: CARD_CANCEL_STATE_VALUES })
   cancelState: CardCancelState;
 
@@ -285,6 +326,9 @@ export class CardApprovalItemDto implements CardApprovalItem {
   @ApiProperty({ type: String, nullable: true, format: 'uuid' })
   similarManualEntryId: string | null;
 
+  @ApiProperty({ type: String, nullable: true, format: 'uuid' })
+  inTripId: string | null;
+
   @ApiProperty()
   selectable: boolean;
 
@@ -293,6 +337,13 @@ export class CardApprovalItemDto implements CardApprovalItem {
 
   @ApiProperty({ enum: CARD_APPROVAL_BLOCK_REASON_VALUES, nullable: true })
   blockReason: CardApprovalBlockReason | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '저장용 서버 서명(고를 수 있는 항목만, 30분)',
+  })
+  itemToken: string | null;
 }
 
 /** 200 응답: status로 갈린다(OK = items, TWO_WAY_REQUIRED = twoWayToken·method·expiresAt) */
@@ -339,4 +390,13 @@ export class ImportWalletEntryResultDto {
 export class ImportWalletEntriesResponseDto implements ImportWalletEntriesResponse {
   @ApiProperty({ type: [ImportWalletEntryResultDto] })
   items: ImportWalletEntryResultDto[];
+
+  @ApiProperty({ description: '새로 만든 건수' })
+  created: number;
+
+  @ApiProperty({ description: '이미 있어 건너뛴 건수' })
+  skipped: number;
+
+  @ApiProperty({ description: '새로 만든 것 중 여정에 연결된 건수' })
+  linked: number;
 }

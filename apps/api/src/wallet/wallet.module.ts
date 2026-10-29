@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CardImportModule } from '../card-import/card-import.module.js';
 import { ExpensesModule } from '../expenses/expenses.module.js';
 import { FxModule } from '../fx/fx.module.js';
 import { WalletController } from './wallet.controller.js';
@@ -10,7 +11,8 @@ import { WalletService } from './wallet.service.js';
  * 계좌·카드 연결(토스)은 src/payment-methods. 연결 화면 노출은 기능 플래그 accountLink(GET /api/auth/session)로 정한다.
  */
 @Module({
-  imports: [ExpensesModule, FxModule],
+  // CardImportModule: 카드 승인내역 저장(import)의 itemToken 검증(S8)
+  imports: [ExpensesModule, FxModule, CardImportModule],
   controllers: [WalletController],
   providers: [WalletService, WalletSummaryService],
 })

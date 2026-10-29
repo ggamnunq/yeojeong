@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   CARD_IMPORT_DEFAULT_RANGE_DAYS,
-  CARD_IMPORT_FETCH_LIMIT,
   CARD_IMPORT_MAX_LOOKBACK_DAYS,
   CARD_IMPORT_MAX_RANGE_DAYS,
   CARD_IMPORT_REQUIRED_CONSENTS,
@@ -9,6 +8,8 @@ import {
   type CardApprovalBlockReason,
   type CardApprovalItem,
   type CardImportConfig,
+  type CardImportItemStatus,
+  type TripStatus,
   type CardImportOrganization,
   type FetchCardApprovalsRequest,
   type FetchCardApprovalsResponse,
@@ -21,6 +22,9 @@ import { dateOnly, kstDate, toKstIso } from '../expenses/kst.js';
 import {
   manualAmountError,
   occurredAtError,
+  rankTripCandidates,
+  suggestedTripOf,
+  type TripCandidateInput,
 } from '../expenses/manual-input.js';
 import { convertToKrw, type FxSpotRate } from '../fx/convert.js';
 import { SUPPORTED_CURRENCY_CODES } from '../fx/currencies.js';
@@ -33,7 +37,9 @@ import {
   normalizeApprovals,
   type NormalizedApproval,
 } from './approval-normalizer.js';
+import { CardImportLimits } from './card-import-limits.js';
 import { CodefAccountRemover } from './codef/codef-account-remover.js';
+import { ItemTokenSigner } from './item-token.js';
 import { CodefClient, type CodefResponse } from './codef/codef.client.js';
 import { CodefConfig } from './codef/codef.config.js';
 import {
@@ -128,18 +134,22 @@ export class CardImportService {
     private readonly audit: AuditService,
     private readonly fx: FxRatesService,
     private readonly remover: CodefAccountRemover,
+    private readonly limits: CardImportLimits,
+    private readonly itemTokens: ItemTokenSigner,
   ) {}
 
   // ─── 설정 ───
 
   async config(userId: string, now = new Date()): Promise<CardImportConfig> {
-    const [defaultRange, missing] = await Promise.all([
+    const [defaultRange, missing, remainingToday] = await Promise.all([
       this.defaultRange(userId, now),
       this.consents.findMissing(userId, CARD_IMPORT_REQUIRED_CONSENTS),
+      this.limits.remainingToday(userId, now),
     ]);
     return {
       enabled: true,
       publicKey: this.codefConfig.publicKey,
+      publicKeyFingerprint: this.codefConfig.publicKeyFingerprint,
       organizations: CARD_IMPORT_ORGANIZATIONS.map((o) => ({ ...o })),
       maxRangeDays: CARD_IMPORT_MAX_RANGE_DAYS,
       maxLookbackDays: CARD_IMPORT_MAX_LOOKBACK_DAYS,
@@ -150,6 +160,7 @@ export class CardImportService {
         required: missing,
       },
       twoWayTimeoutSeconds: CODEF_TWO_WAY_TIMEOUT_SECONDS,
+      remainingToday,
     };
   }
 
@@ -208,6 +219,18 @@ export class CardImportService {
     const loginRef = this.cipher.hmacRef(
       `card-import-login|${org.code}|${request.loginId}`,
     );
+    if (
+      org.requiresCardNo &&
+      (!request.loginCardNo || !request.encryptedCardPassword)
+    ) {
+      throw new ValidationFailedError([
+        {
+          path: 'loginCardNo',
+          code: 'required',
+          message: `${org.name}는 카드번호와 카드 비밀번호가 필요해요`,
+        },
+      ]);
+    }
     let twoWay: TwoWayState | null = null;
     if (request.twoWay) {
       twoWay = this.sealer.open(userId, request.twoWay.token, now.getTime());
@@ -223,18 +246,26 @@ export class CardImportService {
     } else {
       const errors = periodErrors(org, request.from, request.to, now);
       if (errors.length > 0) throw new ValidationFailedError(errors);
-      // 추가 인증 이어가기는 처음 요청이 이미 센 것이라 다시 세지 않는다
-      await this.checkRateLimit(userId, now);
     }
 
+    // 사용자당 동시 1건(다른 요청이 진행 중이면 409). 아래 검사·조회는 모두 잠금 안에서 한다
+    const release = await this.limits.acquire(userId, now);
+    let started = false;
     let outcome: FetchOutcome = 'CARD_IMPORT_FAILED';
     let count = 0;
     try {
+      // 새 조회만 센다: 사용자 횟수(10분 3회·하루 10회) → 로그인 쿨다운 → 서비스 일일 예산
+      if (!twoWay) await this.limits.checkStart(userId, org.code, now);
+      started = true;
       const response =
         this.codefConfig.loginMode === 'account'
           ? await this.queryViaAccount(org.code, request)
           : await this.query(org.code, request, twoWay);
-      if (response.result.code === CODEF_TWO_WAY_REQUIRED) {
+      const code = response.result.code;
+      if (code === CODEF_OK || code === CODEF_TWO_WAY_REQUIRED) {
+        await this.limits.loginSucceeded(userId, org.code);
+      }
+      if (code === CODEF_TWO_WAY_REQUIRED) {
         if (this.codefConfig.loginMode === 'account') {
           outcome = 'CARD_TWO_WAY_UNSUPPORTED';
           throw AppException.of('CARD_TWO_WAY_UNSUPPORTED');
@@ -253,10 +284,14 @@ export class CardImportService {
         outcome = 'TWO_WAY_REQUIRED';
         return result;
       }
-      if (response.result.code !== CODEF_OK) {
-        const code = mapCodefError(response.result.code);
-        outcome = code;
-        throw AppException.of(code);
+      if (code !== CODEF_OK) {
+        // CODEF 메시지는 쓰지 않고 우리 코드로만 바꾼다(결과 코드만 기록)
+        const mapped = mapCodefError(code);
+        outcome = mapped;
+        if (mapped === 'CARD_LOGIN_FAILED') {
+          await this.limits.loginFailed(userId, org.code, now);
+        }
+        throw AppException.of(mapped);
       }
       const { items, dropped } = normalizeApprovals(
         approvalRowsOf(response.data),
@@ -266,8 +301,9 @@ export class CardImportService {
           keyFn: (material) => this.cipher.hmacRef(material),
         },
       );
-      if (dropped > 0)
+      if (dropped > 0) {
         this.logger.warn({ dropped }, '읽을 수 없는 승인내역 줄을 뺐다');
+      }
       const enriched = await this.enrich(userId, org, items, now);
       count = enriched.length;
       outcome = 'OK';
@@ -284,7 +320,16 @@ export class CardImportService {
       }
       throw error;
     } finally {
-      await this.recordAccess(userId, org.code, count, outcome);
+      await release();
+      if (started) {
+        await this.recordAccess(
+          userId,
+          org.code,
+          count,
+          outcome,
+          twoWay ? 'TWO_WAY' : 'START',
+        );
+      }
     }
   }
 
@@ -303,6 +348,13 @@ export class CardImportService {
             id: request.loginId,
             password: request.encryptedPassword,
           }),
+      // 현대·하나 아이디 로그인: 카드번호 전체 + 카드 비밀번호(RSA) — KR_CD_P_002 입력부
+      ...(request.loginCardNo && request.encryptedCardPassword
+        ? {
+            loginCardNo: request.loginCardNo,
+            cardPassword: request.encryptedCardPassword,
+          }
+        : {}),
       startDate: yyyymmdd(request.from),
       endDate: yyyymmdd(request.to),
       // 0 = 최신순, 1 = 전체 카드, 0 = 가맹점 부가 정보 받지 않음(주소·전화 등 불필요한 개인정보를 받지 않는다)
@@ -459,6 +511,7 @@ export class CardImportService {
     ]);
     const importedKeys = new Set(imported.map((t) => t.externalRef));
     const spotCache = new Map<string, FxSpotRate | null>();
+    const trips = await this.tripOptions(userId);
 
     const result: CardApprovalItem[] = [];
     for (const item of items) {
@@ -477,6 +530,12 @@ export class CardImportService {
       else if (manualAmountError(item.amount, item.currency))
         blockReason = 'INVALID_AMOUNT';
       else if (occurredAtError(item.approvedAt, now)) blockReason = 'TOO_OLD';
+      const selectable = blockReason === null;
+      // 저장 때 서버가 같은 규칙으로 다시 고른다(직접 입력의 자동 연결 — 4-11-3)
+      const inTripId = live
+        ? (suggestedTripOf(rankTripCandidates(trips, item.approvedAt))
+            ?.tripId ?? null)
+        : null;
       result.push({
         importKey: item.importKey,
         approvedAt: toKstIso(item.approvedAt),
@@ -493,29 +552,48 @@ export class CardImportService {
         organizationName: org.name,
         cardLast4: item.cardLast4,
         cardName: item.cardName,
+        status: statusOf(item, alreadyImported, similar),
         cancelState: item.cancelState,
         partialCancelAmount: item.partialCancelAmount,
         alreadyImported,
         similarManualEntryId: similar,
-        selectable: blockReason === null,
-        defaultSelected: blockReason === null && similar === null,
+        inTripId,
+        selectable,
+        // 4-12-4: NEW·부분 취소는 여정 기간 안일 때만 기본 선택, 비슷한 기록은 기본 해제
+        defaultSelected: selectable && similar === null && inTripId !== null,
         blockReason,
+        itemToken: selectable
+          ? this.itemTokens.sign(
+              userId,
+              {
+                importKey: item.importKey,
+                occurredAt: toKstIso(item.approvedAt),
+                amount: item.amount,
+                currency: item.currency,
+                merchantName: item.merchantName,
+                krwAmount: item.krwAmount,
+              },
+              now.getTime(),
+            )
+          : null,
       });
     }
     return result;
   }
 
-  /** 승인 시각 직전 매매기준율 추정(통화·날짜별로 한 번만 찾는다, 이 요청 안에서만 캐시). 고시가 없거나 지원하지 않는 통화면 null */
+  /**
+   * 카드사 원화가 없는 외화의 "약 ₩" 추정: 지갑 환산 규칙(4-11-6)과 같이 지금 기준 최신 매매기준율(통화별로 한 번만 찾는다, 이 요청 안에서만 캐시).
+   * 고시가 없거나 지원하지 않는 통화면 null
+   */
   private async estimate(
     item: NormalizedApproval,
     cache: Map<string, FxSpotRate | null>,
   ): Promise<number | null> {
     if (!SUPPORTED_CURRENCY_CODES.includes(item.currency)) return null;
-    const key = `${item.currency}|${kstDate(item.approvedAt)}`;
-    let spot = cache.get(key);
+    let spot = cache.get(item.currency);
     if (spot === undefined) {
-      spot = await this.fx.findSpotRate(item.currency, item.approvedAt);
-      cache.set(key, spot);
+      spot = await this.fx.findSpotRate(item.currency, new Date());
+      cache.set(item.currency, spot);
     }
     if (!spot) return null;
     try {
@@ -530,38 +608,35 @@ export class CardImportService {
     }
   }
 
-  // ─── 제한·기록 ───
-
-  /** 사용자당 10분 5회(접근 기록으로 센다 — 인스턴스가 여럿이어도 같은 기준). 넘으면 429 */
-  private async checkRateLimit(userId: string, now: Date) {
-    const windowStart = new Date(
-      now.getTime() - CARD_IMPORT_FETCH_LIMIT.WINDOW_SECONDS * 1000,
-    );
-    const recent = await this.prisma.accessLog.findMany({
+  /** 자동 연결 후보: 내가 활성 멤버인 예정·진행 중 여정(WalletService.tripOptions와 같은 조건) */
+  private async tripOptions(userId: string): Promise<TripCandidateInput[]> {
+    const trips = await this.prisma.trip.findMany({
       where: {
-        userId,
-        action: 'FETCH_CARD_APPROVALS',
-        at: { gte: windowStart },
+        status: { in: ['UPCOMING', 'ONGOING'] },
+        deletedAt: null,
+        group: {
+          deletedAt: null,
+          memberships: { some: { userId, leftAt: null } },
+        },
       },
-      orderBy: { at: 'asc' },
-      select: { at: true },
+      select: {
+        id: true,
+        status: true,
+        currency: true,
+        startAt: true,
+        autoEndAt: true,
+      },
     });
-    if (recent.length >= CARD_IMPORT_FETCH_LIMIT.COUNT) {
-      const oldest = recent[recent.length - CARD_IMPORT_FETCH_LIMIT.COUNT].at;
-      const retryAfterSec = Math.max(
-        1,
-        Math.ceil(
-          (oldest.getTime() +
-            CARD_IMPORT_FETCH_LIMIT.WINDOW_SECONDS * 1000 -
-            now.getTime()) /
-            1000,
-        ),
-      );
-      throw AppException.of('CARD_IMPORT_RATE_LIMITED', {
-        details: { retryAfterSec },
-      });
-    }
+    return trips.map((t) => ({
+      tripId: t.id,
+      status: t.status as TripStatus,
+      currency: t.currency,
+      startAt: t.startAt,
+      autoEndAt: t.autoEndAt,
+    }));
   }
+
+  // ─── 제한·기록 ───
 
   /** 접근 기록: 기관 코드·건수·결과 코드만(아이디·금액·가맹점 없음). 기록 실패는 응답을 막지 않는다 */
   private async recordAccess(
@@ -569,6 +644,7 @@ export class CardImportService {
     organization: string,
     count: number,
     outcome: string,
+    step: 'START' | 'TWO_WAY',
   ) {
     try {
       await this.audit.record({
@@ -576,7 +652,7 @@ export class CardImportService {
         action: 'FETCH_CARD_APPROVALS',
         resourceType: 'USER',
         resourceId: userId,
-        details: { organization, count, result: outcome },
+        details: { organization, count, result: outcome, step },
       });
     } catch (error) {
       this.logger.error(
@@ -606,4 +682,22 @@ function closestSimilar(
     if (!best || diff < best.diff) best = { id: m.id, diff };
   }
   return best?.id ?? null;
+}
+
+/** 화면 칩(4-12-4): ALREADY_IMPORTED > CANCELLED(원 승인 없는 취소 포함) > SIMILAR > PARTIAL_CANCEL > NEW */
+export function statusOf(
+  item: Pick<NormalizedApproval, 'cancelState'>,
+  alreadyImported: boolean,
+  similar: string | null,
+): CardImportItemStatus {
+  if (alreadyImported) return 'ALREADY_IMPORTED';
+  if (
+    item.cancelState === 'CANCELLED' ||
+    item.cancelState === 'ORPHAN_CANCEL'
+  ) {
+    return 'CANCELLED';
+  }
+  if (similar) return 'SIMILAR';
+  if (item.cancelState === 'PARTIAL') return 'PARTIAL_CANCEL';
+  return 'NEW';
 }

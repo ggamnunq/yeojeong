@@ -8,18 +8,13 @@ import {
 } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
-  CARD_IMPORT_REQUIRED_CONSENTS,
   type CardImportConfig,
   type FetchCardApprovalsResponse,
 } from '@yeojeong/shared';
-import {
-  CurrentUser,
-  RequireConsents,
-  type AuthUser,
-} from '../common/auth/index.js';
+import { CurrentUser, type AuthUser } from '../common/auth/index.js';
 import { ApiErrorResponse } from '../common/errors/index.js';
 import { CardImportGuard } from '../common/features.js';
-import { StrictThrottle } from '../common/throttle.js';
+import { CardImportConsentGuard } from './card-import-consent.guard.js';
 import { CardImportService } from './card-import.service.js';
 import {
   CardImportConfigDto,
@@ -75,8 +70,8 @@ export class CardImportController {
   @ApiErrorResponse(429, 'CARD_IMPORT_RATE_LIMITED', 'RATE_LIMITED')
   @ApiErrorResponse(502, 'CARD_IMPORT_FAILED')
   @ApiErrorResponse(503, 'CARD_COMPANY_UNAVAILABLE')
-  @RequireConsents(CARD_IMPORT_REQUIRED_CONSENTS)
-  @StrictThrottle()
+  // 사용자당 10분 5회는 서비스가 접근 기록으로 센다(인스턴스 여럿이어도 같은 기준). IP 기본 제한(분당 120회)은 전역
+  @UseGuards(CardImportConsentGuard)
   @HttpCode(200)
   @Post('fetch')
   fetch(

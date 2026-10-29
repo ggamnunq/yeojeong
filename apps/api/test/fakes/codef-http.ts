@@ -21,31 +21,44 @@ export function codefHttpMock(
   const calls: CodefCall[] = [];
   let tokens = 0;
   const counts = new Map<string, number>();
-  const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-    const url = String(input);
-    if (url === CODEF_OAUTH_URL) {
-      tokens += 1;
+  const fetch = vi.fn(
+    async (input: string | URL | Request, init?: RequestInit) => {
+      const url =
+        input instanceof Request
+          ? input.url
+          : input instanceof URL
+            ? input.href
+            : input;
+      if (url === CODEF_OAUTH_URL) {
+        tokens += 1;
+        return new Response(
+          JSON.stringify({
+            access_token: `token-${tokens}`,
+            expires_in: 604799,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      const path = new URL(url).pathname;
+      const raw = typeof init?.body === 'string' ? init.body : '';
+      const body = JSON.parse(decodeURIComponent(raw)) as Record<
+        string,
+        unknown
+      >;
+      calls.push({ url, path, body });
+      const route = routes[path];
+      if (!route) return new Response('not found', { status: 404 });
+      const n = counts.get(path) ?? 0;
+      counts.set(path, n + 1);
+      const result = route(body, n);
+      if (result instanceof Error) throw result;
+      const json = JSON.stringify(result);
       return new Response(
-        JSON.stringify({ access_token: `token-${tokens}`, expires_in: 604799 }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
+        options.urlEncodeResponse ? encodeURIComponent(json) : json,
+        { status: 200 },
       );
-    }
-    const path = new URL(url).pathname;
-    const raw = typeof init?.body === 'string' ? init.body : '';
-    const body = JSON.parse(decodeURIComponent(raw)) as Record<string, unknown>;
-    calls.push({ url, path, body });
-    const route = routes[path];
-    if (!route) return new Response('not found', { status: 404 });
-    const n = counts.get(path) ?? 0;
-    counts.set(path, n + 1);
-    const result = route(body, n);
-    if (result instanceof Error) throw result;
-    const json = JSON.stringify(result);
-    return new Response(
-      options.urlEncodeResponse ? encodeURIComponent(json) : json,
-      { status: 200 },
-    );
-  });
+    },
+  );
   return {
     fetch: fetch as unknown as typeof globalThis.fetch,
     calls,

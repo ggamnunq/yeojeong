@@ -31,7 +31,7 @@ export interface CodefApprovalRow {
 export interface NormalizedApproval {
   importKey: string;
   approvedAt: Date;
-  /** 양수 decimal(소수 끝 0 제거) */
+  /** decimal(소수 끝 0 제거). 취소 줄은 음수 */
   amount: string;
   currency: string;
   krwAmount: number | null;
@@ -93,7 +93,11 @@ function parseAmount(value: unknown): bigint | null {
   }
 }
 
-/** scale 4 → 소수 끝 0을 뺀 decimal("22000", "12.5") */
+/** 원화(양수)에 금액 부호를 붙인다 */
+const signed = (amount: bigint, krw: number | null) =>
+  krw === null ? null : amount < 0n ? -krw : krw;
+
+/** scale 4 → 부호 없이 소수 끝 0을 뺀 decimal("22000", "12.5") */
 function formatAmount(value: bigint): string {
   const formatted = formatScaled(value < 0n ? -value : value, SCALE);
   return formatted.replace(/\.?0+$/, '') || '0';
@@ -213,14 +217,17 @@ export function normalizeApprovals(
   ): NormalizedApproval => ({
     importKey: keyOf(row, kind),
     approvedAt: row.approvedAt,
-    amount: formatAmount(amount),
+    // 취소 줄(음수)은 음수로 보인다("−₩58,830"). 승인·부분 취소 순액은 양수
+    amount: (amount < 0n ? '-' : '') + formatAmount(amount),
     currency: row.currency,
-    krwAmount:
+    krwAmount: signed(
+      amount,
       row.currency === 'KRW'
         ? krwAmountOf(formatScaled(amount < 0n ? -amount : amount, SCALE))
         : partial === null
           ? row.krwAmount
           : null,
+    ),
     merchantName: row.merchantName,
     overseas: row.overseas,
     cardLast4: row.cardLast4,

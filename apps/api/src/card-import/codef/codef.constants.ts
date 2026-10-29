@@ -55,29 +55,88 @@ export const CODEF_TOKEN_REFRESH_MARGIN_MS = 60 * 60 * 1000;
  */
 export const CODEF_TWO_WAY_TIMEOUT_SECONDS = 160;
 
-/** 한 번의 CODEF 호출 제한 시간. 상품 타임아웃은 300초(menu-detail/KR_CD_P_002)지만 화면이 기다릴 수 있는 만큼만 기다린다 */
-export const CODEF_REQUEST_TIMEOUT_MS = 110_000;
+/**
+ * CODEF 호출 제한 시간. 승인내역 조회(추가 인증 이어가기 포함) 30초, 나머지(계정 등록·삭제) 10초, 토큰 10초.
+ * 상품 자체 타임아웃은 300초(menu-detail/KR_CD_P_002)지만 화면이 기다릴 수 있는 만큼만 기다린다(넘으면 CARD_IMPORT_FAILED)
+ */
+export const CODEF_QUERY_TIMEOUT_MS = 30_000;
+export const CODEF_OTHER_TIMEOUT_MS = 10_000;
 
 /**
- * 불러올 수 있는 카드사: 개인 카드 승인내역(KR_CD_P_002)에서 아이디 로그인(loginType "1")만으로 되는 곳.
- * 기관 코드: CODEF "파라미터 상세보기" 시트(기관별 개발현황) — 0301 KB국민 · 0303 삼성 · 0304 NH농협 · 0305 BC · 0306 신한 ·
- * 0307 씨티 · 0309 우리 · 0311 롯데 · 0315 전북(0301 KB, 0309 우리는 easycodef-java README에도 있다).
- * 기간 제약: KR_CD_P_002 입력부 안내(inputNote). 개월은 보수적으로 30일로 센다.
- *   KB·삼성·씨티·우리 12개월 · NH 12개월(1회 92일) · BC 9개월(해외는 최근 4개월, 2개월 단위) · 신한 6개월(1회 3개월) ·
- *   롯데 6개월 · 전북 4년(우리 상한 365일). 1회 범위 안내가 없는 곳은 우리 상한 92일.
- * 뺀 곳: 0302 현대·0313 하나는 아이디 로그인에 카드번호 전체·카드 비밀번호(loginCardNo·cardPassword)가 더 필요해 1차에서 뺐다.
- *        0316 광주·0320 수협·0321 제주는 인증서 로그인만 된다.
+ * 불러올 수 있는 카드사 9곳(기능명세 4-12-1, 화면 순서): 개인 카드 승인내역(KR_CD_P_002) 아이디 로그인(loginType "1").
+ * 기관 코드: CODEF "파라미터 상세보기" 시트(기관별 개발현황) — 0301 KB국민 · 0302 현대 · 0303 삼성 · 0304 NH농협 · 0305 BC ·
+ * 0306 신한 · 0309 우리 · 0311 롯데 · 0313 하나(0301 KB, 0309 우리는 easycodef-java README에도 있다).
+ * 현대·하나는 아이디 로그인에 카드번호 전체(loginCardNo)·카드 비밀번호(cardPassword, RSA)가 더 필요하다(KR_CD_P_002 입력부) → requiresCardNo.
+ * 기간 제약: KR_CD_P_002 입력부 안내(inputNote). 개월은 보수적으로 30일로 센다. 우리 상한은 1년·92일.
+ *   KB·삼성·우리 12개월 · NH 12개월(1회 92일) · BC 9개월(해외는 최근 4개월, 2개월 단위 → 1회 60일) · 신한 6개월(1회 3개월) ·
+ *   롯데 6개월 · 현대 3개월 · 하나 18개월(1회 3개월).
+ * 추가 인증(KR_CD_P_002 2-way 안내): 문자 인증번호(smsAuthNo)뿐 — 롯데 아이디 로그인, 씨티 기기 변경. 보안문자(secureNo)는 이 상품 안내에 없다.
+ * 뺀 곳: 씨티(0307)·전북(0315)은 아이디 로그인이 되지만 화면 9곳에 없다. 광주(0316)·수협(0320)·제주(0321)는 인증서 로그인만.
  */
 export const CARD_IMPORT_ORGANIZATIONS: readonly CardImportOrganization[] = [
-  { code: '0301', name: 'KB국민카드', maxRangeDays: 92, maxLookbackDays: 365 },
-  { code: '0303', name: '삼성카드', maxRangeDays: 92, maxLookbackDays: 365 },
-  { code: '0304', name: 'NH농협카드', maxRangeDays: 92, maxLookbackDays: 365 },
-  { code: '0305', name: 'BC카드', maxRangeDays: 60, maxLookbackDays: 270 },
-  { code: '0306', name: '신한카드', maxRangeDays: 90, maxLookbackDays: 180 },
-  { code: '0307', name: '씨티카드', maxRangeDays: 92, maxLookbackDays: 365 },
-  { code: '0309', name: '우리카드', maxRangeDays: 92, maxLookbackDays: 365 },
-  { code: '0311', name: '롯데카드', maxRangeDays: 92, maxLookbackDays: 180 },
-  { code: '0315', name: '전북카드', maxRangeDays: 92, maxLookbackDays: 365 },
+  {
+    code: '0301',
+    name: 'KB국민카드',
+    maxRangeDays: 92,
+    maxLookbackDays: 365,
+    requiresCardNo: false,
+  },
+  {
+    code: '0302',
+    name: '현대카드',
+    maxRangeDays: 90,
+    maxLookbackDays: 90,
+    requiresCardNo: true,
+  },
+  {
+    code: '0303',
+    name: '삼성카드',
+    maxRangeDays: 92,
+    maxLookbackDays: 365,
+    requiresCardNo: false,
+  },
+  {
+    code: '0304',
+    name: 'NH농협카드',
+    maxRangeDays: 92,
+    maxLookbackDays: 365,
+    requiresCardNo: false,
+  },
+  {
+    code: '0305',
+    name: 'BC카드',
+    maxRangeDays: 60,
+    maxLookbackDays: 270,
+    requiresCardNo: false,
+  },
+  {
+    code: '0306',
+    name: '신한카드',
+    maxRangeDays: 90,
+    maxLookbackDays: 180,
+    requiresCardNo: false,
+  },
+  {
+    code: '0309',
+    name: '우리카드',
+    maxRangeDays: 92,
+    maxLookbackDays: 365,
+    requiresCardNo: false,
+  },
+  {
+    code: '0311',
+    name: '롯데카드',
+    maxRangeDays: 92,
+    maxLookbackDays: 180,
+    requiresCardNo: false,
+  },
+  {
+    code: '0313',
+    name: '하나카드',
+    maxRangeDays: 90,
+    maxLookbackDays: 365,
+    requiresCardNo: true,
+  },
 ];
 
 export function organizationOf(code: string): CardImportOrganization | null {

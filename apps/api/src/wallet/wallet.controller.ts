@@ -19,20 +19,16 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import {
-  CARD_IMPORT_REQUIRED_CONSENTS,
   type ImportWalletEntriesResponse,
   type WalletEntryListResponse,
   type WalletEntryMutationResponse,
   type WalletTripCandidatesResponse,
 } from '@yeojeong/shared';
 import { Audited, fromCurrentUser } from '../audit/index.js';
-import {
-  CurrentUser,
-  RequireConsents,
-  type AuthUser,
-} from '../common/auth/index.js';
+import { CurrentUser, type AuthUser } from '../common/auth/index.js';
 import { ApiErrorResponse } from '../common/errors/index.js';
 import { CardImportGuard } from '../common/features.js';
+import { CardImportConsentGuard } from '../card-import/card-import-consent.guard.js';
 import {
   ImportWalletEntriesDto,
   ImportWalletEntriesResponseDto,
@@ -125,8 +121,8 @@ export class WalletController {
   @ApiErrorResponse(403, 'CONSENT_REQUIRED')
   @ApiErrorResponse(404, 'NOT_FOUND')
   @ApiErrorResponse(503, 'FX_RATE_UNAVAILABLE')
-  @UseGuards(CardImportGuard)
-  @RequireConsents(CARD_IMPORT_REQUIRED_CONSENTS)
+  // 플래그(404) 먼저, 그다음 CARD_IMPORT 동의(403)
+  @UseGuards(CardImportGuard, CardImportConsentGuard)
   @Post('entries/import')
   importEntries(
     @CurrentUser() user: AuthUser,

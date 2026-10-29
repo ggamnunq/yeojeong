@@ -17,6 +17,7 @@ import {
   type WalletTripCandidatesResponse,
 } from '@yeojeong/shared';
 import { AuditService } from '../audit/index.js';
+import { ItemTokenSigner } from '../card-import/item-token.js';
 import {
   AppException,
   NotFoundError,
@@ -157,6 +158,7 @@ export class WalletService {
     private readonly manual: ManualExpenseService,
     private readonly summary: WalletSummaryService,
     private readonly audit: AuditService,
+    private readonly itemTokens: ItemTokenSigner,
   ) {}
 
   // ─── 연결 후보 ───
@@ -525,6 +527,29 @@ export class WalletService {
     items: readonly ImportWalletEntryItem[],
     now: Date = new Date(),
   ): Promise<ImportWalletEntriesResponse> {
+    // 서버가 이 사용자에게 돌려준 값 그대로인지(itemToken 서명·30분). 하나라도 아니면 아무것도 저장하지 않는다
+    const invalidIndexes = items.flatMap((item, index) =>
+      this.itemTokens.verify(
+        userId,
+        {
+          importKey: item.importKey,
+          occurredAt: item.occurredAt,
+          amount: item.amount,
+          currency: item.currency,
+          merchantName: item.merchantName,
+          krwAmount: item.krwAmount,
+        },
+        item.itemToken,
+        now.getTime(),
+      )
+        ? []
+        : [index],
+    );
+    if (invalidIndexes.length > 0) {
+      throw AppException.of('CARD_IMPORT_RESULT_EXPIRED', {
+        details: { invalidIndexes },
+      });
+    }
     const errors = items.flatMap((item, index) => {
       const prefix = `items.${index}`;
       const occurredAt = new Date(item.occurredAt);
@@ -547,6 +572,7 @@ export class WalletService {
     if (errors.length > 0) throw new ValidationFailedError(errors);
 
     const results: ImportWalletEntriesResponse['items'] = [];
+    let linked = 0;
     for (const item of items) {
       let id = (await this.findImported(userId, item.importKey))?.id;
       let created = false;
@@ -577,11 +603,9 @@ export class WalletService {
           if (!id) throw error;
         }
       }
-      results.push({
-        importKey: item.importKey,
-        created,
-        entry: this.toEntry(await this.loadEntry(userId, id)),
-      });
+      const entry = this.toEntry(await this.loadEntry(userId, id));
+      if (created && entry.linkedTrip) linked += 1;
+      results.push({ importKey: item.importKey, created, entry });
     }
     // 접근 기록: 건수만(금액·가맹점 없음)
     await this.audit.record({
@@ -592,9 +616,16 @@ export class WalletService {
       details: {
         requested: items.length,
         created: results.filter((r) => r.created).length,
+        linked,
       },
     });
-    return { items: results };
+    const createdCount = results.filter((r) => r.created).length;
+    return {
+      items: results,
+      created: createdCount,
+      skipped: results.length - createdCount,
+      linked,
+    };
   }
 
   private findImported(userId: string, importKey: string) {

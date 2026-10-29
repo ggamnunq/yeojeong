@@ -5,7 +5,13 @@ import { CardImportController } from './card-import.controller.js';
 import { CardImportService } from './card-import.service.js';
 import { CodefAccountRemover } from './codef/codef-account-remover.js';
 import { CardImportJobsController } from './jobs.controller.js';
-import { CODEF_FETCH, CodefClient } from './codef/codef.client.js';
+import { CardImportLimits } from './card-import-limits.js';
+import {
+  CODEF_CALL_COUNTER,
+  CODEF_FETCH,
+  CodefClient,
+} from './codef/codef.client.js';
+import { ItemTokenSigner } from './item-token.js';
 import { CodefConfig } from './codef/codef.config.js';
 import { TwoWayTokenSealer } from './two-way-token.js';
 
@@ -21,10 +27,13 @@ import { TwoWayTokenSealer } from './two-way-token.js';
     CodefClient,
     CodefConfig,
     CodefAccountRemover,
+    CardImportLimits,
+    ItemTokenSigner,
+    { provide: CODEF_CALL_COUNTER, useExisting: CardImportLimits },
     TwoWayTokenSealer,
     TokenCipher,
     { provide: CODEF_FETCH, useValue: globalThis.fetch.bind(globalThis) },
   ],
-  exports: [CodefConfig],
+  exports: [CodefConfig, ItemTokenSigner],
 })
 export class CardImportModule {}

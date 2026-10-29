@@ -1,16 +1,24 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { AppException } from '../../common/errors/index.js';
 import { CodefConfig } from './codef.config.js';
 import {
   CODEF_OAUTH_URL,
-  CODEF_REQUEST_TIMEOUT_MS,
+  CODEF_OTHER_TIMEOUT_MS,
+  CODEF_PATHS,
+  CODEF_QUERY_TIMEOUT_MS,
   CODEF_TOKEN_ERRORS,
   CODEF_TOKEN_REFRESH_MARGIN_MS,
 } from './codef.constants.js';
 
-/** fetch 주입 토큰. 테스트는 HTTP 목을 넣는다(실제 네트워크 호출 없음) */
+/** fetch 주입 토큰. 테스트는 HTTP 목을 넣는다(실제 네트워크 호출 없음). 운영은 Node 기본 fetch(TLS 인증서 검증 그대로) */
 export const CODEF_FETCH = Symbol('CODEF_FETCH');
 export type CodefFetch = typeof fetch;
+
+/** CODEF API 호출 수를 세는 곳(서비스 일일 예산 — CardImportLimits.recordCodefCall) */
+export const CODEF_CALL_COUNTER = Symbol('CODEF_CALL_COUNTER');
+export interface CodefCallCounter {
+  recordCodefCall(): Promise<void>;
+}
 
 /** CODEF 응답 봉투: { result: { code, message, extraMessage, transactionId }, data } */
 export interface CodefResponse {
@@ -45,6 +53,8 @@ const failed = () => AppException.of('CARD_IMPORT_FAILED');
  * CODEF REST 클라이언트(1회성 조회용, 최소 기능).
  * - 요청 본문은 JSON을 URL 인코딩해 보낸다(EasyCodefConnector: URLEncoder.encode(JSON, "UTF-8")). base64 비밀번호의 '+'·'/'도 안전하다.
  * - 액세스 토큰은 메모리에만 두고(개인정보 아님, 1주일 유효) 만료 1시간 전 또는 토큰 오류 코드에 한 번 다시 받는다.
+ *   재시도는 이 토큰 재발급(요청이 처리되지 않은 경우)뿐이다. 조회 자체는 다시 보내지 않는다(계정 삭제 재시도는 CodefAccountRemover).
+ * - 사용자 자격 증명(아이디·암호문)은 request()의 인자로만 지나가고 클래스 필드·캐시에 두지 않는다.
  * - 요청·응답 본문, 토큰, connectedId는 어떤 로그에도 남기지 않는다. 로그는 경로·결과 코드·소요 시간만.
  */
 @Injectable()
@@ -56,6 +66,9 @@ export class CodefClient {
   constructor(
     private readonly config: CodefConfig,
     @Inject(CODEF_FETCH) private readonly fetchFn: CodefFetch,
+    @Optional()
+    @Inject(CODEF_CALL_COUNTER)
+    private readonly counter?: CodefCallCounter,
   ) {}
 
   async request(
@@ -76,6 +89,8 @@ export class CodefClient {
     token: string,
   ): Promise<CodefResponse> {
     const started = Date.now();
+    // 일일 예산: 보낸 호출은 성공·실패와 무관하게 센다
+    await this.counter?.recordCodefCall();
     let text: string;
     try {
       const res = await this.fetchFn(`${this.config.apiHost}${path}`, {
@@ -87,7 +102,11 @@ export class CodefClient {
           Authorization: `Bearer ${token}`,
         },
         body: encodeURIComponent(JSON.stringify(body)),
-        signal: AbortSignal.timeout(CODEF_REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(
+          path === CODEF_PATHS.CARD_APPROVAL_LIST
+            ? CODEF_QUERY_TIMEOUT_MS
+            : CODEF_OTHER_TIMEOUT_MS,
+        ),
       });
       text = await res.text();
     } catch (error) {
@@ -149,7 +168,7 @@ export class CodefClient {
           Authorization: `Basic ${basic}`,
         },
         body: 'grant_type=client_credentials&scope=read',
-        signal: AbortSignal.timeout(20_000),
+        signal: AbortSignal.timeout(CODEF_OTHER_TIMEOUT_MS),
       });
       if (!res.ok) {
         this.logger.error({ status: res.status }, 'CODEF 토큰 발급 실패');

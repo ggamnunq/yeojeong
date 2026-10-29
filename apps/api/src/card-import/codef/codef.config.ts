@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -47,6 +48,8 @@ export class CodefConfig {
   readonly clientId: string;
   readonly clientSecret: string;
   readonly publicKey: string;
+  /** 공개키(DER) SHA-256 hex. 화면 테스트가 고정값과 비교해 키가 바뀌었는지 안다. 키가 없으면 빈 문자열 */
+  readonly publicKeyFingerprint: string;
 
   constructor(config: ConfigService) {
     this.env = pick(
@@ -66,6 +69,11 @@ export class CodefConfig {
     this.publicKey = normalizePublicKey(
       config.get<string>('CODEF_PUBLIC_KEY') ?? '',
     );
+    this.publicKeyFingerprint = this.publicKey
+      ? createHash('sha256')
+          .update(Buffer.from(this.publicKey, 'base64'))
+          .digest('hex')
+      : '';
   }
 
   get apiHost(): string {
