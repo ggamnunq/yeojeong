@@ -80,6 +80,20 @@ export function cleanMemo(memo: string | null | undefined): string {
     .trim();
 }
 
+/**
+ * cleanMemo의 **옛 규칙(\p{Cf}를 지우기 전)** — 카드 불러오기 importKey 재료(승인번호 없는 줄의 가맹점)에만 쓴다.
+ * 표시·저장 이름은 cleanMemo(서식 문자 제거)를 쓰지만, 키 재료가 바뀌면 이미 저장한 CARD_IMPORT의 "추가됨" 판정이 끊기고
+ * 같은 승인 건을 다시 저장할 수 있어 **이 함수는 바꾸지 않는다**(card-import:v1 키 형식의 일부)
+ */
+export function cleanMemoForImportKeyV1(
+  memo: string | null | undefined,
+): string {
+  return (memo ?? '')
+    .replace(/[\p{Cc}\u2028\u2029]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const graphemes = new Intl.Segmenter('ko', { granularity: 'grapheme' });
 
 /** 화면에 보이는 글자 수(이모지·결합 문자는 한 글자) */

@@ -6,7 +6,7 @@ import { parseCsv, decodeText } from './csv'
 import { txnDigest } from './digest'
 import { parseStatementFile, readSheet } from './index'
 import { MAX_FILE_BYTES, StatementFileError, type StatementItem } from './types'
-import { MAX_ENTRY_BYTES } from './xlsx'
+import { MAX_COMPRESSED_ENTRY_BYTES, MAX_ENTRY_BYTES } from './xlsx'
 import { cleanMerchant, normalizeAmount, normalizeWechatTime, parseWechatRows } from './wechat'
 
 // 위챗 거래 내역 파서. fixture는 모두 합성 데이터(실제 개인정보 없음):
@@ -188,6 +188,30 @@ describe('xlsx', () => {
       { level: 0 },
     )
     await expectKind(parseBytes(huge), 'tooLarge')
+  })
+
+  it('압축본이 선언 크기보다 큰(조작된) 항목은 거절, 압축 크기가 2MB 넘는 항목은 풀지 않는다(CPU 상한)', async () => {
+    const noise = (n: number) => {
+      const out = new Uint8Array(n)
+      for (let i = 0; i < n; i += 65_536) crypto.getRandomValues(out.subarray(i, Math.min(n, i + 65_536)))
+      return out
+    }
+    const files = () => ({
+      '[Content_Types].xml': strToU8('<Types/>'),
+      'xl/workbook.xml': strToU8('<workbook/>'),
+    })
+    // 시트 항목의 중앙 디렉터리 "풀린 크기"를 10바이트로 속인다(압축본 4KB)
+    const tampered = zipSync({ ...files(), 'xl/worksheets/sheet1.xml': noise(4096) }, { level: 0 })
+    const view = new DataView(tampered.buffer)
+    for (let i = 0; i + 46 < tampered.length; i++) {
+      if (view.getUint32(i, true) !== 0x02014b50) continue
+      const nameLen = view.getUint16(i + 28, true)
+      const name = new TextDecoder().decode(tampered.subarray(i + 46, i + 46 + nameLen))
+      if (name === 'xl/worksheets/sheet1.xml') view.setUint32(i + 24, 10, true)
+    }
+    await expectKind(parseBytes(tampered), 'format')
+    // 압축해도 줄지 않는 2MB 넘는 시트(파일은 5MB 안)
+    await expectKind(parseBytes(zipSync({ ...files(), 'xl/worksheets/sheet1.xml': noise(MAX_COMPRESSED_ENTRY_BYTES + 1024) }, { level: 0 })), 'tooLarge')
   })
 
   it('DOCTYPE·ENTITY가 있는 XML은 거절(엔티티 확장 방어)', async () => {

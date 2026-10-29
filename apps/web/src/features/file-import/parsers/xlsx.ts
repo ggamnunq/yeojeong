@@ -12,6 +12,8 @@ const MAX_ENTRIES = 2_000
 /** 압축 비율 상한(풀린 크기 ÷ 압축 크기). 정상 xlsx 시트 XML은 10~20배 안팎이다. 1MB 넘게 풀리는 항목에만 본다(작은 항목은 비율이 커도 무해) */
 export const MAX_COMPRESSION_RATIO = 100
 const RATIO_CHECK_FROM = 1024 * 1024
+/** 푸는 항목 하나의 압축 크기 상한 — 압축 해제 CPU 시간을 묶는다(정상 위챗 xlsx 시트는 압축 수백 KB) */
+export const MAX_COMPRESSED_ENTRY_BYTES = 2 * 1024 * 1024
 
 /** 압축 파일 머리(PK\x03\x04) */
 export const isZip = (bytes: Uint8Array) => bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04
@@ -42,8 +44,15 @@ function extract(bytes: Uint8Array, wanted: readonly string[], entries: readonly
   const present = entries.filter((e) => wanted.includes(e.name))
   const total = present.reduce((sum, e) => sum + e.originalSize, 0)
   if (present.some((e) => e.originalSize > MAX_ENTRY_BYTES) || total > MAX_TOTAL_BYTES) throw new StatementFileError('tooLarge')
-  // zip bomb: 선언 크기 대비 압축 비율이 비정상이면 풀지 않는다
-  if (present.some((e) => e.originalSize > RATIO_CHECK_FROM && e.originalSize > Math.max(e.size, 1) * MAX_COMPRESSION_RATIO)) {
+  if (present.some((e) => e.size > MAX_COMPRESSED_ENTRY_BYTES)) throw new StatementFileError('tooLarge')
+  // zip bomb·조작: 선언 크기 대비 압축 비율이 비정상이거나, 압축본이 선언 크기보다 큰(1KB 넘게) 항목은 풀지 않는다
+  if (
+    present.some(
+      (e) =>
+        (e.originalSize > RATIO_CHECK_FROM && e.originalSize > Math.max(e.size, 1) * MAX_COMPRESSION_RATIO) ||
+        e.size > e.originalSize + 1024,
+    )
+  ) {
     throw new StatementFileError('format')
   }
   let files: Record<string, Uint8Array>
@@ -52,6 +61,9 @@ function extract(bytes: Uint8Array, wanted: readonly string[], entries: readonly
   } catch {
     throw new StatementFileError('format')
   }
+  // 실제로 풀린 양이 선언 크기와 다르면(선언을 속인 항목) 버린다 — 메모리는 선언 크기로, CPU는 압축 크기 상한으로 묶인다
+  const declared = new Map(present.map((e) => [e.name, e.originalSize]))
+  if (Object.entries(files).some(([name, data]) => data.length !== declared.get(name))) throw new StatementFileError('format')
   const decoder = new TextDecoder('utf-8')
   return Object.fromEntries(Object.entries(files).map(([name, data]) => [name, decoder.decode(data)]))
 }
