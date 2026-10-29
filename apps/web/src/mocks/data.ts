@@ -352,6 +352,10 @@ export type MockDb = {
   cardImport: boolean
   /** 카드 불러오기 목 상태(features/card-import/mocks.ts). remaining = remainingToday 고정값(null이면 10 − 오늘 시작 수) */
   cardImportState: MockCardImportState
+  /** 세션 응답 features.fileImport(W10 위챗페이 파일 가져오기). 기본 false. 개발 서버는 localStorage 'yj:mock:fileImport' = '1'로 켠다 */
+  fileImport: boolean
+  /** 파일 가져오기로 저장한 거래 다이제스트(features/file-import/mocks.ts — "추가됨" 판정) */
+  fileImportedDigests: string[]
   /** 가입 대기(SIGNUP_REQUIRED)에 담긴 돌아갈 경로(서버 yj_signup 쿠키의 r). 로그인 시작 returnTo를 서버 규칙으로 거른 값 */
   signupReturnTo: string | null
   /** 채우면 세션 응답에 재동의 필요 항목을 싣고 로그인 API는 403 CONSENT_REQUIRED를 준다 */
@@ -372,6 +376,8 @@ export function createMockDb(): MockDb {
     session: 'AUTHENTICATED',
     accountLink: false,
     cardImport: false,
+    fileImport: false,
+    fileImportedDigests: [],
     cardImportState: { consentAgreedAt: null, consentVersion: null, requiredVersion: mockConsentVersion('CARD_IMPORT'), requiredReconsent: true, startedToday: 0, loginFailures: 0, importedKeys: [], twoWayTokens: [], remaining: null },
     signupReturnTo: null,
     consentRequired: null,

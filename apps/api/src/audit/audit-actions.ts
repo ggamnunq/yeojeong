@@ -6,6 +6,8 @@ import { ACCESS_ACTION_VALUES } from '@yeojeong/shared';
  */
 export const AUDIT_ACTION_VALUES = [
   ...ACCESS_ACTION_VALUES,
+  /** 거래 내역 파일(W10, 위챗페이)에서 고른 결제를 지갑에 저장. details = 공급자·건수만(금액·가맹점·거래 번호 없음) */
+  'IMPORT_FILE_ENTRIES',
   // ─ 운영자 DB 직접 접속(scripts/ops/db-connect.sh · access-review.sh가 psql로 직접 쓴다, docs/ops/operator-access.md). 서버 코드는 쓰지 않는다 ─
   // user_id = md5('operator:' + 운영자 gcloud 이메일)로 만든 UUID(users 행 없음), resource_type = DATABASE,
   // request_id = 'opdb:<세션 ID>'(START·END를 잇는다), details = { operator, reason, host, at } (+ END는 durationSec·exitStatus)

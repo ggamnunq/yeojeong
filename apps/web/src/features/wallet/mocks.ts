@@ -91,6 +91,8 @@ const RATES: Record<string, Pick<FxRateView, 'currencyNameKo' | 'displayUnit' | 
   JPY: { currencyNameKo: '엔', displayUnit: 100, rate: '9.192000' },
   USD: { currencyNameKo: '달러', displayUnit: 1, rate: '1380.500000' },
   EUR: { currencyNameKo: '유로', displayUnit: 1, rate: '1495.300000' },
+  // W10 위챗페이 파일 가져오기 "약 ₩"(Figma HF-68: ¥128.00 → 약 ₩24,330)
+  CNY: { currencyNameKo: '위안', displayUnit: 1, rate: '190.080000' },
   // 한국수출입은행이 고시하지 않는 통화는 ExchangeRate-API 값(출처 링크 필수)
   TWD: {
     currencyNameKo: '대만 달러',

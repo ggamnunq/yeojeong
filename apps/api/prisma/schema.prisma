@@ -130,6 +130,8 @@ enum TxSource {
   MANUAL
   /// 카드 승인내역 불러오기(S8, 일회성): 사용자가 고른 승인 건. externalRef = importKey(HMAC), 결제수단·원문 없음
   CARD_IMPORT
+  /// 거래 내역 파일 가져오기(W10, 위챗페이 등): 사용자가 고른 결제. externalRef = importKey(HMAC, 거래 번호 원문 아님), 결제수단·원문 없음
+  FILE_IMPORT
 
   @@map("tx_source")
 }
@@ -607,7 +609,8 @@ model Transaction {
   paymentMethod         PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: Restrict)
   /// 제공자 거래 ID. 멱등 upsert 키. MANUAL은 NULL(유니크 (paymentMethodId, externalRef)는 NULL끼리 겹치지 않는다).
   /// CARD_IMPORT는 importKey(HMAC-SHA256 hex 64자, 승인번호 원문 아님). 부분 유니크 transactions_card_import_ref_key
-  /// (user_id, external_ref) WHERE source = 'CARD_IMPORT'가 중복 저장을 막는다. Prisma 스키마로 표현할 수 없어 마이그레이션 SQL(20261029160001_card_import_constraints)에만 있다
+  /// (user_id, external_ref) WHERE source = 'CARD_IMPORT'가 중복 저장을 막는다. Prisma 스키마로 표현할 수 없어 마이그레이션 SQL(20261029160001_card_import_constraints)에만 있다.
+  /// FILE_IMPORT도 importKey(HMAC-SHA256 hex 64자, 거래 번호 원문 아님). 부분 유니크 transactions_file_import_ref_key(20261030040001_file_import_constraints)
   externalRef           String?        @map("external_ref") @db.VarChar(128)
   /// MANUAL 중복 제출 방지 키(화면이 만든 UUID). 사용자마다 유일
   clientRequestId       String?        @map("client_request_id") @db.Uuid

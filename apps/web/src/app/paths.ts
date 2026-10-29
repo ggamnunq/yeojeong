@@ -32,6 +32,8 @@ export const paths = {
   walletImportIssuer: () => '/wallet/import/issuer',
   /** 카드사 로그인(WF-53, 54~57은 같은 주소의 단계). issuer = CODEF 기관 코드 — 민감 값은 주소에 넣지 않는다 */
   walletImportLogin: (issuer: string) => `/wallet/import/${encodeURIComponent(issuer)}`,
+  /** 거래 내역 파일 가져오기(HF-66~68, W10). provider = 공급자 주소 조각("wechat") */
+  walletFileImport: (provider: string) => `/wallet/file-import/${encodeURIComponent(provider)}`,
   me: () => '/me',
   /** 내 정보(HF-63): 닉네임 변경 · 프사는 카카오 안내만 */
   meProfile: () => '/me/profile',

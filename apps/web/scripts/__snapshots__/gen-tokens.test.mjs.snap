@@ -134,8 +134,8 @@ exports[`gen-tokens > 출력 스냅샷 1`] = `
   --spacing-nav-height: 64px;
   --spacing-touch-min: 44px;
 
-  --font-sans: 'Noto Sans KR Variable', 'Noto Sans KR', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
-  --font-amount: 'IBM Plex Sans KR', 'Noto Sans KR Variable', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-sans: 'Noto Sans KR Variable', 'Noto Sans KR', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', 'Noto Sans CJK SC', 'Microsoft YaHei', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --font-amount: 'IBM Plex Sans KR', 'Noto Sans KR Variable', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', 'Noto Sans CJK SC', 'Microsoft YaHei', system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
 
   /* mixedKorean: 문장형 혼합 문자열은 Noto Sans KR 스타일, 숫자가 주인공인 금액만 Amount/* */
   --text-*: initial;

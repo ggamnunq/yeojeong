@@ -213,3 +213,15 @@ variable "codef_daily_call_budget" {
   }
 }
 
+# ── 거래 내역 파일 가져오기(W10, 위챗페이) ──
+
+variable "feature_file_import" {
+  description = "거래 내역 파일 가져오기(FEATURE_FILE_IMPORT): off(기본) · on. 파일은 브라우저에서만 읽고 고른 결제만 저장한다. importKey 전용 키(Secret Manager yeojeong-import-key-hmac-key)가 있어야 켜진다"
+  type        = string
+  default     = "off"
+
+  validation {
+    condition     = contains(["off", "on"], var.feature_file_import)
+    error_message = "feature_file_import는 off 또는 on이어야 합니다."
+  }
+}

@@ -129,11 +129,13 @@ function visibleLink(record: EntryRecord): LinkRecord | null {
 }
 
 /**
- * 사용자가 직접 만든 지갑 항목: 직접 입력(MANUAL)과 카드 승인내역에서 고른 것(CARD_IMPORT, S8).
+ * 사용자가 직접 만든 지갑 항목: 직접 입력(MANUAL)과 카드 승인내역에서 고른 것(CARD_IMPORT, S8), 거래 내역 파일에서 고른 것(FILE_IMPORT, W10).
  * 둘 다 결제수단·제공자 동기화가 없어 수정·삭제·여정 바꾸기를 같은 규칙으로 한다(여정 결제는 origin MANUAL, 작성자 = 나)
  */
 export function isUserEntrySource(source: TxSource): boolean {
-  return source === 'MANUAL' || source === 'CARD_IMPORT';
+  return (
+    source === 'MANUAL' || source === 'CARD_IMPORT' || source === 'FILE_IMPORT'
+  );
 }
 
 const fieldError = (path: string, code: string, message: string) =>
@@ -182,6 +184,20 @@ export class WalletService {
       suggestedTripId: suggestedTripOf(ranked)?.tripId ?? null,
       defaultCurrency: defaultWalletCurrency(ranked),
     };
+  }
+
+  /**
+   * 결제 시각마다 자동 연결될 여정(직접 입력과 같은 규칙: 기간 안 예정·진행 중 여정, 없으면 null).
+   * 저장 전 미리 보기용(거래 내역 파일 가져오기 W10 확인). 여정 후보는 한 번만 읽는다
+   */
+  async suggestedTripIds(
+    userId: string,
+    times: readonly Date[],
+  ): Promise<(string | null)[]> {
+    const options = await this.tripOptions(userId);
+    return times.map(
+      (at) => suggestedTripOf(rankTripCandidates(options, at))?.tripId ?? null,
+    );
   }
 
   private async tripOptions(userId: string): Promise<TripOption[]> {
@@ -626,6 +642,57 @@ export class WalletService {
       skipped: results.length - createdCount,
       linked,
     };
+  }
+
+  // ─── 거래 내역 파일에서 고른 것 저장(W10) ───
+
+  /**
+   * 파일 가져오기(W10) 한 건: (사용자, FILE_IMPORT, importKey)가 이미 있으면 그 항목(created=false), 없으면 직접 입력과 같은 규칙으로
+   * 만들고 자동 연결한다. 입력 검사(시각·내용·금액)는 호출자가 먼저 한다. 동시에 같은 건을 저장하면 먼저 들어간 항목을 돌려준다
+   */
+  async saveFileImported(
+    userId: string,
+    input: {
+      importKey: string;
+      amount: string;
+      currency: string;
+      occurredAt: Date;
+      merchantName: string;
+    },
+    now: Date,
+  ): Promise<{ entryId: string; created: boolean; linked: boolean }> {
+    const find = () =>
+      this.prisma.transaction.findFirst({
+        where: { userId, source: 'FILE_IMPORT', externalRef: input.importKey },
+        select: { id: true },
+      });
+    const existing = await find();
+    if (existing)
+      return { entryId: existing.id, created: false, linked: false };
+    try {
+      const entryId = await this.insertEntry(
+        userId,
+        {
+          amount: input.amount,
+          currency: input.currency,
+          occurredAt: input.occurredAt,
+          merchantName: merchantNameOf(input.merchantName),
+          clientRequestId: null,
+        },
+        { source: 'FILE_IMPORT', externalRef: input.importKey },
+        now,
+      );
+      const link = await this.prisma.expense.findFirst({
+        where: { transactionId: entryId, refundOfExpenseId: null },
+        select: { id: true },
+      });
+      return { entryId, created: true, linked: link !== null };
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const raced = await find();
+      if (!raced) throw error;
+      return { entryId: raced.id, created: false, linked: false };
+    }
   }
 
   private findImported(userId: string, importKey: string) {

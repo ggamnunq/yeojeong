@@ -85,6 +85,12 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.feature_account_link
       }
 
+      # 거래 내역 파일 가져오기(W10). importKey 전용 키(IMPORT_KEY_HMAC_KEY)는 api_secret_env로 늘 붙는다
+      env {
+        name  = "FEATURE_FILE_IMPORT"
+        value = var.feature_file_import
+      }
+
       # 카드 승인내역 불러오기(S8). CODEF 키는 enable_codef로 external_secret_env에 붙는다
       env {
         name  = "FEATURE_CARD_IMPORT"

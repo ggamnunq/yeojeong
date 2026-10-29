@@ -15,5 +15,7 @@ import { WalletService } from './wallet.service.js';
   imports: [ExpensesModule, FxModule, CardImportModule],
   controllers: [WalletController],
   providers: [WalletService, WalletSummaryService],
+  // 거래 내역 파일 가져오기(W10, src/file-import)가 저장·자동 연결을 재사용한다
+  exports: [WalletService],
 })
 export class WalletModule {}

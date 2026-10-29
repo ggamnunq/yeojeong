@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { generate, paths } from './gen-tokens.mjs'
+import { CJK_SC_FALLBACK, generate, paths } from './gen-tokens.mjs'
 
 const tokens = JSON.parse(readFileSync(paths.tokens, 'utf8'))
 const fixture = resolve(dirname(fileURLToPath(import.meta.url)), '__fixtures__/tokens-v1.3.css')
@@ -36,7 +36,9 @@ describe('gen-tokens', () => {
     const before = declarations(readFileSync(fixture, 'utf8'))
     const after = declarations(generate(tokens))
     expect(before.size).toBeGreaterThan(200)
-    for (const [name, value] of before) expect(after.get(name), name).toBe(value)
+    // W10: 서체 폴백에 시스템 중국어 서체(CJK_SC_FALLBACK)를 더했다 — 그것만 빼면 v1.3과 같아야 한다
+    const withoutCjk = (v) => CJK_SC_FALLBACK.reduce((acc, font) => acc.replace(`'${font}', `, ''), v ?? '')
+    for (const [name, value] of before) expect(name.startsWith('--font-') ? withoutCjk(after.get(name)) : after.get(name), name).toBe(value)
     const added = [...after.keys()].filter((name) => !before.has(name))
     expect(added).toEqual([
       '--text-amount-xl',

@@ -18,4 +18,10 @@
   body {
     @apply bg-canvas font-sans text-primary;
   }
+
+  /* 중국어 원문(위챗페이 가맹점 이름·메뉴명, lang="zh-CN")은 한 서체로 보이게 시스템 간체 서체를 먼저 쓴다.
+     Noto Sans KR은 간체 일부(个·啡 등)가 없어 한 이름 안에서 서체가 섞인다. 외부 웹폰트는 쓰지 않는다(CSP font-src 'self') */
+  :lang(zh) {
+    font-family: 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', 'Noto Sans CJK SC', 'Microsoft YaHei', var(--font-sans);
+  }
 }

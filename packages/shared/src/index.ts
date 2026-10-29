@@ -35,6 +35,7 @@ export * from './api/account.js';
 export * from './api/expenses.js';
 export * from './api/wallet.js';
 export * from './api/card-import.js';
+export * from './api/file-import.js';
 export * from './api/admin.js';
 export type * from './api/settlements.js';
 export type * from './api/fx.js';

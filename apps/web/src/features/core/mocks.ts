@@ -25,7 +25,7 @@ export const handlers: HttpHandler[] = [
               signupDraft: { kakaoNickname: '준용', profileImageUrl: null, returnTo: db.signupReturnTo },
             }
           : { status: 'ANONYMOUS' }
-    const body: SessionResponse = { ...status, features: { accountLink: db.accountLink, cardImport: db.cardImport } }
+    const body: SessionResponse = { ...status, features: { accountLink: db.accountLink, cardImport: db.cardImport, fileImport: db.fileImport } }
     return HttpResponse.json(body)
   }),
 

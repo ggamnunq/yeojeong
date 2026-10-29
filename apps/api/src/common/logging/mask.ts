@@ -44,6 +44,10 @@ const SENSITIVE = [
   'client_secret',
   'authorization',
   'cookie',
+  // 거래 내역 파일 가져오기(W10): 거래 번호 원문(서버로 오지 않아야 한다)·다이제스트
+  'txnNo',
+  'txnNos',
+  'txnDigest',
   // 요청·응답·CODEF 본문은 통째로(어느 깊이든: *.body, err.body, err.cause.request.body …)
   'body',
 ];

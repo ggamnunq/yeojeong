@@ -71,13 +71,13 @@ describe('진입점(HF-49 · 49b · 0-11)', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/wallet'))
   })
 
-  it('shows "카드 내역 불러오기" above the CTA on the empty wallet — and hides the header "불러오기" there (HF-49b)', async () => {
+  it('shows "내역 불러오기" above the CTA on the empty wallet — and hides the header "불러오기" there (HF-49b, card only → straight to WF-51)', async () => {
     db.walletEntries = []
     renderApp('/wallet')
     expect(await screen.findByText('결제 기록이 없어요')).toBeTruthy()
     // 빈 상태의 진입점은 텍스트 버튼 하나
     expect(screen.queryByRole('button', { name: '불러오기' })).toBeNull()
-    fireEvent.click(button('카드 내역 불러오기'))
+    fireEvent.click(button('내역 불러오기'))
     expect(await screen.findByText('외부 업체(CODEF)')).toBeTruthy()
   })
 
