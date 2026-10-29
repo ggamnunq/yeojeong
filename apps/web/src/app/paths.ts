@@ -22,6 +22,10 @@ export const paths = {
   walletConnectSelect: (attemptId: string) => `/wallet/connect/select${q({ attempt: attemptId })}`,
   walletConnectDone: (attemptId: string) => `/wallet/connect/done${q({ attempt: attemptId })}`,
   wallet: () => '/wallet',
+  /** 지갑 결제 추가 시트(WF-48) */
+  walletNew: () => '/wallet/new',
+  /** 지갑 결제 수정 시트(WF-50 지갑 폼) */
+  walletEntryEdit: (entryId: string) => `/wallet/${entryId}/edit`,
   me: () => '/me',
 
   trips: () => '/trips',
@@ -36,6 +40,10 @@ export const paths = {
   payments: (tripId: string, params: { view?: 'timeline'; day?: number; filter?: 'pending' } = {}) =>
     `/trips/${tripId}/payments${q(params)}`,
   payment: (tripId: string, expenseId: string) => `/trips/${tripId}/payments/${expenseId}`,
+  /** 여정 결제 추가 시트(WF-46) */
+  paymentNew: (tripId: string) => `/trips/${tripId}/payments/new`,
+  /** 수동 결제 수정 시트(WF-50 여정 폼) */
+  paymentEdit: (tripId: string, expenseId: string) => `/trips/${tripId}/payments/${expenseId}/edit`,
   outOfPeriod: (tripId: string) => `/trips/${tripId}/payments/out-of-period`,
   stats: (tripId: string) => `/trips/${tripId}/stats`,
   settlement: (tripId: string) => `/trips/${tripId}/settlement`,

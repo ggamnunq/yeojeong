@@ -88,6 +88,7 @@ describe('SessionBridge', () => {
   })
 
   it('연동 동의(FIN_*)만 빠졌으면 이동하지 않고 그 화면 위에 연동 동의 시트(WF-05b), 토스트 없음', async () => {
+    db.accountLink = true
     const { router, queryClient } = renderApp('/trips/trip-osaka/info')
     await screen.findByRole('heading', { name: '여정 정보' })
 
@@ -99,6 +100,7 @@ describe('SessionBridge', () => {
   })
 
   it('결제수단 0개(NO_ACTIVE_PAYMENT_METHOD) + missing 없음 → 재동의가 아니라 계좌·카드 추가 시트', async () => {
+    db.accountLink = true
     const { router, queryClient } = renderApp('/trips/trip-osaka/info')
     await screen.findByRole('heading', { name: '여정 정보' })
 

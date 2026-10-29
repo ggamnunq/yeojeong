@@ -71,8 +71,8 @@ describe('환율(HF-29)', () => {
     expect(radio('카드사 청구 환율').disabled).toBe(true)
   })
 
-  it('KRW 여정은 지갑으로 보낸다', async () => {
+  it('KRW 여정은 여정 정보로 보낸다(환율 행이 없다, HF-23)', async () => {
     const { router } = renderApp(`/trips/${TRIP.busan}/fx`)
-    await waitFor(() => expect(router.state.location.pathname).toBe('/wallet'))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/trips/${TRIP.busan}/info`))
   })
 })

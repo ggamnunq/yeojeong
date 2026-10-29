@@ -1,5 +1,6 @@
-import type { HealthResponse, Me, TripDetailResponse } from '@yeojeong/shared'
+import type { HealthResponse, TripDetailResponse } from '@yeojeong/shared'
 import { HttpResponse, type HttpHandler } from 'msw'
+import type { MeWithWallet } from '../manual/types'
 import type { MyTripsResponse, SessionResponse } from '../../api'
 import { db, findTrip, meOf, tripDetail, tripListItem } from '../../mocks/data'
 import { api, denyUnlessAuthenticated, mockError, requireMember } from '../../mocks/utils'
@@ -7,8 +8,9 @@ import { api, denyUnlessAuthenticated, mockError, requireMember } from '../../mo
 export const handlers: HttpHandler[] = [
   api.get<HealthResponse>('/api/health', () => HttpResponse.json({ status: 'ok', db: 'up' })),
 
+  // features(FR-006)는 모든 status에 싣는다
   api.get<SessionResponse>('/api/auth/session', () => {
-    const body: SessionResponse =
+    const status: SessionResponse =
       db.session === 'AUTHENTICATED'
         ? {
             status: 'AUTHENTICATED',
@@ -23,10 +25,17 @@ export const handlers: HttpHandler[] = [
               signupDraft: { kakaoNickname: '준용', profileImageUrl: null, returnTo: db.signupReturnTo },
             }
           : { status: 'ANONYMOUS' }
+    const body: SessionResponse = { ...status, features: { accountLink: db.accountLink } }
     return HttpResponse.json(body)
   }),
 
-  api.get<Me>('/api/users/me', () => denyUnlessAuthenticated() ?? HttpResponse.json(meOf())),
+  // walletEntryCount는 서버 S7b 예정 필드(수동 지갑 항목 수, HF-30). shared 타입 전이라 화면은 선택 필드로 읽는다
+  api.get<MeWithWallet>('/api/users/me', () => {
+    const denied = denyUnlessAuthenticated()
+    if (denied) return denied
+    const body: MeWithWallet = { ...meOf(), walletEntryCount: db.walletEntries.filter((w) => w.userId === db.meUserId).length }
+    return HttpResponse.json(body)
+  }),
 
   api.get<MyTripsResponse>('/api/me/trips', () => {
     const denied = denyUnlessAuthenticated()

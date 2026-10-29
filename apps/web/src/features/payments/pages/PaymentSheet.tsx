@@ -73,7 +73,14 @@ export default function PaymentSheet() {
     if (notFound) close()
   })
 
-  return <SheetView key={expenseId} detail={query.data} preview={preview} onClose={close} />
+  // 직접 입력 결제의 작성자 · 종료 전이면 헤더 "수정" → 결제 수정 시트(HF-20b → WF-50). 정산 멤버 화면 위에서는 열지 않는다
+  const detail = query.data
+  const manualEditable = !membershipId && detail?.origin === 'MANUAL' && detail.permissions.canEdit && detail.permissions.isAuthor !== false
+  const onEdit = manualEditable
+    ? () => navigate({ pathname: paths.paymentEdit(trip.tripId, expenseId), search: location.search }, { state: { fromDetail: true } })
+    : undefined
+
+  return <SheetView key={expenseId} detail={query.data} preview={preview} onClose={close} onEdit={onEdit} />
 }
 
 type SheetViewProps = {
@@ -81,10 +88,12 @@ type SheetViewProps = {
   detail: PaymentDetail | undefined
   preview: ExpenseRow | undefined
   onClose: () => void
+  /** 수동 결제 작성자: 헤더 "수정"(HF-20b) */
+  onEdit?: () => void
 }
 
 /** 시트 하나(<dialog>)를 로딩 → 상세까지 그대로 쓴다(다시 열리며 깜빡이지 않게) */
-function SheetView({ detail, preview, onClose }: SheetViewProps) {
+function SheetView({ detail, preview, onClose, onEdit }: SheetViewProps) {
   const trip = useTripDetail()
   const queryClient = useQueryClient()
   const mode = detail ? sheetMode(detail) : null
@@ -177,6 +186,7 @@ function SheetView({ detail, preview, onClose }: SheetViewProps) {
         open
         title={(detail ?? preview)?.merchantName ?? ''}
         onClose={onClose}
+        action={onEdit && { label: '수정', onClick: onEdit }}
         cta={
           cta
             ? {

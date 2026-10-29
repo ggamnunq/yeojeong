@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http } from 'msw'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { keys, type SessionResponse } from '../../api'
 import { db } from '../../mocks/data'
 import { server } from '../../mocks/server'
@@ -36,6 +36,11 @@ beforeAll(async () => {
     import('./pages/SignupWalletPage'),
     import('./pages/ReconsentPage'),
   ])
+})
+
+// 아래 가입 흐름은 토스 연결 기능이 켜진 4단계 기준. 꺼진 2단계(기본)는 맨 아래 「가입 2단계」
+beforeEach(() => {
+  db.accountLink = true
 })
 
 afterEach(() => {

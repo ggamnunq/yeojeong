@@ -104,12 +104,14 @@ describe('결제내역 · 리스트(WF-18)', () => {
   })
 
   it('맨 아래 "기간 외 결제 추가"로 이동한다', async () => {
+    db.accountLink = true
     const { router } = renderApp(PAYMENTS)
     fireEvent.click(await screen.findByRole('button', { name: '기간 외 결제 추가' }))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/trips/${TRIP.osaka}/payments/out-of-period`))
   })
 
   it('결제가 없으면 빈 상태, 기간 외 결제 추가는 남는다', async () => {
+    db.accountLink = true
     db.expenses = db.expenses.filter((e) => e.tripId !== TRIP.osaka)
     renderApp(PAYMENTS)
     expect(await screen.findByRole('heading', { name: '아직 결제가 없어요' })).toBeTruthy()
@@ -171,6 +173,7 @@ describe('결제내역 · 당겨서 새로고침(FR-402)', () => {
   }
 
   it('진행 중이면 수동 동기화 → 끝날 때까지 스피너 → 목록을 다시 받는다', async () => {
+    db.accountLink = true
     const count = countRequests()
     renderApp(PAYMENTS)
     const day2 = await screen.findByRole('region', { name: '11.13 (금) Day 2' })
@@ -185,6 +188,7 @@ describe('결제내역 · 당겨서 새로고침(FR-402)', () => {
   })
 
   it('60초 제한(429)이면 토스트 없이 목록만 다시 받는다', async () => {
+    db.accountLink = true
     const count = countRequests(() => mockError('SYNC_RATE_LIMITED', 429))
     renderApp(PAYMENTS)
     const day2 = await screen.findByRole('region', { name: '11.13 (금) Day 2' })

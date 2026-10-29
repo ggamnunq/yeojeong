@@ -1,6 +1,6 @@
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http } from 'msw'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, TRIP } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { renderApp } from '../../test/render'
@@ -14,6 +14,11 @@ vi.setConfig({ testTimeout: 30_000 })
 
 beforeAll(async () => {
   await Promise.all([import('./pages/OutOfPeriodPage'), import('./pages/PaymentsPage')])
+})
+
+// 기간 외 결제 후보는 토스 연결 기능이 켜져 있을 때만(FR-006)
+beforeEach(() => {
+  db.accountLink = true
 })
 
 const rows = () => within(screen.getByRole('list', { name: '기간 외 결제' })).getAllByRole('checkbox')

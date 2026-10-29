@@ -16,11 +16,12 @@ import { useBack } from '../useBack'
 /** WF-29 환율 표시 · 적용 기준(그룹장만 변경, FR-806·807) */
 export default function FxPage() {
   const trip = useTripDetail()
-  const back = useBack(paths.wallet())
+  // 진입점은 여정 정보의 환율 행(HF-23, v0.6.0). 주소로 바로 왔으면 여정 정보로
+  const back = useBack(paths.tripInfo(trip.tripId))
   const fx = useQuery(tripFxQuery(trip.tripId))
 
-  // KRW 여정은 환율 화면이 없다(지갑에서도 섹션을 숨긴다)
-  if (!trip.fx || fx.data?.isKrwTrip) return <Navigate replace to={paths.wallet()} />
+  // KRW 여정은 환율 화면이 없다(여정 정보에도 환율 행이 없다)
+  if (!trip.fx || fx.data?.isKrwTrip) return <Navigate replace to={paths.tripInfo(trip.tripId)} />
 
   return (
     <ShellSub

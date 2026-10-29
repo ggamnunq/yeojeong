@@ -1,7 +1,9 @@
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { keys } from '../../../api'
-import { db } from '../../../mocks/data'
+import { http, HttpResponse } from 'msw'
+import { db, meOf } from '../../../mocks/data'
+import { server } from '../../../mocks/server'
 import { renderApp } from '../../../test/render'
 import { expireConnections } from '../../wallet/mocks'
 import { mailto } from '../mailto'
@@ -16,6 +18,29 @@ afterEach(() => {
 })
 
 describe('마이페이지(HF-30)', () => {
+  // 지갑 요약 "계좌 a · 카드 c"는 토스 연결 기능이 켜져 있을 때(FR-006). 꺼진 기본값은 아래 "결제 n건"
+  beforeEach(() => {
+    db.accountLink = true
+  })
+
+  it('토스 연결이 꺼져 있으면 "결제 n건"(지갑 항목 수)이고 연결 만료 태그가 없다', async () => {
+    db.accountLink = false
+    expireConnections()
+    renderApp('/me')
+    const wallet = await screen.findByRole('link', { name: /내 지갑/ })
+    expect(await within(wallet).findByText('결제 7건')).toBeTruthy()
+    expect(within(wallet).queryByText('연결 만료')).toBeNull()
+  })
+
+  it('서버가 지갑 항목 수를 주지 않으면 "내 지갑"만', async () => {
+    db.accountLink = false
+    server.use(http.get('/api/users/me', () => HttpResponse.json(meOf())))
+    renderApp('/me')
+    const wallet = await screen.findByRole('link', { name: /내 지갑/ })
+    await screen.findByRole('heading', { name: '준용' })
+    expect(within(wallet).queryByText(/결제 \d+건/)).toBeNull()
+  })
+
   it('위에서부터 프사·닉네임 → 내 지갑(계좌 1 · 카드 2) → 로그아웃 → 탈퇴·삭제 요청 → 푸터 링크', async () => {
     renderApp('/me')
     expect(await screen.findByRole('heading', { name: '마이페이지' })).toBeTruthy()
@@ -57,7 +82,7 @@ describe('마이페이지(HF-30)', () => {
     expect(router.state.location.search).toBe('')
     expect(db.session).toBe('ANONYMOUS')
     // 로그인 화면 가드가 세션을 새로 묻고, 다른 캐시는 비어 있다
-    await waitFor(() => expect(queryClient.getQueryData(keys.session)).toEqual({ status: 'ANONYMOUS' }))
+    await waitFor(() => expect(queryClient.getQueryData(keys.session)).toMatchObject({ status: 'ANONYMOUS' }))
     await waitFor(() => {
       expect(queryClient.getQueryData(keys.wallet.methods)).toBeUndefined()
       expect(queryClient.getQueryData(keys.me)).toBeUndefined()

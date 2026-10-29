@@ -32,10 +32,12 @@ clock.now = () => Date.parse(MOCK_NOW)
 /** 서버 에러 형식. status·문구는 @yeojeong/shared ERRORS(도메인 코드 포함) 기본값 */
 export const fail = (code: ErrorCode, details?: Record<string, unknown>) => mockError(code, undefined, details)
 
+const notAuthor = () => fail('NOT_AUTHOR')
+
 // ── 종료된 여정 샘플(제주, WF-39 잠금 · 탈퇴한 멤버) ─────────────────
 // 중앙 샘플에는 종료 여정 결제가 없다. 현황·정산 목(W4F)이 넣는 제주 정산 샘플(탈퇴한 멤버 포함)을 같이 써서
 // 결제내역과 정산이 같은 장부를 본다. 결제 핸들러가 처음 불릴 때 넣고, db를 되돌리면 다시 넣는다.
-const ensureSeed = () => seedJejuSettlement({ withdrawn: true })
+export const ensureSeed = () => seedJejuSettlement({ withdrawn: true })
 
 // ── 변경 이력 상태(서버 firstSharedAt · 중복 해제 기록) ──────────────
 // db.expenses 배열·항목은 되돌릴 때마다 새로 만들어지므로 WeakMap/WeakSet이면 함께 초기화된다.
@@ -68,25 +70,32 @@ function period(tripId: string): ExpensesPage['period'] {
 }
 
 /** 원통화 순액·취소 줄 원통화(부모와 같은 환율, 4-1-4) */
-function expenseRow(e: MockExpense): ExpenseRow {
+export function expenseRow(e: MockExpense): ExpenseRow {
   const original = Number(e.originalAmount)
   const ratio = e.grossKrwAmount > 0 ? original / e.grossKrwAmount : 0
   const digits = e.originalCurrency === 'JPY' || e.originalCurrency === 'KRW' ? 0 : 2
   const fix = (n: number) => n.toFixed(digits)
   return {
     ...expenseListItem(e),
+    // 직접 입력 결제의 작성자(가져온 결제는 null)
+    createdByMembershipId: e.createdByMembershipId ?? null,
     grossKrwAmount: e.grossKrwAmount,
     netOriginalAmount: fix(Math.max(0, ratio * e.krwAmount)),
     refunds: e.refunds.map((r) => ({ ...r, originalAmount: fix(ratio * r.krwAmount) })),
   }
 }
 
-function editBlock(e: MockExpense, me: MockMembership): EditBlockReason | null {
+/** 바꿀 수 있는 사람: 직접 입력 결제는 작성자, 가져온 결제는 결제자(FR-425) */
+export const actorOf = (e: MockExpense) => (e.origin === 'MANUAL' ? (e.createdByMembershipId ?? e.payerMembershipId) : e.payerMembershipId)
+
+export function editBlock(e: MockExpense, me: MockMembership): EditBlockReason | null {
   const trip = findTrip(e.tripId)!
+  const manual = e.origin === 'MANUAL'
   if (trip.status === 'ENDED') return 'TRIP_ENDED'
-  if (trip.status === 'UPCOMING') return 'TRIP_NOT_STARTED'
-  if (membership(e.payerMembershipId)?.leftAt) return 'PAYER_LEFT'
-  if (e.payerMembershipId !== me.membershipId) return 'NOT_PAYER'
+  // 직접 입력 결제는 예정 여정에서도 바꿀 수 있다(S7)
+  if (trip.status === 'UPCOMING' && !manual) return 'TRIP_NOT_STARTED'
+  if (membership(e.payerMembershipId)?.leftAt || (manual && membership(actorOf(e))?.leftAt)) return 'PAYER_LEFT'
+  if (actorOf(e) !== me.membershipId) return manual ? 'NOT_AUTHOR' : 'NOT_PAYER'
   return null
 }
 
@@ -107,8 +116,10 @@ function candidatesOf(e: MockExpense) {
   )
 }
 
-function expenseDetail(e: MockExpense, me: MockMembership): PaymentDetail {
+export function expenseDetail(e: MockExpense, me: MockMembership): PaymentDetail {
   const isPayer = e.payerMembershipId === me.membershipId
+  const isAuthor = actorOf(e) === me.membershipId
+  const walletEntry = db.walletEntries.find((w) => w.expenseId === e.id && w.userId === me.userId)
   const reason = editBlock(e, me)
   const canEdit = reason === null
   const ids = e.status === 'SHARED' ? (e.participantMembershipIds ?? []) : []
@@ -116,7 +127,7 @@ function expenseDetail(e: MockExpense, me: MockMembership): PaymentDetail {
   const holder = split ? remainderHolder(e) : null
   const trip = findTrip(e.tripId)!
   const active = db.memberships.filter((m) => m.tripId === e.tripId && m.leftAt === null).map((m) => m.membershipId)
-  return {
+  const detail: PaymentDetail = {
     ...expenseRow(e),
     paymentMethodLabel: isPayer ? (db.paymentMethods.find((p) => p.id === e.paymentMethodId)?.label ?? null) : null,
     fx:
@@ -131,16 +142,18 @@ function expenseDetail(e: MockExpense, me: MockMembership): PaymentDetail {
     perPersonKrw: split?.perPerson ?? null,
     remainderKrw: split?.remainder ?? 0,
     remainderHolderMembershipId: holder,
-    permissions: { canEdit, reason, isPayer },
-    duplicate: e.duplicateGroupId ? { groupId: e.duplicateGroupId, canDismiss: isPayer && canEdit } : null,
+    permissions: { canEdit, reason, isPayer, isAuthor },
+    duplicate: e.duplicateGroupId ? { groupId: e.duplicateGroupId, canDismiss: isAuthor && canEdit } : null,
     participantCandidates: canEdit ? candidatesOf(e) : null,
     defaultParticipantMembershipIds: canEdit ? (e.status === 'SHARED' ? [...ids] : active) : null,
   }
+  // 내 지갑에 같은 결제가 있으면 그 항목 ID
+  return { ...detail, walletEntryId: walletEntry?.id ?? null }
 }
 
 // ── 중복 의심(4-1-5) ─────────────────────────────────────────────
 
-function leaveDuplicateGroup(e: MockExpense) {
+export function leaveDuplicateGroup(e: MockExpense) {
   const groupId = e.duplicateGroupId
   if (!groupId) return
   e.duplicateGroupId = null
@@ -148,8 +161,22 @@ function leaveDuplicateGroup(e: MockExpense) {
   if (rest.length < 2) for (const x of rest) x.duplicateGroupId = null
 }
 
-function detectDuplicate(e: MockExpense) {
+/** 직접 입력이 끼면 같은 여정·같은 원화·±30분·결제자 무관(Q-42), 아니면 기존 규칙 */
+const sameManualPayment = (a: MockExpense, b: MockExpense) =>
+  (a.origin === 'MANUAL' || b.origin === 'MANUAL') &&
+  a.krwAmount === b.krwAmount &&
+  Math.abs(Date.parse(a.occurredAt) - Date.parse(b.occurredAt)) <= 30 * 60_000
+
+export function detectDuplicate(e: MockExpense) {
+  if (e.status !== 'SHARED') return
   const match = db.expenses.find(
+    (x) =>
+      x !== e &&
+      x.tripId === e.tripId &&
+      x.status === 'SHARED' &&
+      sameManualPayment(x, e) &&
+      !dismissed().has(pairKey(x.id, e.id)),
+  ) ?? db.expenses.find(
     (x) =>
       x !== e &&
       x.tripId === e.tripId &&
@@ -224,7 +251,7 @@ const decodeCursor = (cursor: string | null) => {
 }
 
 /** 멤버 확인 + 이 사람에게 보이는 결제(남의 미확정·개인은 404) */
-function visibleExpense(tripId: string, expenseId: string) {
+export function visibleExpense(tripId: string, expenseId: string) {
   const check = requireMember(tripId)
   if (check.denied) return { denied: check.denied }
   ensureSeed()
@@ -287,6 +314,7 @@ export const handlers: HttpHandler[] = [
     const reason = editBlock(e, me)
     if (reason === 'TRIP_ENDED' || reason === 'TRIP_NOT_STARTED' || reason === 'PAYER_LEFT') return fail('EXPENSE_LOCKED')
     if (reason === 'NOT_PAYER') return fail('NOT_PAYER')
+    if (reason === 'NOT_AUTHOR') return notAuthor()
     if (body.status !== 'PERSONAL' && body.status !== 'SHARED') {
       return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'status', code: 'isIn', message: '분류를 골라 주세요' }] })
     }
@@ -305,7 +333,8 @@ export const handlers: HttpHandler[] = [
 
     // 결제자의 결제수단이 0개면 공개 확대(공동 지정·부담 인원 추가)를 막고, 공동 → 개인은 결제를 지운다(v0.5.7, S4)
     const wallet = walletMock() // 지갑 시나리오('empty' 등)를 먼저 적용한다
-    const noMethods = userMethods(me.userId).length === 0
+    // 결제수단 0개 규칙은 가져온 결제에만(직접 입력은 해당 없음, S7)
+    const noMethods = e.origin !== 'MANUAL' && userMethods(me.userId).length === 0
     const widens = body.status === 'SHARED' && (e.status !== 'SHARED' || ids.some((id) => !before.includes(id)))
     if (noMethods && widens) return finConsentRequired(wallet.finMissing, 'NO_ACTIVE_PAYMENT_METHOD')
     if (noMethods && body.status === 'PERSONAL' && e.status === 'SHARED' && body.confirmSharedToPersonal === true) {
@@ -351,6 +380,7 @@ export const handlers: HttpHandler[] = [
 
     const reason = editBlock(e, me)
     if (reason === 'NOT_PAYER') return fail('NOT_PAYER')
+    if (reason === 'NOT_AUTHOR') return notAuthor()
     if (reason) return fail('EXPENSE_LOCKED')
     if (!e.duplicateGroupId) return fail('DUPLICATE_NOT_FLAGGED')
     if (body.version !== e.version) return fail('VERSION_CONFLICT', { current: expenseDetail(e, me) })

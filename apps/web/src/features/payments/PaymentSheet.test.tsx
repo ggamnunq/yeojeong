@@ -1,6 +1,6 @@
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, TRIP, USER } from '../../mocks/data'
 import { server } from '../../mocks/server'
 import { renderApp } from '../../test/render'
@@ -264,6 +264,10 @@ describe('분담 변경(HF-31~39)', () => {
 })
 
 describe('결제수단 0개(v0.5.7)', () => {
+  // 결제수단·연결 흐름은 토스 연결 기능이 켜져 있을 때만(FR-006)
+  beforeEach(() => {
+    db.accountLink = true
+  })
   const removeAllMyMethods = () => {
     for (const p of db.paymentMethods) if (p.userId === db.meUserId) p.status = 'REMOVED'
   }
