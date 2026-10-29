@@ -38,6 +38,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @yeojeong/web... build
+        env:
+          # CODEF 공개키(DER) SHA-256(비밀 아님, 저장소 변수). 비어 있으면 운영 빌드에서 카드 내역 불러오기 진입을 막는다
+          VITE_CODEF_PUBKEY_SHA256: ${{ vars.CODEF_PUBKEY_SHA256 }}
       # Worker 스크립트와 정적 자산만 올린다. 도메인 연결과 secret은 Terraform/README 절차로 관리한다.
       - name: Deploy to Cloudflare Workers
         working-directory: apps/web

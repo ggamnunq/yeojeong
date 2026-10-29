@@ -1,11 +1,12 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiProvider, isApiError } from '../../api'
 import { server } from '../../mocks/server'
 import { createTestQueryClient } from '../../test/render'
 import { cardImportConfigQuery, fetchCardApprovals, importWalletEntries, revocableConsentsQuery, submitCardImportConsent, withdrawConsent } from './api'
-import { cardImportOf, useFetchCardApprovals, useImportWalletEntries } from './hooks'
+import { CardImportKeyPinError, pinPolicy, publicKeyFingerprint } from './crypto'
+import { buildFetchRequest, cardImportOf, useFetchCardApprovals } from './hooks'
 import { MOCK_CARD_IMPORT_PUBLIC_KEY, MOCK_TWO_WAY_CODE, resetCardImportMock } from './mocks'
 
 const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10)
@@ -110,35 +111,57 @@ describe('카드 승인내역 불러오기 데이터 계층(S8, MSW)', () => {
     expect(await client.fetchQuery({ ...revocableConsentsQuery(), staleTime: 0 })).toEqual([])
   })
 
-  it('encrypts the password inside the mutation and keeps it out of the cache', async () => {
+  it('encrypts before mutating so the mutation cache only ever holds ciphertext (L3)', async () => {
     resetCardImportMock({ consented: true })
     const client = createTestQueryClient()
     const wrapper = ({ children }: { children: ReactNode }) => <ApiProvider client={client}>{children}</ApiProvider>
-    const { result } = renderHook(() => ({ fetch: useFetchCardApprovals(), save: useImportWalletEntries() }), { wrapper })
+    const { result } = renderHook(() => useFetchCardApprovals(), { wrapper })
     const password = 'plain-password-never-sent'
     const sent: string[] = []
     const listener = ({ request }: { request: Request }) => {
       if (request.url.endsWith('/api/card-import/fetch')) void request.clone().text().then((t) => sent.push(t))
     }
     server.events.on('request:start', listener)
-    result.current.fetch.mutate({
-      publicKey: MOCK_CARD_IMPORT_PUBLIC_KEY,
-      organization: '0306',
-      loginId: 'me',
-      password,
-      from: today,
-      to: today,
-    })
-    await waitFor(() => expect(result.current.fetch.isSuccess).toBe(true))
+    const input = { publicKey: MOCK_CARD_IMPORT_PUBLIC_KEY, organization: '0306', loginId: 'twoway', password, from: today, to: today }
+    const first = await act(() => result.current.start(input))
+    expect(first.status).toBe('TWO_WAY_REQUIRED')
+    if (first.status !== 'TWO_WAY_REQUIRED') return
+    const variables = () => JSON.stringify(client.getMutationCache().getAll().map((m) => m.state.variables))
+    expect(variables()).not.toContain(password)
+    expect(variables()).toContain('encryptedPassword')
+    // 이어가기는 같은 암호문을 다시 쓴다(다시 암호화하지 않는다)
+    const done = await act(() => result.current.continueTwoWay({ token: first.twoWayToken, code: MOCK_TWO_WAY_CODE }))
+    expect(done.status).toBe('OK')
+    await waitFor(() => expect(sent).toHaveLength(2))
     server.events.removeListener('request:start', listener)
-    expect(result.current.fetch.data?.status).toBe('OK')
-    // 서버로는 암호문만 간다
-    expect(sent).toHaveLength(1)
-    expect(sent[0]).not.toContain(password)
-    expect(JSON.parse(sent[0])).toMatchObject({ loginId: 'me', encryptedPassword: expect.stringMatching(/^[A-Za-z0-9+/]+={0,2}$/) })
-    expect(JSON.parse(sent[0])).not.toHaveProperty('password')
-    // 쿼리 캐시에는 아무것도 없다(조회 결과는 화면 상태로만)
+    const [a, b] = sent.map((t) => JSON.parse(t) as { encryptedPassword: string; password?: string })
+    expect(a.encryptedPassword).toBe(b.encryptedPassword)
+    expect(sent.join()).not.toContain(password)
+    expect(a).not.toHaveProperty('password')
+    expect(variables()).not.toContain(password)
+    // 쿼리 캐시에는 조회 결과가 없다
     expect(client.getQueryCache().getAll()).toHaveLength(0)
-    expect(JSON.stringify(client.getQueryCache().getAll())).not.toContain(password)
+    act(() => result.current.reset())
+  })
+
+  it('pins the CODEF public key fingerprint when the build provides one (L4)', async () => {
+    const fingerprint = await publicKeyFingerprint(MOCK_CARD_IMPORT_PUBLIC_KEY)
+    expect(fingerprint).toMatch(/^[0-9a-f]{64}$/)
+    const input = { publicKey: MOCK_CARD_IMPORT_PUBLIC_KEY, organization: '0306', loginId: 'me', password: 'pw', from: today, to: today }
+
+    vi.stubEnv('VITE_CODEF_PUBKEY_SHA256', fingerprint.toUpperCase())
+    expect(pinPolicy()).toBe('pinned')
+    await expect(buildFetchRequest(input)).resolves.toMatchObject({ encryptedPassword: expect.any(String) })
+
+    vi.stubEnv('VITE_CODEF_PUBKEY_SHA256', 'f'.repeat(64))
+    await expect(buildFetchRequest(input)).rejects.toBeInstanceOf(CardImportKeyPinError)
+
+    // 운영 빌드에 고정값이 없으면 진입·암호화를 막는다(개발·목은 허용)
+    vi.stubEnv('VITE_CODEF_PUBKEY_SHA256', '')
+    expect(pinPolicy()).toBe('unpinned')
+    vi.stubEnv('PROD', true)
+    expect(pinPolicy()).toBe('blocked')
+    await expect(buildFetchRequest(input)).rejects.toBeInstanceOf(CardImportKeyPinError)
+    vi.unstubAllEnvs()
   })
 })
