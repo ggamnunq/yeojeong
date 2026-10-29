@@ -1,5 +1,5 @@
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, findTrip, TRIP } from '../../../mocks/data'
 import { renderApp } from '../../../test/render'
 import { expireConnections, walletMock } from '../mocks'
@@ -11,6 +11,11 @@ vi.setConfig({ testTimeout: 15_000 })
 const methodNames = () => screen.getAllByRole('listitem').map((li) => li.textContent)
 
 describe('지갑(HF-27)', () => {
+  // 연결 지갑은 토스 연결 기능이 켜져 있을 때만(FR-006). 꺼져 있으면 수동 지갑(HF-49, manual 테스트)
+  beforeEach(() => {
+    db.accountLink = true
+  })
+
   it('연결된 계좌·카드, 마지막 동기화 시각, 추가 행, 지금 여정 환율 카드', async () => {
     renderApp('/wallet')
     expect(await screen.findByRole('heading', { name: '지갑' })).toBeTruthy()
@@ -110,6 +115,10 @@ describe('지갑(HF-27)', () => {
 })
 
 describe('지갑 · 연결 만료(HF-42)', () => {
+  beforeEach(() => {
+    db.accountLink = true
+  })
+
   it('맨 위 "토스 연결 만료 · 다시 연결", 마지막 성공 시각, 새로고침·추가 없음, 행은 흐리게', async () => {
     expireConnections()
     renderApp('/wallet')

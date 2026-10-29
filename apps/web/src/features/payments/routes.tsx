@@ -10,7 +10,15 @@ export const routes: AppRoute[] = [
     layout: 'trip',
     path: '/trips/:tripId/payments',
     Component: PaymentsRoute,
-    children: [{ path: '/trips/:tripId/payments/:expenseId', Component: lazy(() => import('./pages/PaymentSheet')) }],
+    children: [
+      { path: '/trips/:tripId/payments/:expenseId', Component: lazy(() => import('./pages/PaymentSheet')) },
+      // 수동 결제(WF-46 추가 · WF-50 수정)도 목록 위 시트. "new"는 고정 경로라 :expenseId보다 먼저 맞는다
+      { path: '/trips/:tripId/payments/new', Component: lazy(() => import('../manual/TripExpenseSheet').then((m) => ({ default: m.NewTripExpensePage }))) },
+      {
+        path: '/trips/:tripId/payments/:expenseId/edit',
+        Component: lazy(() => import('../manual/TripExpenseSheet').then((m) => ({ default: m.EditTripExpensePage }))),
+      },
+    ],
   },
   // 기간 외 결제 후보는 토스 연결 기능이 켜져 있을 때만(FR-006). 꺼져 있으면 결제내역으로
   {

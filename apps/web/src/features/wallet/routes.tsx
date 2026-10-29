@@ -8,7 +8,19 @@ const connect = (page: Parameters<typeof accountLinkOnly>[0]) => accountLinkOnly
 
 // WF-06~08은 가입·추가·재연결 공용(?attempt=…&returnTo=…, connect.ts)
 export const routes: AppRoute[] = [
-  { layout: 'auth', path: '/wallet', Component: lazy(() => import('./pages/WalletPage')) },
+  {
+    layout: 'auth',
+    path: '/wallet',
+    Component: lazy(() => import('./pages/WalletPage')),
+    // 수동 지갑(WF-49) 위 시트: 결제 추가(WF-48) · 수정(WF-50)
+    children: [
+      { path: '/wallet/new', Component: lazy(() => import('../manual/WalletEntrySheet').then((m) => ({ default: m.NewWalletEntryPage }))) },
+      {
+        path: '/wallet/:entryId/edit',
+        Component: lazy(() => import('../manual/WalletEntrySheet').then((m) => ({ default: m.EditWalletEntryPage }))),
+      },
+    ],
+  },
   { layout: 'auth', path: '/wallet/connect/toss', Component: connect(lazy(() => import('./pages/TossAuthPage'))) },
   { layout: 'auth', path: '/wallet/connect/select', Component: connect(lazy(() => import('./pages/SelectMethodsPage'))) },
   { layout: 'auth', path: '/wallet/connect/done', Component: connect(lazy(() => import('./pages/ConnectDonePage'))) },

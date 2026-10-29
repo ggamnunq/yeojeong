@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Link } from 'react-router'
+import { useAccountLink } from '../../../app/features'
 import { paths } from '../../../app/paths'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { useCurrentTrip, useMyTrips } from '../../../app/trip'
@@ -17,8 +18,23 @@ import { useBack } from '../useBack'
 import { useManualSync } from '../useManualSync'
 import { useTossConnect } from '../useTossConnect'
 
-/** WF-27 지갑 · WF-42 연결 만료 · WF-28 계좌·카드 추가 시트 */
+const WalletListPage = lazy(() => import('../../manual/WalletListPage'))
+
+/** 토스 연결이 꺼져 있으면(FR-006) 수동 지갑(WF-49), 켜져 있으면 연결 지갑(WF-27) */
 export default function WalletPage() {
+  const accountLink = useAccountLink()
+  if (!accountLink) {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <WalletListPage />
+      </Suspense>
+    )
+  }
+  return <LinkedWalletPage />
+}
+
+/** WF-27 지갑 · WF-42 연결 만료 · WF-28 계좌·카드 추가 시트 */
+function LinkedWalletPage() {
   const back = useBack(paths.splash())
   const methods = useQuery(paymentMethodsQuery())
 

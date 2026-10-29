@@ -3,12 +3,15 @@ import { clsx } from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { keys } from '../../../api'
+import { useAccountLink } from '../../../app/features'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
 import { Avatar, Dialog, Icon, ShellSub, Tag } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { toast } from '../../../notifications'
+import { entryCountLabel } from '../../manual/rules'
+import type { MeWithWallet } from '../../manual/types'
 import { paymentMethodsQuery } from '../../wallet/api'
 import { formatMethodCounts } from '../../wallet/format'
 import { useBack } from '../../wallet/useBack'
@@ -25,7 +28,7 @@ export default function MePage() {
   return (
     <ShellSub header={{ title: '마이페이지', onBack: back }}>
       {me.data ? (
-        <MeContent nickname={me.data.nickname} profileImageUrl={me.data.profileImageUrl} />
+        <MeContent nickname={me.data.nickname} profileImageUrl={me.data.profileImageUrl} walletEntryCount={(me.data as MeWithWallet).walletEntryCount} />
       ) : me.isPending ? (
         <LoadingScreen inset />
       ) : (
@@ -35,10 +38,21 @@ export default function MePage() {
   )
 }
 
-function MeContent({ nickname, profileImageUrl }: { nickname: string; profileImageUrl: string | null }) {
+function MeContent({
+  nickname,
+  profileImageUrl,
+  walletEntryCount,
+}: {
+  nickname: string
+  profileImageUrl: string | null
+  /** 서버 Me.walletEntryCount(S7b 예정). 없으면 지갑 줄은 "내 지갑"만 */
+  walletEntryCount?: number
+}) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const methods = useQuery(paymentMethodsQuery())
+  // 토스 연결이 꺼져 있으면(FR-006) 지갑 요약은 "결제 n건"(서버 Me.walletEntryCount — 목록을 세지 않는다), 연결 만료 태그 없음
+  const accountLink = useAccountLink()
+  const methods = useQuery({ ...paymentMethodsQuery(), enabled: accountLink })
   const [deletion, setDeletion] = useState<DeletionRequestResponse | null>(null)
 
   const signedOut = useRef(false)
@@ -65,9 +79,13 @@ function MeContent({ nickname, profileImageUrl }: { nickname: string; profileIma
   )
   const askDeletion = useMutation({ mutationFn: requestDeletion, onSuccess: setDeletion })
 
-  const counts = methods.data
-    ? formatMethodCounts(methods.data.counts.accounts, methods.data.counts.cards) || '연결 안 됨'
-    : null
+  const counts = accountLink
+    ? methods.data
+      ? formatMethodCounts(methods.data.counts.accounts, methods.data.counts.cards) || '연결 안 됨'
+      : null
+    : walletEntryCount !== undefined
+      ? entryCountLabel(walletEntryCount)
+      : null
 
   return (
     <>
@@ -89,7 +107,7 @@ function MeContent({ nickname, profileImageUrl }: { nickname: string; profileIma
           {counts !== null && <span className="truncate text-caption text-tertiary">{counts}</span>}
         </span>
         {/* 연결 만료(WF-30): Tag Type=Warning(기본 문구 "연결 만료") */}
-        {methods.data?.hasExpiredConnection && <Tag type="warning" size="s" className="shrink-0" />}
+        {accountLink && methods.data?.hasExpiredConnection && <Tag type="warning" size="s" className="shrink-0" />}
         <Icon name="chevron-right" size={20} className="shrink-0 text-icon-subtle" />
       </Link>
 
