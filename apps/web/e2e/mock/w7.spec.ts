@@ -80,6 +80,8 @@ test.describe('카드 내역 불러오기(W7)', () => {
   })
 
   test('한도: 남은 횟수 2 캡션 · 호출 한도 57r · 오늘 한도 57d · 남은 횟수 0이면 지갑에서 바로 57d', async ({ page }) => {
+    // 한도 시각(retryAfter, 30분 뒤)이 자정을 넘으면 57r 대신 57d가 맞으므로, 기기 시각을 낮으로 고정한다
+    await page.clock.setFixedTime(new Date('2026-11-13T12:00:00+09:00'))
     await useMockScenario(page, { cardImport: 'low' })
     await toLogin(page)
     await expect(page.getByText('오늘 2번 더 불러올 수 있어요')).toBeVisible()
