@@ -14,6 +14,12 @@ ALTER TABLE "transactions" ADD CONSTRAINT "transactions_source_check" CHECK (
 -- Prisma 스키마로 표현할 수 없어 여기에만 있다(schema.prisma Transaction.externalRef 주석)
 CREATE UNIQUE INDEX "transactions_card_import_ref_key" ON "transactions"("user_id", "external_ref") WHERE "source" = 'CARD_IMPORT';
 
+-- 동의 기록 값 검사: 동의 화면 HF-51(카드 내역 불러오기 시작 전 확인), 철회 경로 HF-58(동의 관리) 추가(@yeojeong/shared CONSENT_SCREEN_VALUES·WITHDRAW_CHANNEL_VALUES)
+ALTER TABLE "user_consents" DROP CONSTRAINT "user_consents_screen_check";
+ALTER TABLE "user_consents" ADD CONSTRAINT "user_consents_screen_check" CHECK ("screen" IN ('WF-04', 'WF-05', 'WF-28', 'WF-42', 'WF-30', 'RECONSENT', 'SUPPORT', 'HF-51'));
+ALTER TABLE "user_consents" DROP CONSTRAINT "user_consents_withdraw_channel_check";
+ALTER TABLE "user_consents" ADD CONSTRAINT "user_consents_withdraw_channel_check" CHECK ("withdraw_channel" IS NULL OR "withdraw_channel" IN ('WF-30', 'WF-27', 'SUPPORT', 'ACCOUNT_DELETED', 'HF-58'));
+
 -- 동의 문서 초안(0.1-draft). 전문은 법무 검토 뒤 docs/legal에 올리고 정식본 행을 새 마이그레이션으로 추가한다
 -- (정식본이 생기면 초안 동의는 무효가 되어 불러오기 전에 다시 동의를 받는다 — common/auth/consent-catalog.ts).
 -- doc_hash는 아직 전문이 없어 아래 summary 문장(UTF-8)의 SHA-256이다.

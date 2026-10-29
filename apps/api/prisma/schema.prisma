@@ -212,15 +212,18 @@ model User {
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  sessions         Session[]
-  consents         UserConsent[]
-  accountDeletions AccountDeletion[]
-  memberships      Membership[]
-  createdGroups    Group[]
-  connections      PaymentConnection[]
-  attempts         ConnectionAttempt[]
-  paymentMethods   PaymentMethod[]
-  transactions     Transaction[]
+  sessions                Session[]
+  consents                UserConsent[]
+  accountDeletions        AccountDeletion[]
+  memberships             Membership[]
+  createdGroups           Group[]
+  connections             PaymentConnection[]
+  attempts                ConnectionAttempt[]
+  paymentMethods          PaymentMethod[]
+  transactions            Transaction[]
+  /// 카드 승인내역 불러오기(S8) 동시 1건 잠금·로그인 실패 횟수. 내용 없음, 탈퇴하면 같이 지운다
+  cardImportLock          CardImportLock?
+  cardImportLoginFailures CardImportLoginFailure[]
 
   @@map("users")
 }
@@ -304,14 +307,14 @@ model UserConsent {
   ipHash          String?   @map("ip_hash") @db.Char(64)
   /// User-Agent 512자 자름
   ua              String    @db.VarChar(512)
-  /// WF-04 | WF-05 | WF-28 | WF-42 | WF-30 | RECONSENT | SUPPORT
+  /// WF-04 | WF-05 | WF-28 | WF-42 | WF-30 | RECONSENT | SUPPORT | HF-51
   screen          String    @db.VarChar(16)
   /// ALL | INDIVIDUAL | TOGGLE
   method          String    @db.VarChar(12)
   /// 동의 당시 보여 준 전문의 SHA-256(= ConsentDocument.docHash)
   docHash         String    @map("doc_hash") @db.Char(64)
   withdrawnAt     DateTime? @map("withdrawn_at") @db.Timestamptz
-  /// WF-30 | WF-27 | SUPPORT | ACCOUNT_DELETED
+  /// WF-30 | WF-27 | SUPPORT | ACCOUNT_DELETED | HF-58
   withdrawChannel String?   @map("withdraw_channel") @db.VarChar(16)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
@@ -606,35 +609,35 @@ model Transaction {
   version               Int            @default(0)
   kind                  TxKind
   /// 승인(취소) 시각. 인입 범위·Day 계산 기준
-  occurredAt            DateTime      @map("occurred_at") @db.Timestamptz
-  merchantNameRaw       String        @map("merchant_name_raw") @db.VarChar(100)
+  occurredAt            DateTime       @map("occurred_at") @db.Timestamptz
+  merchantNameRaw       String         @map("merchant_name_raw") @db.VarChar(100)
   /// NFKC → 대문자 → 공백·기호 제거. 중복·환불 매칭용
-  merchantKey           String        @map("merchant_key") @db.VarChar(100)
+  merchantKey           String         @map("merchant_key") @db.VarChar(100)
   /// 부호 포함(취소는 음수)
-  originalAmount        Decimal       @map("original_amount") @db.Decimal(19, 4)
-  originalCurrency      String        @map("original_currency") @db.Char(3)
-  providerKrwAmount     Int?          @map("provider_krw_amount")
+  originalAmount        Decimal        @map("original_amount") @db.Decimal(19, 4)
+  originalCurrency      String         @map("original_currency") @db.Char(3)
+  providerKrwAmount     Int?           @map("provider_krw_amount")
   /// 카드사 청구 확정 원화(CARD_BILLED)
-  billedKrwAmount       Int?          @map("billed_krw_amount")
-  billedAt              DateTime?     @map("billed_at") @db.Timestamptz
+  billedKrwAmount       Int?           @map("billed_krw_amount")
+  billedAt              DateTime?      @map("billed_at") @db.Timestamptz
   /// 환율 스냅샷: occurredAt 직전 매매기준율
-  spotRateId            String?       @map("spot_rate_id") @db.Uuid
-  spotRate              ExchangeRate? @relation(fields: [spotRateId], references: [id], onDelete: SetNull)
-  spotKrwAmount         Int?          @map("spot_krw_amount")
+  spotRateId            String?        @map("spot_rate_id") @db.Uuid
+  spotRate              ExchangeRate?  @relation(fields: [spotRateId], references: [id], onDelete: SetNull)
+  spotKrwAmount         Int?           @map("spot_krw_amount")
   /// 취소 건이 가리키는 원 승인 ID(제공자가 줄 때)
-  providerApprovalRef   String?       @map("provider_approval_ref") @db.VarChar(128)
-  cancelOfTransactionId String?       @map("cancel_of_transaction_id") @db.Uuid
-  cancelOf              Transaction?  @relation("TxCancel", fields: [cancelOfTransactionId], references: [id], onDelete: SetNull)
-  cancels               Transaction[] @relation("TxCancel")
+  providerApprovalRef   String?        @map("provider_approval_ref") @db.VarChar(128)
+  cancelOfTransactionId String?        @map("cancel_of_transaction_id") @db.Uuid
+  cancelOf              Transaction?   @relation("TxCancel", fields: [cancelOfTransactionId], references: [id], onDelete: SetNull)
+  cancels               Transaction[]  @relation("TxCancel")
   /// 같은 결제가 계좌·카드 양쪽에 잡힌 경우 계좌 쪽에 표시하고 인입하지 않는다
-  sameUserDuplicateOfId String?       @map("same_user_duplicate_of_id") @db.Uuid
-  sameUserDuplicateOf   Transaction?  @relation("TxDuplicate", fields: [sameUserDuplicateOfId], references: [id], onDelete: SetNull)
-  sameUserDuplicates    Transaction[] @relation("TxDuplicate")
+  sameUserDuplicateOfId String?        @map("same_user_duplicate_of_id") @db.Uuid
+  sameUserDuplicateOf   Transaction?   @relation("TxDuplicate", fields: [sameUserDuplicateOfId], references: [id], onDelete: SetNull)
+  sameUserDuplicates    Transaction[]  @relation("TxDuplicate")
   /// 원문 JSON의 AES-256-GCM 암호문. 수집 후 90일에 NULL
-  rawPayloadEnc         Bytes?        @map("raw_payload_enc")
-  importedAt            DateTime      @default(now()) @map("imported_at") @db.Timestamptz
-  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt             DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  rawPayloadEnc         Bytes?         @map("raw_payload_enc")
+  importedAt            DateTime       @default(now()) @map("imported_at") @db.Timestamptz
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   expenses Expense[]
 
@@ -662,6 +665,39 @@ model CodefPendingDeletion {
 
   @@index([createdAt])
   @@map("codef_pending_deletions")
+}
+
+/// 카드 승인내역 조회 사용자별 동시 1건 잠금(S8). 조회 요청 동안만 있다. 만료(expiresAt)가 지난 행은 다음 요청이 가져간다(인스턴스 여럿이어도 안전)
+model CardImportLock {
+  userId    String   @id @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+
+  @@map("card_import_locks")
+}
+
+/// 카드사 로그인 연속 실패 수(S8, 사용자·기관별). 30분 안에 3회면 30분 막는다(카드사 계정 잠김 예방). 성공하면 지운다. 7일 지나면 파기 배치가 지운다
+model CardImportLoginFailure {
+  userId       String   @map("user_id") @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// CODEF 기관 코드
+  organization String   @db.Char(4)
+  failures     Int
+  lastFailedAt DateTime @map("last_failed_at") @db.Timestamptz
+
+  @@id([userId, organization])
+  @@index([lastFailedAt])
+  @@map("card_import_login_failures")
+}
+
+/// 서비스 전체 CODEF API 호출 수(KST 날짜별, S8). 일일 예산(CODEF_DAILY_CALL_BUDGET) 확인용. 사용자 정보 없음. 7일 지나면 파기 배치가 지운다
+model CodefDailyUsage {
+  /// KST 날짜
+  day       DateTime @id @db.Date
+  calls     Int      @default(0)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("codef_daily_usage")
 }
 
 // ─── 여정 장부 ───
