@@ -163,10 +163,12 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
     expect(await access.view(granted)).toEqual({
       accountLink: false,
       cardImport: true,
+      fileImport: false,
     });
     expect(await access.view(nobody)).toEqual({
       accountLink: false,
       cardImport: false,
+      fileImport: false,
     });
     expect(access.enabledWithGrant(nobody, true)).toBe(true);
     expect(access.enabledWithGrant(nobody, false)).toBe(false);

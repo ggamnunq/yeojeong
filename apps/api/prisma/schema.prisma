@@ -617,7 +617,7 @@ model Transaction {
   /// 제공자 거래 ID. 멱등 upsert 키. MANUAL은 NULL(유니크 (paymentMethodId, externalRef)는 NULL끼리 겹치지 않는다).
   /// CARD_IMPORT는 importKey(HMAC-SHA256 hex 64자, 승인번호 원문 아님). 부분 유니크 transactions_card_import_ref_key
   /// (user_id, external_ref) WHERE source = 'CARD_IMPORT'가 중복 저장을 막는다. Prisma 스키마로 표현할 수 없어 마이그레이션 SQL(20261029160001_card_import_constraints)에만 있다.
-  /// FILE_IMPORT도 importKey(HMAC-SHA256 hex 64자, 거래 번호 원문 아님). 부분 유니크 transactions_file_import_ref_key(20261030040001_file_import_constraints)
+  /// FILE_IMPORT도 importKey(HMAC-SHA256 hex 64자, 거래 번호 원문 아님). 부분 유니크 transactions_file_import_ref_key(20261030050001_file_import_constraints)
   externalRef           String?        @map("external_ref") @db.VarChar(128)
   /// FILE_IMPORT만: 파일 공급자(위챗페이 등). 그 밖의 출처는 NULL
   importProvider        FileImportProvider? @map("import_provider")
