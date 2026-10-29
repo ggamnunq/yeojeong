@@ -1,5 +1,6 @@
 import {
   ADMIN_LOGIN_LIMIT,
+  ADMIN_STEP_UP_LIMIT,
   ADMIN_USER_PAGE_SIZE,
   ADMIN_WITHDRAW_REASON_LENGTH,
   CARD_IMPORT_FETCH_LIMIT,
@@ -16,10 +17,13 @@ import { HttpResponse, type HttpHandler } from 'msw'
 import { api, mockError, noContent, type NoContent } from '../../mocks/utils'
 
 // 관리자 API 목(/api/admin/*). 상태는 이 파일 안에만 둔다(앱 목 db와 섞지 않는다).
-// 개발 서버: VITE_MOCK_API=1에서 /admin/login → 아이디 admin · 비밀번호 admin-password-123(목 전용 값).
+// 개발 서버: VITE_MOCK_API=1에서 /admin/login → 아이디 admin · 비밀번호 admin-password-123 · 인증 코드 246810(목 전용 값).
+// 인증 코드(TOTP)는 한 번 쓰면 다시 받지 않는다(서버와 같이). 로그인 뒤 탈퇴 재인증에는 두 번째 코드 135791을 쓴다.
 // 로그인 여부는 sessionStorage 'yj:mock:admin'에 둬서 새로고침해도 유지된다. 테스트는 afterEach에서 resetAdminMock().
 
 export const ADMIN_MOCK_CREDENTIALS = { username: 'admin', password: 'admin-password-123' } as const
+/** 목이 받는 인증 코드(목 전용). 각 코드는 한 번만 쓸 수 있다 — 로그인에 [0], 재인증에 [1] */
+export const ADMIN_MOCK_TOTP_CODES = ['246810', '135791'] as const
 const SESSION_KEY = 'yj:mock:admin'
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -163,7 +167,19 @@ function fixtureCodefUsage(): AdminCodefUsage {
   }
 }
 
-const state = { loggedIn: false, failures: 0, users: fixtureUsers() }
+const state = { loggedIn: false, failures: 0, stepUpFailures: 0, usedCodes: new Set<string>(), users: fixtureUsers() }
+
+/** 맞고 아직 쓰지 않은 인증 코드면 쓴 것으로 표시하고 true */
+function claimTotp(code: unknown): boolean {
+  if (typeof code !== 'string' || !(ADMIN_MOCK_TOTP_CODES as readonly string[]).includes(code) || state.usedCodes.has(code)) {
+    return false
+  }
+  state.usedCodes.add(code)
+  return true
+}
+
+const isMockTotp = (code: unknown) =>
+  typeof code === 'string' && (ADMIN_MOCK_TOTP_CODES as readonly string[]).includes(code) && !state.usedCodes.has(code)
 
 function readLoggedIn(): boolean {
   try {
@@ -187,6 +203,8 @@ function setLoggedIn(value: boolean) {
 export function resetAdminMock() {
   setLoggedIn(false)
   state.failures = 0
+  state.stepUpFailures = 0
+  state.usedCodes = new Set()
   state.users = fixtureUsers()
 }
 
@@ -216,10 +234,15 @@ export const handlers: HttpHandler[] = [
       })
     }
     const body = await request.json()
-    if (body.username !== ADMIN_MOCK_CREDENTIALS.username || body.password !== ADMIN_MOCK_CREDENTIALS.password) {
+    if (
+      body.username !== ADMIN_MOCK_CREDENTIALS.username ||
+      body.password !== ADMIN_MOCK_CREDENTIALS.password ||
+      !isMockTotp(body.totp)
+    ) {
       state.failures += 1
       return mockError('ADMIN_LOGIN_FAILED', 401)
     }
+    claimTotp(body.totp)
     state.failures = 0
     setLoggedIn(true)
     return HttpResponse.json(sessionView())
@@ -266,6 +289,18 @@ export const handlers: HttpHandler[] = [
       return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'reason', code: 'length', message: '사유를 2~200자로 적어 주세요' }] })
     }
     if (body.confirmNickname !== user.nickname) return mockError('ADMIN_CONFIRM_MISMATCH', 400)
+    if (state.stepUpFailures >= ADMIN_STEP_UP_LIMIT.ATTEMPTS) {
+      const retryAfterSec = ADMIN_STEP_UP_LIMIT.WINDOW_SECONDS
+      return mockError('ADMIN_STEP_UP_RATE_LIMITED', 429, {
+        retryAfter: new Date(Date.now() + retryAfterSec * 1000).toISOString(),
+        retryAfterSec,
+      })
+    }
+    if (body.password !== ADMIN_MOCK_CREDENTIALS.password || !claimTotp(body.totp)) {
+      state.stepUpFailures += 1
+      return mockError('ADMIN_STEP_UP_FAILED', 403)
+    }
+    state.stepUpFailures = 0
     state.users = state.users.filter((u) => u.id !== user.id)
     return HttpResponse.json({ status: 'DELETED', accountDeletionId: uuid(5000), completedAt: kstIso(Date.now()) })
   }),

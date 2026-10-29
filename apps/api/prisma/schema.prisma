@@ -979,7 +979,7 @@ model AccessLog {
 
 /// 관리자 세션(쿠키 __Host-yj_admin). 쿠키 값(256bit 난수)의 SHA-256만 저장한다. 사용자 세션(sessions)과 완전히 별개다.
 /// 유휴 30분(lastSeenAt) · 절대 8시간(expiresAt) 중 먼저 오는 때 끝난다. 로그아웃하면 revokedAt.
-/// credentialTag = SHA-256(ADMIN_USERNAME + ADMIN_PASSWORD_HASH) — 자격 증명을 바꾸면 기존 세션이 모두 무효가 된다. 파기 배치(ADMIN_SESSIONS)가 끝난 행을 지운다
+/// credentialTag = SHA-256(ADMIN_USERNAME + ADMIN_PASSWORD_HASH + ADMIN_TOTP_SECRET) — 자격 증명을 바꾸면 기존 세션이 모두 무효가 된다. 파기 배치(ADMIN_SESSIONS)가 끝난 행을 지운다
 model AdminSession {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tokenHash     String    @unique @map("token_hash") @db.Char(64)
@@ -995,7 +995,7 @@ model AdminSession {
   @@map("admin_sessions")
 }
 
-/// 관리자 로그인 시도 제한 카운터(인스턴스 여럿이어도 같다). key = "ip:<IP HMAC>" | "global". 비밀번호 확인 전에 원자적으로 센다.
+/// 관리자 로그인·재인증 시도 제한 카운터(인스턴스 여럿이어도 같다). key = "ip:<IP(IPv6 /64) HMAC>" | "global" | "dev:<장치 ID>" | "stepup:<세션 ID>". 비밀번호 확인 전에 원자적으로 센다.
 /// 15분 고정 창, 성공하면 지운다. 내용 없음(IP는 HMAC). 파기 배치(ADMIN_SESSIONS)가 하루 지난 행을 지운다
 model AdminLoginThrottle {
   key             String   @id @db.VarChar(80)
@@ -1004,4 +1004,14 @@ model AdminLoginThrottle {
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("admin_login_throttles")
+}
+
+/// 관리자 TOTP 재사용 금지: 관리자(행위자 ID)마다 마지막으로 받은 TOTP 창 번호. 그보다 큰 창의 코드만 받는다(로그인·재인증 공통)
+model AdminTotpCounter {
+  /// AdminConfig.actorId(아이디에서 만든 UUID, users 행 없음)
+  actorId     String   @id @map("actor_id") @db.Uuid
+  lastCounter BigInt   @map("last_counter")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("admin_totp_counters")
 }

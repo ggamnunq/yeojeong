@@ -25,7 +25,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
     "db:studio": "prisma studio",
-    "admin:hash": "node --disable-warning=ExperimentalWarning scripts/admin-hash.mjs"
+    "admin:hash": "node --disable-warning=ExperimentalWarning scripts/admin-hash.mjs",
+    "admin:totp": "node --disable-warning=ExperimentalWarning scripts/admin-totp.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

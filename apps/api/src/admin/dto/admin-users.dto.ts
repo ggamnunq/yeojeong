@@ -86,6 +86,22 @@ export class AdminWithdrawUserDto implements AdminWithdrawUserRequest {
   @IsString({ message: '닉네임을 입력해 주세요' })
   @MaxLength(64, { message: '닉네임이 맞지 않아요' })
   confirmNickname: string;
+
+  @ApiProperty({
+    maxLength: 256,
+    description: '재인증: 관리자 비밀번호(저장·기록하지 않는다)',
+  })
+  @IsString({ message: '비밀번호를 입력해 주세요' })
+  @Length(1, 256, { message: '비밀번호를 입력해 주세요' })
+  password: string;
+
+  @ApiProperty({
+    pattern: '^\\d{6}$',
+    description: '재인증: 지금 인증 앱의 6자리 코드',
+  })
+  @IsString({ message: '인증 코드 6자리를 입력해 주세요' })
+  @Matches(/^\d{6}$/, { message: '인증 코드 6자리를 입력해 주세요' })
+  totp: string;
 }
 
 class AdminCardImportAccessDto implements AdminCardImportAccess {

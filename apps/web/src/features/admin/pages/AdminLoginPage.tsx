@@ -2,8 +2,9 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { isApiError } from '../../../api'
+import { ADMIN_TOTP } from '@yeojeong/shared'
 import { Button, Input, Logo } from '../../../ds'
-import { formatWait } from '../format'
+import { formatWait, isTotpComplete, totpDigits } from '../format'
 import { useAdminLogin } from '../hooks'
 import { adminPaths, safeAdminReturnTo } from '../paths'
 
@@ -17,10 +18,12 @@ function loginErrorMessage(error: unknown): string {
   return error.message
 }
 
-/** /admin/login: 아이디·비밀번호. 실패 문구는 어느 쪽이 틀렸는지 알려 주지 않는 서버 문구 그대로 */
+/** /admin/login: 아이디·비밀번호·인증 코드(TOTP). 실패 문구는 무엇이 틀렸는지 알려 주지 않는 서버 문구 그대로 */
 export default function AdminLoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [totp, setTotp] = useState('')
+  const ready = username !== '' && password !== '' && isTotpComplete(totp)
   const login = useAdminLogin()
   const navigate = useNavigate()
   const [params] = useSearchParams()
@@ -31,13 +34,16 @@ export default function AdminLoginPage() {
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (!username || !password || login.isPending) return
+    if (!ready || login.isPending) return
     login.mutate(
-      { username, password },
+      { username, password, totp },
       {
         onSuccess: () => navigate(safeAdminReturnTo(params.get('returnTo')) ?? adminPaths.users(), { replace: true }),
-        // 실패하면 비밀번호만 비운다
-        onError: () => setPassword(''),
+        // 실패하면 비밀번호와 인증 코드를 비운다(아이디는 남긴다)
+        onError: () => {
+          setPassword('')
+          setTotp('')
+        },
       },
     )
   }
@@ -74,6 +80,16 @@ export default function AdminLoginPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        <Input
+          label="인증 코드"
+          name="totp"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="[0-9]{6}"
+          maxLength={ADMIN_TOTP.DIGITS}
+          value={totp}
+          onChange={(e) => setTotp(totpDigits(e.target.value))}
+        />
         {login.isError && (
           <p role="alert" className="text-body-s text-error">
             {loginErrorMessage(login.error)}
@@ -85,7 +101,7 @@ export default function AdminLoginPage() {
           size="l"
           label="로그인"
           state={login.isPending ? 'loading' : 'default'}
-          disabled={!username || !password}
+          disabled={!ready}
           className="w-full"
         />
       </form>

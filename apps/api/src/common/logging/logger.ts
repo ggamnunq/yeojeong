@@ -41,6 +41,8 @@ export const SENSITIVE_BODY_KEYS = [
   // 관리자 로그인(src/admin)
   'username',
   'passwordHash',
+  'totp',
+  'totpSecret',
   'encryptedPassword',
   'connectedId',
   'twoWay',

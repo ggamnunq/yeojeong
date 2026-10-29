@@ -11,6 +11,12 @@ import request from 'supertest';
 import { AdminAuditLog } from './../src/admin/admin-audit.js';
 import { AdminConfig, actorIdOf } from './../src/admin/admin-config.js';
 import { hashPassword } from './../src/admin/password-hash.js';
+import {
+  base32Decode,
+  generateTotpSecret,
+  hotp,
+  totpCounter,
+} from './../src/admin/totp.js';
 import { createLogger } from './../src/common/logging/logger.js';
 import { PurgeService } from './../src/retention/purge.service.js';
 import type { PrismaClient } from './../src/generated/prisma/client.js';
@@ -31,6 +37,14 @@ const USERNAME = 'ops-admin-e2e';
 const PASSWORD = 'e2e-Admin-Pw-9f3k2-correct-horse';
 const WRONG_PASSWORD = 'e2e-wrong-pw-7c1d0-battery-staple';
 const COOKIE = '__Host-yj_admin';
+const DEVICE_COOKIE = '__Host-yj_admin_dev';
+const TOTP_SECRET = generateTotpSecret();
+const TOTP_KEY = base32Decode(TOTP_SECRET)!;
+/** 지금 창의 TOTP 코드(offset = 창 이동) */
+const totpNow = (offset = 0) =>
+  hotp(TOTP_KEY, totpCounter(Date.now()) + offset);
+/** 지금 창과 다른, 확실히 틀린 6자리 */
+const wrongTotp = () => (totpNow() === '000000' ? '111111' : '000000');
 const ACTOR_ID = actorIdOf(USERNAME);
 const MERCHANT = 'E2E-SECRET-MERCHANT-4411';
 const AMOUNT = '98765';
@@ -45,12 +59,13 @@ let ipSeq = 10;
 /** 테스트마다 다른 클라이언트 IP(TRUST_PROXY_HOPS=1 + X-Forwarded-For) — rate limit·시도 제한이 섞이지 않게 */
 const nextIp = () => `198.51.100.${ipSeq++}`;
 
-function adminCookieOf(res: request.Response): string {
+function cookieOf(res: request.Response, name: string): string {
   const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
-  const line = raw?.find((c) => c.startsWith(`${COOKIE}=`));
-  if (!line) throw new Error('관리자 쿠키가 없다');
+  const line = raw?.find((c) => c.startsWith(`${name}=`));
+  if (!line) throw new Error(`${name} 쿠키가 없다`);
   return line.split(';')[0];
 }
+const adminCookieOf = (res: request.Response) => cookieOf(res, COOKIE);
 
 describe('Admin disabled (no ADMIN_* env)', () => {
   let app: NestExpressApplication;
@@ -115,12 +130,36 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
   const get = (path: string, ip = nextIp()) =>
     request(server()).get(path).set('X-Forwarded-For', ip);
 
-  async function login(ip = nextIp()) {
-    const res = await post('/api/admin/login', ip)
-      .send({ username: USERNAME, password: PASSWORD })
-      .expect(200);
-    return adminCookieOf(res);
+  /**
+   * 재사용 금지 카운터를 비우고 지금 TOTP 코드를 준다. 실제 시계로 30초 창마다 한 번만 쓸 수 있어,
+   * 여러 번 로그인하는 테스트는 이걸로 카운터를 되돌린다(재사용 금지 자체는 따로 증명한다)
+   */
+  async function freshTotp() {
+    await prisma.adminTotpCounter.deleteMany();
+    return totpNow();
   }
+
+  async function loginFull(ip = nextIp(), extraCookie?: string) {
+    const req = post('/api/admin/login', ip);
+    if (extraCookie) req.set('Cookie', extraCookie);
+    const res = await req
+      .send({ username: USERNAME, password: PASSWORD, totp: await freshTotp() })
+      .expect(200);
+    return {
+      session: adminCookieOf(res),
+      device: cookieOf(res, DEVICE_COOKIE),
+    };
+  }
+
+  async function login(ip = nextIp()) {
+    return (await loginFull(ip)).session;
+  }
+
+  const lastLoginFailure = () =>
+    prisma.accessLog.findFirst({
+      where: { userId: ACTOR_ID, action: 'ADMIN_LOGIN_FAILED' },
+      orderBy: { at: 'desc' },
+    });
 
   beforeAll(async () => {
     prisma = createFixturePrisma(databaseUrl as string);
@@ -134,6 +173,7 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
       username: USERNAME,
       // 테스트는 가벼운 비용(N = 2^14)
       passwordHash: await hashPassword(PASSWORD, { N: 16_384, r: 8, p: 1 }),
+      totpSecret: TOTP_SECRET,
     });
     auth = createTestAuth();
     const logger = createLogger(new ConfigService(), {
@@ -159,6 +199,7 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
     await prisma.accessLog.deleteMany({ where: { userId: ACTOR_ID } });
     await prisma.adminSession.deleteMany();
     await prisma.adminLoginThrottle.deleteMany();
+    await prisma.adminTotpCounter.deleteMany();
     await fx.cleanup();
     await prisma.$disconnect();
   });
@@ -169,15 +210,21 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
         where: { userId: ACTOR_ID, action: 'ADMIN_LOGIN_FAILED' },
       });
       const badPw = await post('/api/admin/login')
-        .send({ username: USERNAME, password: WRONG_PASSWORD })
+        .send({ username: USERNAME, password: WRONG_PASSWORD, totp: totpNow() })
         .expect(401);
       const badUser = await post('/api/admin/login')
-        .send({ username: 'someone-else', password: PASSWORD })
+        .send({ username: 'someone-else', password: PASSWORD, totp: totpNow() })
         .expect(401);
-      for (const res of [badPw, badUser]) {
+      const badTotp = await post('/api/admin/login')
+        .send({ username: USERNAME, password: PASSWORD, totp: wrongTotp() })
+        .expect(401);
+      expect((await lastLoginFailure())?.details).toEqual({
+        reason: 'BAD_TOTP',
+      });
+      for (const res of [badPw, badUser, badTotp]) {
         expect(res.body).toMatchObject({
           code: 'ADMIN_LOGIN_FAILED',
-          message: '아이디 또는 비밀번호가 맞지 않아요',
+          message: '아이디, 비밀번호 또는 인증 코드가 맞지 않아요',
         });
         expect(res.body.details).toBeUndefined();
         expect(res.headers['set-cookie']).toBeUndefined();
@@ -186,19 +233,60 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
       const rows = await prisma.accessLog.findMany({
         where: { userId: ACTOR_ID, action: 'ADMIN_LOGIN_FAILED' },
         orderBy: { at: 'desc' },
-        take: 2,
+        take: 3,
       });
-      expect(rows.length + before).toBeGreaterThanOrEqual(2);
-      expect(rows[0]).toMatchObject({
+      expect(rows.length + before).toBeGreaterThanOrEqual(3);
+      expect(rows[1]).toMatchObject({
         resourceType: 'ADMIN',
         details: { reason: 'BAD_CREDENTIALS' },
       });
       expect(rows[0].ipHash).toMatch(/^[0-9a-f]{64}$/);
     });
 
+    it('requires a TOTP code (2FA) and never accepts the same code twice (replay)', async () => {
+      await post('/api/admin/login')
+        .send({ username: USERNAME, password: PASSWORD })
+        .expect(400);
+      const code = await freshTotp();
+      await post('/api/admin/login')
+        .send({ username: USERNAME, password: PASSWORD, totp: code })
+        .expect(200);
+      const replay = await post('/api/admin/login')
+        .send({ username: USERNAME, password: PASSWORD, totp: code })
+        .expect(401);
+      expect(replay.body.code).toBe('ADMIN_LOGIN_FAILED');
+      expect((await lastLoginFailure())?.details).toEqual({
+        reason: 'TOTP_REPLAY',
+      });
+      // 이미 쓴 창보다 이른 창(앞 1창)도 받지 않는다
+      await post('/api/admin/login')
+        .send({ username: USERNAME, password: PASSWORD, totp: totpNow(-1) })
+        .expect(401);
+      // 동시에 같은 코드로 두 번 보내도 한 번만 성공한다
+      const next = await freshTotp();
+      const results = await Promise.all(
+        [nextIp(), nextIp()].map((ip) =>
+          post('/api/admin/login', ip).send({
+            username: USERNAME,
+            password: PASSWORD,
+            totp: next,
+          }),
+        ),
+      );
+      expect(results.map((r) => r.status).sort()).toEqual([200, 401]);
+    });
+
+    it('a new login ends every existing admin session (other browsers too)', async () => {
+      const first = await login();
+      await get('/api/admin/session').set('Cookie', first).expect(200);
+      const second = await login();
+      await get('/api/admin/session').set('Cookie', first).expect(401);
+      await get('/api/admin/session').set('Cookie', second).expect(200);
+    });
+
     it('validates input without echoing values', async () => {
       const res = await post('/api/admin/login')
-        .send({ username: USERNAME })
+        .send({ username: USERNAME, totp: '12' })
         .expect(400);
       expect(res.body.code).toBe('VALIDATION_FAILED');
       expect(JSON.stringify(res.body)).not.toContain(USERNAME);
@@ -208,14 +296,14 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
       await request(server())
         .post('/api/admin/login')
         .set('X-Forwarded-For', nextIp())
-        .send({ username: USERNAME, password: PASSWORD })
+        .send({ username: USERNAME, password: PASSWORD, totp: totpNow() })
         .expect(403)
         .expect((res) => expect(res.body.code).toBe('CSRF_REJECTED'));
       await request(server())
         .post('/api/admin/login')
         .set('Origin', 'https://evil.example')
         .set('X-Forwarded-For', nextIp())
-        .send({ username: USERNAME, password: PASSWORD })
+        .send({ username: USERNAME, password: PASSWORD, totp: totpNow() })
         .expect(403);
     });
 
@@ -223,11 +311,19 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
       const ip = nextIp();
       for (let i = 0; i < 5; i += 1) {
         await post('/api/admin/login', ip)
-          .send({ username: USERNAME, password: WRONG_PASSWORD })
+          .send({
+            username: USERNAME,
+            password: WRONG_PASSWORD,
+            totp: wrongTotp(),
+          })
           .expect(401);
       }
       const blocked = await post('/api/admin/login', ip)
-        .send({ username: USERNAME, password: PASSWORD })
+        .send({
+          username: USERNAME,
+          password: PASSWORD,
+          totp: await freshTotp(),
+        })
         .expect(429);
       expect(blocked.body.code).toBe('ADMIN_LOGIN_RATE_LIMITED');
       expect(blocked.body.details.retryAfterSec).toBeGreaterThan(0);
@@ -237,21 +333,80 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
         where: { userId: ACTOR_ID, action: 'ADMIN_LOGIN_FAILED' },
         orderBy: { at: 'desc' },
       });
-      expect(limited?.details).toEqual({ reason: 'RATE_LIMITED' });
+      expect(limited?.details).toEqual({ reason: 'RATE_LIMITED', scope: 'IP' });
+      // 계속 막혀도 접근 기록은 키·창마다 한 번만 쓰고 나머지는 카운터로만 센다
+      const rateLimitedRows = () =>
+        prisma.accessLog.count({
+          where: {
+            userId: ACTOR_ID,
+            action: 'ADMIN_LOGIN_FAILED',
+            details: { path: ['reason'], equals: 'RATE_LIMITED' },
+          },
+        });
+      const logged = await rateLimitedRows();
+      for (let i = 0; i < 3; i += 1) {
+        await post('/api/admin/login', ip)
+          .send({
+            username: USERNAME,
+            password: WRONG_PASSWORD,
+            totp: wrongTotp(),
+          })
+          .expect(429);
+      }
+      expect(await rateLimitedRows()).toBe(logged);
+      expect(
+        (
+          await prisma.adminLoginThrottle.findFirst({
+            where: { key: { startsWith: 'ip:' } },
+          })
+        )?.attempts,
+      ).toBe(9);
       // 다른 IP는 영향 없음
       await login();
+    });
+
+    it('limits IPv6 clients per /64 prefix (rotating addresses inside one /64 does not help)', async () => {
+      for (let i = 0; i < 5; i += 1) {
+        await post('/api/admin/login', `2001:db8:77:1::${(i + 1).toString(16)}`)
+          .send({
+            username: USERNAME,
+            password: WRONG_PASSWORD,
+            totp: wrongTotp(),
+          })
+          .expect(401);
+      }
+      await post('/api/admin/login', '2001:db8:77:1:ffff:ffff:ffff:fff0')
+        .send({
+          username: USERNAME,
+          password: PASSWORD,
+          totp: await freshTotp(),
+        })
+        .expect(429);
+      await login('2001:db8:77:2::1');
     });
 
     it('locks every IP after too many failures overall (distributed guessing), success resets', async () => {
       for (let i = 0; i < 20; i += 1) {
         await post('/api/admin/login')
-          .send({ username: USERNAME, password: WRONG_PASSWORD })
+          .send({
+            username: USERNAME,
+            password: WRONG_PASSWORD,
+            totp: wrongTotp(),
+          })
           .expect(401);
       }
       const locked = await post('/api/admin/login')
-        .send({ username: USERNAME, password: PASSWORD })
+        .send({
+          username: USERNAME,
+          password: PASSWORD,
+          totp: await freshTotp(),
+        })
         .expect(429);
       expect(locked.body.code).toBe('ADMIN_LOGIN_RATE_LIMITED');
+      expect((await lastLoginFailure())?.details).toEqual({
+        reason: 'RATE_LIMITED',
+        scope: 'GLOBAL',
+      });
       // 창이 끝나면(DB 카운터 기준) 다시 된다
       await prisma.adminLoginThrottle.updateMany({
         data: { windowStartedAt: new Date(Date.now() - 16 * 60_000) },
@@ -262,9 +417,120 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
       ).toBe(0);
     });
 
+    it('a browser that logged in before (device cookie) is exempt from the global lock, with its own 5-attempt limit', async () => {
+      const { device } = await loginFull();
+      // 공격자가 장치 쿠키 없이 전체 잠금을 건다
+      for (let i = 0; i < 20; i += 1) {
+        await post('/api/admin/login')
+          .send({
+            username: USERNAME,
+            password: WRONG_PASSWORD,
+            totp: wrongTotp(),
+          })
+          .expect(401);
+      }
+      await post('/api/admin/login')
+        .send({
+          username: USERNAME,
+          password: PASSWORD,
+          totp: await freshTotp(),
+        })
+        .expect(429);
+      // 운영자 브라우저(장치 쿠키)는 그대로 로그인된다 — 같은 IP를 써도
+      await loginFull(nextIp(), device);
+      // 위조·변조한 장치 쿠키는 장치로 보지 않는다(전체 잠금이 그대로 걸린다)
+      const tampered = `${device.slice(0, -2)}xx`;
+      await post('/api/admin/login')
+        .set('Cookie', tampered)
+        .send({
+          username: USERNAME,
+          password: PASSWORD,
+          totp: await freshTotp(),
+        })
+        .expect(429);
+      // 장치 자체도 15분 5번(맞는 자격 증명이어도 6번째는 429)
+      await prisma.adminLoginThrottle.deleteMany();
+      for (let i = 0; i < 5; i += 1) {
+        await post('/api/admin/login')
+          .set('Cookie', device)
+          .send({
+            username: USERNAME,
+            password: WRONG_PASSWORD,
+            totp: wrongTotp(),
+          })
+          .expect(401);
+      }
+      expect((await lastLoginFailure())?.details).toEqual({
+        reason: 'BAD_CREDENTIALS',
+        device: 'TRUSTED',
+      });
+      const deviceBlocked = await post('/api/admin/login')
+        .set('Cookie', device)
+        .send({
+          username: USERNAME,
+          password: PASSWORD,
+          totp: await freshTotp(),
+        })
+        .expect(429);
+      expect(deviceBlocked.body.code).toBe('ADMIN_LOGIN_RATE_LIMITED');
+      expect((await lastLoginFailure())?.details).toEqual({
+        reason: 'RATE_LIMITED',
+        scope: 'DEVICE',
+      });
+      // 장치 쿠키 없는 다른 IP는 장치 카운터와 무관
+      await login();
+    });
+
+    it('device cookies are signed (90 days, __Host-, HttpOnly, Strict) and die when credentials rotate', async () => {
+      const res = await post('/api/admin/login')
+        .send({
+          username: USERNAME,
+          password: PASSWORD,
+          totp: await freshTotp(),
+        })
+        .expect(200);
+      const line = (res.headers['set-cookie'] as unknown as string[]).find(
+        (c) => c.startsWith(`${DEVICE_COOKIE}=`),
+      );
+      expect(line).toMatch(/Max-Age=7776000/);
+      expect(line).toMatch(/HttpOnly/);
+      expect(line).toMatch(/Secure/);
+      expect(line).toMatch(/SameSite=Strict/);
+      expect(line).toMatch(/Path=\//);
+      const device = cookieOf(res, DEVICE_COOKIE);
+      const original = adminConfig.credentialTag;
+      Object.assign(adminConfig, { credentialTag: 'f'.repeat(64) });
+      try {
+        for (let i = 0; i < 20; i += 1) {
+          await post('/api/admin/login')
+            .send({
+              username: USERNAME,
+              password: WRONG_PASSWORD,
+              totp: wrongTotp(),
+            })
+            .expect(401);
+        }
+        // 지문이 바뀌면 예전 장치 쿠키는 무효라 전체 잠금에 걸린다
+        await post('/api/admin/login')
+          .set('Cookie', device)
+          .send({
+            username: USERNAME,
+            password: PASSWORD,
+            totp: await freshTotp(),
+          })
+          .expect(429);
+      } finally {
+        Object.assign(adminConfig, { credentialTag: original });
+      }
+    });
+
     it('issues a __Host- cookie (HttpOnly, Secure, SameSite=Strict, Path=/, 8h) and records ADMIN_LOGIN', async () => {
       const res = await post('/api/admin/login')
-        .send({ username: USERNAME, password: PASSWORD })
+        .send({
+          username: USERNAME,
+          password: PASSWORD,
+          totp: await freshTotp(),
+        })
         .expect(200);
       expect(res.body).toEqual({
         authenticated: true,
@@ -373,6 +639,7 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
           r: 8,
           p: 1,
         }),
+        totpSecret: TOTP_SECRET,
       });
       const original = adminConfig.credentialTag;
       // 같은 인스턴스(앱이 주입받은 것)의 지문만 바꿔 env 교체를 흉내 낸다
@@ -514,12 +781,29 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
             query: 'NICKNAME',
             sort: 'createdAt',
             page: 'FIRST',
+            userIds: expect.arrayContaining([alice]),
           },
-          { count: 1, query: 'USER_ID', sort: 'createdAt', page: 'FIRST' },
-          { count: 1, query: 'NONE', sort: 'lastLoginAt', page: 'NEXT' },
+          {
+            count: 1,
+            query: 'USER_ID',
+            sort: 'createdAt',
+            page: 'FIRST',
+            userIds: [carol],
+          },
+          {
+            count: 1,
+            query: 'NONE',
+            sort: 'lastLoginAt',
+            page: 'NEXT',
+            userIds: [expect.any(String)],
+          },
         ]),
       );
       expect(JSON.stringify(logs)).not.toContain('앨리스');
+      // 어떤 회원을 봤는지(반환한 ID 목록)
+      expect(logs.map((l) => l.details)).toContainEqual(
+        expect.objectContaining({ query: 'USER_ID', userIds: [carol] }),
+      );
     });
 
     it('shows detail with counts only — no payment contents, amounts or merchants — and records ADMIN_VIEW_USER', async () => {
@@ -571,40 +855,91 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
         },
       });
       expect(row).not.toBeNull();
-      await get(`/api/admin/users/${randomUUID()}`)
+      const missing = randomUUID();
+      await get(`/api/admin/users/${missing}`)
         .set('Cookie', cookie)
         .expect(404);
       await get('/api/admin/users/not-a-uuid')
         .set('Cookie', cookie)
         .expect(404);
+      // 없는 회원 조회도 기록한다
+      expect(
+        await prisma.accessLog.findFirst({
+          where: {
+            userId: ACTOR_ID,
+            action: 'ADMIN_VIEW_USER',
+            resourceId: missing,
+          },
+        }),
+      ).toMatchObject({ details: { result: 'NOT_FOUND' } });
+      expect(
+        await prisma.accessLog.count({
+          where: {
+            userId: ACTOR_ID,
+            action: 'ADMIN_VIEW_USER',
+            resourceId: null,
+            details: { path: ['result'], equals: 'NOT_FOUND' },
+          },
+        }),
+      ).toBeGreaterThanOrEqual(1);
     });
 
-    it('withdraws via the existing deletion pipeline: nickname must match, reason required, CSRF, access log', async () => {
+    it('withdraws via the existing deletion pipeline: nickname, reason, step-up (password + fresh TOTP), CSRF, access log for every attempt', async () => {
       const nickname = (
         await prisma.user.findUniqueOrThrow({ where: { id: bob } })
       ).nickname;
-      await post(`/api/admin/users/${bob}/withdraw`)
-        .set('Cookie', cookie)
-        .send({ reason: REASON, confirmNickname: `${nickname}x` })
+      const withdraw = (body: Record<string, unknown>, ip = nextIp()) =>
+        post(`/api/admin/users/${bob}/withdraw`, ip)
+          .set('Cookie', cookie)
+          .send(body);
+      const full = async (extra: Record<string, unknown> = {}) => ({
+        reason: REASON,
+        confirmNickname: nickname,
+        password: PASSWORD,
+        totp: await freshTotp(),
+        ...extra,
+      });
+      const lastWithdrawResult = async () =>
+        (
+          (
+            await prisma.accessLog.findFirst({
+              where: { userId: ACTOR_ID, action: 'ADMIN_WITHDRAW_USER' },
+              orderBy: { at: 'desc' },
+            })
+          )?.details as { result?: string } | undefined
+        )?.result;
+
+      await withdraw(await full({ confirmNickname: `${nickname}x` }))
         .expect(400)
         .expect((res) => expect(res.body.code).toBe('ADMIN_CONFIRM_MISMATCH'));
-      await post(`/api/admin/users/${bob}/withdraw`)
-        .set('Cookie', cookie)
-        .send({ reason: ' ', confirmNickname: nickname })
+      expect(await lastWithdrawResult()).toBe('ADMIN_CONFIRM_MISMATCH');
+      await withdraw(await full({ reason: ' ' }))
         .expect(400)
         .expect((res) => expect(res.body.code).toBe('VALIDATION_FAILED'));
+      // 재인증 필드 없으면 400
+      await withdraw({ reason: REASON, confirmNickname: nickname }).expect(400);
+      // 비밀번호가 틀리거나 인증 코드가 틀리면 403(같은 문구), 기록에는 이유
+      const badPw = await withdraw(
+        await full({ password: WRONG_PASSWORD }),
+      ).expect(403);
+      expect(badPw.body).toMatchObject({
+        code: 'ADMIN_STEP_UP_FAILED',
+        message: '비밀번호 또는 인증 코드가 맞지 않아요',
+      });
+      expect(await lastWithdrawResult()).toBe(
+        'ADMIN_STEP_UP_FAILED:BAD_CREDENTIALS',
+      );
+      await withdraw(await full({ totp: wrongTotp() })).expect(403);
+      expect(await lastWithdrawResult()).toBe('ADMIN_STEP_UP_FAILED:BAD_TOTP');
       await request(server())
         .post(`/api/admin/users/${bob}/withdraw`)
         .set('X-Forwarded-For', nextIp())
         .set('Cookie', cookie)
-        .send({ reason: REASON, confirmNickname: nickname })
+        .send(await full())
         .expect(403);
       expect(await prisma.user.count({ where: { id: bob } })).toBe(1);
 
-      const ok = await post(`/api/admin/users/${bob}/withdraw`)
-        .set('Cookie', cookie)
-        .send({ reason: REASON, confirmNickname: nickname })
-        .expect(200);
+      const ok = await withdraw(await full()).expect(200);
       const result = ok.body as AdminWithdrawUserResponse;
       expect(result).toMatchObject({
         status: 'DELETED',
@@ -629,6 +964,7 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
           userId: ACTOR_ID,
           action: 'ADMIN_WITHDRAW_USER',
           resourceId: bob,
+          details: { path: ['result'], equals: 'DELETED' },
         },
       });
       expect(log?.details).toEqual({
@@ -637,10 +973,78 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
         accountDeletionId: result.accountDeletionId,
       });
 
-      await post(`/api/admin/users/${bob}/withdraw`)
+      await withdraw(await full()).expect(404);
+      expect(await lastWithdrawResult()).toBe('NOT_FOUND');
+    });
+
+    it('step-up never accepts a TOTP code that was already used (e.g. at login)', async () => {
+      const victim = await prisma.user.create({
+        data: { kakaoId: `test-${randomUUID()}`, nickname: '재사용확인' },
+      });
+      fx.userIds.push(victim.id);
+      const code = await freshTotp();
+      const session = (
+        await post('/api/admin/login')
+          .send({ username: USERNAME, password: PASSWORD, totp: code })
+          .expect(200)
+      ).headers['set-cookie'] as unknown as string[];
+      const sessionCookie = session
+        .find((c) => c.startsWith(`${COOKIE}=`))!
+        .split(';')[0];
+      await post(`/api/admin/users/${victim.id}/withdraw`)
+        .set('Cookie', sessionCookie)
+        .send({
+          reason: REASON,
+          confirmNickname: '재사용확인',
+          password: PASSWORD,
+          totp: code,
+        })
+        .expect(403)
+        .expect((res) => expect(res.body.code).toBe('ADMIN_STEP_UP_FAILED'));
+      const row = await prisma.accessLog.findFirst({
+        where: {
+          userId: ACTOR_ID,
+          action: 'ADMIN_WITHDRAW_USER',
+          resourceId: victim.id,
+        },
+        orderBy: { at: 'desc' },
+      });
+      expect((row?.details as { result: string }).result).toBe(
+        'ADMIN_STEP_UP_FAILED:TOTP_REPLAY',
+      );
+      expect(await prisma.user.count({ where: { id: victim.id } })).toBe(1);
+      // 이 세션은 members 테스트의 cookie를 폐기했으므로 이후 테스트를 위해 다시 쓴다
+      cookie = sessionCookie;
+    });
+
+    it('limits step-up attempts per admin session (5 per 15 min → 429)', async () => {
+      const victim = await prisma.user.create({
+        data: { kakaoId: `test-${randomUUID()}`, nickname: '한도확인' },
+      });
+      fx.userIds.push(victim.id);
+      for (let i = 0; i < 5; i += 1) {
+        await post(`/api/admin/users/${victim.id}/withdraw`)
+          .set('Cookie', cookie)
+          .send({
+            reason: REASON,
+            confirmNickname: '한도확인',
+            password: WRONG_PASSWORD,
+            totp: totpNow(),
+          })
+          .expect(403);
+      }
+      const blocked = await post(`/api/admin/users/${victim.id}/withdraw`)
         .set('Cookie', cookie)
-        .send({ reason: REASON, confirmNickname: nickname })
-        .expect(404);
+        .send({
+          reason: REASON,
+          confirmNickname: '한도확인',
+          password: PASSWORD,
+          totp: await freshTotp(),
+        })
+        .expect(429);
+      expect(blocked.body.code).toBe('ADMIN_STEP_UP_RATE_LIMITED');
+      expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
+      expect(await prisma.user.count({ where: { id: victim.id } })).toBe(1);
     });
 
     it('fails closed when the access log cannot be written (no data without a record)', async () => {
@@ -841,9 +1245,9 @@ describe.skipIf(!databaseUrl)('Admin console (e2e, real DB)', () => {
 
   describe('retention', () => {
     it('purge deletes finished admin sessions and stale throttle rows, keeps live sessions', async () => {
-      const live = await login();
       const ended = await login();
       await post('/api/admin/logout').set('Cookie', ended).expect(204);
+      const live = await login();
       await prisma.adminLoginThrottle.create({
         data: {
           key: 'ip:stale',

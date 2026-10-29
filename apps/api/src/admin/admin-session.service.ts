@@ -108,6 +108,15 @@ export class AdminSessionService {
     if (res) this.clearCookie(res);
   }
 
+  /** 아직 유효한 관리자 세션을 모두 폐기한다(새로 로그인하면 다른 브라우저의 세션은 끝난다) */
+  async revokeAll(now = new Date()): Promise<number> {
+    const { count } = await this.prisma.adminSession.updateMany({
+      where: { revokedAt: null },
+      data: { revokedAt: now },
+    });
+    return count;
+  }
+
   clearCookie(res: Response) {
     res.clearCookie(ADMIN_COOKIE, COOKIE_OPTIONS);
   }

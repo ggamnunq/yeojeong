@@ -14,6 +14,9 @@ const SENSITIVE = [
   // 관리자 로그인(src/admin) 아이디. 비밀번호는 위 password로 가린다
   'username',
   'passwordHash',
+  // 관리자 2단계 인증 코드·시크릿
+  'totp',
+  'totpSecret',
   'encryptedPassword',
   'encryptedCardPassword',
   'connectedId',

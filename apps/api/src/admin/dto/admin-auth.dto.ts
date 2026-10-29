@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import type { AdminLoginRequest, AdminSessionView } from '@yeojeong/shared';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class AdminLoginDto implements AdminLoginRequest {
   @ApiProperty({
@@ -20,6 +20,14 @@ export class AdminLoginDto implements AdminLoginRequest {
   @MinLength(1, { message: '비밀번호를 입력해 주세요' })
   @MaxLength(256, { message: '비밀번호가 너무 길어요' })
   password: string;
+
+  @ApiProperty({
+    pattern: '^\\d{6}$',
+    description: '인증 앱의 6자리 코드(TOTP). 한 번 쓴 코드는 다시 받지 않는다',
+  })
+  @IsString({ message: '인증 코드 6자리를 입력해 주세요' })
+  @Matches(/^\d{6}$/, { message: '인증 코드 6자리를 입력해 주세요' })
+  totp: string;
 }
 
 export class AdminSessionViewDto implements AdminSessionView {

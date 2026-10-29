@@ -5,10 +5,21 @@ import { enumObject } from '../enum.js';
 // 시각 = ISO 8601 KST("2026-11-13T14:10:00+09:00"), 날짜 = "YYYY-MM-DD"(KST).
 
 /**
- * 관리자 로그인 실패 제한. 같은 IP에서 WINDOW_SECONDS 안에 IP_ATTEMPTS번 넘게 시도하면 429,
- * 서비스 전체에서 성공 없이 GLOBAL_ATTEMPTS번 넘게 시도하면 그 창이 끝날 때까지 모든 IP가 429(잠금). 성공하면 둘 다 0으로 돌아간다.
+ * 관리자 로그인 시도 제한(WINDOW_SECONDS 고정 창).
+ * - 장치 쿠키(로그인에 성공했던 브라우저, 90일)가 없는 요청: 같은 IP(IPv6는 /64)에서 IP_ATTEMPTS번, 서비스 전체에서 성공 없이 GLOBAL_ATTEMPTS번을 넘으면 429
+ * - 유효한 장치 쿠키가 있는 요청: 전체 잠금에서 빠지고 그 장치만 DEVICE_ATTEMPTS번(운영자가 전체 잠금으로 무기한 막히지 않게 — OWASP device cookie)
+ * 성공하면 그 요청의 카운터가 0으로 돌아간다.
  */
-export const ADMIN_LOGIN_LIMIT = { IP_ATTEMPTS: 5, GLOBAL_ATTEMPTS: 20, WINDOW_SECONDS: 900 } as const;
+export const ADMIN_LOGIN_LIMIT = {
+  IP_ATTEMPTS: 5,
+  GLOBAL_ATTEMPTS: 20,
+  DEVICE_ATTEMPTS: 5,
+  WINDOW_SECONDS: 900,
+} as const;
+/** 파괴적 조치(탈퇴 처리)의 재인증(비밀번호 + 인증 코드) 시도 제한: 관리자 세션마다 WINDOW_SECONDS에 ATTEMPTS번 */
+export const ADMIN_STEP_UP_LIMIT = { ATTEMPTS: 5, WINDOW_SECONDS: 900 } as const;
+/** 2단계 인증(TOTP, RFC 6238): 30초 · 6자리 · 앞뒤 1창 허용, 같은 코드(창) 재사용 금지 */
+export const ADMIN_TOTP = { DIGITS: 6, PERIOD_SECONDS: 30 } as const;
 /** 관리자 세션 수명: 마지막 요청 뒤 IDLE_SECONDS(유휴), 로그인 뒤 ABSOLUTE_SECONDS(절대) 중 먼저 오는 때 */
 export const ADMIN_SESSION_TTL = { IDLE_SECONDS: 1800, ABSOLUTE_SECONDS: 28_800 } as const;
 /** 회원 목록 한 페이지 기본·최대 건수 */
@@ -26,6 +37,8 @@ export const ADMIN_CODEF_TOP_USERS = 10;
 export interface AdminLoginRequest {
   username: string;
   password: string;
+  /** 인증 앱의 6자리 코드(TOTP). 한 번 쓴 코드는 다시 받지 않는다 */
+  totp: string;
 }
 
 /** POST /api/admin/login 200 · GET /api/admin/session 200 */
@@ -141,6 +154,10 @@ export interface AdminWithdrawUserRequest {
   reason: string;
   /** 확인용으로 다시 입력한 닉네임. 회원 닉네임과 정확히 같아야 한다 */
   confirmNickname: string;
+  /** 재인증(step-up): 관리자 비밀번호 */
+  password: string;
+  /** 재인증(step-up): 지금 인증 앱의 6자리 코드(로그인 때 쓴 코드는 다시 쓸 수 없다) */
+  totp: string;
 }
 
 /** POST /api/admin/users/:userId/withdraw 200. 서비스 내 탈퇴와 같은 파이프라인(AccountDeletionService, 경로 SUPPORT) */

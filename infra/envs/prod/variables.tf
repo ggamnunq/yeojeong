@@ -141,7 +141,7 @@ variable "kakao_app_id" {
 }
 
 variable "enable_admin" {
-  description = "운영자 관리자 페이지(/admin). true면 Secret Manager yeojeong-admin-username·yeojeong-admin-password-hash를 ADMIN_USERNAME·ADMIN_PASSWORD_HASH로 연결한다(시크릿이 먼저 있어야 한다). 끄면(기본) /api/admin/* 전체가 404"
+  description = "운영자 관리자 페이지(/admin). true면 Secret Manager yeojeong-admin-username·yeojeong-admin-password-hash·yeojeong-admin-totp-secret을 ADMIN_USERNAME·ADMIN_PASSWORD_HASH·ADMIN_TOTP_SECRET으로 연결한다(시크릿 셋이 먼저 있어야 한다). 끄면(기본) /api/admin/* 전체가 404"
   type        = bool
   default     = false
 }

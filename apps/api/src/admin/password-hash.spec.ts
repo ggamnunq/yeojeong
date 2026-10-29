@@ -21,9 +21,19 @@ describe('admin password hash (scrypt)', () => {
     expect(await verifyPassword('', parsed!)).toBe(false);
   });
 
-  it('uses N = 2^15 by default', async () => {
-    expect(await hashPassword('x'.repeat(12))).toMatch(
-      /^scrypt\$32768\$8\$1\$/,
+  it('uses N = 2^17 by default and still verifies older N = 2^15 hashes (parameters live in the hash)', async () => {
+    const strong = await hashPassword('x'.repeat(12));
+    expect(strong).toMatch(/^scrypt\$131072\$8\$1\$/);
+    expect(await verifyPassword('x'.repeat(12), parseScryptHash(strong)!)).toBe(
+      true,
+    );
+    const legacy = await hashPassword('y'.repeat(12), {
+      N: 32_768,
+      r: 8,
+      p: 1,
+    });
+    expect(await verifyPassword('y'.repeat(12), parseScryptHash(legacy)!)).toBe(
+      true,
     );
   });
 

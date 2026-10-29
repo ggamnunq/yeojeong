@@ -1,3 +1,5 @@
+import { ADMIN_TOTP } from '@yeojeong/shared'
+
 // 관리자 화면 표시 형식. 서버 시각은 ISO 8601(KST 오프셋)이고, 화면은 KST로 보여 준다.
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000
@@ -58,3 +60,8 @@ export function formatWait(seconds: number): string {
 export function cardImportLabel({ allowlisted, enabled }: { allowlisted: boolean; enabled: boolean }): string {
   return `${allowlisted ? '허용 목록' : '목록 밖'} · ${enabled ? '켜짐' : '꺼짐'}`
 }
+
+/** 인증 코드(TOTP) 입력값: 숫자만, 6자리까지 */
+export const totpDigits = (value: string) => value.replace(/\D/g, '').slice(0, ADMIN_TOTP.DIGITS)
+/** 인증 코드를 6자리 다 넣었는지 */
+export const isTotpComplete = (value: string) => value.length === ADMIN_TOTP.DIGITS

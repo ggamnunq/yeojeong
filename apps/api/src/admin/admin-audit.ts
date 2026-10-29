@@ -5,6 +5,7 @@ import { AuditService } from '../audit/index.js';
 import { getRequestId } from '../common/logging/request-id.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AdminConfig } from './admin-config.js';
+import { rateLimitAddress } from './admin-login-throttle.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -12,9 +13,13 @@ export interface AdminAuditEntry {
   resourceType: AuditResourceType;
   /** 대상 회원 ID 등. UUID가 아니면 NULL */
   resourceId?: string | null;
-  /** 건수·코드 값·탈퇴 처리 사유만. 비밀번호·아이디·검색어는 넣지 않는다 */
-  details?: Readonly<Record<string, number | string>>;
+  /** 건수·코드 값·회원 ID 목록·탈퇴 처리 사유만. 비밀번호·아이디·인증 코드·검색어는 넣지 않는다 */
+  details?: AdminAuditDetails;
 }
+
+export type AdminAuditDetails = Readonly<
+  Record<string, number | string | readonly string[]>
+>;
 
 /**
  * 관리자 열람·조치 접근 기록(access_logs, 1년 보존 — 개인정보취급자 접속 기록).
@@ -32,9 +37,9 @@ export class AdminAuditLog {
     private readonly admin: AdminConfig,
   ) {}
 
-  /** IP HMAC(로그인 시도 제한 키에도 쓴다) */
-  ipHash(req: Request): string | null {
-    return this.audit.hashIp(req.ip);
+  /** 시도 제한 키용 IP HMAC(IPv6는 /64 접두어로 자른 뒤 — rateLimitAddress) */
+  rateLimitIpHash(req: Request): string | null {
+    return this.audit.hashIp(rateLimitAddress(req.ip));
   }
 
   async record(
@@ -72,10 +77,7 @@ export class AdminAuditLog {
   }
 
   /** 조치 결과를 같은 행에 채운다(탈퇴 처리처럼 시도를 먼저 기록한 경우) */
-  async finish(
-    id: string,
-    details: Readonly<Record<string, number | string>>,
-  ): Promise<void> {
+  async finish(id: string, details: AdminAuditDetails): Promise<void> {
     await this.prisma.accessLog.update({
       where: { id },
       data: { details: { ...details } },

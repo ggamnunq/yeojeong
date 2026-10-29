@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { server } from '../../mocks/server'
 import { api, mockError } from '../../mocks/utils'
 import { renderApp } from '../../test/render'
-import { ADMIN_MOCK_CREDENTIALS, ADMIN_MOCK_USER, resetAdminMock, signInAdminMock } from './mocks'
+import { ADMIN_MOCK_CREDENTIALS, ADMIN_MOCK_TOTP_CODES, ADMIN_MOCK_USER, resetAdminMock, signInAdminMock } from './mocks'
 import { formatWait } from './format'
 import { safeAdminReturnTo } from './paths'
 
@@ -12,10 +12,28 @@ afterEach(() => resetAdminMock())
 type Router = ReturnType<typeof renderApp>['router']
 const location = (router: Router) => `${router.state.location.pathname}${router.state.location.search}`
 
-async function login(username: string, password: string) {
+const FAILED = '아이디, 비밀번호 또는 인증 코드가 맞지 않아요'
+const [CODE, CODE2] = ADMIN_MOCK_TOTP_CODES
+
+async function login(username: string, password: string, totp: string = CODE) {
   fireEvent.change(await screen.findByLabelText('아이디'), { target: { value: username } })
   fireEvent.change(screen.getByLabelText('비밀번호'), { target: { value: password } })
+  fireEvent.change(screen.getByLabelText('인증 코드'), { target: { value: totp } })
   fireEvent.click(screen.getByRole('button', { name: '로그인' }))
+}
+
+/** 탈퇴 폼 채우기(사유·닉네임·재인증) */
+function fillWithdraw(nickname: string, step: { password?: string; totp?: string } = {}) {
+  fireEvent.change(screen.getByLabelText('사유'), { target: { value: '고객센터 요청 처리' } })
+  fireEvent.change(screen.getByLabelText('닉네임 다시 입력'), { target: { value: nickname } })
+  fireEvent.change(screen.getByLabelText('관리자 비밀번호'), { target: { value: step.password ?? ADMIN_MOCK_CREDENTIALS.password } })
+  fireEvent.change(screen.getByLabelText('인증 코드'), { target: { value: step.totp ?? CODE2 } })
+}
+
+async function confirmWithdraw() {
+  fireEvent.click(screen.getByRole('button', { name: '탈퇴 처리' }))
+  const dialog = await screen.findByRole('alertdialog')
+  fireEvent.click(within(dialog).getByRole('button', { name: '탈퇴 처리' }))
 }
 
 const userRows = () => within(screen.getByRole('region', { name: '회원 목록 표' })).getAllByRole('row').slice(1)
@@ -28,19 +46,52 @@ describe('관리자 로그인 /admin/login', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'CODEF 현황' })).toBeTruthy()
   })
 
-  it('틀리면 어느 쪽이 틀렸는지 말하지 않는 일반 문구 + 비밀번호만 비운다', async () => {
+  it('틀리면 무엇이 틀렸는지 말하지 않는 일반 문구 + 비밀번호·인증 코드를 비운다', async () => {
     renderApp('/admin/login')
     await login('admin', 'wrong-password')
-    expect((await screen.findByRole('alert')).textContent).toBe('아이디 또는 비밀번호가 맞지 않아요')
+    expect((await screen.findByRole('alert')).textContent).toBe(FAILED)
     expect((screen.getByLabelText('아이디') as HTMLInputElement).value).toBe('admin')
     expect((screen.getByLabelText('비밀번호') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('인증 코드') as HTMLInputElement).value).toBe('')
+  })
+
+  it('인증 코드가 틀려도 같은 일반 문구', async () => {
+    renderApp('/admin/login')
+    await login(ADMIN_MOCK_CREDENTIALS.username, ADMIN_MOCK_CREDENTIALS.password, '000000')
+    expect((await screen.findByRole('alert')).textContent).toBe(FAILED)
+  })
+
+  it('인증 코드는 숫자 6자리만 받고, 6자리가 되어야 로그인 버튼이 켜진다', async () => {
+    renderApp('/admin/login')
+    const submit = () => screen.getByRole('button', { name: '로그인' }) as HTMLButtonElement
+    fireEvent.change(await screen.findByLabelText('아이디'), { target: { value: 'admin' } })
+    fireEvent.change(screen.getByLabelText('비밀번호'), { target: { value: 'pw' } })
+    const code = screen.getByLabelText('인증 코드') as HTMLInputElement
+    expect(code.getAttribute('autocomplete')).toBe('one-time-code')
+    expect(code.getAttribute('inputmode')).toBe('numeric')
+    fireEvent.change(code, { target: { value: '12a3 45' } })
+    expect(code.value).toBe('12345')
+    expect(submit().disabled).toBe(true)
+    fireEvent.change(code, { target: { value: '1234567' } })
+    expect(code.value).toBe('123456')
+    expect(submit().disabled).toBe(false)
+  })
+
+  it('한 번 쓴 인증 코드로는 다시 로그인할 수 없다', async () => {
+    const { router } = renderApp('/admin/login')
+    await login(ADMIN_MOCK_CREDENTIALS.username, ADMIN_MOCK_CREDENTIALS.password)
+    await waitFor(() => expect(router.state.location.pathname).toBe('/admin/users'))
+    fireEvent.click(await screen.findByRole('button', { name: '로그아웃' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/admin/login'))
+    await login(ADMIN_MOCK_CREDENTIALS.username, ADMIN_MOCK_CREDENTIALS.password, CODE)
+    expect((await screen.findByRole('alert')).textContent).toBe(FAILED)
   })
 
   it('여러 번 틀리면 429 문구와 남은 시간', async () => {
     renderApp('/admin/login')
     for (let i = 0; i < 5; i += 1) {
       await login('admin', `wrong-${i}`)
-      await screen.findByText('아이디 또는 비밀번호가 맞지 않아요')
+      await screen.findByText(FAILED)
     }
     await login(ADMIN_MOCK_CREDENTIALS.username, ADMIN_MOCK_CREDENTIALS.password)
     expect((await screen.findByText(/로그인 시도가 너무 많아요/)).textContent).toContain('(15분 후)')
@@ -161,7 +212,7 @@ describe('회원 상세 /admin/users/:userId', () => {
     expect(await screen.findByText('회원을 찾을 수 없어요')).toBeTruthy()
   })
 
-  it('탈퇴 처리: 사유·닉네임이 맞아야 버튼이 켜지고 → 확인 다이얼로그 → 목록 + 안내', async () => {
+  it('탈퇴 처리: 사유·닉네임·재인증(비밀번호 + 인증 코드)이 있어야 버튼이 켜지고 → 확인 다이얼로그 → 목록 + 안내', async () => {
     signInAdminMock()
     const { router } = renderApp(`/admin/users/${ADMIN_MOCK_USER.taehyeon}`)
     await screen.findByRole('heading', { level: 1, name: '태현' })
@@ -171,6 +222,13 @@ describe('회원 상세 /admin/users/:userId', () => {
     fireEvent.change(screen.getByLabelText('닉네임 다시 입력'), { target: { value: '태' } })
     expect(submit().disabled).toBe(true)
     fireEvent.change(screen.getByLabelText('닉네임 다시 입력'), { target: { value: '태현' } })
+    // 재인증 없이는 아직 꺼져 있다
+    expect(submit().disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('관리자 비밀번호'), { target: { value: ADMIN_MOCK_CREDENTIALS.password } })
+    expect(submit().disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('인증 코드'), { target: { value: '13579' } })
+    expect(submit().disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('인증 코드'), { target: { value: CODE2 } })
     expect(submit().disabled).toBe(false)
     fireEvent.click(submit())
     const dialog = await screen.findByRole('alertdialog', { name: '태현 님을 탈퇴 처리할까요?' })
@@ -186,13 +244,41 @@ describe('회원 상세 /admin/users/:userId', () => {
     server.use(api.post<never>('/api/admin/users/:userId/withdraw', () => mockError('ADMIN_CONFIRM_MISMATCH', 400)))
     renderApp(`/admin/users/${ADMIN_MOCK_USER.taehyeon}`)
     await screen.findByRole('heading', { level: 1, name: '태현' })
-    fireEvent.change(screen.getByLabelText('사유'), { target: { value: '고객센터 요청 처리' } })
-    fireEvent.change(screen.getByLabelText('닉네임 다시 입력'), { target: { value: '태현' } })
-    fireEvent.click(screen.getByRole('button', { name: '탈퇴 처리' }))
-    const dialog = await screen.findByRole('alertdialog')
-    fireEvent.click(within(dialog).getByRole('button', { name: '탈퇴 처리' }))
+    fillWithdraw('태현')
+    await confirmWithdraw()
     expect(await screen.findByText('닉네임이 맞지 않아요')).toBeTruthy()
     expect(screen.getByRole('heading', { level: 1, name: '태현' })).toBeTruthy()
+  })
+
+  it('재인증이 틀리면 입력 옆에 문구 + 인증 코드를 비우고, 회원은 그대로', async () => {
+    signInAdminMock()
+    renderApp(`/admin/users/${ADMIN_MOCK_USER.taehyeon}`)
+    await screen.findByRole('heading', { level: 1, name: '태현' })
+    fillWithdraw('태현', { password: 'wrong-password' })
+    await confirmWithdraw()
+    expect(await screen.findByText('비밀번호 또는 인증 코드가 맞지 않아요')).toBeTruthy()
+    expect((screen.getByLabelText('인증 코드') as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('button', { name: '탈퇴 처리' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole('heading', { level: 1, name: '태현' })).toBeTruthy()
+    // 틀린 코드도 같은 문구
+    fireEvent.change(screen.getByLabelText('관리자 비밀번호'), { target: { value: ADMIN_MOCK_CREDENTIALS.password } })
+    fireEvent.change(screen.getByLabelText('인증 코드'), { target: { value: '000000' } })
+    await confirmWithdraw()
+    expect(await screen.findByText('비밀번호 또는 인증 코드가 맞지 않아요')).toBeTruthy()
+  })
+
+  it('재인증을 여러 번 틀리면 429 문구와 남은 시간', async () => {
+    signInAdminMock()
+    server.use(
+      api.post<never>('/api/admin/users/:userId/withdraw', () =>
+        mockError('ADMIN_STEP_UP_RATE_LIMITED', 429, { retryAfter: new Date(Date.now() + 600_000).toISOString(), retryAfterSec: 600 }),
+      ),
+    )
+    renderApp(`/admin/users/${ADMIN_MOCK_USER.taehyeon}`)
+    await screen.findByRole('heading', { level: 1, name: '태현' })
+    fillWithdraw('태현')
+    await confirmWithdraw()
+    expect((await screen.findByText(/확인 시도가 너무 많아요/)).textContent).toContain('(10분 후)')
   })
 })
 

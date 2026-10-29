@@ -5,10 +5,14 @@ import { expect, test, type Page } from '@playwright/test'
 
 const USERNAME = 'admin'
 const PASSWORD = 'admin-password-123'
+// ADMIN_MOCK_TOTP_CODES: 한 번 쓴 코드는 다시 받지 않는다(로그인 [0], 탈퇴 재인증 [1])
+const LOGIN_CODE = '246810'
+const STEP_UP_CODE = '135791'
 
 async function login(page: Page) {
   await page.getByLabel('아이디').fill(USERNAME)
   await page.getByLabel('비밀번호', { exact: true }).fill(PASSWORD)
+  await page.getByLabel('인증 코드').fill(LOGIN_CODE)
   await page.getByRole('button', { name: '로그인' }).click()
 }
 
@@ -23,8 +27,9 @@ test.describe('관리자(데스크톱)', () => {
     // 틀린 비밀번호는 일반 문구
     await page.getByLabel('아이디').fill(USERNAME)
     await page.getByLabel('비밀번호', { exact: true }).fill('wrong-password')
+    await page.getByLabel('인증 코드').fill(LOGIN_CODE)
     await page.getByRole('button', { name: '로그인' }).click()
-    await expect(page.getByRole('alert')).toHaveText('아이디 또는 비밀번호가 맞지 않아요')
+    await expect(page.getByRole('alert')).toHaveText('아이디, 비밀번호 또는 인증 코드가 맞지 않아요')
 
     await login(page)
     await expect(page).toHaveURL(/\/admin\/users$/)
@@ -44,11 +49,23 @@ test.describe('관리자(데스크톱)', () => {
     await expect(page.getByRole('group', { name: '결제', exact: true })).toBeVisible()
     await expect(page.getByText(/₩|가맹점/)).toHaveCount(0)
 
-    // 탈퇴: 사유 + 닉네임 재입력 → 확인 다이얼로그
+    // 탈퇴: 사유 + 닉네임 재입력 + 재인증(비밀번호·인증 코드) → 확인 다이얼로그
     const withdraw = page.getByRole('button', { name: '탈퇴 처리' })
     await expect(withdraw).toBeDisabled()
     await page.getByLabel('사유').fill('고객센터 요청 처리')
     await page.getByLabel('닉네임 다시 입력').fill('태현')
+    await expect(withdraw).toBeDisabled()
+    await page.getByLabel('관리자 비밀번호').fill(PASSWORD)
+    // 로그인에 쓴 코드는 다시 쓸 수 없다
+    await page.getByLabel('인증 코드').fill(LOGIN_CODE)
+    await expect(withdraw).toBeEnabled()
+    await withdraw.click()
+    await page.getByRole('alertdialog').getByRole('button', { name: '탈퇴 처리' }).click()
+    await expect(page.getByText('비밀번호 또는 인증 코드가 맞지 않아요')).toBeVisible()
+    // 닫히는 다이얼로그(전환 중)의 버튼과 겹치지 않게 다 닫힐 때까지 기다린다
+    await expect(page.getByRole('alertdialog')).toHaveCount(0)
+    await expect(page.getByLabel('인증 코드')).toHaveValue('')
+    await page.getByLabel('인증 코드').fill(STEP_UP_CODE)
     await expect(withdraw).toBeEnabled()
     await withdraw.click()
     const dialog = page.getByRole('alertdialog', { name: '태현 님을 탈퇴 처리할까요?' })

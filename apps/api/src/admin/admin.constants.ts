@@ -12,3 +12,8 @@ export const ADMIN_TOUCH_INTERVAL_MS = 60_000;
 export const ADMIN_LOGIN_WINDOW_MS = ADMIN_LOGIN_LIMIT.WINDOW_SECONDS * 1000;
 /** 로그인 시도 제한 전체 카운터 키 */
 export const ADMIN_GLOBAL_THROTTLE_KEY = 'global';
+/**
+ * 관리자 장치 쿠키(admin-device.ts). 로그인에 성공한 브라우저 표시 — 전체 잠금에서 빠진다. HttpOnly · Secure · SameSite=Strict, 90일
+ */
+export const ADMIN_DEVICE_COOKIE = '__Host-yj_admin_dev';
+export const ADMIN_DEVICE_TTL_MS = 90 * 86_400_000;

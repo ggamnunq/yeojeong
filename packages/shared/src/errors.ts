@@ -215,12 +215,25 @@ export const CARD_IMPORT_ERRORS = {
 export const ADMIN_ERRORS = {
   /** 관리자 세션이 없거나 만료(유휴 30분·절대 8시간)·폐기됐다 */
   ADMIN_UNAUTHENTICATED: { status: 401, message: '관리자 로그인이 필요해요' },
-  /** 아이디·비밀번호가 맞지 않다(어느 쪽이 틀렸는지 알려 주지 않는다) */
-  ADMIN_LOGIN_FAILED: { status: 401, message: '아이디 또는 비밀번호가 맞지 않아요' },
+  /** 아이디·비밀번호·인증 코드(TOTP) 중 무엇이 틀렸는지 알려 주지 않는다 */
+  ADMIN_LOGIN_FAILED: {
+    status: 401,
+    message: '아이디, 비밀번호 또는 인증 코드가 맞지 않아요',
+  },
   /** 로그인 시도 제한(IP당·서비스 전체). details: { retryAfter(ISO UTC), retryAfterSec } + Retry-After */
   ADMIN_LOGIN_RATE_LIMITED: {
     status: 429,
     message: '로그인 시도가 너무 많아요. 잠시 후 다시 시도해 주세요',
+  },
+  /** 파괴적 조치의 재인증(비밀번호 + 인증 코드)이 맞지 않다 */
+  ADMIN_STEP_UP_FAILED: {
+    status: 403,
+    message: '비밀번호 또는 인증 코드가 맞지 않아요',
+  },
+  /** 재인증 시도 제한(세션당). details: { retryAfter(ISO UTC), retryAfterSec } + Retry-After */
+  ADMIN_STEP_UP_RATE_LIMITED: {
+    status: 429,
+    message: '확인 시도가 너무 많아요. 잠시 후 다시 시도해 주세요',
   },
   /** 탈퇴 처리 확인용 닉네임이 회원 닉네임과 다르다 */
   ADMIN_CONFIRM_MISMATCH: { status: 400, message: '닉네임이 맞지 않아요' },

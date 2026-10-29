@@ -4,8 +4,11 @@ import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 // 형식: scrypt$<N>$<r>$<p>$<salt base64url>$<hash base64url>
 // 이 파일은 node:crypto 말고는 import하지 않는다 — scripts/admin-hash.mjs가 빌드 없이(Node 타입 제거) 바로 불러 쓴다.
 
-/** 새 해시의 기본 비용: N = 2^15, r = 8, p = 1(메모리 약 32MB, 수십 ms) */
-export const SCRYPT_DEFAULTS = { N: 32_768, r: 8, p: 1 } as const;
+/**
+ * 새 해시의 기본 비용: N = 2^17, r = 8, p = 1(메모리 128MiB, 수백 ms — OWASP 권장 최소값).
+ * 비용은 해시 문자열 안에 들어 있어 예전 해시(N = 2^15 등)도 그 값으로 그대로 확인한다(하위 호환)
+ */
+export const SCRYPT_DEFAULTS = { N: 131_072, r: 8, p: 1 } as const;
 const KEY_LENGTH = 32;
 const SALT_LENGTH = 16;
 // env 값이 잘못돼도 부팅을 무겁게 하거나 요청마다 메모리를 크게 쓰지 않게 비용 범위를 묶는다
@@ -37,7 +40,7 @@ function scryptAsync(
         N: params.N,
         r: params.r,
         p: params.p,
-        // 128 · N · r 바이트 + 여유
+        // 필요 메모리 128 · N · r 바이트(N = 2^17이면 128MiB)의 2배까지 허용. 동시 실행은 AdminConfig의 ScryptGate가 1개로 묶는다
         maxmem: 256 * params.N * params.r,
       },
       (err, key) => (err ? reject(err) : resolve(key)),

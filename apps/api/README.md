@@ -140,7 +140,7 @@ documents() {}
 | `KAKAO_ADMIN_KEY`                         | Secret Manager(사용자가 gcloud로 생성, `yeojeong-kakao-admin-key`) | 선택. 없으면 연결 끊기 알림 404. Terraform `enable_kakao_unlink` |
 | `KAKAO_APP_ID`                            | Cloud Run 일반 env(`kakao_app_id`)     | 선택. 연결 끊기 알림 app_id 확인         |
 | `EXIM_API_KEY`                            | Secret Manager(사용자가 gcloud로 생성, `yeojeong-exim-api-key`) | 선택. 있으면 환율 소스 koreaexim+erapi(미고시 통화 TWD·VND·PHP는 ExchangeRate-API, 키 없음). Terraform `enable_exim_fx` |
-| `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`   | Secret Manager(사용자가 gcloud로 생성, `yeojeong-admin-username`·`yeojeong-admin-password-hash`) | 선택. 둘 다 있어야 관리자 페이지가 켜진다(없으면 `/api/admin/*` 404). 해시는 `pnpm --filter @yeojeong/api admin:hash`. Terraform `enable_admin`. `src/admin/README.md` |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `ADMIN_TOTP_SECRET` | Secret Manager(사용자가 gcloud로 생성, `yeojeong-admin-username`·`yeojeong-admin-password-hash`·`yeojeong-admin-totp-secret`) | 선택. 셋 다 있어야 관리자 페이지가 켜진다(없으면 `/api/admin/*` 404). 해시는 `admin:hash`, TOTP 시크릿은 `admin:totp`. Terraform `enable_admin`. `src/admin/README.md` |
 
 ### 내부 잡 인증
 

@@ -1,4 +1,4 @@
-import { ADMIN_WITHDRAW_REASON_LENGTH, type AdminUserDetail } from '@yeojeong/shared'
+import { ADMIN_TOTP, ADMIN_WITHDRAW_REASON_LENGTH, type AdminUserDetail } from '@yeojeong/shared'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { isApiError } from '../../../api'
@@ -6,7 +6,7 @@ import { LoadingScreen } from '../../../app/states'
 import { Button, Dialog, Input, Tag } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { EmptyRow, ErrorText, InfoList, Metric, Section, StatusTag, Table, TableBox, Td, Th } from '../components'
-import { cardImportLabel, CONSENT_LABEL, formatCount, formatDate, formatDateTime, maskedKakaoId, TRIP_STATUS_LABEL } from '../format'
+import { cardImportLabel, CONSENT_LABEL, formatCount, formatDate, formatDateTime, formatWait, isTotpComplete, maskedKakaoId, totpDigits, TRIP_STATUS_LABEL } from '../format'
 import { useAdminUser, useAdminWithdraw } from '../hooks'
 import { adminPaths } from '../paths'
 import type { AdminUsersNotice } from './AdminUsersPage'
@@ -148,10 +148,23 @@ function UserDetail({ user }: { user: AdminUserDetail }) {
   )
 }
 
-/** 탈퇴 처리: ① 사유 + 닉네임 다시 입력 → ② 확인 다이얼로그(Danger). 서비스 내 탈퇴와 같은 파이프라인 */
+/** 재인증 시도 제한 문구(남은 시간) */
+function stepUpLimitMessage(error: unknown): string | null {
+  if (!isApiError(error) || error.code !== 'ADMIN_STEP_UP_RATE_LIMITED') return null
+  const fromBody = error.details?.retryAfterSec
+  const seconds = typeof fromBody === 'number' ? fromBody : error.retryAfterSec
+  return seconds ? `${error.message} (${formatWait(Math.ceil(seconds))} 후)` : error.message
+}
+
+/**
+ * 탈퇴 처리: ① 사유 + 닉네임 다시 입력 + 재인증(관리자 비밀번호 + 지금 인증 코드) → ② 확인 다이얼로그(Danger).
+ * 서비스 내 탈퇴와 같은 파이프라인. 비밀번호는 이 컴포넌트 상태에만 두고(저장소 없음) 실패하면 인증 코드를 비운다
+ */
 function WithdrawSection({ user }: { user: AdminUserDetail }) {
   const [reason, setReason] = useState('')
   const [confirmNickname, setConfirmNickname] = useState('')
+  const [password, setPassword] = useState('')
+  const [totp, setTotp] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const withdraw = useAdminWithdraw(user.id)
   const navigate = useNavigate()
@@ -160,16 +173,23 @@ function WithdrawSection({ user }: { user: AdminUserDetail }) {
   const reasonOk = reasonLength >= ADMIN_WITHDRAW_REASON_LENGTH.MIN && reasonLength <= ADMIN_WITHDRAW_REASON_LENGTH.MAX
   const nicknameOk = confirmNickname === user.nickname
   const mismatch = isApiError(withdraw.error) && withdraw.error.code === 'ADMIN_CONFIRM_MISMATCH'
+  const stepUpFailed = isApiError(withdraw.error) && withdraw.error.code === 'ADMIN_STEP_UP_FAILED'
+  const stepUpLimited = stepUpLimitMessage(withdraw.error)
+  const stepUpOk = password !== '' && isTotpComplete(totp)
 
   const onConfirm = () => {
     withdraw.mutate(
-      { reason: reason.trim(), confirmNickname },
+      { reason: reason.trim(), confirmNickname, password, totp },
       {
         onSuccess: () => {
           setDialogOpen(false)
           navigate(adminPaths.users(), { replace: true, state: { notice: `${user.nickname} 님을 탈퇴 처리했어요` } satisfies AdminUsersNotice })
         },
-        onError: () => setDialogOpen(false),
+        onError: () => {
+          setDialogOpen(false)
+          // 한 번 보낸 인증 코드는 다시 쓸 수 없다
+          setTotp('')
+        },
       },
     )
   }
@@ -196,14 +216,36 @@ function WithdrawSection({ user }: { user: AdminUserDetail }) {
           helper={mismatch ? withdraw.error?.message : undefined}
           onChange={(e) => setConfirmNickname(e.target.value)}
         />
+        <Input
+          label="관리자 비밀번호"
+          type="password"
+          name="stepUpPassword"
+          autoComplete="current-password"
+          maxLength={256}
+          value={password}
+          error={stepUpFailed}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <Input
+          label="인증 코드"
+          name="stepUpTotp"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="[0-9]{6}"
+          maxLength={ADMIN_TOTP.DIGITS}
+          value={totp}
+          error={stepUpFailed}
+          helper={stepUpFailed ? withdraw.error?.message : (stepUpLimited ?? undefined)}
+          onChange={(e) => setTotp(totpDigits(e.target.value))}
+        />
       </div>
-      {withdraw.isError && !mismatch && <ErrorText error={withdraw.error} />}
+      {withdraw.isError && !mismatch && !stepUpFailed && !stepUpLimited && <ErrorText error={withdraw.error} />}
       <Button
         type="danger"
         size="m"
         label="탈퇴 처리"
         className="self-start"
-        disabled={!reasonOk || !nicknameOk}
+        disabled={!reasonOk || !nicknameOk || !stepUpOk}
         onClick={() => {
           withdraw.reset()
           setDialogOpen(true)
