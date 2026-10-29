@@ -2,7 +2,6 @@ import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import {
   SIGNUP_REQUIRED_CONSENTS,
-  normalizeNickname,
   type AuthSessionResponse,
   type SignupResponse,
 } from '@yeojeong/shared';
@@ -30,7 +29,6 @@ import { WebConfig } from '../common/auth/web-config.js';
 import {
   AppException,
   UnauthenticatedError,
-  ValidationFailedError,
 } from '../common/errors/app-exception.js';
 import { Prisma } from '../generated/prisma/client.js';
 import {
@@ -38,6 +36,7 @@ import {
   consentEvidence,
 } from '../consents/consents.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { assertNickname } from '../users/nickname.js';
 import { UsersService } from '../users/users.service.js';
 import { FeatureFlags } from '../common/features.js';
 import type { ReconsentDto, SignupDto } from './dto/auth.dto.js';
@@ -266,21 +265,7 @@ export class AuthService {
         '가입 시간이 지났어요. 다시 로그인해 주세요',
       );
     }
-    const nickname = normalizeNickname(dto.nickname);
-    if (!nickname.ok) {
-      throw new ValidationFailedError([
-        {
-          path: 'nickname',
-          code: nickname.reason,
-          message:
-            nickname.reason === 'TOO_LONG'
-              ? '닉네임은 10자까지 쓸 수 있어요'
-              : nickname.reason === 'EMPTY'
-                ? '닉네임을 입력해 주세요'
-                : '닉네임에 쓸 수 없는 문자가 있어요',
-        },
-      ]);
-    }
+    const nickname = assertNickname(dto.nickname);
     const { documents } = await this.consents.check(
       'SIGNUP',
       dto.agreements,
@@ -300,7 +285,7 @@ export class AuthService {
         const user = await tx.user.create({
           data: {
             kakaoId: ticket.kakaoId,
-            nickname: nickname.value,
+            nickname,
             profileImageUrl: ticket.profileImageUrl,
             profileImageSyncedAt: now,
             lastLoginAt: now,

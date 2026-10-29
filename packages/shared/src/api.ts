@@ -49,6 +49,15 @@ export interface Me extends Profile {
   walletEntryCount?: number;
 }
 
+/**
+ * PATCH /api/users/me (FR-902). 닉네임 규칙은 가입(FR-103)과 같다 — normalizeNickname(앞뒤 공백 제거 후 1~10자, 제어 문자 불가, 중복 허용).
+ * 응답은 갱신된 Me. 멤버·결제·정산 화면은 users.nickname을 조인해 그리므로 다른 멤버 화면에도 다음 조회부터 바로 보인다.
+ * 프로필 사진은 바꿀 수 없다(카카오 프사를 로그인할 때마다 동기화).
+ */
+export interface UpdateMeRequest {
+  nickname: string;
+}
+
 export type AuthStatus = 'ANONYMOUS' | 'SIGNUP_REQUIRED' | 'AUTHENTICATED';
 
 /** 가입 대기(카카오 인증만 끝난 상태)에서 닉네임 화면을 미리 채우는 값 */

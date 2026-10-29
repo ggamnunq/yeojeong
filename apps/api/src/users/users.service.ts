@@ -1,12 +1,15 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Me } from '@yeojeong/shared';
 import { UnauthenticatedError } from '../common/errors/app-exception.js';
 import { FeatureFlags } from '../common/features.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { walletEntryWhere } from '../wallet/wallet-summary.service.js';
+import { assertNickname } from './nickname.js';
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly features?: FeatureFlags,
@@ -39,5 +42,23 @@ export class UsersService {
       hasExpiredConnection: expired > 0 && (this.features?.accountLink ?? true),
       walletEntryCount,
     };
+  }
+
+  /**
+   * FR-902 닉네임 변경. 규칙은 가입과 같다(assertNickname). 중복은 허용한다.
+   * 멤버·결제·정산 응답은 users.nickname을 조인하므로 따로 퍼뜨릴 곳이 없다(TripEvent 승계 토스트 payload만 그때 이름 그대로).
+   * 마지막 저장이 이기는 단일 필드라 버전 검사는 하지 않는다.
+   */
+  async updateNickname(userId: string, input: string): Promise<Me> {
+    const nickname = assertNickname(input);
+    const { count } = await this.prisma.user.updateMany({
+      where: { id: userId },
+      data: { nickname },
+    });
+    // 세션 확인 직후 탈퇴가 끝난 경우
+    if (count === 0) throw new UnauthenticatedError();
+    // 닉네임 원문은 남기지 않는다
+    this.logger.log({ userId }, '닉네임 변경');
+    return this.me(userId);
   }
 }

@@ -144,7 +144,7 @@ test.describe('토스트 자리 · 수명(화면명세 0-4 v0.5.8)', () => {
 })
 
 test.describe('목 시점 전환 · 5명 넘는 여정(QA 도구)', () => {
-  test('?mockAs=member: 오사카를 멤버(민지)로 — 종료·연필 없음', async ({ page }) => {
+  test('?mockAs=member: 오사카를 멤버(민지)로 — 종료·「수정」 없음', async ({ page }) => {
     await useMockScenario(page)
     await page.goto('/trips/trip-osaka/info?mockAs=member')
     await expect(page.getByText('여행 중')).toBeVisible()

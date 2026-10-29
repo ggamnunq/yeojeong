@@ -26,18 +26,18 @@ export type TripHeroCardProps = {
   days: number
   current?: number
   meta: ReactNode
-  /** 그룹장 연필(여정 정보 수정) */
+  /** 그룹장 「수정」(여정 정보 수정, W9: 연필 아이콘 → 텍스트 버튼 Ghost S — 발견성) */
   onEdit?: () => void
 }
 
-/** 영웅 카드 · 톤(DS Card/HeroTone): 라벨 → 영웅 숫자 [+ 보조] · 연필 → 경로 → 메타 한 줄 */
+/** 영웅 카드 · 톤(DS Card/HeroTone): 라벨 · 「수정」 → 영웅 숫자 [+ 보조] → 경로 → 메타 한 줄 */
 export function TripHeroCard({ status, label, value, suffix, start, end, days, current, meta, onEdit }: TripHeroCardProps) {
   return (
     <CardHeroTone
       label={label}
       hero={value}
       heroSuffix={suffix}
-      action={onEdit && { label: '여정 정보 수정', onClick: onEdit }}
+      action={onEdit && { label: '여정 정보 수정', text: '수정', onClick: onEdit }}
       route={{ phase: PHASE[status], start, end, days, current }}
       meta={meta}
     />

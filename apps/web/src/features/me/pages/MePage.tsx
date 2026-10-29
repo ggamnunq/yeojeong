@@ -7,7 +7,7 @@ import { useAccountLink } from '../../../app/features'
 import { paths } from '../../../app/paths'
 import { useSession } from '../../../app/session'
 import { ErrorScreen, LoadingScreen } from '../../../app/states'
-import { Avatar, Icon, ShellSub, Tag } from '../../../ds'
+import { Icon, ShellSub, Tag } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { revocableConsentsQuery } from '../../card-import/api'
 import { entryCountLabel } from '../../manual/rules'
@@ -17,8 +17,9 @@ import { useBack } from '../../wallet/useBack'
 import { NoticeBanner } from '../../notices/NoticeBanner'
 import { forgetInvites } from '../../trips/pendingInvite'
 import { logout, meQuery } from '../api'
+import { ProfileHeader } from '../components/ProfileHeader'
 
-/** WF-30 마이페이지: (공지 배너 HF-60b) → 프사·닉네임 → 내 지갑 → (아래) 로그아웃 · 탈퇴(HF-59) · 동의 관리 · 푸터 링크(C-03 사용자 결정) */
+/** WF-30 마이페이지: (공지 배너 HF-60b) → 프사·닉네임 「수정」(HF-63) → 내 지갑 → (아래) 로그아웃 · 탈퇴(HF-59) · 동의 관리 · 푸터 링크(C-03 사용자 결정) */
 export default function MePage() {
   const back = useBack(paths.splash())
   const session = useSession()
@@ -92,10 +93,7 @@ function MeContent({
   return (
     <>
       <NoticeBanner className="mb-4" />
-      <div className="flex items-center gap-4">
-        <Avatar size="xl" me name={nickname} src={profileImageUrl} alt="" />
-        <h2 className="min-w-0 truncate text-h1 text-primary">{nickname}</h2>
-      </div>
+      <ProfileHeader nickname={nickname} profileImageUrl={profileImageUrl} onEdit={() => void navigate(paths.meProfile())} />
 
       <Link
         to={paths.wallet()}
