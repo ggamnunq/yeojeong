@@ -29,6 +29,8 @@ export const RETENTION = {
   accountDeletion: { years: 3 },
   /** 11단계: 카드 승인내역 불러오기 호출 보호 카운터(로그인 실패 수·CODEF 일일 호출 수). 내용 없음, 운영 확인용으로 7일 */
   cardImportCounters: { days: 7 },
+  /** 12단계: CODEF 계정 삭제 대기(account 모드). 내부 잡이 그 안에 못 지우면 버리고 운영자가 CODEF 콘솔에서 정리한다 */
+  codefPendingDeletion: { days: 30 },
 } as const satisfies Record<string, RetentionPeriod>;
 
 const DAY_MS = 86_400_000;
