@@ -88,32 +88,98 @@ describe('notices', () => {
     );
   });
 
+  const published03 = LEGAL_RELEASES.find((r) => r.dir === 'v0.3')?.published;
+  const privacy03 = LEGAL_DOCUMENT_VERSIONS['privacy.md'].find(
+    (v) => v.version === '0.3',
+  );
+  const mmdd = (date: string) => `${date.slice(5, 7)}.${date.slice(8)}`;
+
   it.runIf(terms02)(
-    '0.2 terms notice: from the publish date through the effective day (7 days ahead), shown first while active',
+    '0.2 terms notice: from the publish date through the effective day (7 days ahead) — replaced by the combined notice once 0.3 is published',
     () => {
       const effective = terms02!.effectiveDate;
       expect(effective).toBe(plus(published, 7));
       const notice = NOTICES.find((n) => n.id === 'legal-v0.2-terms')!;
+      const end = [plus(effective, 1), published03 ?? '9999-12-31'].sort(
+        (a, b) => a.localeCompare(b),
+      )[0];
       expect(notice).toEqual({
         id: 'legal-v0.2-terms',
-        title: `이용약관이 바뀌어요 · ${effective.slice(5, 7)}.${effective.slice(8)}부터`,
+        title: `이용약관이 바뀌어요 · ${mmdd(effective)}부터`,
         url: '/terms?v=0.2',
         startsAt: `${published}T00:00:00+09:00`,
-        endsAt: `${plus(effective, 1)}T00:00:00+09:00`,
+        endsAt: `${end}T00:00:00+09:00`,
       });
       expect(notice.title.length).toBeLessThanOrEqual(40);
-      // 한 번에 하나 — 시행 전(시행일 포함)에는 이용약관 공지가 먼저
+    },
+  );
+
+  it.runIf(terms02 && privacy03 && published03)(
+    '0.3: combined advance notice until the terms take effect, then privacy-only until 7 days after; statutory advance notices outrank the 0.2 correction notice',
+    () => {
+      const termsAt = terms02!.effectiveDate;
+      const privacyAt = privacy03!.effectiveDate;
+      const combined = NOTICES.find((n) => n.id === 'legal-v0.3-combined')!;
+      expect(combined).toEqual({
+        id: 'legal-v0.3-combined',
+        title: `이용약관(${mmdd(termsAt)})·개인정보처리방침(${mmdd(privacyAt)})이 바뀌어요`,
+        url: '/privacy?v=0.3',
+        startsAt: `${published03}T00:00:00+09:00`,
+        endsAt: `${termsAt}T00:00:00+09:00`,
+      });
+      expect(combined.title.length).toBeLessThanOrEqual(40);
+      const only = NOTICES.find((n) => n.id === 'legal-v0.3-privacy')!;
+      expect(only).toEqual({
+        id: 'legal-v0.3-privacy',
+        title: `개인정보처리방침 일부가 바뀌어요 · ${mmdd(privacyAt)}부터`,
+        url: '/privacy?v=0.3',
+        urlFrom: { at: `${privacyAt}T00:00:00+09:00`, url: '/privacy' },
+        startsAt: `${termsAt}T00:00:00+09:00`,
+        endsAt: `${plus(privacyAt, 7)}T00:00:00+09:00`,
+      });
+      // 처리방침 시행 7일 전부터 알린다(제14조②)
+      expect(published03! <= plus(privacyAt, -7)).toBe(true);
+
+      const first = (iso: string) => activeNotices(at(iso))[0];
+      // 게시일 ~ 이용약관 시행 전날: 합친 공지(예정본), 처리방침 0.2 정정 공지는 그다음
       for (const when of [
-        `${published}T00:00:00`,
-        `${plus(effective, -1)}T23:59:59`,
-        `${effective}T23:59:59`,
+        `${published03}T00:00:00`,
+        `${plus(termsAt, -1)}T23:59:59`,
       ]) {
-        expect(ids(when)[0], when).toBe('legal-v0.2-terms');
-        expect(ids(when)).toContain('legal-v0.2-privacy');
+        expect(first(when), when).toMatchObject({
+          id: 'legal-v0.3-combined',
+          url: '/privacy?v=0.3',
+        });
+        expect(ids(when)).not.toContain('legal-v0.2-terms');
       }
-      expect(ids(`${plus(effective, 1)}T00:00:00`)).toEqual([
-        'legal-v0.2-privacy',
-      ]);
+      // 이용약관 시행일: 처리방침만(예정본)
+      expect(first(`${termsAt}T00:00:00`)).toMatchObject({
+        id: 'legal-v0.3-privacy',
+        url: '/privacy?v=0.3',
+      });
+      expect(first(`${plus(privacyAt, -1)}T23:59:59`)).toMatchObject({
+        id: 'legal-v0.3-privacy',
+        url: '/privacy?v=0.3',
+      });
+      // 처리방침 시행부터는 현행 주소, 시행 후 7일까지
+      expect(first(`${privacyAt}T00:00:00`)).toMatchObject({
+        id: 'legal-v0.3-privacy',
+        url: '/privacy',
+      });
+      expect(ids(`${plus(privacyAt, 6)}T23:59:59`)[0]).toBe(
+        'legal-v0.3-privacy',
+      );
+      expect(ids(`${plus(privacyAt, 7)}T00:00:00`)).not.toContain(
+        'legal-v0.3-privacy',
+      );
+      // 법정 사전 공지가 처리방침 0.2 정정 공지보다 먼저 — 정정 공지는 남아 있으면 다음 차례
+      expect(ids(`${termsAt}T12:00:00`)).toEqual(
+        ['legal-v0.3-privacy', 'legal-v0.2-privacy'].filter((id) =>
+          id === 'legal-v0.2-privacy'
+            ? `${termsAt}` < plus(published, 14)
+            : true,
+        ),
+      );
     },
   );
 

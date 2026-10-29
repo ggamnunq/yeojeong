@@ -17,6 +17,8 @@ export interface NoticeDefinition {
   url: string;
   startsAt: string;
   endsAt: string;
+  /** 이 시각(포함)부터는 url 대신 이 주소로 보낸다 — 예정본 미리 보기(?v=) → 시행 뒤 현행 주소 */
+  urlFrom?: { at: string; url: string };
 }
 
 const kstMidnight = (date: string) => `${date}T00:00:00+09:00`;
@@ -31,6 +33,14 @@ const V02_PUBLISHED = LEGAL_RELEASES.find((r) => r.dir === 'v0.2')?.published;
 const TERMS_02 = LEGAL_DOCUMENT_VERSIONS['terms.md']?.find(
   (v) => v.version === '0.2',
 );
+/** 처리방침 0.3 게시일과 시행일(문서 부칙) */
+const V03_PUBLISHED = LEGAL_RELEASES.find((r) => r.dir === 'v0.3')?.published;
+const PRIVACY_03 = LEGAL_DOCUMENT_VERSIONS['privacy.md']?.find(
+  (v) => v.version === '0.3',
+);
+/** 11-06 → "11.06" */
+const mmdd = (date: string) => date.slice(5).replace('-', '.');
+const earlier = (a: string, b: string) => (a < b ? a : b);
 
 export const NOTICES: readonly NoticeDefinition[] = [
   {
@@ -64,7 +74,37 @@ export const NOTICES: readonly NoticeDefinition[] = [
           title: `이용약관이 바뀌어요 · ${TERMS_02.effectiveDate.slice(5).replace('-', '.')}부터`,
           url: '/terms?v=0.2',
           startsAt: kstMidnight(V02_PUBLISHED),
-          endsAt: kstMidnight(addDays(TERMS_02.effectiveDate, 1)),
+          // 처리방침 0.3 공지가 시작하면 아래 "합친 공지"로 바꾼다(한 번에 하나라 두 법정 사전 공지를 한 줄로)
+          endsAt: earlier(
+            kstMidnight(addDays(TERMS_02.effectiveDate, 1)),
+            V03_PUBLISHED ? kstMidnight(V03_PUBLISHED) : '9999-12-31',
+          ),
+        },
+      ]
+    : []),
+  ...(V03_PUBLISHED && PRIVACY_03 && TERMS_02
+    ? [
+        {
+          // 이용약관 0.2 시행 예고 + 처리방침 0.3 시행 예고(둘 다 법정 사전 공지). 이용약관 시행 전날까지.
+          // 시작이 처리방침 0.2 정정 공지와 같으면 뒤에 적은 이 공지가 먼저 보인다(법정 사전 공지 우선)
+          id: 'legal-v0.3-combined',
+          title: `이용약관(${mmdd(TERMS_02.effectiveDate)})·개인정보처리방침(${mmdd(PRIVACY_03.effectiveDate)})이 바뀌어요`,
+          url: '/privacy?v=0.3',
+          startsAt: kstMidnight(V03_PUBLISHED),
+          endsAt: kstMidnight(TERMS_02.effectiveDate),
+        },
+        {
+          // 처리방침 0.3(MINOR, 재동의 없음): 이용약관 시행일부터 처리방침 시행 후 7일까지. 시작이 늦어 처리방침 0.2 정정 공지보다 먼저 보인다.
+          // 시행 전에는 예정본(?v=0.3), 시행 뒤에는 현행 주소
+          id: 'legal-v0.3-privacy',
+          title: `개인정보처리방침 일부가 바뀌어요 · ${mmdd(PRIVACY_03.effectiveDate)}부터`,
+          url: '/privacy?v=0.3',
+          urlFrom: {
+            at: kstMidnight(PRIVACY_03.effectiveDate),
+            url: '/privacy',
+          },
+          startsAt: kstMidnight(TERMS_02.effectiveDate),
+          endsAt: kstMidnight(addDays(PRIVACY_03.effectiveDate, 7)),
         },
       ]
     : []),
@@ -82,7 +122,7 @@ export function activeNotices(
       view: {
         id: n.id,
         title: n.title,
-        url: n.url,
+        url: n.urlFrom && Date.parse(n.urlFrom.at) <= t ? n.urlFrom.url : n.url,
         startsAt: new Date(n.startsAt).toISOString(),
         endsAt: new Date(n.endsAt).toISOString(),
       },

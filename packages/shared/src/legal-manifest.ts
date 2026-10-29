@@ -10,6 +10,10 @@ export const LEGAL_RELEASES = [
   {
     "dir": "v0.2",
     "published": "2026-10-30"
+  },
+  {
+    "dir": "v0.3",
+    "published": "2026-10-30"
   }
 ] as const
 
@@ -51,6 +55,12 @@ export const LEGAL_DOCUMENT_VERSIONS: Readonly<Record<string, readonly LegalDocu
       "effectiveDate": "2026-10-30",
       "path": "v0.2/privacy.md",
       "sha256": "710f594c686b772b965d1d631e072c5a251cae35b3d74b72bd8997d56f84387c"
+    },
+    {
+      "version": "0.3",
+      "effectiveDate": "2026-11-07",
+      "path": "v0.3/privacy.md",
+      "sha256": "3fd8e284dc71205568c11f0651554137eef473ad9570a83d8b8bf67974521276"
     }
   ],
   "consent-collection.md": [
