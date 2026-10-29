@@ -38,6 +38,9 @@ const HEADER_REDACT_PATHS = [
 export const SENSITIVE_BODY_KEYS = [
   'loginId',
   'password',
+  // 관리자 로그인(src/admin)
+  'username',
+  'passwordHash',
   'encryptedPassword',
   'connectedId',
   'twoWay',

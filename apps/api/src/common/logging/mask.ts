@@ -11,6 +11,9 @@ export const normalizeKey = (key: string) =>
 const SENSITIVE = [
   'loginId',
   'password',
+  // 관리자 로그인(src/admin) 아이디. 비밀번호는 위 password로 가린다
+  'username',
+  'passwordHash',
   'encryptedPassword',
   'encryptedCardPassword',
   'connectedId',

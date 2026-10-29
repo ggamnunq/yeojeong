@@ -92,6 +92,7 @@ describe('isPastRetention (경계)', () => {
       accountDeletion: { years: 3 },
       cardImportCounters: { days: 7 },
       codefPendingDeletion: { days: 30 },
+      adminLoginThrottle: { days: 1 },
     });
   });
 });

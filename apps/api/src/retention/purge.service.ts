@@ -7,6 +7,7 @@ import type {
 import { AccountDeletionService } from '../account/account-deletion.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ADMIN_IDLE_MS } from '../admin/admin.constants.js';
 import { CardImportLimits } from '../card-import/card-import-limits.js';
 import { RETENTION, cutoff } from './retention-policy.js';
 
@@ -75,6 +76,8 @@ export class PurgeService {
     const deletion = cutoff(now, RETENTION.accountDeletion);
     const counters = cutoff(now, RETENTION.cardImportCounters);
     const pendingDeletion = cutoff(now, RETENTION.codefPendingDeletion);
+    const adminThrottle = cutoff(now, RETENTION.adminLoginThrottle);
+    const adminIdle = new Date(now.getTime() - ADMIN_IDLE_MS);
     const { rows, groups } = PURGE_LIMITS;
 
     return [
@@ -355,6 +358,32 @@ export class PurgeService {
             );
           }
           return { count, hasMore: false };
+        },
+      ],
+      [
+        'ADMIN_SESSIONS',
+        async (tx, dryRun) => {
+          // 끝난 관리자 세션(절대 만료 · 로그아웃 · 유휴 30분 초과)은 다시 쓸 수 없으니 지운다. 접근 기록(access_logs)은 따로 1년
+          const sessions = {
+            OR: [
+              { expiresAt: { lte: now } },
+              { revokedAt: { not: null } },
+              { lastSeenAt: { lte: adminIdle } },
+            ],
+          };
+          const throttles = { windowStartedAt: { lte: adminThrottle } };
+          if (dryRun) {
+            const [a, b] = await Promise.all([
+              tx.adminSession.count({ where: sessions }),
+              tx.adminLoginThrottle.count({ where: throttles }),
+            ]);
+            return { count: a + b, hasMore: false };
+          }
+          const [a, b] = await Promise.all([
+            tx.adminSession.deleteMany({ where: sessions }),
+            tx.adminLoginThrottle.deleteMany({ where: throttles }),
+          ]);
+          return { count: a.count + b.count, hasMore: false };
         },
       ],
     ];

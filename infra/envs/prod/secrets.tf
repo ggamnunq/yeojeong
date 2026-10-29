@@ -129,6 +129,11 @@ locals {
   external_secret_env = merge(
     var.enable_kakao_unlink ? { KAKAO_ADMIN_KEY = "yeojeong-kakao-admin-key" } : {},
     var.enable_exim_fx ? { EXIM_API_KEY = "yeojeong-exim-api-key" } : {},
+    # 관리자 페이지 자격 증명. 해시는 pnpm --filter @yeojeong/api admin:hash로 만든 scrypt$… 값(비밀번호 원문은 어디에도 두지 않는다)
+    var.enable_admin ? {
+      ADMIN_USERNAME      = "yeojeong-admin-username"
+      ADMIN_PASSWORD_HASH = "yeojeong-admin-password-hash"
+    } : {},
     var.enable_codef ? {
       CODEF_CLIENT_ID     = "yeojeong-codef-client-id"
       CODEF_CLIENT_SECRET = "yeojeong-codef-client-secret"

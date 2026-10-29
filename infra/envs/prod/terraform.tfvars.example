@@ -16,6 +16,8 @@ support_forward_to = "<운영자 메일 주소>"
 enable_kakao_unlink = false
 kakao_app_id        = ""
 enable_exim_fx      = false
+# 관리자 페이지(/admin). 시크릿 yeojeong-admin-username·yeojeong-admin-password-hash를 gcloud로 만든 뒤에만 켠다(apps/api/src/admin/README.md).
+enable_admin = false
 # 카드 승인내역 불러오기(S8). CODEF 시크릿(yeojeong-codef-client-id·-client-secret·-public-key)을 gcloud로 만든 뒤에만 enable_codef를 켠다.
 # 전체 공개(on)는 법률 자문(L-25) 뒤에만. 그 전에는 allowlist + 운영자 본인 사용자 ID로만 실테스트한다(ID는 커밋하지 않는다).
 enable_codef                 = false

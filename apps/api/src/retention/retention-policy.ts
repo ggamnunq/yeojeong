@@ -31,6 +31,8 @@ export const RETENTION = {
   cardImportCounters: { days: 7 },
   /** 12단계: CODEF 계정 삭제 대기(account 모드). 내부 잡이 그 안에 못 지우면 버리고 운영자가 CODEF 콘솔에서 정리한다 */
   codefPendingDeletion: { days: 30 },
+  /** 13단계: 관리자 로그인 시도 제한 카운터(15분 창). 내용 없음(IP HMAC·개수), 창이 끝나고 하루 */
+  adminLoginThrottle: { days: 1 },
 } as const satisfies Record<string, RetentionPeriod>;
 
 const DAY_MS = 86_400_000;

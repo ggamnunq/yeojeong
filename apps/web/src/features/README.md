@@ -14,6 +14,8 @@ features/<flow>/
 
 폴더 배정: `core`(스플래시·헬스) · `auth`(로그인·가입·재동의) · `wallet`(지갑·토스 연결·환율) · `trips`(여정 없음·만들기·참여·수정·생성 완료) · `trip-info` · `payments` · `stats` · `settlement` · `me` · `legal`. 각 `routes.tsx`의 `PlaceholderPage`를 진짜 페이지로 바꾼다.
 
+`admin`(운영자 관리자 페이지 `/admin/*`)은 일반 앱과 분리한다: 화면은 모두 지연 로딩, 전용 QueryClient(앱 전역 401·토스트 처리기를 타지 않고 `ADMIN_UNAUTHENTICATED`면 `/admin/login`), 주소는 `features/admin/paths.ts`, 일반 화면에서 링크하지 않는다.
+
 ## 라우트
 
 ```tsx

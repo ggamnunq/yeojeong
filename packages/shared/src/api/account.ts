@@ -50,6 +50,8 @@ export const PURGE_STEP_VALUES = [
   'CARD_IMPORT_COUNTERS',
   /** CODEF 계정 삭제 대기 행 보관 상한 30일(넘으면 버리고 error 로그). 남은 행이 있으면 매일 error 로그 */
   'CODEF_PENDING_DELETIONS',
+  /** 관리자 세션(만료·폐기·유휴 초과) · 관리자 로그인 시도 제한 카운터(창이 끝나고 하루) */
+  'ADMIN_SESSIONS',
 ] as const;
 /** 파기 배치 단계. 순서와 기준은 apps/api/src/retention/README.md */
 export type PurgeStep = (typeof PURGE_STEP_VALUES)[number];

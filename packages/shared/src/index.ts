@@ -1,4 +1,5 @@
 export {
+  ADMIN_ERRORS,
   AUTH_ERRORS,
   CARD_IMPORT_ERRORS,
   CLIENT_ERRORS,
@@ -32,6 +33,7 @@ export * from './api/account.js';
 export * from './api/expenses.js';
 export * from './api/wallet.js';
 export * from './api/card-import.js';
+export * from './api/admin.js';
 export type * from './api/settlements.js';
 export type * from './api/fx.js';
 export type * from './api/payment-methods.js';
