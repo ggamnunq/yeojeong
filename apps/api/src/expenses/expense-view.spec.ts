@@ -18,6 +18,8 @@ const member = (
   role: joinOrder === 1 ? 'LEADER' : 'MEMBER',
   joinOrder,
   leftAt,
+  userId: nickname === null ? null : id,
+  leaveReason: nickname === null ? 'ACCOUNT_DELETED' : leftAt ? 'LEFT' : null,
   user: nickname === null ? null : { nickname, profileImageUrl: null },
 });
 

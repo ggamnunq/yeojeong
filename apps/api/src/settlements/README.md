@@ -60,7 +60,7 @@
 ## 통합 예정(S2B-2)
 
 - 기간 외 결제 등 인입 환산은 임시 `krw.ts` 대신 `FxRatesService.convertForTrip`(DB 고시 조회 포함) 또는 순수 함수 `convertToKrw`로 바꾼다.
-- 멤버별 내역·개인 건수는 지금 Prisma로 직접 읽는다(`settlements.service.ts`, `ledger.ts`의 `countPersonalByMember`). expenses 모듈의 `ExpenseQueryService.paymentsByPayer`·`ExpenseStatsService.personalCountsByPayer`가 들어오면 그쪽으로 바꾼다.
+- 멤버별 내역·개인 건수는 expenses 모듈의 `ExpenseQueryService.paymentsByPayer`와 `ExpenseStatsService.personalCountsByPayer`를 사용한다.
 
 ## 가시성
 
@@ -70,8 +70,8 @@
 
 ## 내부 잡
 
-- `@Public()` + `InternalJobGuard`(`../fx/internal-job.guard.ts`): 헤더 `x-internal-job-secret` = env `INTERNAL_JOB_SECRET`(32자 이상). 없으면 모두 403.
-- 전역 `CsrfGuard`가 먼저 돌아 POST에 `Origin`(허용 목록) 또는 `Sec-Fetch-Site: same-origin`이 필요하다. 운영 Scheduler가 헤더를 붙이거나 common에서 `/api/internal/*`를 제외해야 한다(OIDC 도입 때 함께 정리).
+- `@InternalJob()` 공통 가드: 운영은 Cloud Scheduler OIDC, 로컬·테스트는 `x-internal-job-secret` 대체 인증을 쓴다.
+- `@InternalJob()` 라우트는 전역 CSRF·Cloudflare origin lock 대신 내부 잡 인증으로 방어한다.
 - 환율 소스: env `FX_RATE_SOURCE` = `demo`(기본, 고정 샘플 값, 출처 "데모 매매기준율") | `koreaexim`(한국수출입은행 OpenAPI, 뼈대만 — 잡이 503). `KOREAEXIM_API_KEY`는 Secret Manager.
 - 환율 잡은 같은 (통화, 출처, 고시 시각)을 한 번만 저장하고, 진행 중 외화 여정(SPOT·CARD_BILLED)을 다시 환산한다.
 

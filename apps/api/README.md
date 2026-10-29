@@ -116,7 +116,7 @@ documents() {}
 - 유효 동의 = 그 항목의 시행 중인 **정식본(`is_draft = false`)** 중 가장 최근 MAJOR 버전과 그 이후 버전에 `agreed`한 행이 있고 철회되지 않음. MINOR 개정은 기존 동의를 유지한다.
 - **초안 동의는 법적 유효 동의가 아니다.** 지금은 시행일이 정해지지 않아 `0.1-draft`(초안)만 있으므로, 정식본이 하나도 없을 때만 초안 동의를 임시로 인정한다. 정식본을 넣는 순간 초안에 동의한 회원 모두에게 `403 CONSENT_REQUIRED`가 나가 재동의(`POST /api/auth/reconsent`)를 받는다(출시 전 필수 작업).
 - 판정 함수와 테스트: `src/common/auth/consent-catalog.ts`, `consent-catalog.spec.ts`(초안만 / 정식 발행 후 초안 동의자 / 정식 동의자 / 더 새 정식본 MAJOR·MINOR).
-- 동의 기록에는 서버가 `ip`(origin lock이 넘긴 클라이언트 IP), `ua`(512자), `screen`, `method`, `docHash`, `userRefHash = HMAC-SHA256(userId, USER_REF_HMAC_KEY)`를 채운다. `USER_REF_HMAC_KEY`는 바꾸지 않는다.
+- 동의 기록에는 서버가 `ipHash`(origin lock이 넘긴 클라이언트 IP의 HMAC-SHA256, 키 `AUDIT_HMAC_KEY`. 평문 `ip`는 더 쓰지 않는다), `ua`(512자), `screen`, `method`, `docHash`, `userRefHash = HMAC-SHA256(userId, USER_REF_HMAC_KEY)`를 채운다. `USER_REF_HMAC_KEY`는 바꾸지 않는다.
 
 ### 탈퇴·삭제 요청 (FR-108)
 
@@ -136,6 +136,14 @@ documents() {}
 | `TOKEN_ENCRYPTION_KEY`                    | Secret Manager(random_bytes 32)        | `*_enc` 컬럼 AES-256-GCM(`TokenCipher`) |
 | `USER_REF_HMAC_KEY`                       | Secret Manager(random_password)        | 교체 금지(prevent_destroy)              |
 | `SUPPORT_EMAIL`                           | Cloud Run 일반 env                     | 임시 주소                               |
+
+### 내부 잡 인증
+
+- 내부 잡 컨트롤러는 클래스에 `@InternalJob()`을 붙인다. 이 데코레이터가 `@Public()`과 CSRF 예외를 함께 적용하고, 전역 `InternalJobGuard`가 인증한다. 모듈별 가드를 만들지 않는다.
+- 운영은 Cloud Scheduler가 Cloud Run URL을 직접 호출하며, `Authorization: Bearer <OIDC ID token>`의 Google JWKS 서명·`aud`·서비스 계정 `email`을 검증한다. `INTERNAL_JOB_OIDC_AUDIENCE`와 `INTERNAL_JOB_OIDC_SERVICE_ACCOUNT`가 정확히 일치해야 한다.
+- 로컬·테스트만 `x-internal-job-secret` = `INTERNAL_JOB_SECRET`(32자 이상)을 대체 인증으로 허용한다. `NODE_ENV=production`에서는 이 헤더를 무시한다.
+- `/api/internal/`은 Cloudflare origin lock을 건너뛴다. 이 경로의 인증 경계는 `@InternalJob()` 가드다.
+- 내부 잡 목록(모두 `POST`, 본문 `{}`): `auto-end`(5분), `sync`(10분, 결제 동기화), `fx`(11:10·17:10), `settlements`(매시 15분), `purge`(04:00) — Cloud Scheduler `yeojeong-<이름>`(`infra/envs/prod/scheduler.tf`). `consent-ip-backfill`은 Scheduler 잡 없이 수동으로 부르는 일회성 이관 잡이다(파기 배치가 같은 일을 매일 한다, `prisma/README.md` "동의 기록 IP").
 
 ### 테스트에서 로그인 흉내 내기
 

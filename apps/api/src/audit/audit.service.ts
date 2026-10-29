@@ -17,6 +17,8 @@ export interface AuditEntry {
   resourceId?: string | null;
   /** 원문은 저장하지 않고 HMAC만 남긴다 */
   ip?: string | null;
+  requestId?: string | null;
+  ua?: string | null;
 }
 
 type AccessLogWriter = Pick<Prisma.TransactionClient, 'accessLog'>;
@@ -41,8 +43,13 @@ export class AuditService {
     this.ipKey = key;
   }
 
+  /** AUDIT_HMAC_KEY가 있어 IP를 해시로 남길 수 있는지 */
+  get ipHashEnabled(): boolean {
+    return this.ipKey !== null;
+  }
+
   /**
-   * 접속 IP의 HMAC-SHA256(hex 64자). IPv4는 경우의 수가 적어 키 없는 해시는 되돌릴 수 있으므로
+   * 접속 IP의 HMAC-SHA256(hex 64자). 접근 기록(access_logs)과 동의 기록(user_consents)이 같은 키를 쓴다. IPv4는 경우의 수가 적어 키 없는 해시는 되돌릴 수 있으므로
    * AUDIT_HMAC_KEY가 없으면 NULL을 돌려준다(남기지 않는다).
    */
   hashIp(ip: string | null | undefined): string | null {
@@ -52,7 +59,6 @@ export class AuditService {
 
   /**
    * AccessLog 한 줄을 쓰고 id를 돌려준다. 트랜잭션 안이면 tx를 넘긴다.
-   * requestId·user-agent는 테이블에 칸이 없어 같은 요청의 애플리케이션 로그(requestId 자동)에 accessLogId로 잇는다.
    */
   async record(
     entry: AuditEntry,
@@ -67,6 +73,8 @@ export class AuditService {
         resourceType: entry.resourceType,
         resourceId,
         ipHash: this.hashIp(entry.ip),
+        requestId: entry.requestId?.slice(0, 128) ?? null,
+        ua: entry.ua?.slice(0, 512) ?? null,
       },
       select: { id: true },
     });

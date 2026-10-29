@@ -25,7 +25,7 @@
 | DELETE | `/api/groups/:groupId` | 그룹장 · 시작 전 | 204 | 403, 409 | 209 |
 | GET | `/api/invites/:code` | 로그인 · StrictThrottle | `InvitePreview` | 404 `INVITE_CODE_INVALID`, 403 `MEMBER_KICKED`, 409 `INVITE_TRIP_ENDED` | 203 |
 | POST | `/api/invites/:code/join` | 로그인 · StrictThrottle | 201 `JoinTripResponse` | 위 + 409 `ALREADY_MEMBER`·`MEMBER_LIMIT_EXCEEDED` | 204 |
-| POST | `/api/internal/jobs/auto-end` | 내부(`x-internal-job-secret`) | `AutoEndJobResponse` | 403 `FORBIDDEN` | 305 |
+| POST | `/api/internal/jobs/auto-end` | 내부(Cloud Scheduler OIDC) | `AutoEndJobResponse` | 403 `FORBIDDEN` | 305 |
 
 시작·종료·나가기는 행동이라 200, 만들기·참여는 201이다. 날짜는 KST 달력 날짜 `"2026-11-12"`, 시각은 `"2026-11-15T23:59:59+09:00"`.
 
@@ -63,7 +63,7 @@
 | `trip.started` | `tripId, groupId, startedByUserId, startAt`(시작일 00:00 KST) + `eventSeq, occurredAt` | 시작 트랜잭션 커밋 뒤 | S2B 소급 인입(TRIP_START, [startAt, now]) |
 | `trip.ended` | `tripId, groupId, endedByUserId`(자동이면 null)`, endedAt, reason`(`MANUAL`·`AUTO`)`, redelivered` + `eventSeq, occurredAt` | 종료 트랜잭션 커밋 뒤. 자동 종료 잡이 재전송할 때 `redelivered: true` | S2B 미확정 → 개인, S2C 정산 스냅샷 |
 | `membership.joined` | `tripId, groupId, membershipId, userId, joinedAt, rejoined, tripStatus` + `eventSeq, occurredAt` | 참여 트랜잭션 커밋 뒤 | S2B 신규 멤버 소급 인입(진행 중일 때 JOIN) |
-| `membership.left` | `tripId, groupId, membershipId, userId`(탈퇴 멤버면 null)`, reason`(`LEFT`·`KICKED`·`DELETED`) + `eventSeq, occurredAt` | 나가기·강퇴 커밋 뒤, 그룹 삭제는 활성 멤버마다 한 건 | S2B 이후 인입 중단 |
+| `membership.left` | `tripId, groupId, membershipId, userId`(탈퇴 멤버면 null)`, reason`(`LEFT`·`KICKED`·`ACCOUNT_DELETED`·`GROUP_DELETED`) + `eventSeq, occurredAt` | 나가기·강퇴 커밋 뒤, 그룹 삭제는 활성 멤버마다 한 건 | S2B 이후 인입 중단 |
 | `trip.auto-ending` | `tripId, groupId, autoEndAt`(순서 번호 없음) | 자동 종료 잡이 종료 트랜잭션 전에 보내고 최대 60초 기다림 | S2B FINAL 동기화(FR-305) |
 
 보장과 구독자 규칙:
@@ -84,9 +84,9 @@
 
 ## 내부 잡
 
-`POST /api/internal/jobs/auto-end`(Cloud Scheduler, 1분 주기 제안).
+`POST /api/internal/jobs/auto-end`(Cloud Scheduler, 5분 주기).
 
-- `@Public()` + `InternalJobGuard`: 헤더 `x-internal-job-secret`가 env `INTERNAL_JOB_SECRET`(32자 이상)과 같아야 한다. 비밀값이 없거나 짧으면 항상 403(fail closed). 명세 8-1의 OIDC 검증은 아니고, 다른 모듈의 같은 가드와 나중에 합친다.
+- `@InternalJob()`: 운영은 Scheduler OIDC 서명·audience·서비스 계정을 공통 가드에서 검증한다. 로컬·테스트만 `x-internal-job-secret`를 쓴다.
 - 전역 `CsrfGuard`가 먼저 돌아서 `Origin`도 `Sec-Fetch-Site: same-origin`도 없는 요청은 403 `CSRF_REJECTED`다. 공통 가드에서 `/api/internal/*`를 빼기 전까지 Scheduler는 `Sec-Fetch-Site: same-origin` 헤더를 함께 보낸다. 운영 origin lock(`x-origin-auth`)도 같은 문제라 공통 처리가 필요하다.
 - 한 번에 50건, 남으면 다음 실행이 잇는다. 여정 하나가 실패해도 나머지는 계속한다.
 
@@ -98,7 +98,7 @@
 | `test/trips-guards.e2e-spec.ts` | DB 없이: 비로그인 401, 비멤버 404, 비그룹장 403, 단계 위반 409, 검증 400, 초대코드 형식, 내부 잡 시크릿 |
 | `test/trips-flow.e2e-spec.ts` | 실제 DB: 생성 → 목록 → 상세 → 참여 → 강퇴 → 나가기·승계 → 재참여 → 수정 → 시작 → 종료 → 잠금, 동시 참여, 그룹장·다음 멤버 동시 나가기, 인원 한도, 초대코드 충돌·재사용, 마지막 멤버, 자동 종료 겹침·재전송 |
 
-실제 DB e2e는 `TEST_DATABASE_URL`이 있을 때만 돈다(CI는 건너뜀). 이름이 `_test`로 끝나는 전용 DB를 쓰고, 테스트가 매번 `TRUNCATE users, groups … CASCADE`로 비운다.
+실제 DB e2e는 `TEST_DATABASE_URL`이 있을 때만 돈다(CI에서도 실행). 이름이 `_test`로 끝나는 전용 DB를 쓰고, 테스트가 매번 `TRUNCATE users, groups … CASCADE`로 비운다.
 
 ```bash
 docker exec yeojeong-db-1 psql -U yeojeong -c "CREATE DATABASE yeojeong_s2a_test"

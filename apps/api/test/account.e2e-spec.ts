@@ -328,7 +328,7 @@ describeWithDb('DELETE /api/users/me 서비스 내 탈퇴 (e2e, 실제 DB)', () 
     });
     expect(myMemberships).toHaveLength(3);
     for (const m of myMemberships) {
-      expect(m).toMatchObject({ userId: null, leaveReason: 'LEFT' });
+      expect(m).toMatchObject({ userId: null, leaveReason: 'ACCOUNT_DELETED' });
       expect(m.leftAt).toBeInstanceOf(Date);
     }
 
@@ -411,11 +411,11 @@ describeWithDb('DELETE /api/users/me 서비스 내 탈퇴 (e2e, 실제 DB)', () 
       groupId: s.ongoing.group.id,
       membershipId: s.ongoing.memberships[0].id,
       userId: null,
-      reason: 'DELETED',
+      reason: 'ACCOUNT_DELETED',
       eventSeq: expect.any(BigInt),
       occurredAt: expect.any(Date),
     });
-    expect(left.every((e) => e.reason === 'DELETED' && e.userId === null)).toBe(
+    expect(left.every((e) => e.reason === 'ACCOUNT_DELETED' && e.userId === null)).toBe(
       true,
     );
     // eventSeq는 같은 여정의 승계 토스트(TripEvent)보다 뒤

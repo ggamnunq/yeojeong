@@ -1,4 +1,5 @@
 project_id                 = "yeojeong-xxxxxx"
+internal_job_oidc_audience = "https://yeojeong-api-000000000000.asia-northeast3.run.app"
 billing_account            = "XXXXXX-XXXXXX-XXXXXX"
 supabase_organization_id   = "supabase-org-slug"
 github_repository_id       = "123456789"

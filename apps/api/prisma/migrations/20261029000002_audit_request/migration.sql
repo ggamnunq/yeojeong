@@ -1,0 +1,1 @@
+ALTER TABLE "access_logs" ADD COLUMN "request_id" VARCHAR(128), ADD COLUMN "ua" VARCHAR(512);

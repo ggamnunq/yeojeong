@@ -101,6 +101,8 @@ describeWithDb('감사 로그 @Audited() (e2e, 실제 DB)', () => {
       resourceType: 'EXPENSE',
       resourceId: expenseId,
       ipHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      requestId,
+      ua: 'yeojeong-e2e',
     });
     expect(row.at).toBeInstanceOf(Date);
     // 행에는 ID·행위·시각·IP 해시 칸만 있고 응답 내용(가맹점·금액·카드번호)·IP 원문·닉네임은 없다
@@ -110,8 +112,10 @@ describeWithDb('감사 로그 @Audited() (e2e, 실제 DB)', () => {
       'createdAt',
       'id',
       'ipHash',
+      'requestId',
       'resourceId',
       'resourceType',
+      'ua',
       'updatedAt',
       'userId',
     ]);

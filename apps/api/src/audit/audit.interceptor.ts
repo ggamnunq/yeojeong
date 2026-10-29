@@ -9,6 +9,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { mergeMap, type Observable } from 'rxjs';
 import { AuditService } from './audit.service.js';
+import { getRequestId } from '../common/logging/request-id.js';
 import { AUDITED_KEY, type AuditedMetadata } from './audited.decorator.js';
 
 /**
@@ -43,6 +44,8 @@ export class AuditInterceptor implements NestInterceptor {
       resourceType: meta.resourceType,
       resourceId: meta.resourceId?.(req) ?? null,
       ip: req.ip,
+      requestId: getRequestId(req),
+      ua: req.get('user-agent'),
     };
 
     return next.handle().pipe(

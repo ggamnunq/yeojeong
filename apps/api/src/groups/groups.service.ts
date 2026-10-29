@@ -182,6 +182,10 @@ export class GroupsService {
         where: { id: locked.id },
         data: { deletedAt: now },
       });
+      await tx.membership.updateMany({
+        where: { groupId, leftAt: null },
+        data: { leftAt: now, leaveReason: 'GROUP_DELETED', role: 'MEMBER' },
+      });
       const seqs = await nextEventSeqs(tx, active.length);
       return active.map((m, i): DomainEvent => ({
         name: TRIP_EVENTS.MEMBERSHIP_LEFT,
@@ -190,7 +194,7 @@ export class GroupsService {
           groupId,
           membershipId: m.id,
           userId: m.userId,
-          reason: 'DELETED',
+          reason: 'GROUP_DELETED',
           eventSeq: seqs[i],
           occurredAt: now,
         },

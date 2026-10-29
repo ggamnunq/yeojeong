@@ -20,9 +20,9 @@
 | GET    | `/api/payment-connections/attempts/:attemptId`             | 본인                                     | `{ attemptId, status, purpose, expiresAt }` · 410 `ATTEMPT_EXPIRED`                                                                                                                                                                                           |
 | GET    | `/api/payment-connections/attempts/:attemptId/candidates`  | 본인                                     | `ConnectionCandidate[]` · 410                                                                                                                                                                                                                                 |
 | POST   | `/api/payment-connections/attempts/:attemptId/confirm`     | 본인 + 연동 동의                         | 201 `{ accounts, cards }` · 400 · 410                                                                                                                                                                                                                         |
-| POST   | `/api/internal/jobs/sync`                                  | `@Public` + 헤더 `x-internal-job-secret` | 200 `SyncJobResult` · 403                                                                                                                                                                                                                                     |
+| POST   | `/api/internal/jobs/sync`                                  | `@InternalJob()`(Cloud Scheduler OIDC)  | 200 `SyncJobResult` · 403                                                                                                                                                                                                                                     |
 
-타입은 `@yeojeong/shared`의 `api/payment-methods.ts`. 내부 잡은 전역 CsrfGuard 뒤에 있어서 호출 측(Cloud Scheduler)이 `Origin: <WEB_BASE_URL>`을 붙여야 한다(공통 쪽에서 나중에 정리).
+타입은 `@yeojeong/shared`의 `api/payment-methods.ts`. 내부 잡은 공통 `@InternalJob()`(전역 InternalJobGuard)로 인증한다 — 운영은 Cloud Scheduler OIDC 토큰만, 로컬·테스트는 헤더 `x-internal-job-secret`도 허용. CSRF·origin lock은 건너뛴다(`src/common/internal-job`, `apps/api/README.md`).
 
 ## env
 
@@ -30,7 +30,7 @@
 | --------------------------- | -------------------------- | ----------------------------------------------------------------------------------------- |
 | `PAYMENT_PROVIDER`          | 운영 `toss`, 그 밖 `demo`  | `demo` = DemoTossAdapter, `toss` = TossPaymentAdapter(미구현, 503)                        |
 | `TOKEN_ENCRYPTION_KEY`      | 로컬·테스트는 고정 개발 키 | 32바이트(base64 44자 또는 hex 64자). 운영에서 없으면 부팅은 되지만 연결·동기화가 실패한다 |
-| `INTERNAL_JOB_SECRET`       | 없음(항상 403)             | 내부 잡 공유 비밀                                                                         |
+| `INTERNAL_JOB_SECRET`       | 없음                       | 로컬·테스트 전용 내부 잡 공유 비밀(운영은 OIDC만)                                         |
 | `DEMO_ANCHOR_DATE`          | `2026-11-12`               | 데모 샘플 기준일(사용자에게 여정이 없을 때만)                                             |
 | `PAYMENT_CALLBACK_BASE_URL` | `WEB_BASE_URL`             | 콜백 주소의 origin. 로컬에서 Vite 프록시 없이 API에 직접 붙일 때 `http://localhost:3000`  |
 

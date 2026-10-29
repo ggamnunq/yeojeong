@@ -43,6 +43,8 @@ export class SettlementMemberRefDto implements MemberSummary {
   isMe: boolean;
   @ApiProperty({ description: '지금 나가 있는지' })
   isLeft: boolean;
+  @ApiProperty({ description: '계정 탈퇴한 멤버' })
+  isWithdrawn: boolean;
 }
 
 class SummaryMeDto {

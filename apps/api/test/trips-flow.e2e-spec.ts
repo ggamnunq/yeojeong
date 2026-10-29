@@ -420,7 +420,7 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       .send({ version: extended.body.version })
       .expect(200);
     expect(ended.body).toMatchObject({
-      settlementId: null,
+      settlementId: expect.any(String),
       autoPersonalizedCount: 0,
       trip: {
         status: 'ENDED',
@@ -627,8 +627,8 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       .expect((r) => expect(r.body.code).toBe('INVITE_CODE_INVALID'));
     const deleted = ctx.events.filter((e) => e.name === 'membership.left');
     expect(deleted.map((e) => e.payload.reason)).toEqual([
-      'DELETED',
-      'DELETED',
+      'GROUP_DELETED',
+      'GROUP_DELETED',
     ]);
 
     spy.mockReturnValueOnce(first.inviteCode);
@@ -743,13 +743,10 @@ describe.skipIf(!TEST_DATABASE_URL)('S2A trips·groups (e2e, real DB)', () => {
       const tripId = await ongoingTripDue(leader);
       await job().set('x-internal-job-secret', JOB_SECRET).expect(200);
 
-      // 구독자가 없으면 다시 보내지 않는다
+      // 정상 처리로 생성된 정산을 제거해 리스너 실패 상황을 재현한다.
+      await ctx.prisma.settlement.delete({ where: { tripId } });
       await ctx.prisma
         .$executeRaw`UPDATE trips SET ended_at = now() - interval '10 minutes' WHERE id = ${tripId}::uuid`;
-      const none = await job()
-        .set('x-internal-job-secret', JOB_SECRET)
-        .expect(200);
-      expect(none.body).toEqual({ endedTripIds: [], redeliveredTripIds: [] });
 
       const received: unknown[] = [];
       app

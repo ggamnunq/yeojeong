@@ -26,6 +26,8 @@ pnpm --filter @yeojeong/api build                            # client 재생성(
 
 Prisma CLI는 `DIRECT_URL`이 있으면 그것을, 없으면 `DATABASE_URL`을 쓴다. 로컬은 `DATABASE_URL`만 있으면 된다. 서버 런타임은 항상 `DATABASE_URL`을 쓴다.
 
+CI는 여정 테스트의 TRUNCATE가 다른 테스트에 영향을 주지 않도록 Postgres DB 세 개(`DATABASE_URL` 일반 e2e, `TEST_DATABASE_URL` 여정, `PAYMENT_TEST_DATABASE_URL` 결제수단·인입)에 각각 마이그레이션을 적용한다. LeaveReason 확장과 기존 값 이관은 enum 추가가 커밋된 뒤 값을 사용할 수 있도록 별도 마이그레이션으로 나눈다.
+
 ## 스키마 규칙
 
 - 모델은 PascalCase 단수, 테이블은 snake_case 복수: `@@map("trip_members")`
@@ -73,7 +75,7 @@ Prisma 스키마로 표현할 수 없는 제약은 마이그레이션 SQL 끝에
 | `payment_methods_*_check`              | `masked_number`에 `*` 포함, `last4`는 숫자 2~4자리                                                  |
 | `expenses_*_check`                     | 부모(환불 자식이 아닌 행)만 `net_krw_amount` NOT NULL·≥ 0, 통화 형식                               |
 | `expense_shares`, `exchange_rates`, `settlements`, `settlement_transfers` | 금액·환율 ≥ 0 또는 > 0, 송금 권장안 from ≠ to |
-| `user_consents_*_check`, `consent_documents_*_check`, `account_deletions_channel_check` | screen·method·withdraw_channel·change_type·channel 허용 값, doc_hash 형식 |
+| `user_consents_*_check`, `consent_documents_*_check`, `account_deletions_channel_check` | screen·method·withdraw_channel·change_type·channel 허용 값, doc_hash·ip_hash 형식 |
 
 ## 배포 흐름
 
@@ -95,6 +97,15 @@ Prisma 스키마로 표현할 수 없는 제약은 마이그레이션 SQL 끝에
   1. expand: 새 컬럼을 추가한다(필요하면 기존 데이터 복사).
   2. 코드 배포: 새 컬럼을 읽고 쓰는 코드를 배포한다.
   3. contract: 다음 배포에서 옛 컬럼을 지우거나 제약을 건다.
+
+### 동의 기록 IP: 평문 → HMAC (진행 중)
+
+`user_consents.ip`(inet 평문)를 `ip_hash`(HMAC-SHA256, 키 `AUDIT_HMAC_KEY` = Secret Manager `yeojeong-audit-hmac-key`, 접근 기록과 같은 키)로 옮긴다.
+
+1. expand (`20261029000003_consent_ip_hash_expand`, 완료): `ip_hash` 추가, `ip`의 `NOT NULL` 해제. 새 코드는 `ip_hash`만 쓰고 `ip`는 비운다. 옛 리비전은 계속 `ip`를 쓸 수 있다.
+2. 이관: 내부 잡 `POST /api/internal/jobs/consent-ip-backfill`(`@InternalJob()`, 멱등, 500행 배치 × 최대 20회)이 평문을 해시로 옮기고 `ip`를 NULL로 지운다. 응답 `{ hashed, remaining }`. 파기 배치의 `CONSENT_IP_PLAINTEXT` 단계도 매일 같은 일을 해서 배포 중 옛 리비전이 쓴 평문까지 잡는다. 키가 없으면 평문을 지우지 않는다(`skipped: 'NO_KEY'`).
+3. 확인: 배포 후 잡을 한 번 돌리고 평문이 0건인지 본다 — 잡 응답의 `remaining: 0`, 또는 Cloud Logging의 `동의 기록 IP 이관` 로그(`remaining`)와 파기 배치 드라이런의 `CONSENT_IP_PLAINTEXT` 건수(`scripts/prisma-prod.sh`는 임의 SQL을 막는다). 옛 리비전이 더는 트래픽을 받지 않는 것도 확인한다.
+4. contract (별도 PR): 0건 확인 뒤 `drop_user_consents_ip` 마이그레이션으로 `ip` 컬럼을 지우고, 스키마의 `ip` 필드·이관 잡·파기 배치 `CONSENT_IP_PLAINTEXT` 단계·shared `ConsentIpBackfillResult`를 함께 지운다. 이 PR 배포 전에 다시 한 번 0건을 확인한다(옛 리비전이 아직 `ip`를 쓰면 DROP 뒤 그 리비전의 동의 저장이 실패한다).
 
 ## 롤백
 

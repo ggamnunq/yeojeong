@@ -57,7 +57,7 @@ const TX_OPTIONS = { timeout: 20_000, maxWait: 5_000 } as const;
  * 2. 트랜잭션: User 행 잠금 → 활성 멤버십의 Trip 행 잠금(S2A와 같은 순서) → 멤버십 익명화·승계·빈 그룹 소프트 삭제 →
  *    PENDING·PERSONAL 결제 삭제 → 거래 원본·결제수단·연결 시도·연결(토큰 포함) 삭제 → 세션 삭제 →
  *    동의 철회 기록 → AccountDeletion 완료 기록 → User 삭제
- * 3. membership.left(reason DELETED)·account.deleted 이벤트(커밋 후)
+ * 3. membership.left(reason ACCOUNT_DELETED)·account.deleted 이벤트(커밋 후)
  */
 @Injectable()
 export class AccountDeletionService {
@@ -313,7 +313,7 @@ export class AccountDeletionService {
           groupId: group.id,
           membershipId: mine.id,
           userId: null,
-          reason: 'DELETED',
+          reason: 'ACCOUNT_DELETED',
           eventSeq: await nextEventSeq(tx),
           occurredAt: now,
         });

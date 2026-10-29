@@ -1,13 +1,10 @@
-import type { ExecutionContext } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import { AppException } from '../common/errors/index.js';
 import {
   createFxRateSource,
   DemoFxRateSource,
   KoreaEximFxRateSource,
 } from './fx-rate-source.js';
 import { SpotRateTable } from './fx-rates.service.js';
-import { InternalJobGuard } from './internal-job.guard.js';
 import { asOfFromQuery, toKstIso } from './kst.js';
 
 const config = (values: Record<string, string>) =>
@@ -94,36 +91,6 @@ describe('FxRateSource', () => {
     expect(() =>
       createFxRateSource(config({ FX_RATE_SOURCE: 'scrape' })),
     ).toThrow('FX_RATE_SOURCE');
-  });
-});
-
-describe('InternalJobGuard', () => {
-  const SECRET = 's'.repeat(40);
-  const ctx = (headers: Record<string, string>) =>
-    ({
-      switchToHttp: () => ({ getRequest: () => ({ headers }) }),
-    }) as unknown as ExecutionContext;
-
-  it('accepts only the configured secret', () => {
-    const guard = new InternalJobGuard(config({ INTERNAL_JOB_SECRET: SECRET }));
-    expect(guard.canActivate(ctx({ 'x-internal-job-secret': SECRET }))).toBe(
-      true,
-    );
-    expect(() =>
-      guard.canActivate(ctx({ 'x-internal-job-secret': `${SECRET}x` })),
-    ).toThrow(AppException);
-    expect(() => guard.canActivate(ctx({}))).toThrow(AppException);
-  });
-
-  it('stays closed without a long enough secret', () => {
-    for (const value of ['', 'short-secret']) {
-      const guard = new InternalJobGuard(
-        config({ INTERNAL_JOB_SECRET: value }),
-      );
-      expect(() =>
-        guard.canActivate(ctx({ 'x-internal-job-secret': value })),
-      ).toThrow(AppException);
-    }
   });
 });
 

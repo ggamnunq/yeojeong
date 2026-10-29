@@ -48,6 +48,8 @@ export class ExpenseMemberDto implements MemberSummary {
 
   @ApiProperty({ description: '나간 멤버(프사 35% + "나간 멤버" 태그)' })
   isLeft: boolean;
+  @ApiProperty({ description: '계정 탈퇴한 멤버' })
+  isWithdrawn: boolean;
 }
 
 export class ExpenseFlagsDto {

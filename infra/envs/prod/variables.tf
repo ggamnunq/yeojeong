@@ -24,6 +24,11 @@ variable "api_service_name" {
   default = "yeojeong-api"
 }
 
+variable "internal_job_oidc_audience" {
+  description = "Cloud Scheduler OIDC aud. terraform output api_url과 정확히 같은 Cloud Run 서비스 URL"
+  type        = string
+}
+
 variable "supabase_organization_id" {
   description = "Supabase 조직 slug"
   type        = string

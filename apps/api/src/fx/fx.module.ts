@@ -6,7 +6,6 @@ import { FxPolicyService } from './fx-policy.service.js';
 import { createFxRateSource, FX_RATE_SOURCE } from './fx-rate-source.js';
 import { FxRatesService } from './fx-rates.service.js';
 import { FxRecalcService } from './fx-recalc.service.js';
-import { InternalJobGuard } from './internal-job.guard.js';
 
 /**
  * 환율 수집·조회, 여정 환율 정책, 원화 환산·재계산(기능명세 1-2 fx).
@@ -19,13 +18,12 @@ import { InternalJobGuard } from './internal-job.guard.js';
     FxRecalcService,
     FxPolicyService,
     FxJobService,
-    InternalJobGuard,
     {
       provide: FX_RATE_SOURCE,
       inject: [ConfigService],
       useFactory: createFxRateSource,
     },
   ],
-  exports: [FxRatesService, FxRecalcService, InternalJobGuard],
+  exports: [FxRatesService, FxRecalcService],
 })
 export class FxModule {}

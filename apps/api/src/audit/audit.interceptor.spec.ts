@@ -44,6 +44,8 @@ const authed = (params: Record<string, string> = {}) => ({
   auth: { user: { id: USER_ID } },
   params,
   ip: '203.0.113.7',
+  id: 'request-1',
+  get: () => 'test-agent',
 });
 
 describe('AuditInterceptor', () => {
@@ -80,6 +82,8 @@ describe('AuditInterceptor', () => {
       resourceType: 'EXPENSE',
       resourceId: EXPENSE_ID,
       ip: '203.0.113.7',
+      requestId: 'request-1',
+      ua: 'test-agent',
     });
   });
 

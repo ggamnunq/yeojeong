@@ -4,7 +4,7 @@ import request from 'supertest';
 import type { AuthUser } from './../src/common/auth/index.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { DuplicateFlagger } from './../src/transactions/duplicate-flagger.js';
-import { INTERNAL_JOB_SECRET_HEADER } from './../src/transactions/internal-job.guard.js';
+import { INTERNAL_JOB_SECRET_HEADER } from './../src/common/internal-job/index.js';
 import { TripEventsListener } from './../src/transactions/trip-events.listener.js';
 import { createTestAuth, TEST_ORIGIN, type TestAuth } from './auth-helpers.js';
 import {
@@ -15,7 +15,7 @@ import {
   type SeededTrip,
 } from './payment-helpers.js';
 
-// 실제 DB에 붙는 결제수단·인입 e2e. PAYMENT_TEST_DATABASE_URL(이름이 _test로 끝나는 전용 DB)이 있을 때만 돈다(CI는 건너뜀).
+// 실제 DB에 붙는 결제수단·인입 e2e. PAYMENT_TEST_DATABASE_URL(이름이 _test로 끝나는 전용 DB)이 있을 때만 돈다(CI는 yeojeong_s2b_test).
 // S2A의 TEST_DATABASE_URL은 시작할 때 TRUNCATE하므로 같이 돌면 서로 지운다 — 다른 DB를 쓴다. 이 테스트는 자기가 만든 행만 지운다.
 // 예: PAYMENT_TEST_DATABASE_URL=postgresql://yeojeong:yeojeong@localhost:5432/yeojeong_s2b_test pnpm --filter @yeojeong/api test:e2e
 const TEST_DB = process.env.PAYMENT_TEST_DATABASE_URL;
@@ -424,7 +424,8 @@ describe.skipIf(!TEST_DB)('Payment flow (e2e, real DB)', () => {
     const seed = await seedTrip(prisma, {
       members: [{ nickname: '수빈' }, { nickname: '민지', member: false }],
       status: 'UPCOMING',
-      startOffsetDays: -3,
+      // 샘플 마지막 결제(D4 12:10)가 실행 시각과 상관없이 이미 지난 결제가 되도록 4일 전에 시작한다
+      startOffsetDays: -4,
     });
     seeds.push(seed);
     const [sb, mj] = seed.users;

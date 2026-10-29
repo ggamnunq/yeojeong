@@ -5,7 +5,7 @@
 | 메서드 | 경로                       | 권한                          | 하는 일                                                                    |
 | ------ | -------------------------- | ----------------------------- | -------------------------------------------------------------------------- |
 | DELETE | `/api/users/me`            | 로그인(재동의 전에도 가능)    | 본문 `{ "confirm": true }`. 탈퇴 파이프라인 → 204 + `yj_session` 쿠키 삭제 |
-| POST   | `/api/internal/jobs/purge` | 내부(`x-internal-job-secret`) | 본문 `{ "dryRun"?: boolean }`. 파기 배치 → 200 `PurgeJobResult`            |
+| POST   | `/api/internal/jobs/purge` | 내부(Cloud Scheduler OIDC) | 본문 `{ "dryRun"?: boolean }`. 파기 배치 → 200 `PurgeJobResult`            |
 
 공유 타입은 `@yeojeong/shared`의 `api/account.ts`(`DeleteAccountRequest`, `DELETED_MEMBER_NICKNAME`, `PurgeStep`, `PurgeJobResult`).
 
@@ -17,7 +17,7 @@
 2. 한 트랜잭션:
    - `users` 행 `FOR UPDATE`. 없으면 `ALREADY_DELETED`로 끝난다(동시 요청·재시도 멱등).
    - 활성 멤버십의 Trip 행 `FOR UPDATE`(S2A와 같은 순서: Trip → Membership).
-   - 활성 멤버십마다: `userId = NULL`, `leftAt`, `leaveReason = LEFT`. 그룹장이면 남은 활성 멤버 중 `joinOrder` 최소에게 LEADER + `TripEvent LEADER_CHANGED`. 남는 활성 멤버가 없으면 그룹·여정 `deletedAt`(29일 경과 후 파기).
+   - 활성 멤버십마다: `userId = NULL`, `leftAt`, `leaveReason = ACCOUNT_DELETED`. 그룹장이면 남은 활성 멤버 중 `joinOrder` 최소에게 LEADER + `TripEvent LEADER_CHANGED`. 남는 활성 멤버가 없으면 그룹·여정 `deletedAt`(29일 경과 후 파기).
    - 나간 멤버십도 `userId = NULL`. 내가 승계받았던 토스트 페이로드의 닉네임은 "탈퇴한 멤버"로 바꾼다.
    - 내 PENDING·PERSONAL 결제(취소 자식 포함), 거래 원본, 결제수단, 연결 시도, 연결(토큰 포함), 세션, 같은 카카오 회원번호의 가입 대기를 지운다. SHARED 결제·부담·정산 행은 Membership ID로 남고 `transactionId`만 NULL이 된다.
    - 동의 이력 `withdrawnAt` + `ACCOUNT_DELETED`(3년 보존 후 파기).
@@ -47,24 +47,26 @@
 | 6   | `REVOKED_CONNECTIONS`     | PaymentConnection           | `REVOKED` + 결제수단 없음 + `updatedAt` + 29일             | 삭제(명세 외 추가)          | 5,000행    |
 | 7   | `INACTIVE_USERS`          | User                        | `lastLoginAt` + 3년                                        | 탈퇴 파이프라인(`INACTIVE`) | 20명       |
 | 8   | `USER_CONSENTS`           | UserConsent                 | `withdrawnAt` + 3년                                        | 삭제                        | 5,000행    |
+| 8   | `CONSENT_IP_PLAINTEXT`    | `UserConsent.ip`(평문)      | 평문이 남아 있으면 모두(임시, expand~contract 사이)        | `ipHash` 계산 후 NULL       | 5,000행    |
 | 9   | `ACCESS_LOGS`             | AccessLog                   | `at` + 1년                                                 | 삭제                        | 5,000행    |
 | 10  | `ACCOUNT_DELETIONS`       | AccountDeletion             | `completedAt` + 3년, 처리 안 된 요청은 `requestedAt` + 3년 | 삭제                        | 5,000행    |
 
 - "하위 기록 일체" = ExpenseChangeLog → Expense(ExpenseShare·취소 자식 CASCADE) → Settlement(멤버·송금안 CASCADE) → TripEvent → Trip → Membership → Group. 이 여정의 결제에만 쓰인 거래 원본과, 그 거래를 가리키는 동일 사용자 중복 행(결제가 없는 것)도 지운다. 겹치는 다른 여정이 쓰는 거래는 남긴다.
 - 상한에 걸리면 `hasMore: true`이고 다음 실행이 이어서 지운다.
+- `CONSENT_IP_PLAINTEXT`는 파기가 아니라 동의 기록 IP 평문 → HMAC 이관이다(`consent-ip-backfill` 잡과 같은 함수). 배포 중 옛 리비전이 남긴 평문도 다음 날 잡힌다. `AUDIT_HMAC_KEY`가 없으면 평문을 지우지 않고 `skipped: 'NO_KEY'`. 평문 컬럼을 지우는 contract 마이그레이션과 함께 이 단계도 지운다(`prisma/README.md` "동의 기록 IP").
 - 운영 로그(Cloud Logging)는 버킷 보존 정책(서울 `yeojeong-app-logs`, 93일, `infra/envs/prod/logging.tf`)이 지운다.
 
 ### 호출
 
 ```bash
-curl -X POST https://jinyeojeong.com/api/internal/jobs/purge \
+curl -X POST http://localhost:3000/api/internal/jobs/purge \
   -H "x-internal-job-secret: $INTERNAL_JOB_SECRET" \
-  -H 'Origin: https://jinyeojeong.com' -H 'Content-Type: application/json' \
+  -H 'Content-Type: application/json' \
   -d '{"dryRun": true}'
 ```
 
-- `InternalJobGuard`(`internal-job.guard.ts`): 헤더가 env `INTERNAL_JOB_SECRET`(32자 이상)과 같아야 한다. 비어 있으면 모두 403. 다른 잡 모듈도 같은 헤더 이름을 쓴다.
-- 지금은 전역 CSRF 가드가 Origin 없는 POST를 막아 `Origin`을 붙여야 한다. 운영 Cloud Run은 origin lock 때문에 Worker를 거쳐야 한다(통합 과제 참고).
+- `@InternalJob()` 공통 가드: 운영은 Cloud Scheduler OIDC, 로컬·테스트는 `x-internal-job-secret` 대체 인증을 쓴다.
+- 위 시크릿 방식은 로컬·테스트 전용이다. 운영은 Cloud Scheduler OIDC만 허용한다.
 
 ## 감사 로그 (`src/audit`)
 
@@ -84,7 +86,7 @@ detail() {}
 ```
 
 - 라우트 밖(서비스 트랜잭션 안, 잡)에서는 `AuditService.record({ userId, action, resourceType, resourceId, ip }, tx?)`.
-- 행동은 shared `AccessAction`(`VIEW_PAYMENT_METHODS`·`VIEW_EXPENSE_DETAIL`·`LIST_EXPENSES`·`VIEW_CANDIDATES`·`CONNECT`·`DISCONNECT`·`SYNC`)에 `CLASSIFY_EXPENSE`·`VIEW_SETTLEMENT`·`DELETE_ACCOUNT`를 더했다(`audit-actions.ts`).
+- 행동은 shared `AccessAction`을 사용한다.
 - 남기는 것: userId, action, resourceType, resourceId(UUID가 아니면 NULL), `ipHash`(HMAC-SHA256, `AUDIT_HMAC_KEY` 없으면 NULL), 시각. 금액·가맹점·닉네임·IP 원문은 남기지 않는다.
 - requestId·user-agent는 테이블에 칸이 없어 같은 요청의 애플리케이션 로그 `접근 기록`(`accessLogId`, requestId 자동)으로 잇는다. 요청 로그 줄에 ip·userAgent가 있다.
 - 기록 실패는 응답을 막지 않는다(오류 코드만 로그). 보존 1년은 파기 배치 9단계.
@@ -94,16 +96,16 @@ detail() {}
 | 이름                  | 필수         | 설명                                                         |
 | --------------------- | ------------ | ------------------------------------------------------------ |
 | `INTERNAL_JOB_SECRET` | 잡을 부를 때 | 32자 이상. 비우면 내부 잡 전부 403                           |
-| `AUDIT_HMAC_KEY`      | 아니오       | 32자 이상. 접근 기록 IP 해시 키. 없으면 `ipHash` NULL        |
+| `AUDIT_HMAC_KEY`      | 아니오       | 32자 이상. 접근 기록·동의 기록 IP 해시 키. 없으면 `ipHash` NULL(운영은 Secret Manager `yeojeong-audit-hmac-key`) |
 | `USER_REF_HMAC_KEY`   | 아니오       | 동의 이력이 없는 회원의 `userRefHash` 계산용(auth와 같은 키) |
 
 ## 테스트
 
-- 단위: `retention-policy.spec.ts`(경계), `account-deletion.plan.spec.ts`(승계·익명화), `audit.*.spec.ts`, `internal-job.guard.spec.ts`.
-- e2e(실제 DB): `test/account.e2e-spec.ts`, `test/retention.e2e-spec.ts`, `test/audit.e2e-spec.ts`. `.env`의 `DATABASE_URL`이 없으면(CI) 건너뛴다. 파기 e2e는 그 DB에서 배치를 실제로 돌리므로 개발 DB 대신 별도 DB를 쓰는 것을 권한다.
+- 단위: `retention-policy.spec.ts`(경계), `account-deletion.plan.spec.ts`(승계·익명화), `audit.*.spec.ts`, `common/internal-job/*.spec.ts`.
+- e2e(실제 DB): `test/account.e2e-spec.ts`, `test/retention.e2e-spec.ts`, `test/audit.e2e-spec.ts`. `DATABASE_URL`이 없으면 건너뛴다. CI는 별도 테스트 DB를 사용한다. 파기 e2e는 그 DB에서 배치를 실제로 돌리므로 개발 DB 대신 별도 DB를 쓰는 것을 권한다.
 
 ## 통합 과제
 
 - `membership.left` 타입은 S2A `src/trips/events.ts`를 그대로 쓴다. 그쪽 주석의 DELETED(그룹 삭제)에 탈퇴도 포함되도록 고치고, 스키마 통합 때 사유를 `ACCOUNT_DELETED`/`GROUP_DELETED`로 나눈다.
-- 내부 잡: 전역 CSRF 가드 예외(내부 잡 경로), Cloud Scheduler 잡과 `INTERNAL_JOB_SECRET` 시크릿(Terraform), Worker 경유 또는 origin lock 예외. 명세 6-1의 OIDC 검증으로 바꿀 때 `InternalJobGuard`를 교체한다.
-- 로그 redact 목록(`common/logging/logger.ts`)에 `x-internal-job-secret` 추가.
+- 내부 잡: `@InternalJob()`이 전역 CSRF를 예외하고, Cloud Scheduler의 Google OIDC 토큰을 공통 가드가 검증한다. Worker는 경유하지 않는다.
+- 로그 redact 목록(`common/logging/logger.ts`)에 `x-internal-job-secret`가 포함된다.

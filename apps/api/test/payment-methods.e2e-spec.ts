@@ -1,6 +1,6 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
-import { INTERNAL_JOB_SECRET_HEADER } from './../src/transactions/internal-job.guard.js';
+import { INTERNAL_JOB_SECRET_HEADER } from './../src/common/internal-job/index.js';
 import { createTestAuth, TEST_ORIGIN, type TestAuth } from './auth-helpers.js';
 import { createPaymentTestApp } from './payment-helpers.js';
 
@@ -83,12 +83,11 @@ describe('Payment methods guards (e2e, no DB)', () => {
         .expect((r) => expect(r.body.code).toBe('FORBIDDEN'));
     });
 
-    it('is still behind the global CSRF guard (callers send Origin)', async () => {
+    it('skips the CSRF guard like every @InternalJob() route (no Origin needed)', async () => {
       await request(server())
         .post(path)
         .set(INTERNAL_JOB_SECRET_HEADER, 'test-internal-job-secret-0123456789')
-        .expect(403)
-        .expect((r) => expect(r.body.code).toBe('CSRF_REJECTED'));
+        .expect(200);
     });
 
     it('runs with the right secret', async () => {

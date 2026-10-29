@@ -63,13 +63,14 @@ describe('anonymizedMembership (익명화 필드)', () => {
     expect(anonymizedMembership(null, now)).toEqual({
       userId: null,
       leftAt: now,
-      leaveReason: 'LEFT',
+      leaveReason: 'ACCOUNT_DELETED',
+      kickedByMembershipId: null,
     });
   });
 
   it('only unlinks the user when the member had already left', () => {
     const leftAt = new Date('2026-11-14T00:00:00Z');
-    expect(anonymizedMembership(leftAt, now)).toEqual({ userId: null });
+    expect(anonymizedMembership(leftAt, now)).toEqual({ userId: null, leaveReason: 'ACCOUNT_DELETED', kickedByMembershipId: null });
   });
 
   it('replaces the nickname in leader-change toasts with the deleted-member label', () => {

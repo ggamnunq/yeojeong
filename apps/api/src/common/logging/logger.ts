@@ -23,6 +23,7 @@ const REDACT_PATHS = [
   'cookie',
   'set-cookie',
   'x-origin-auth',
+  'x-internal-job-secret',
 ].flatMap((name) => [
   `headers["${name}"]`,
   `req.headers["${name}"]`,

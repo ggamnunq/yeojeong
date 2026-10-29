@@ -1,9 +1,9 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { PurgeJobResult, PurgeStep } from '@yeojeong/shared';
 import request from 'supertest';
 import type { PrismaService } from './../src/prisma/prisma.service.js';
-import { INTERNAL_JOB_SECRET_HEADER } from './../src/retention/internal-job.guard.js';
+import { INTERNAL_JOB_SECRET_HEADER } from './../src/common/internal-job/index.js';
 import {
   createDbTestApp,
   createExpense,
@@ -19,6 +19,7 @@ import {
   yearsAgo,
 } from './account-fixtures.js';
 import { TEST_ORIGIN } from './auth-helpers.js';
+import { TEST_ENV } from './env.js';
 
 const SECRET = 'internal-job-secret-for-e2e-only-0123456789';
 const hex64 = () => randomBytes(32).toString('hex');
@@ -41,7 +42,7 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
     vi.unstubAllEnvs();
   });
 
-  // Cloud Scheduler 호출 흉내. 전역 CSRF 가드 때문에 허용 Origin도 붙인다(src/retention/README.md "호출")
+  // 로컬 대체 시크릿으로 Cloud Scheduler 호출을 흉내 낸다.
   const purge = (body: object = {}, secret: string | null = SECRET) => {
     const req = request(app.getHttpServer())
       .post('/api/internal/jobs/purge')
@@ -361,6 +362,7 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
       'REVOKED_CONNECTIONS',
       'INACTIVE_USERS',
       'USER_CONSENTS',
+      'CONSENT_IP_PLAINTEXT',
       'ACCESS_LOGS',
       'ACCOUNT_DELETIONS',
     ]);
@@ -490,6 +492,20 @@ describeWithDb('POST /api/internal/jobs/purge 파기 배치 (e2e, 실제 DB)', (
     expect(
       await db.userConsent.count({ where: { id: s.consentRecent.id } }),
     ).toBe(1);
+    // 8단계 뒤: 옛 리비전이 남긴 동의 기록 IP 평문은 HMAC으로 옮기고 지운다
+    expect(countOf(dry, 'CONSENT_IP_PLAINTEXT')).toBeGreaterThanOrEqual(1);
+    expect(countOf(run, 'CONSENT_IP_PLAINTEXT')).toBeGreaterThanOrEqual(1);
+    expect(
+      await db.userConsent.findUniqueOrThrow({
+        where: { id: s.consentRecent.id },
+        select: { ip: true, ipHash: true },
+      }),
+    ).toEqual({
+      ip: null,
+      ipHash: createHmac('sha256', TEST_ENV.AUDIT_HMAC_KEY)
+        .update('203.0.113.7')
+        .digest('hex'),
+    });
     expect(await db.accessLog.count({ where: { id: s.accessOld.id } })).toBe(0);
     expect(await db.accessLog.count({ where: { id: s.accessRecent.id } })).toBe(
       1,

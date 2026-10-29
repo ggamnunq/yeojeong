@@ -58,6 +58,8 @@ export class MemberSummaryDto extends ProfileDto implements MemberSummary {
 
   @ApiProperty({ description: '나간 멤버(강퇴 포함)' })
   isLeft: boolean;
+  @ApiProperty({ description: '계정 탈퇴한 멤버' })
+  isWithdrawn: boolean;
 }
 
 export class TripListItemDto implements TripListItem {

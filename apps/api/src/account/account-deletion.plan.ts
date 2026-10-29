@@ -43,15 +43,15 @@ export function planLeave(
 /**
  * 탈퇴한 회원의 멤버십에 쓰는 값. 계정 연결을 끊어(userId = NULL → 화면 "탈퇴한 멤버", 기본 프사)
  * 공동 결제·부담·정산 행은 Membership ID로 그대로 남긴다. 활성 멤버였으면 나간 멤버로 만든다
- * (정산 N에서 빠지고, 결제 잠금, 새 부담 인원 후보에서 빠진다). DB enum에 DELETED가 없어 사유는 LEFT로 둔다.
+ * (정산 N에서 빠지고, 결제 잠금, 새 부담 인원 후보에서 빠진다).
  */
 export function anonymizedMembership(
   leftAt: Date | null,
   now: Date,
-): { userId: null; leftAt?: Date; leaveReason?: 'LEFT' } {
+): { userId: null; leftAt?: Date; leaveReason: 'ACCOUNT_DELETED'; kickedByMembershipId: null } {
   return leftAt
-    ? { userId: null }
-    : { userId: null, leftAt: now, leaveReason: 'LEFT' };
+    ? { userId: null, leaveReason: 'ACCOUNT_DELETED', kickedByMembershipId: null }
+    : { userId: null, leftAt: now, leaveReason: 'ACCOUNT_DELETED', kickedByMembershipId: null };
 }
 
 /** TripEvent(LEADER_CHANGED) 페이로드 {newLeaderMembershipId, nickname}에서 지울 닉네임 자리에 넣는 값 */
