@@ -1,3 +1,4 @@
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import type { FetchCardApprovalsRequest } from '@yeojeong/shared';
 import {
@@ -25,11 +26,17 @@ import {
 import { TwoWayTokenSealer } from './two-way-token.js';
 
 const KEY = Buffer.alloc(32, 3).toString('base64');
+/** 실제 RSA 2048 공개키(암호문 길이 검사 기준 256바이트). 개인키는 쓰지 않는다 */
+const PUBLIC_KEY = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  .publicKey.export({ type: 'spki', format: 'der' })
+  .toString('base64');
 const USER = '11111111-1111-4111-8111-111111111111';
 const NOW = new Date('2026-11-13T06:00:00Z'); // KST 15:00
 const TRIP_ID = '33333333-3333-4333-8333-333333333333';
+const BUDGET_DAY = new Date('2026-11-13T00:00:00Z');
 const LOGIN_ID = 'my-card-login-id';
-const CIPHERTEXT = 'Q0lQSEVSVEVYVC1CQVNFNjQtVkFMVUU=';
+/** 모듈러스와 같은 256바이트 암호문(모양만) */
+const CIPHERTEXT = randomBytes(256).toString('base64');
 
 function setup(
   routes: Record<string, CodefRoute>,
@@ -40,7 +47,7 @@ function setup(
     CODEF_LOGIN_MODE: options.mode ?? 'direct',
     CODEF_CLIENT_ID: 'id',
     CODEF_CLIENT_SECRET: 'secret',
-    CODEF_PUBLIC_KEY: 'PUBLICKEY',
+    CODEF_PUBLIC_KEY: PUBLIC_KEY,
     TOKEN_ENCRYPTION_KEY: KEY,
   });
   const http = codefHttpMock(routes);
@@ -71,6 +78,18 @@ function setup(
     checkStart: vi.fn().mockResolvedValue(undefined),
     remainingToday: vi.fn().mockResolvedValue(10),
     loginSucceeded: vi.fn().mockResolvedValue(undefined),
+    reserveFetch: vi.fn().mockResolvedValue({ day: BUDGET_DAY, calls: 4 }),
+    refund: vi.fn().mockResolvedValue(undefined),
+    recordAttempt: vi.fn().mockResolvedValue('attempt-log-id'),
+    finishAttempt: vi.fn().mockResolvedValue(undefined),
+    openTwoWay: vi.fn().mockResolvedValue('nonce-1'),
+    consumeTwoWay: vi.fn().mockResolvedValue({
+      nonceHash: 'nonce-hash-1',
+      attempts: 1,
+      callsLeft: 2,
+      budgetDay: BUDGET_DAY,
+    }),
+    closeTwoWay: vi.fn().mockResolvedValue(undefined),
     loginFailed: vi.fn(() =>
       Promise.reject(
         AppException.of('CARD_LOGIN_FAILED', {
@@ -79,7 +98,6 @@ function setup(
       ),
     ),
   };
-  const audit = { record: vi.fn().mockResolvedValue('log-id') };
   const remover = new CodefAccountRemover(client, prisma as never, env);
   remover.delays = [0, 0];
   const service = new CardImportService(
@@ -89,13 +107,12 @@ function setup(
     new TwoWayTokenSealer(env),
     new ImportKeyHasher(env),
     { findMissing: vi.fn().mockResolvedValue([]) } as never,
-    audit as never,
     { findSpotRate: vi.fn().mockResolvedValue(null) } as never,
     remover,
     limits as never,
     new ItemTokenSigner(env),
   );
-  return { service, http, prisma, audit, pendingCreate, limits, release };
+  return { service, http, prisma, pendingCreate, limits, release };
 }
 
 const request = (
@@ -120,7 +137,7 @@ const codeOf = async (promise: Promise<unknown>) => {
 
 describe('CardImportService.fetch (direct)', () => {
   it('logs in inside the approval request, creates no CODEF account and writes nothing', async () => {
-    const { service, http, prisma, audit } = setup({
+    const { service, http, prisma, limits } = setup({
       [CODEF_PATHS.CARD_APPROVAL_LIST]: () =>
         codefResult('CF-00000', mixedRows('2026-11-13')),
     });
@@ -177,15 +194,26 @@ describe('CardImportService.fetch (direct)', () => {
     });
     // 쓰기 메서드가 아예 없다(조회 결과는 DB에 가지 않는다)
     expect(Object.keys(prisma.transaction)).toEqual(['findMany']);
-    // 접근 기록: 기관 코드·건수·결과 코드만
-    expect(audit.record).toHaveBeenCalledWith({
-      userId: USER,
-      action: 'FETCH_CARD_APPROVALS',
-      resourceType: 'USER',
-      resourceId: USER,
-      details: { organization: '0306', count: 4, result: 'OK', step: 'START' },
+    // 시도 기록은 CODEF 호출 전에(사용자 횟수의 기준), 결과는 기관 코드·건수·결과 코드만
+    expect(limits.recordAttempt).toHaveBeenCalledWith(USER, '0306', 'START');
+    expect(limits.recordAttempt.mock.invocationCallOrder[0]).toBeLessThan(
+      (
+        http.fetch as unknown as ReturnType<typeof vi.fn>
+      ).mock.invocationCallOrder.at(-1) as number,
+    );
+    expect(limits.finishAttempt).toHaveBeenCalledWith('attempt-log-id', {
+      organization: '0306',
+      count: 4,
+      result: 'OK',
+      step: 'START',
     });
-    const logged = JSON.stringify(audit.record.mock.calls);
+    // 예산: 4 예약 → 1 사용 → 3 돌려줌
+    expect(limits.reserveFetch).toHaveBeenCalledTimes(1);
+    expect(limits.refund).toHaveBeenCalledWith(BUDGET_DAY, 3);
+    const logged = JSON.stringify([
+      limits.recordAttempt.mock.calls,
+      limits.finishAttempt.mock.calls,
+    ]);
     expect(logged).not.toContain(LOGIN_ID);
     expect(logged).not.toContain(CIPHERTEXT);
   });
@@ -305,6 +333,24 @@ describe('CardImportService.fetch (direct)', () => {
     expect(limits.acquire).toHaveBeenCalledTimes(2);
     expect(release).toHaveBeenCalledTimes(2);
     expect(limits.loginSucceeded).toHaveBeenCalledWith(USER, '0311');
+    // 처음 조회의 남은 예약(4 − 1 = 3)을 이어가기 행이 들고 가고, 결과를 받으면 행을 닫는다(남은 예약 반환)
+    expect(limits.openTwoWay).toHaveBeenCalledWith(
+      USER,
+      { day: BUDGET_DAY, callsLeft: 3 },
+      expect.any(Date),
+    );
+    expect(limits.refund).not.toHaveBeenCalled();
+    expect(limits.consumeTwoWay).toHaveBeenCalledWith(
+      USER,
+      'nonce-1',
+      expect.any(Date),
+    );
+    expect(limits.closeTwoWay).toHaveBeenCalledWith('nonce-hash-1');
+    expect(limits.recordAttempt).toHaveBeenLastCalledWith(
+      USER,
+      '0311',
+      'TWO_WAY',
+    );
     // 만료 뒤에는 410
     expect(
       await codeOf(
@@ -327,20 +373,17 @@ describe('CardImportService.fetch (direct)', () => {
     ['CF-04020', 'CARD_PASSWORD_ENCRYPTION_INVALID'],
     ['CF-99999', 'CARD_IMPORT_FAILED'],
   ])('maps %s to %s and records the code', async (codefCode, ours) => {
-    const { service, audit } = setup({
+    const { service, limits } = setup({
       [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult(codefCode, {}),
     });
     expect(await codeOf(service.fetch(USER, request(), NOW))).toBe(ours);
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        details: {
-          organization: '0306',
-          count: 0,
-          result: ours,
-          step: 'START',
-        },
-      }),
-    );
+    expect(limits.finishAttempt).toHaveBeenCalledWith('attempt-log-id', {
+      organization: '0306',
+      count: 0,
+      result: ours,
+      step: 'START',
+    });
+    expect(limits.refund).toHaveBeenCalledWith(BUDGET_DAY, 3);
   });
 
   it('counts login failures and releases the lock', async () => {
@@ -360,7 +403,7 @@ describe('CardImportService.fetch (direct)', () => {
   });
 
   it('does not call CODEF or record access when a start limit refuses', async () => {
-    const { service, limits, release, http, audit } = setup({
+    const { service, limits, release, http } = setup({
       [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-00000', []),
     });
     limits.checkStart.mockRejectedValueOnce(
@@ -371,7 +414,8 @@ describe('CardImportService.fetch (direct)', () => {
     );
     expect(http.calls).toHaveLength(0);
     expect(release).toHaveBeenCalledTimes(1);
-    expect(audit.record).not.toHaveBeenCalled();
+    expect(limits.recordAttempt).not.toHaveBeenCalled();
+    expect(limits.reserveFetch).not.toHaveBeenCalled();
   });
 
   it('rejects Hyundai and Hana while card-number login is disabled', async () => {
@@ -404,6 +448,101 @@ describe('CardImportService.fetch (direct)', () => {
       ).toBe('VALIDATION_FAILED');
     }
     expect(http.calls).toHaveLength(0);
+  });
+
+  it('rejects ciphertexts that are not exactly the key modulus long and stray card fields (L2·L8)', async () => {
+    const { service, http, limits } = setup({
+      [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-00000', []),
+    });
+    for (const bad of [
+      Buffer.from('plain-password').toString('base64'),
+      randomBytes(255).toString('base64'),
+      randomBytes(512).toString('base64'),
+    ]) {
+      const error = await service
+        .fetch(USER, request({ encryptedPassword: bad }), NOW)
+        .catch((e: unknown) => e);
+      expect(error).toMatchObject({ code: 'VALIDATION_FAILED' });
+      expect(JSON.stringify(error)).not.toContain(bad);
+    }
+    expect(
+      await codeOf(
+        service.fetch(
+          USER,
+          request({
+            loginCardNo: '9410123412341934',
+            encryptedCardPassword: CIPHERTEXT,
+          }),
+          NOW,
+        ),
+      ),
+    ).toBe('VALIDATION_FAILED');
+    expect(http.calls).toHaveLength(0);
+    expect(limits.acquire).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the attempt record cannot be written or finished', async () => {
+    const { service, http, limits, release } = setup({
+      [CODEF_PATHS.CARD_APPROVAL_LIST]: () =>
+        codefResult('CF-00000', [DOC_SAMPLE_ROW]),
+    });
+    limits.recordAttempt.mockRejectedValueOnce(new Error('db down'));
+    await expect(service.fetch(USER, request(), NOW)).rejects.toThrow(
+      'db down',
+    );
+    expect(http.calls).toHaveLength(0);
+    // 예약은 돌려주고 잠금은 푼다
+    expect(limits.refund).toHaveBeenCalledWith(BUDGET_DAY, 4);
+    expect(release).toHaveBeenCalledTimes(1);
+
+    limits.finishAttempt.mockRejectedValueOnce(new Error('db down'));
+    await expect(service.fetch(USER, request(), NOW)).rejects.toThrow();
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it('keeps the 2-way session only for a wrong code and closes it otherwise', async () => {
+    const { service, limits } = setup({
+      [CODEF_PATHS.CARD_APPROVAL_LIST]: (body) =>
+        body.is2Way
+          ? codefResult('CF-12872', {})
+          : codefResult('CF-03002', {
+              method: 'smsAuthNo',
+              jobIndex: 0,
+              threadIndex: 0,
+              jti: 'j',
+              twoWayTimestamp: 1,
+            }),
+    });
+    const lotte = request({ organization: '0311' });
+    const first = await service.fetch(USER, lotte, NOW);
+    if (first.status !== 'TWO_WAY_REQUIRED') throw new Error('expected 2-way');
+    const next = {
+      ...lotte,
+      twoWay: { token: first.twoWayToken, code: '000000' },
+    };
+    // 틀린 인증번호: 행 유지(시도 1/3)
+    expect(await codeOf(service.fetch(USER, next, NOW))).toBe(
+      'CARD_TWO_WAY_INVALID',
+    );
+    expect(limits.closeTwoWay).not.toHaveBeenCalled();
+    // 3번째 시도도 틀리면 닫는다
+    limits.consumeTwoWay.mockResolvedValueOnce({
+      nonceHash: 'nonce-hash-1',
+      attempts: 3,
+      callsLeft: 0,
+      budgetDay: BUDGET_DAY,
+    });
+    expect(await codeOf(service.fetch(USER, next, NOW))).toBe(
+      'CARD_TWO_WAY_INVALID',
+    );
+    expect(limits.closeTwoWay).toHaveBeenCalledWith('nonce-hash-1');
+    // 시도 상한·없는 행은 consumeTwoWay가 410
+    limits.consumeTwoWay.mockRejectedValueOnce(
+      AppException.of('CARD_TWO_WAY_EXPIRED'),
+    );
+    expect(await codeOf(service.fetch(USER, next, NOW))).toBe(
+      'CARD_TWO_WAY_EXPIRED',
+    );
   });
 
   it('checks the period against the card company limits', () => {

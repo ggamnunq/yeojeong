@@ -18,7 +18,10 @@ POST /api/wallet/entries/import ─▶  itemToken 검증 → CARD_IMPORT 지갑 
 ```
 
 - **direct(기본, `CODEF_LOGIN_MODE=direct`)**: 승인내역 요청에 아이디·암호문을 바로 넣는다(KR_CD_P_002 입력부: connectedId는 "로그인 파라미터를 생략할 때만 필수"). CODEF에 계정(connectedId)을 만들지 않으므로 지울 것도, 추가 인증 중 이탈해도 남는 것도 없다.
-- **account(대안)**: 계정 등록 → 조회 → `finally` 계정 삭제. 삭제는 요청 안에서 지수 백오프로 최대 3회, 그래도 실패하면 connectedId만 암호화해 `codef_pending_deletions`에 넣고 내부 잡(`POST /api/internal/jobs/codef-cleanup`, 10분)이 성공할 때까지 다시 지운다. 추가 인증이 필요하면 계정을 지우고 `CARD_TWO_WAY_UNSUPPORTED`(이어가기 상태에 connectedId를 담지 않는다). direct가 운영에서 막힐 때만 켠다.
+- **account(대안)**: 운영에서는 `CODEF_ALLOW_ACCOUNT_MODE=true`가 없으면 켜지지 않는다(부팅 때 error 로그 + direct로 동작). 계정 등록 → 조회 → `finally` 계정 삭제. 삭제는 요청 안에서 지수 백오프로 최대 3회, 그래도 실패하면 connectedId만 암호화해 `codef_pending_deletions`에 넣고 내부 잡(`POST /api/internal/jobs/codef-cleanup`, 10분)이 성공할 때까지 다시 지운다. 추가 인증이 필요하면 계정을 지우고 `CARD_TWO_WAY_UNSUPPORTED`(이어가기 상태에 connectedId를 담지 않는다). direct가 운영에서 막힐 때만 켠다.
+
+  - **알려진 위험**: 계정 등록 요청이 타임아웃(10초)으로 끝나면 CODEF 쪽에서는 계정이 만들어졌는데 응답(connectedId)을 받지 못했을 수 있다. 이 경우 서버는 지울 connectedId를 모르므로 삭제 대기에도 넣지 못한다 — CODEF 콘솔(connectedId 목록)에서 운영자가 정리해야 한다. direct 모드에는 이 위험이 없다.
+  - 삭제 대기 행은 30일 보관 상한(파기 배치 `CODEF_PENDING_DELETIONS`, 넘으면 버리고 error 로그), 남은 행이 있으면 매일 error 로그로 알린다.
 
 ## 저장하지 않는 것
 
@@ -52,18 +55,33 @@ POST /api/wallet/entries/import ─▶  itemToken 검증 → CARD_IMPORT 지갑 
 - `itemToken` = `"<만료 epoch 초>.<HMAC-SHA256>"`, 재료 = 사용자 + importKey + 승인 일시 + 금액 + 통화 + 가맹점명 + 카드사 원화 + 만료(30분). 저장은 서명이 맞는 항목만(위변조·임의 항목 주입 방지, 서버 무상태).
 - 저장한 CARD_IMPORT 항목은 지갑에서 직접 입력과 같은 규칙(수정·삭제·여정 바꾸기)이고 여정 결제는 `origin = MANUAL`(작성자 = 나).
 
+## 추가 인증 토큰
+
+- `twoWayToken`: AES-256-GCM(키 = TOKEN_ENCRYPTION_KEY HKDF `card-import:two-way:v1`), AAD = 사용자 ID. 내용 = 기관·기간·아이디 HMAC·**무작위 nonce**·CODEF twoWayInfo·만료(160초).
+- 서버에는 nonce의 SHA-256만 `card_import_two_way_sessions`에 둔다(사용자 ID·시도 수·남은 예약 호출 수·만료). 같은 토큰은 **3번까지**(원자적 UPDATE … WHERE attempts < 3), 결과를 받거나 끝나는 오류면 **바로 지운다**(재사용 410). 인증번호만 틀렸으면(CF-12872) 남은 시도 안에서 다시 보낼 수 있다. 만료된 행은 파기 배치가 지운다.
+
+## 입력 검사
+
+- 암호문(`encryptedPassword`·`encryptedCardPassword`)은 base64를 풀었을 때 **공개키 모듈러스 길이(2048비트 = 256바이트)**와 같을 때만 받는다(평문·다른 키로 만든 값 거절). 공개키가 RSA SPKI가 아니면 부팅을 멈춘다.
+- `loginCardNo`·`encryptedCardPassword`는 그 카드사가 요구하고(`requiresCardNo`) `CARD_NUMBER_LOGIN_ENABLED`일 때만 받는다. 아니면 400.
+- CODEF 응답 본문은 5MB까지만 읽는다(넘으면 `CARD_IMPORT_FAILED`).
+
+## 로그 마스킹
+
+pino `redact` 경로 목록에 더해 `common/logging/mask.ts`가 **키 이름으로 깊이 제한 없이** 가린다(`formatters.log` + `err` 직렬화기): loginId·password·encrypted*·twoWay*·smsCode·connectedId·loginCardNo·cardPassword·itemToken 등과 어느 깊이의 `body`(`*.body`, `err.body`, `err.cause.request.body`), CODEF 본문 문맥의 `id`(상위 키에 codef·accountList가 있거나 같은 객체에 loginType·organization·password·connectedId가 있을 때). 에러는 원인(cause)까지 펼쳐서 가린다.
+
 ## 호출 보호
 
 | 규칙 | 값 | 저장 | 응답 |
 |---|---|---|---|
 | 사용자당 동시 1건 | 조회 요청 동안(최대 3분) | `card_import_locks`(user_id, expires_at) | 409 `CARD_IMPORT_IN_PROGRESS` |
-| 사용자 횟수 | 10분 3회, KST 하루 10회. 새 조회만 센다(추가 인증 이어가기·우리 서버가 거절한 요청은 안 셈, CODEF까지 간 실패는 셈) | 접근 기록 `FETCH_CARD_APPROVALS` `details.step = START` | 429 `CARD_IMPORT_RATE_LIMITED` |
+| 사용자 횟수 | 10분 3회, KST 하루 10회. 새 조회만 센다(추가 인증 이어가기·우리 서버가 거절한 요청은 안 셈, CODEF까지 간 실패는 셈). **잠금 안에서 CODEF 호출 전에** START 기록을 쓰고, 기록 실패면 조회하지 않는다(fail closed). 결과(건수·결과 코드)는 끝난 뒤 같은 행에 채운다(실패하면 결과를 돌려주지 않는다) | 접근 기록 `FETCH_CARD_APPROVALS` `details.step = START` | 429 `CARD_IMPORT_RATE_LIMITED` |
 | 로그인 연속 실패 | 같은 사용자·기관 30분 안 3회째 실패 응답부터 30분 | `card_import_login_failures`(user_id, organization, failures, last_failed_at) | 400 `CARD_LOGIN_FAILED{failedAttempts}` → 429 `CARD_IMPORT_LOGIN_COOLDOWN` |
-| 서비스 일일 CODEF 예산 | `CODEF_DAILY_CALL_BUDGET`(기본 100), 실제 CODEF API 호출(등록·조회·추가 인증·삭제) 수. 남은 예산 < 4면 새 조회 거절. 삭제는 늘 보낸다 | `codef_daily_usage`(day, calls) | 503 `CARD_IMPORT_DAILY_LIMIT` |
+| 서비스 일일 CODEF 예산 | `CODEF_DAILY_CALL_BUDGET`(기본 100). 새 조회마다 4(조회 1 + 이어가기 3, 또는 등록 1 + 조회 1)를 **원자적으로 예약**(`INSERT … ON CONFLICT DO UPDATE … WHERE calls + 4 <= budget RETURNING`)하고, 끝나면 쓰지 않은 만큼 돌려준다. 이어가기는 예약 범위에서 1씩 쓴다. 계정 삭제는 예약과 무관하게 늘 보내고 따로 센다 | `codef_daily_usage`(day, calls), 이어가기 `card_import_two_way_sessions.calls_left` | 503 `CARD_IMPORT_DAILY_LIMIT` |
 | remainingToday | min(10 − 오늘 시작한 조회 수, floor(남은 예산 / 4)) | — | config |
 | OAuth 토큰 | 메모리 캐시(1주일 유효, 만료 1시간 전 재발급) | — | — |
 
-카운터는 파기 배치 `CARD_IMPORT_COUNTERS`가 7일 뒤 지운다(만료된 잠금 포함).
+카운터는 파기 배치 `CARD_IMPORT_COUNTERS`가 7일 뒤 지운다(만료된 잠금·이어가기 행 포함).
 
 ## CODEF 에러 매핑 (`codef/codef.constants.ts`)
 
@@ -87,6 +105,7 @@ CODEF가 준 메시지는 화면에 넘기지 않는다. 로그는 경로·결�
 | `CARD_IMPORT_ALLOWED_USER_IDS` | 빈 값 | allowlist 사용자 UUID(쉼표). tfvars로만 |
 | `CODEF_ENV` | `sandbox` | `sandbox`(고정 샘플) · `development`(데모) · `production` |
 | `CODEF_LOGIN_MODE` | `direct` | `direct` · `account` |
+| `CODEF_ALLOW_ACCOUNT_MODE` | — | 운영에서 account 모드를 쓰려면 `true`(없으면 direct로 동작, error 로그) |
 | `CODEF_CLIENT_ID` · `CODEF_CLIENT_SECRET` · `CODEF_PUBLIC_KEY` | — | Secret Manager `yeojeong-codef-client-id`·`-client-secret`·`-public-key`(infra `enable_codef`) |
 | `CODEF_DAILY_CALL_BUDGET` | `100` | 서비스 전체 일일 CODEF 호출 예산 |
 | `IMPORT_KEY_HMAC_KEY` | 로컬·테스트 고정 개발 키 | importKey 전용 HMAC 키(32자 이상). 운영 Secret Manager `yeojeong-import-key-hmac-key`(Terraform `random_password`, prevent_destroy). 운영에서 없으면 기능이 꺼진다. 교체 금지 |

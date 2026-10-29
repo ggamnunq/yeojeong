@@ -15,7 +15,6 @@ import {
   type FetchCardApprovalsResponse,
   type FieldError,
 } from '@yeojeong/shared';
-import { AuditService } from '../audit/index.js';
 import { ConsentChecker } from '../common/auth/index.js';
 import { AppException, ValidationFailedError } from '../common/errors/index.js';
 import { dateOnly, kstDate, toKstIso } from '../expenses/kst.js';
@@ -36,7 +35,12 @@ import {
   normalizeApprovals,
   type NormalizedApproval,
 } from './approval-normalizer.js';
-import { CardImportLimits } from './card-import-limits.js';
+import {
+  CardImportLimits,
+  TWO_WAY_MAX_ATTEMPTS,
+  type BudgetReservation,
+  type TwoWayAttempt,
+} from './card-import-limits.js';
 import { CodefAccountRemover } from './codef/codef-account-remover.js';
 import { ImportKeyHasher } from './import-key.js';
 import { ItemTokenSigner } from './item-token.js';
@@ -44,6 +48,7 @@ import { CodefClient, type CodefResponse } from './codef/codef.client.js';
 import { CodefConfig } from './codef/codef.config.js';
 import {
   CARD_IMPORT_ORGANIZATIONS,
+  CARD_NUMBER_LOGIN_ENABLED,
   CODEF_OK,
   CODEF_PATHS,
   CODEF_TWO_WAY_REQUIRED,
@@ -131,7 +136,6 @@ export class CardImportService {
     private readonly sealer: TwoWayTokenSealer,
     private readonly importKeys: ImportKeyHasher,
     private readonly consents: ConsentChecker,
-    private readonly audit: AuditService,
     private readonly fx: FxRatesService,
     private readonly remover: CodefAccountRemover,
     private readonly limits: CardImportLimits,
@@ -216,21 +220,10 @@ export class CardImportService {
         },
       ]);
     }
+    this.checkLoginFields(org, request);
     const loginRef = this.importKeys.hash(
       `card-import-login|${org.code}|${request.loginId}`,
     );
-    if (
-      org.requiresCardNo &&
-      (!request.loginCardNo || !request.encryptedCardPassword)
-    ) {
-      throw new ValidationFailedError([
-        {
-          path: 'loginCardNo',
-          code: 'required',
-          message: `${org.name}는 카드번호와 카드 비밀번호가 필요해요`,
-        },
-      ]);
-    }
     let twoWay: TwoWayState | null = null;
     if (request.twoWay) {
       twoWay = this.sealer.open(userId, request.twoWay.token, now.getTime());
@@ -248,19 +241,32 @@ export class CardImportService {
       if (errors.length > 0) throw new ValidationFailedError(errors);
     }
 
-    // 사용자당 동시 1건(다른 요청이 진행 중이면 409). 아래 검사·조회는 모두 잠금 안에서 한다
+    // 사용자당 동시 1건(다른 요청이 진행 중이면 409). 아래 검사·기록·조회는 모두 잠금 안에서 한다
     const release = await this.limits.acquire(userId, now);
-    let started = false;
+    const step = twoWay ? 'TWO_WAY' : 'START';
+    let attemptLogId: string | null = null;
+    let reservation: BudgetReservation | null = null;
+    let session: TwoWayAttempt | null = null;
+    /** 이 요청에서 예약분으로 쓴 CODEF 호출 수(계정 삭제 제외) */
+    const used = { calls: 0 };
+    let keepSession = false;
     let outcome: FetchOutcome = 'CARD_IMPORT_FAILED';
     let count = 0;
     try {
-      // 새 조회만 센다: 사용자 횟수(10분 3회·하루 10회) → 로그인 쿨다운 → 서비스 일일 예산
-      if (!twoWay) await this.limits.checkStart(userId, org.code, now);
-      started = true;
+      if (twoWay) {
+        // 같은 토큰은 3번까지, 예약 범위 안에서만(원자적으로 시도 +1·예약 −1)
+        session = await this.limits.consumeTwoWay(userId, twoWay.nonce, now);
+      } else {
+        // 새 조회: 사용자 횟수·쿨다운 → 예산 예약(원자적) → 시도 기록(사용자 횟수의 기준)
+        await this.limits.checkStart(userId, org.code, now);
+        reservation = await this.limits.reserveFetch(now);
+      }
+      attemptLogId = await this.limits.recordAttempt(userId, org.code, step);
+
       const response =
         this.codefConfig.loginMode === 'account'
-          ? await this.queryViaAccount(org.code, request)
-          : await this.query(org.code, request, twoWay);
+          ? await this.queryViaAccount(org.code, request, used)
+          : await this.query(org.code, request, twoWay, used);
       const code = response.result.code;
       if (code === CODEF_OK || code === CODEF_TWO_WAY_REQUIRED) {
         await this.limits.loginSucceeded(userId, org.code);
@@ -270,24 +276,57 @@ export class CardImportService {
           outcome = 'CARD_TWO_WAY_UNSUPPORTED';
           throw AppException.of('CARD_TWO_WAY_UNSUPPORTED');
         }
-        const result = this.twoWayRequired(
-          userId,
-          response,
-          {
-            organization: org.code,
-            from: request.from,
-            to: request.to,
-            loginRef,
-          },
-          now,
+        const info = this.twoWayInfoOf(response);
+        const expiresAt = new Date(
+          now.getTime() + CODEF_TWO_WAY_TIMEOUT_SECONDS * 1000,
         );
+        let nonce: string;
+        if (twoWay && session) {
+          // 같은 이어가기의 다음 단계: 같은 행(시도 수·남은 예약)을 그대로 쓴다
+          nonce = twoWay.nonce;
+          keepSession =
+            session.attempts < TWO_WAY_MAX_ATTEMPTS && session.callsLeft > 0;
+        } else {
+          const callsLeft = (reservation?.calls ?? 0) - used.calls;
+          nonce = await this.limits.openTwoWay(
+            userId,
+            { day: (reservation as BudgetReservation).day, callsLeft },
+            expiresAt,
+          );
+          // 남은 예약은 이어가기 행이 들고 간다
+          reservation = null;
+          keepSession = true;
+        }
+        if (!keepSession) throw AppException.of('CARD_TWO_WAY_EXPIRED');
         outcome = 'TWO_WAY_REQUIRED';
-        return result;
+        return {
+          status: 'TWO_WAY_REQUIRED',
+          twoWayToken: this.sealer.seal(
+            userId,
+            {
+              organization: org.code,
+              from: request.from,
+              to: request.to,
+              loginRef,
+              nonce,
+              info,
+            },
+            expiresAt,
+          ),
+          method: 'SMS',
+          expiresAt: toKstIso(expiresAt),
+        };
       }
       if (code !== CODEF_OK) {
         // CODEF 메시지는 쓰지 않고 우리 코드로만 바꾼다(결과 코드만 기록)
         const mapped = mapCodefError(code);
         outcome = mapped;
+        // 인증번호만 틀렸으면 같은 토큰으로 다시(시도 3회 안에서)
+        keepSession =
+          mapped === 'CARD_TWO_WAY_INVALID' &&
+          session !== null &&
+          session.attempts < TWO_WAY_MAX_ATTEMPTS &&
+          session.callsLeft > 0;
         if (mapped === 'CARD_LOGIN_FAILED') {
           await this.limits.loginFailed(userId, org.code, now);
         }
@@ -307,6 +346,14 @@ export class CardImportService {
       const enriched = await this.enrich(userId, org, items, now);
       count = enriched.length;
       outcome = 'OK';
+      // 결과 기록이 실패하면 결과를 돌려주지 않는다(fail closed)
+      await this.limits.finishAttempt(attemptLogId, {
+        organization: org.code,
+        count,
+        result: outcome,
+        step,
+      });
+      attemptLogId = null;
       return {
         status: 'OK',
         organization: org.code,
@@ -320,17 +367,72 @@ export class CardImportService {
       }
       throw error;
     } finally {
-      await release();
-      if (started) {
-        await this.recordAccess(
-          userId,
-          org.code,
-          count,
-          outcome,
-          twoWay ? 'TWO_WAY' : 'START',
-        );
+      try {
+        if (session && !keepSession)
+          await this.limits.closeTwoWay(session.nonceHash);
+        if (reservation) {
+          await this.limits.refund(
+            reservation.day,
+            reservation.calls - used.calls,
+          );
+        }
+        if (attemptLogId) {
+          await this.limits.finishAttempt(attemptLogId, {
+            organization: org.code,
+            count,
+            result: outcome,
+            step,
+          });
+        }
+      } finally {
+        await release();
       }
     }
+  }
+
+  /**
+   * 카드번호 로그인 필드: 지금 받는 카드사가 그것을 요구할 때만(현대·하나, CARD_NUMBER_LOGIN_ENABLED) 받는다. 아니면 400.
+   * 암호문은 공개키 모듈러스 길이(2048비트 = 256바이트)와 같은 길이일 때만 받는다(평문·다른 키로 만든 값 거절)
+   */
+  private checkLoginFields(
+    org: CardImportOrganization,
+    request: FetchCardApprovalsRequest,
+  ) {
+    const errors: FieldError[] = [];
+    const cardLogin = org.requiresCardNo && CARD_NUMBER_LOGIN_ENABLED;
+    if (!cardLogin && (request.loginCardNo || request.encryptedCardPassword)) {
+      errors.push({
+        path: 'loginCardNo',
+        code: 'notAllowed',
+        message: '이 카드사는 카드번호를 받지 않아요',
+      });
+    }
+    if (cardLogin && (!request.loginCardNo || !request.encryptedCardPassword)) {
+      errors.push({
+        path: 'loginCardNo',
+        code: 'required',
+        message: `${org.name}는 카드번호와 카드 비밀번호가 필요해요`,
+      });
+    }
+    const expected = this.codefConfig.modulusBytes;
+    for (const path of [
+      'encryptedPassword',
+      'encryptedCardPassword',
+    ] as const) {
+      const value = request[path];
+      if (value === undefined) continue;
+      if (
+        expected === null ||
+        Buffer.from(value, 'base64').length !== expected
+      ) {
+        errors.push({
+          path,
+          code: 'ciphertext',
+          message: '다시 시도해 주세요',
+        });
+      }
+    }
+    if (errors.length > 0) throw new ValidationFailedError(errors);
   }
 
   /** CODEF 승인내역 요청 본문(KR_CD_P_002 입력부). 로그에 남기지 않는다 */
@@ -369,6 +471,7 @@ export class CardImportService {
     organization: string,
     request: FetchCardApprovalsRequest,
     twoWay: TwoWayState | null,
+    used: { calls: number },
   ): Promise<CodefResponse> {
     const body = this.approvalBody(organization, request, null);
     if (twoWay && request.twoWay) {
@@ -378,6 +481,7 @@ export class CardImportService {
         smsAuthNo: request.twoWay.code,
       });
     }
+    used.calls += 1;
     return this.codef.request(CODEF_PATHS.CARD_APPROVAL_LIST, body);
   }
 
@@ -388,6 +492,7 @@ export class CardImportService {
   private async queryViaAccount(
     organization: string,
     request: FetchCardApprovalsRequest,
+    used: { calls: number },
   ): Promise<CodefResponse> {
     const account = {
       countryCode: 'KR',
@@ -396,6 +501,7 @@ export class CardImportService {
       organization,
       loginType: '1',
     };
+    used.calls += 1;
     const created = await this.codef.request(CODEF_PATHS.ACCOUNT_CREATE, {
       accountList: [
         {
@@ -427,6 +533,7 @@ export class CardImportService {
           data: null,
         };
       }
+      used.calls += 1;
       return await this.codef.request(
         CODEF_PATHS.CARD_APPROVAL_LIST,
         this.approvalBody(organization, request, { connectedId }),
@@ -438,12 +545,8 @@ export class CardImportService {
     }
   }
 
-  private twoWayRequired(
-    userId: string,
-    response: CodefResponse,
-    base: Omit<TwoWayState, 'info'>,
-    now: Date,
-  ): FetchCardApprovalsResponse {
+  /** CF-03002 응답의 이어가기 값(add-auth 가이드). 형식이 다르거나 문자 인증이 아니면 이어갈 수 없다 */
+  private twoWayInfoOf(response: CodefResponse): CodefTwoWayInfo {
     const data = (response.data ?? {}) as Record<string, unknown>;
     const info: CodefTwoWayInfo = {
       jobIndex: Number(data.jobIndex),
@@ -460,17 +563,10 @@ export class CardImportService {
       throw AppException.of('CARD_IMPORT_FAILED');
     }
     // 개인 카드 승인내역의 추가 인증은 문자 인증번호뿐이다(KR_CD_P_002). 다른 수단이면 이어갈 수 없다
-    if (data.method !== 'smsAuthNo')
+    if (data.method !== 'smsAuthNo') {
       throw AppException.of('CARD_TWO_WAY_UNSUPPORTED');
-    const expiresAt = new Date(
-      now.getTime() + CODEF_TWO_WAY_TIMEOUT_SECONDS * 1000,
-    );
-    return {
-      status: 'TWO_WAY_REQUIRED',
-      twoWayToken: this.sealer.seal(userId, { ...base, info }, expiresAt),
-      method: 'SMS',
-      expiresAt: toKstIso(expiresAt),
-    };
+    }
+    return info;
   }
 
   // ─── 결과 보강(지갑 상태·환율 추정) ───
@@ -637,30 +733,6 @@ export class CardImportService {
   }
 
   // ─── 제한·기록 ───
-
-  /** 접근 기록: 기관 코드·건수·결과 코드만(아이디·금액·가맹점 없음). 기록 실패는 응답을 막지 않는다 */
-  private async recordAccess(
-    userId: string,
-    organization: string,
-    count: number,
-    outcome: string,
-    step: 'START' | 'TWO_WAY',
-  ) {
-    try {
-      await this.audit.record({
-        userId,
-        action: 'FETCH_CARD_APPROVALS',
-        resourceType: 'USER',
-        resourceId: userId,
-        details: { organization, count, result: outcome, step },
-      });
-    } catch (error) {
-      this.logger.error(
-        { errorCode: (error as { code?: string }).code },
-        '카드 승인내역 접근 기록을 남기지 못함',
-      );
-    }
-  }
 }
 
 /** 같은 통화·같은 금액, ±30분 안의 직접 입력 지갑 항목 중 시각이 가장 가까운 것 */

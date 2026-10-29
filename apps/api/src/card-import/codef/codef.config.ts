@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { createHash, createPublicKey } from 'node:crypto';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CODEF_API_HOSTS,
@@ -50,6 +50,8 @@ export class CodefConfig {
   readonly publicKey: string;
   /** 공개키(DER) SHA-256 hex. 화면 테스트가 고정값과 비교해 키가 바뀌었는지 안다. 키가 없으면 빈 문자열 */
   readonly publicKeyFingerprint: string;
+  /** RSA 모듈러스 바이트 수(2048비트 = 256). 암호문 길이 검사 기준. 키가 없으면 null */
+  readonly modulusBytes: number | null;
 
   constructor(config: ConfigService) {
     this.env = pick(
@@ -58,17 +60,34 @@ export class CodefConfig {
       CODEF_ENV_VALUES,
       'sandbox',
     );
-    this.loginMode = pick(
+    const mode = pick(
       'CODEF_LOGIN_MODE',
       config.get<string>('CODEF_LOGIN_MODE'),
       CODEF_LOGIN_MODE_VALUES,
       'direct',
     );
+    // 운영에서 account 모드(CODEF 계정 생성)는 CODEF_ALLOW_ACCOUNT_MODE=true로 따로 허락해야 한다. 아니면 direct로 둔다
+    const allowAccount =
+      config.get<string>('CODEF_ALLOW_ACCOUNT_MODE')?.trim().toLowerCase() ===
+      'true';
+    if (
+      mode === 'account' &&
+      config.get<string>('NODE_ENV') === 'production' &&
+      !allowAccount
+    ) {
+      new Logger(CodefConfig.name).error(
+        'CODEF_LOGIN_MODE=account는 운영에서 CODEF_ALLOW_ACCOUNT_MODE=true가 있어야 한다 — direct로 동작',
+      );
+      this.loginMode = 'direct';
+    } else {
+      this.loginMode = mode;
+    }
     this.clientId = config.get<string>('CODEF_CLIENT_ID')?.trim() ?? '';
     this.clientSecret = config.get<string>('CODEF_CLIENT_SECRET')?.trim() ?? '';
     this.publicKey = normalizePublicKey(
       config.get<string>('CODEF_PUBLIC_KEY') ?? '',
     );
+    this.modulusBytes = rsaModulusBytes(this.publicKey);
     this.publicKeyFingerprint = this.publicKey
       ? createHash('sha256')
           .update(Buffer.from(this.publicKey, 'base64'))
@@ -79,4 +98,25 @@ export class CodefConfig {
   get apiHost(): string {
     return CODEF_API_HOSTS[this.env];
   }
+}
+
+/** base64 SPKI → RSA 모듈러스 바이트 수. 키가 없으면 null, RSA 키가 아니거나 읽을 수 없으면 부팅을 멈춘다 */
+function rsaModulusBytes(publicKey: string): number | null {
+  if (!publicKey) return null;
+  let bits: number | undefined;
+  try {
+    const key = createPublicKey({
+      key: Buffer.from(publicKey, 'base64'),
+      format: 'der',
+      type: 'spki',
+    });
+    bits =
+      key.asymmetricKeyType === 'rsa'
+        ? key.asymmetricKeyDetails?.modulusLength
+        : undefined;
+  } catch {
+    bits = undefined;
+  }
+  if (!bits) throw new Error('CODEF_PUBLIC_KEY는 RSA 공개키(SPKI)여야 합니다');
+  return Math.ceil(bits / 8);
 }

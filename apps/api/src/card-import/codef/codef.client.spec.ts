@@ -1,24 +1,39 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { codefHttpMock, codefResult } from '../../../test/fakes/codef-http.js';
 import { AppException } from '../../common/errors/index.js';
-import { CodefClient, decodeCodefBody } from './codef.client.js';
+import {
+  CodefClient,
+  MAX_RESPONSE_BYTES,
+  decodeCodefBody,
+} from './codef.client.js';
 import { CodefConfig } from './codef.config.js';
 import { CODEF_PATHS } from './codef.constants.js';
 
+const pem = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  .publicKey.export({ type: 'spki', format: 'pem' })
+  .toString();
 const config = new CodefConfig(
   new ConfigService({
     CODEF_ENV: 'development',
     CODEF_CLIENT_ID: 'id',
     CODEF_CLIENT_SECRET: 'secret',
-    CODEF_PUBLIC_KEY:
-      '-----BEGIN PUBLIC KEY-----\nAAAA\nBBBB\n-----END PUBLIC KEY-----',
+    CODEF_PUBLIC_KEY: pem,
   }),
 );
 
 describe('CodefClient', () => {
   it('normalizes env and public key', () => {
     expect(config.apiHost).toBe('https://development.codef.io');
-    expect(config.publicKey).toBe('AAAABBBB');
+    expect(config.publicKey).toBe(
+      pem.replace(/-----(BEGIN|END) PUBLIC KEY-----/g, '').replace(/\s+/g, ''),
+    );
+    expect(config.modulusBytes).toBe(256);
+    expect(config.publicKeyFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      () =>
+        new CodefConfig(new ConfigService({ CODEF_PUBLIC_KEY: 'AAAABBBB' })),
+    ).toThrow(/RSA/);
     expect(config.loginMode).toBe('direct');
     expect(
       () => new CodefConfig(new ConfigService({ CODEF_ENV: 'prod' })),
@@ -80,5 +95,54 @@ describe('CodefClient', () => {
     ).rejects.toMatchObject({
       code: 'CARD_IMPORT_FAILED',
     });
+  });
+
+  it('refuses account mode in production without CODEF_ALLOW_ACCOUNT_MODE (L5)', () => {
+    const make = (env: Record<string, string>) =>
+      new CodefConfig({
+        get: (name: string) => env[name],
+      } as unknown as ConfigService);
+    expect(make({ CODEF_LOGIN_MODE: 'account' }).loginMode).toBe('account');
+    expect(
+      make({ NODE_ENV: 'production', CODEF_LOGIN_MODE: 'account' }).loginMode,
+    ).toBe('direct');
+    expect(
+      make({
+        NODE_ENV: 'production',
+        CODEF_LOGIN_MODE: 'account',
+        CODEF_ALLOW_ACCOUNT_MODE: 'true',
+      }).loginMode,
+    ).toBe('account');
+  });
+
+  it('caps the response body at 5MB and counts only account deletes toward the budget (L8·M1)', async () => {
+    const big = 'x'.repeat(MAX_RESPONSE_BYTES + 1);
+    const fetchFn = vi.fn((input: string | URL | Request) =>
+      Promise.resolve(
+        (input instanceof Request ? input.url : input.toString()).includes(
+          'oauth',
+        )
+          ? new Response(JSON.stringify({ access_token: 't', expires_in: 600 }))
+          : new Response(big),
+      ),
+    );
+    const counter = { recordCodefCall: vi.fn().mockResolvedValue(undefined) };
+    const client = new CodefClient(
+      config,
+      fetchFn as unknown as typeof fetch,
+      counter,
+    );
+    await expect(
+      client.request(CODEF_PATHS.CARD_APPROVAL_LIST, {}),
+    ).rejects.toMatchObject({ code: 'CARD_IMPORT_FAILED' });
+    expect(counter.recordCodefCall).not.toHaveBeenCalled();
+    const ok = codefHttpMock({
+      [CODEF_PATHS.ACCOUNT_DELETE]: () => codefResult('CF-00000', {}),
+      [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-00000', []),
+    });
+    const counted = new CodefClient(config, ok.fetch, counter);
+    await counted.request(CODEF_PATHS.CARD_APPROVAL_LIST, {});
+    await counted.request(CODEF_PATHS.ACCOUNT_DELETE, {});
+    expect(counter.recordCodefCall).toHaveBeenCalledTimes(1);
   });
 });

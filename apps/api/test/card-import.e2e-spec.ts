@@ -1,4 +1,9 @@
-import { createHash } from 'node:crypto';
+import {
+  createHash,
+  generateKeyPairSync,
+  randomBytes,
+  randomUUID,
+} from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
@@ -14,6 +19,7 @@ import type {
 } from '@yeojeong/shared';
 import request from 'supertest';
 import { AppModule } from './../src/app.module.js';
+import { PurgeService } from './../src/retention/purge.service.js';
 import { CODEF_FETCH } from './../src/card-import/codef/codef.client.js';
 import { CodefConfig } from './../src/card-import/codef/codef.config.js';
 import { CODEF_PATHS } from './../src/card-import/codef/codef.constants.js';
@@ -55,7 +61,11 @@ const kstDay = (offsetDays: number) =>
     .toISOString()
     .slice(0, 10);
 const LOGIN_ID = 'e2e-card-login-id-7f3a';
-const PASSWORD_CIPHERTEXT = 'RTJFLUVOQ1JZUFRFRC1QQVNTV09SRC1CQVNFNjQ=';
+/** 실제 RSA 2048 공개키(암호문은 256바이트여야 받는다). 개인키는 쓰지 않는다 */
+const PUBLIC_KEY = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  .publicKey.export({ type: 'spki', format: 'der' })
+  .toString('base64');
+const PASSWORD_CIPHERTEXT = randomBytes(256).toString('base64');
 const TWO_WAY_CODE = '987654';
 
 /** CARD_IMPORT만 실제 동의 기록으로 판정하고, 가입 동의는 통과시킨다(픽스처 사용자는 가입 동의 행이 없다) */
@@ -136,7 +146,7 @@ describe.skipIf(!databaseUrl)(
               CODEF_ENV: 'sandbox',
               CODEF_CLIENT_ID: 'e2e-client-id',
               CODEF_CLIENT_SECRET: 'e2e-client-secret',
-              CODEF_PUBLIC_KEY: 'E2EPUBLICKEY',
+              CODEF_PUBLIC_KEY: PUBLIC_KEY,
             }),
           ),
         )
@@ -338,9 +348,9 @@ describe.skipIf(!databaseUrl)(
       const body = config.body as CardImportConfig;
       expect(body).toMatchObject({
         enabled: true,
-        publicKey: 'E2EPUBLICKEY',
+        publicKey: PUBLIC_KEY,
         publicKeyFingerprint: createHash('sha256')
-          .update(Buffer.from('E2EPUBLICKEY', 'base64'))
+          .update(Buffer.from(PUBLIC_KEY, 'base64'))
           .digest('hex'),
         maxRangeDays: 92,
         maxLookbackDays: 365,
@@ -603,6 +613,124 @@ describe.skipIf(!databaseUrl)(
         .set(as(seed, '준용'))
         .expect(200);
       expect(config.body.remainingToday).toBe(9);
+      // 결과를 받은 토큰은 바로 무효(재사용 410). 이어가기 행도 지워졌다
+      await fetchAs(seed, '준용', { organization: '0311', twoWay }).expect(410);
+      expect(
+        await prisma.cardImportTwoWaySession.count({
+          where: { userId: seed.members['준용'].userId },
+        }),
+      ).toBe(0);
+    });
+
+    it('allows at most 3 attempts per 2-way token and returns unused budget (M1)', async () => {
+      const seed = await seedOngoing(['준용']);
+      const userId = seed.members['준용'].userId;
+      await consent(seed, '준용').expect(201);
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: (body) =>
+          body.is2Way
+            ? codefResult('CF-12872', {})
+            : codefResult('CF-03002', {
+                method: 'smsAuthNo',
+                jobIndex: 0,
+                threadIndex: 0,
+                jti: 'e2e-jti-2',
+                twoWayTimestamp: 1793260000001,
+              }),
+      };
+      const callsBefore =
+        (
+          await prisma.codefDailyUsage.findUnique({
+            where: { day: todayDate() },
+          })
+        )?.calls ?? 0;
+      const first = await fetchAs(seed, '준용', {
+        organization: '0311',
+      }).expect(200);
+      const twoWay = {
+        token: first.body.twoWayToken as string,
+        code: '000000',
+      };
+      const row = await prisma.cardImportTwoWaySession.findFirstOrThrow({
+        where: { userId },
+      });
+      // 예약 4 중 1 사용, 3을 이어가기가 들고 간다. 행에 토큰·인증번호는 없다(해시만)
+      expect(row).toMatchObject({ attempts: 0, callsLeft: 3 });
+      expect(JSON.stringify(row)).not.toContain(twoWay.token.slice(4, 20));
+      for (let i = 0; i < 3; i += 1) {
+        const res = await fetchAs(seed, '준용', {
+          organization: '0311',
+          twoWay,
+        }).expect(400);
+        expect(res.body.code).toBe('CARD_TWO_WAY_INVALID');
+      }
+      // 4번째는 같은 토큰이라도 410(행이 닫혔다)
+      await fetchAs(seed, '준용', { organization: '0311', twoWay }).expect(410);
+      expect(
+        await prisma.cardImportTwoWaySession.count({ where: { userId } }),
+      ).toBe(0);
+      // 실제로 쓴 호출(처음 1 + 이어가기 3)만 남았다
+      const callsAfter =
+        (
+          await prisma.codefDailyUsage.findUnique({
+            where: { day: todayDate() },
+          })
+        )?.calls ?? 0;
+      expect(callsAfter - callsBefore).toBe(4);
+    });
+
+    it('reserves the daily budget atomically under concurrency (M1)', async () => {
+      const seed = await seedOngoing(['준용', '민지']);
+      await consent(seed, '준용').expect(201);
+      await consent(seed, '민지').expect(201);
+      routes = {
+        [CODEF_PATHS.CARD_APPROVAL_LIST]: () => codefResult('CF-00000', []),
+      };
+      const before =
+        (
+          await prisma.codefDailyUsage.findUnique({
+            where: { day: todayDate() },
+          })
+        )?.calls ?? 0;
+      // 남은 예산 4: 한 번만 예약된다
+      await prisma.codefDailyUsage.upsert({
+        where: { day: todayDate() },
+        create: { day: todayDate(), calls: 96 },
+        update: { calls: 96 },
+      });
+      const results = await Promise.all([
+        fetchAs(seed, '준용'),
+        fetchAs(seed, '민지'),
+      ]);
+      expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+        200, 503,
+      ]);
+      await prisma.codefDailyUsage.update({
+        where: { day: todayDate() },
+        data: { calls: before },
+      });
+    });
+
+    it('drops pending deletions after 30 days and alerts daily (L5)', async () => {
+      const purge = app.get(PurgeService);
+      const id = randomUUID();
+      await prisma.codefPendingDeletion.create({
+        data: {
+          id,
+          connectedIdEnc: new Uint8Array([1, 2, 3]),
+          organization: '0306',
+          createdAt: new Date(Date.now() - 31 * 86_400_000),
+        },
+      });
+      logOutput = '';
+      const result = await purge.run();
+      expect(
+        result.steps.find((s) => s.step === 'CODEF_PENDING_DELETIONS'),
+      ).toMatchObject({ count: 1 });
+      expect(await prisma.codefPendingDeletion.count({ where: { id } })).toBe(
+        0,
+      );
+      expect(logOutput).toContain('CODEF 계정 삭제 대기가 30일을 넘겨 버렸다');
     });
 
     it('saves only signed items, links them like manual entries and never duplicates', async () => {

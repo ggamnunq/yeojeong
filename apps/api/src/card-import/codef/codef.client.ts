@@ -46,6 +46,33 @@ function isCodefResponse(value: unknown): value is CodefResponse {
   );
 }
 
+/** 응답 본문 상한(5MB). 넘으면 읽기를 멈추고 실패로 본다 */
+export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+
+/** 본문을 상한까지만 읽는다(스트림). 넘으면 예외 */
+async function readLimited(res: Response, limit: number): Promise<string> {
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > limit) {
+    await res.body?.cancel();
+    throw new RangeError('CODEF 응답이 너무 큽니다');
+  }
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel();
+      throw new RangeError('CODEF 응답이 너무 큽니다');
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 /** 통신 실패를 사용자 응답으로 바꾼다. 원래 오류(요청 본문이 붙어 있을 수 있다)는 cause로도 넘기지 않는다 */
 const failed = () => AppException.of('CARD_IMPORT_FAILED');
 
@@ -89,8 +116,9 @@ export class CodefClient {
     token: string,
   ): Promise<CodefResponse> {
     const started = Date.now();
-    // 일일 예산: 보낸 호출은 성공·실패와 무관하게 센다
-    await this.counter?.recordCodefCall();
+    // 일일 예산: 조회·등록·추가 인증은 새 조회 때 미리 예약한다(CardImportLimits.reserveFetch). 계정 삭제만 여기서 센다
+    if (path === CODEF_PATHS.ACCOUNT_DELETE)
+      await this.counter?.recordCodefCall();
     let text: string;
     try {
       const res = await this.fetchFn(`${this.config.apiHost}${path}`, {
@@ -108,7 +136,7 @@ export class CodefClient {
             : CODEF_OTHER_TIMEOUT_MS,
         ),
       });
-      text = await res.text();
+      text = await readLimited(res, MAX_RESPONSE_BYTES);
     } catch (error) {
       this.logger.warn(
         {
