@@ -77,31 +77,41 @@ export default function FlowPage() {
   const generation = useRef(0)
   const leaving = useRef(false)
 
-  const now = useNow(step === 'two-way' || cooldownUntil !== null)
-  const locked = cooldownUntil !== null && Date.parse(cooldownUntil) > now
-  const remainingMs = twoWay ? twoWay.deadline - now : 0
-
-  // 쿨다운 시각이 지나면 에러 줄을 지우고 버튼을 살린다
+  const now = useNow(step === 'two-way')
+  // 쿨다운(53c)은 해제 시각까지 — 시각이 지나면 에러 줄을 지우고 버튼을 살린다(백그라운드 복귀 때도 다시 계산)
+  const locked = cooldownUntil !== null
   useEffect(() => {
-    if (cooldownUntil !== null && !locked) setCooldownUntil(null)
-  }, [cooldownUntil, locked])
+    if (cooldownUntil === null) return
+    const release = () => {
+      if (Date.parse(cooldownUntil) <= Date.now()) setCooldownUntil(null)
+    }
+    const id = window.setTimeout(release, Math.max(0, Date.parse(cooldownUntil) - Date.now()) + 50)
+    document.addEventListener('visibilitychange', release)
+    return () => {
+      window.clearTimeout(id)
+      document.removeEventListener('visibilitychange', release)
+    }
+  }, [cooldownUntil])
+  const remainingMs = twoWay ? twoWay.deadline - now : 0
   // 남은 시간 0 → WF-54b
   useEffect(() => {
-    if (step === 'two-way' && twoWay && remainingMs <= 0 && !twoWayExpired) {
+    if (step !== 'two-way' || !twoWay || twoWayExpired) return
+    const expire = () => {
       setTwoWayExpired(true)
       setExpiredDialog(true)
     }
-  }, [step, twoWay, remainingMs, twoWayExpired])
+    const id = window.setTimeout(expire, Math.max(0, twoWay.deadline - Date.now()))
+    return () => window.clearTimeout(id)
+  }, [step, twoWay, twoWayExpired])
 
-  // 화면을 떠나면 암호문·결과를 버리고 늦은 응답을 무시한다
-  const resetFetch = useRef(fetcher.reset)
-  resetFetch.current = fetcher.reset
+  // 화면을 떠나면 암호문·결과를 버리고 늦은 응답을 무시한다(reset은 바뀌지 않는 함수)
+  const resetFetcher = fetcher.reset
   useEffect(
     () => () => {
       generation.current += 1
-      resetFetch.current()
+      resetFetcher()
     },
-    [],
+    [resetFetcher],
   )
 
   // WF-53이 다시 보일 때마다 남은 횟수(remainingToday)를 새로 받는다
@@ -114,9 +124,7 @@ export default function FlowPage() {
 
   // 결과 화면에서 브라우저 뒤로 가기 → WF-56c
   const blocker = useBlocker(useCallback(() => step === 'result' && !leaving.current, [step]))
-  useEffect(() => {
-    if (blocker.state === 'blocked') setLeaveOpen(true)
-  }, [blocker.state])
+  const leaveDialogOpen = leaveOpen || blocker.state === 'blocked'
 
   /** 처음 입력으로(아이디·기간 유지, 비밀번호·암호문·결과는 버림) */
   const backToLogin = (options: { openRange?: boolean } = {}) => {
@@ -351,7 +359,7 @@ export default function FlowPage() {
           />
           {/* WF-56c 나가기 확인 */}
           <Dialog
-            open={leaveOpen}
+            open={leaveDialogOpen}
             type="danger"
             title={COPY.leaveTitle}
             message={COPY.leaveMessage}
@@ -407,7 +415,7 @@ export default function FlowPage() {
           rangeOpen={rangeOpen}
           onRangeOpen={setRangeOpen}
           rangeError={rangeError}
-          error={locked && cooldownUntil ? COPY.cooldown(kstClock(cooldownUntil)) : loginError}
+          error={cooldownUntil ? COPY.cooldown(kstClock(cooldownUntil)) : loginError}
           locked={locked}
           remaining={config.data.remainingToday}
           onBack={() => flow.go(paths.walletImportIssuer())}

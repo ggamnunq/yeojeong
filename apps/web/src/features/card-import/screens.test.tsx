@@ -1,4 +1,6 @@
 import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import type { FetchCardApprovalsResponse } from '@yeojeong/shared'
+import { HttpResponse } from 'msw'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../../mocks/data'
 import { server } from '../../mocks/server'
@@ -148,6 +150,23 @@ describe('보안(L-0 메모리 규칙)', () => {
     const [first, second] = sent.map((t) => JSON.parse(t) as Record<string, unknown>)
     expect(first).not.toHaveProperty('password')
     expect(second.encryptedPassword).toBe(first.encryptedPassword)
+  })
+
+  it('shows 54b when the 2-way timer runs out, and "다시 하기" returns to WF-53 with the password emptied', async () => {
+    server.use(
+      api.post<FetchCardApprovalsResponse>('/api/card-import/fetch', () =>
+        HttpResponse.json({ status: 'TWO_WAY_REQUIRED', twoWayToken: 'tw1.short', method: 'SMS', expiresAt: new Date(Date.now() + 1200).toISOString() }),
+      ),
+    )
+    await toLogin()
+    fillLogin('twoway')
+    fireEvent.click(button('불러오기'))
+    await screen.findByLabelText('인증번호')
+    const dialog = await screen.findByRole('alertdialog', { name: '인증 시간이 지났어요' })
+    expect(within(dialog).getByText('처음부터 다시 불러와 주세요')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: '다시 하기' }))
+    expect(((await screen.findByLabelText('아이디')) as HTMLInputElement).value).toBe('twoway')
+    expect((screen.getByLabelText('비밀번호', { selector: 'input' }) as HTMLInputElement).value).toBe('')
   })
 
   it('empties the password field after a failed login (53b) — 1st, 2nd and 3rd failure', async () => {

@@ -1,12 +1,13 @@
 import { clsx } from 'clsx'
 import { useEffect } from 'react'
+import { Navigate } from 'react-router'
 import { paths } from '../../../app/paths'
 import { LoadingScreen } from '../../../app/states'
 import { Icon, ShellSub } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { toast } from '../../../notifications'
 import { COPY } from '../copy'
-import { useFlowNav } from '../flow'
+import { useFlowNav, type CardImportFlowState } from '../flow'
 import { useCardImportConfig } from '../hooks'
 import { orgMark } from '../rules'
 
@@ -20,11 +21,9 @@ export default function IssuerPage() {
   const failed = config.isError
 
   useEffect(() => {
-    if (!failed) return
-    toast.error(COPY.later)
-    flow.go(paths.walletImport())
-    // flow는 렌더마다 새 객체 — 실패로 바뀔 때 한 번만
+    if (failed) toast.error(COPY.later)
   }, [failed])
+  if (failed) return <Navigate replace to={paths.walletImport()} state={{ cardImportFlow: true } satisfies CardImportFlowState} />
 
   return (
     <ShellSub header={{ title: COPY.issuerTitle, onBack: () => flow.go(paths.walletImport()) }} gutter={false}>
