@@ -1,6 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CONSENT_ID_VALUES,
+  REVOCABLE_CONSENTS,
+  type RevocableConsent,
+  type RevocableConsentId,
   type ConsentAgreementInput,
   type ConsentDocumentSummary,
   type ConsentId,
@@ -58,20 +61,61 @@ export class AgreementsBodyDto {
   method: (typeof AGREEMENT_METHODS)[number];
 }
 
+/** POST /api/consents로 받는 단계와, 단계마다 허용하는 화면 */
+export const SUBMIT_STAGE_SCREENS = {
+  FIN_LINK: ['WF-05', 'WF-28', 'WF-42'],
+  CARD_IMPORT: ['CARD_IMPORT'],
+} as const satisfies Record<
+  ConsentSubmitRequest['stage'],
+  readonly ConsentSubmitRequest['screen'][]
+>;
+const SUBMIT_STAGES = Object.keys(
+  SUBMIT_STAGE_SCREENS,
+) as ConsentSubmitRequest['stage'][];
+const SUBMIT_SCREENS = [
+  ...new Set(Object.values(SUBMIT_STAGE_SCREENS).flat()),
+] as ConsentSubmitRequest['screen'][];
+
 export class ConsentSubmitDto
   extends AgreementsBodyDto
   implements ConsentSubmitRequest
 {
-  @ApiProperty({ enum: ['FIN_LINK'] })
-  @IsIn(['FIN_LINK'], { message: '이 단계의 동의는 받을 수 없어요' })
-  stage: 'FIN_LINK';
+  @ApiProperty({
+    enum: SUBMIT_STAGES,
+    description:
+      'FIN_LINK = 결제수단 연결 전(FR-809), CARD_IMPORT = 카드 승인내역 불러오기 전(S8)',
+  })
+  @IsIn(SUBMIT_STAGES, { message: '이 단계의 동의는 받을 수 없어요' })
+  stage: ConsentSubmitRequest['stage'];
 
   @ApiProperty({
-    enum: ['WF-05', 'WF-28', 'WF-42'],
-    description: '동의 시트를 띄운 화면',
+    enum: SUBMIT_SCREENS,
+    description:
+      '동의 시트를 띄운 화면. FIN_LINK = WF-05·WF-28·WF-42, CARD_IMPORT = CARD_IMPORT',
   })
-  @IsIn(['WF-05', 'WF-28', 'WF-42'], { message: '화면 값이 올바르지 않아요' })
-  screen: 'WF-05' | 'WF-28' | 'WF-42';
+  @IsIn(SUBMIT_SCREENS, { message: '화면 값이 올바르지 않아요' })
+  screen: ConsentSubmitRequest['screen'];
+}
+
+export class RevocableConsentDto implements RevocableConsent {
+  @ApiProperty({ enum: REVOCABLE_CONSENTS })
+  consentId: RevocableConsentId;
+
+  @ApiProperty({ example: '카드 승인내역 불러오기' })
+  title: string;
+
+  @ApiProperty({ example: '0.1-draft' })
+  version: string;
+
+  @ApiProperty({ example: '2026-11-13T14:10:00+09:00' })
+  agreedAt: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: '/consents/CARD_IMPORT',
+  })
+  docUrl: string | null;
 }
 
 export class ConsentRequirementDto implements ConsentRequirement {
