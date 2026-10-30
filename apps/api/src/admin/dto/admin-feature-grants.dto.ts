@@ -17,7 +17,17 @@ import {
   type FeatureKey,
   type FeatureMode,
 } from '@yeojeong/shared';
-import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+} from 'class-validator';
+
+/** 제어 문자(줄바꿈·탭·NUL 등 Cc)와 줄·문단 구분자가 없는 문자열 — 메모가 표·로그 줄을 깨지 않게 */
+const NO_CONTROL_CHARS = /^[^\p{Cc}\u2028\u2029]*$/u;
 
 export class AdminFeatureGrantListQueryDto implements AdminFeatureGrantListQuery {
   @ApiPropertyOptional({
@@ -49,6 +59,9 @@ export class AdminCreateFeatureGrantDto implements AdminCreateFeatureGrantReques
   @IsString({ message: '메모는 문자열이어야 해요' })
   @MaxLength(ADMIN_FEATURE_GRANT_NOTE_MAX, {
     message: `메모는 ${ADMIN_FEATURE_GRANT_NOTE_MAX}자까지 적을 수 있어요`,
+  })
+  @Matches(NO_CONTROL_CHARS, {
+    message: '메모에 줄바꿈이나 제어 문자를 넣을 수 없어요',
   })
   note?: string;
 }

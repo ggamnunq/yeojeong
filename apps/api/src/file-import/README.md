@@ -73,6 +73,8 @@ POST /api/wallet/entries/file-import       ──▶ 검사(S7 규칙) → 한 �
 
 Terraform `feature_file_import`(기본 `"off"`, `off`·`allowlist`·`on`) · `file_import_providers`(기본 `"WECHAT"`)(infra/envs/prod). 운영자 계정에만 먼저 켜려면 `feature_file_import = "allowlist"`, `file_import_providers = "WECHAT,ALIPAY"`로 apply한 뒤 관리자 페이지 "기능 권한"에서 그 계정에 공급자 권한을 준다.
 
+롤백 주의: ADMIN3 이전 이미지는 `allowlist` 값을 몰라 **부팅에 실패**한다. `feature_file_import = "allowlist"`인 채로 이전 이미지로 되돌리려면 먼저 `"off"`(또는 `"on"`)로 바꿔 apply한다. 배포·롤백 중 권한 변경 규칙은 `src/admin/README.md` "기능 권한".
+
 ## 화면 파서(`apps/web/src/features/file-import/parsers`)
 
 - 읽기: 5MB·데이터 2만 행·칸 1,000자·CSV 한 행 200칸(넘으면 format) 상한. zip 머리면 xlsx(첫 시트, `fflate` 압축 해제 + 브라우저 `DOMParser` — 항목 20MB·합계 40MB 선언 크기 상한, 1MB 넘게 풀리는 항목은 압축 비율 100배 초과 거절, 항목 압축 크기 2MB 상한(해제 CPU 시간), 압축본이 선언 크기보다 1KB 넘게 큰 항목·실제 풀린 양이 선언과 다른 항목 거절, DOCTYPE·ENTITY 거절). Web Worker로 옮기지 않은 이유: Worker에는 `DOMParser`가 없어 XML 파서 의존성을 더해야 한다 — 크기·비율·행 상한으로 주 스레드 정지 시간을 묶었다, xlsx가 아닌 zip·OLE(암호 Excel)는 "압축을 풀고 올려 주세요"(HF-66c), 그 밖은 CSV(UTF-8 BOM · UTF-8 · GB18030 자동 감지). 요약·안내 블록 줄 수는 세지 않고 헤더 행(위챗: 첫 칸이 `交易时间`, 알리페이: `交易时间`·`收/支`가 있는 행)을 찾아 열을 이름으로 고른다. 파서 묶음은 파일을 고를 때 지연 로딩한다.

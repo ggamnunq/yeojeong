@@ -498,6 +498,47 @@ describe.skipIf(!databaseUrl)('Admin feature grants (e2e, real DB)', () => {
     await grant(leaver.id, 'CARD_IMPORT').expect(404);
   });
 
+  it('CARD_IMPORT revoke also clears a grant that exists only in the legacy card_import_grants table (204), 404 only when neither has it', async () => {
+    const user = await createUser('옛표만');
+    const legacyAt = new Date('2026-10-30T01:02:03.000Z');
+    await prisma.cardImportGrant.create({
+      data: { userId: user.id, grantedBy: ACTOR_ID, grantedAt: legacyAt },
+    });
+    await revoke(user.id, 'CARD_IMPORT').expect(204);
+    expect(
+      await prisma.cardImportGrant.count({ where: { userId: user.id } }),
+    ).toBe(0);
+    expect((await lastLog('ADMIN_REVOKE_FEATURE'))?.details).toEqual({
+      feature: 'CARD_IMPORT',
+      result: 'REVOKED',
+      grantedAt: legacyAt.toISOString(),
+    });
+    // 둘 다 없으면 404
+    await revoke(user.id, 'CARD_IMPORT').expect(404);
+    // 파일 권한 회수는 옛 표를 보지 않는다
+    await prisma.cardImportGrant.create({
+      data: { userId: user.id, grantedBy: ACTOR_ID },
+    });
+    await revoke(user.id, 'FILE_IMPORT_WECHAT').expect(404);
+    expect(
+      await prisma.cardImportGrant.count({ where: { userId: user.id } }),
+    ).toBe(1);
+  });
+
+  it('rejects control characters in the note (400) and stores nothing', async () => {
+    const user = await createUser('메모검사');
+    for (const note of ['줄\n바꿈', '탭\t문자', 'nul\u0000', '구분 자']) {
+      const bad = await grant(user.id, 'FILE_IMPORT_WECHAT', note).expect(400);
+      expect(bad.body.code).toBe('VALIDATION_FAILED');
+    }
+    expect(
+      await prisma.featureGrant.count({ where: { userId: user.id } }),
+    ).toBe(0);
+    await grant(user.id, 'FILE_IMPORT_WECHAT', ' 앞뒤 공백은 괜찮다 ').expect(
+      201,
+    );
+  });
+
   it('records every view/grant/revoke in access_logs with the feature key and target user — never the note text', async () => {
     const user = await createUser('기록확인');
     await grant(user.id, 'FILE_IMPORT_ALIPAY', '베타 테스트 메모').expect(201);

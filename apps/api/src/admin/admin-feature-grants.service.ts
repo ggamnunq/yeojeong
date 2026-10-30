@@ -149,7 +149,8 @@ export class AdminFeatureGrantsService {
   /**
    * 관리자 권한 회수(행 삭제 — 다음 요청부터 바로 꺼진다). 관리자 권한이 없고 env에만 있으면 409 ADMIN_FEATURE_GRANT_ENV_ONLY,
    * 둘 다 없으면 404. env에도 있는 회원이면 관리자 권한만 지워지고 env 권한은 남는다.
-   * CARD_IMPORT는 옛 card_import_grants 행도 같은 트랜잭션에서 지운다(옛 리비전으로 되돌려도 되살아나지 않게)
+   * CARD_IMPORT는 옛 card_import_grants 행도 같은 트랜잭션에서 지운다(옛 리비전으로 되돌려도 되살아나지 않게).
+   * 새 표에 없고 옛 표에만 있는 권한(배포 중 옛 화면에서 준 것)도 지우고 성공으로 본다 — 둘 다 없을 때만 404
    */
   async revoke(
     userId: string,
@@ -157,20 +158,27 @@ export class AdminFeatureGrantsService {
   ): Promise<{ grantedAt: Date }> {
     const id = userId.toLowerCase();
     if (UUID.test(id)) {
-      try {
-        return await this.prisma.$transaction(async (tx) => {
-          const deleted = await tx.featureGrant.delete({
-            where: { userId_feature: { userId: id, feature } },
-            select: { grantedAt: true },
-          });
-          if (feature === 'CARD_IMPORT') {
-            await tx.cardImportGrant.deleteMany({ where: { userId: id } });
-          }
-          return deleted;
+      const grantedAt = await this.prisma.$transaction(async (tx) => {
+        const current = await tx.featureGrant.findUnique({
+          where: { userId_feature: { userId: id, feature } },
+          select: { grantedAt: true },
         });
-      } catch (error) {
-        if (!isPrismaError(error, 'P2025')) throw error;
-      }
+        if (current) {
+          await tx.featureGrant.deleteMany({ where: { userId: id, feature } });
+        }
+        const legacy =
+          feature === 'CARD_IMPORT'
+            ? await tx.cardImportGrant.findUnique({
+                where: { userId: id },
+                select: { grantedAt: true },
+              })
+            : null;
+        if (legacy) {
+          await tx.cardImportGrant.deleteMany({ where: { userId: id } });
+        }
+        return current?.grantedAt ?? legacy?.grantedAt ?? null;
+      });
+      if (grantedAt) return { grantedAt };
     }
     if (this.envSources(id, feature).length > 0) {
       throw AppException.of('ADMIN_FEATURE_GRANT_ENV_ONLY');

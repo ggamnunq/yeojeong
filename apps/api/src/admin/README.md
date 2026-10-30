@@ -98,9 +98,30 @@ pnpm --silent --filter @yeojeong/api admin:totp '<관리자 아이디>' | gcloud
 #### 옛 `card_import_grants`(ADMIN2)에서 옮긴 방법
 
 - 마이그레이션 `20261030100000_create_feature_grants`가 새 enum·표를 만들고 옛 행을 `CARD_IMPORT`로 복사한다(`ON CONFLICT DO NOTHING` — 다시 돌려도 안전, `test/feature-grants-migration.e2e-spec.ts`가 같은 문장을 실DB에서 돌려 본다).
-- 배포 워크플로는 마이그레이션을 새 리비전보다 **먼저** 적용한다. 그 사이 옛 리비전은 옛 표만 읽고 쓰므로 새 표가 생겨도 영향이 없다. 그래서 **옛 표는 이번에 지우지 않는다**: 새 코드는 옛 표를 읽지도 쓰지도 않고, `CARD_IMPORT` 회수·탈퇴 때만 옛 행도 함께 지운다(옛 리비전으로 되돌려도 회수한 권한이 되살아나지 않게 — fail closed). 되돌린 동안 새 화면에서 준 권한은 옛 리비전에 보이지 않는다(덜 열리는 쪽).
-- 한계: 마이그레이션이 끝난 뒤 새 리비전이 트래픽을 받기 전(보통 1~2분)에 **옛 화면에서 준** 카드 권한은 복사되지 않는다. 배포 중에는 권한을 바꾸지 않고, 바꿨다면 새 화면에서 다시 준다.
-- 옛 표 삭제는 옛 리비전이 더는 돌지 않는 것을 확인한 뒤 별도 마이그레이션으로 한다. 옛 접근 기록 값(`ADMIN_*_CARD_IMPORT*`, `CARD_IMPORT_GRANT`)은 1년 보존 중인 행이 있어 목록에 남겨 둔다.
+- 배포 워크플로는 마이그레이션을 새 리비전보다 **먼저** 적용한다. 그 사이 옛 리비전은 옛 표만 읽고 쓰므로 새 표가 생겨도 영향이 없다. 그래서 **옛 표는 이번에 지우지 않는다**: 새 코드는 판정에 옛 표를 쓰지 않고, `CARD_IMPORT` 회수·탈퇴 때만 옛 행도 함께 지운다. 새 표에 없고 옛 표에만 있는 권한도 회수 대상이다(지웠으면 204, 둘 다 없을 때만 404).
+- 이렇게 해서 막는 것: **새 화면에서 회수한** 권한은 옛 리비전으로 되돌려도 되살아나지 않는다. 되돌린 동안 새 화면에서 준 권한은 옛 리비전에 보이지 않는다(덜 열리는 쪽).
+- 막지 못하는 틈(운영 규칙으로 막는다):
+  - 마이그레이션이 끝난 뒤 새 리비전이 트래픽을 받기 전(보통 1~2분)이나 옛 리비전으로 되돌린 동안 **옛 화면에서 준** 카드 권한은 새 표로 복사되지 않는다(롤포워드하면 보이지 않는다 — 덜 열리는 쪽).
+  - 같은 때 **옛 화면에서 회수한** 카드 권한은 옛 표에서만 지워지고, 마이그레이션이 복사해 둔 `feature_grants` 행은 남는다. 그래서 새 리비전으로 넘어가면(롤포워드) **그 권한이 다시 켜진다**.
+  - 그러므로 **배포·롤백 중에는 기능 권한을 주거나 회수하지 않는다.** 그때 옛 화면에서 바꿨다면 배포가 끝난 뒤 새 화면("기능 권한")에서 같은 조치를 다시 한다(회수했다면 다시 회수).
+- **롤백 주의(파일 가져오기)**: 이 PR 이전 이미지는 `FEATURE_FILE_IMPORT`를 `off`·`on`만 읽어 `allowlist`면 **부팅에 실패**한다. `feature_file_import = "allowlist"`인 채로 이전 이미지로 되돌리려면 먼저 tfvars를 `"off"`(또는 `"on"`)로 바꿔 apply한다.
+- 옛 접근 기록 값(`ADMIN_*_CARD_IMPORT*`, `CARD_IMPORT_GRANT`)은 1년 보존 중인 행이 있어 목록에 남겨 둔다.
+
+#### 후속 작업: `card_import_grants` 지우기
+
+옛 리비전이 더는 돌지 않는 것(롤백할 일이 없음)을 확인한 뒤 별도 마이그레이션으로 옛 표를 지운다. 그 마이그레이션은 **표를 지우기 전에** 위 틈(배포·롤백 중 옛 화면에서 회수했는데 복사본이 남은 권한)을 정리한다. 마이그레이션이 복사한 행(이번 마이그레이션 적용 시각보다 먼저 준 권한) 가운데 옛 표에 더는 없는 것만 지운다:
+
+```sql
+-- <적용 시각> = _prisma_migrations에서 20261030100000_create_feature_grants의 finished_at
+DELETE FROM feature_grants f
+WHERE f.feature = 'CARD_IMPORT'
+  AND f.granted_at < <적용 시각>
+  AND NOT EXISTS (SELECT 1 FROM card_import_grants c WHERE c.user_id = f.user_id);
+
+DROP TABLE card_import_grants;
+```
+
+함께 지울 것: Prisma 모델 `CardImportGrant`·`User.cardImportGrant`, 회수(`AdminFeatureGrantsService.revoke`)·탈퇴(`AccountDeletionService`)의 옛 표 삭제와 `counts.cardImportGrants`.
 
 ## 보안 설계
 
