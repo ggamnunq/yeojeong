@@ -38,12 +38,19 @@ export const AUDIT_ACTION_VALUES = [
   'ADMIN_WITHDRAW_USER',
   /** CODEF 호출 현황 열람 */
   'ADMIN_VIEW_CODEF_USAGE',
-  /** 카드 불러오기 권한 목록 열람. details = 건수·회원 ID 목록 */
+  // 옛 카드 불러오기 권한(ADMIN2) 기록. 새 코드는 쓰지 않지만 1년 보존 중인 행의 값이라 남긴다
+  /** 카드 불러오기 권한 목록 열람(ADMIN2). details = 건수·회원 ID 목록 */
   'ADMIN_VIEW_CARD_IMPORT_GRANTS',
-  /** 카드 불러오기 권한 부여. resourceId = 회원 ID, details = 결과(PENDING → GRANTED | 에러 코드)·메모 */
+  /** 카드 불러오기 권한 부여(ADMIN2). resourceId = 회원 ID, details = 결과·메모 */
   'ADMIN_GRANT_CARD_IMPORT',
-  /** 카드 불러오기 권한 회수. resourceId = 회원 ID, details = 결과(PENDING → REVOKED | 에러 코드)·원래 부여 시각 */
+  /** 카드 불러오기 권한 회수(ADMIN2). resourceId = 회원 ID, details = 결과·원래 부여 시각 */
   'ADMIN_REVOKE_CARD_IMPORT',
+  /** 기능 권한 표 열람(ADMIN3). details = 건수·검색 종류(NONE|NICKNAME|USER_ID)·회원 ID 목록(검색어 원문은 남기지 않는다) */
+  'ADMIN_VIEW_FEATURE_GRANTS',
+  /** 기능 권한 부여. resourceId = 회원 ID, details = 기능 키·결과(PENDING → GRANTED | 에러 코드)·메모를 적었는지(YES|NO — 내용은 남기지 않는다) */
+  'ADMIN_GRANT_FEATURE',
+  /** 기능 권한 회수. resourceId = 회원 ID, details = 기능 키·결과(PENDING → REVOKED | 에러 코드)·원래 부여 시각 */
+  'ADMIN_REVOKE_FEATURE',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTION_VALUES)[number];
 
@@ -62,7 +69,9 @@ export const AUDIT_RESOURCE_TYPE_VALUES = [
   'ADMIN',
   /** 관리자 CODEF 호출 현황(resourceId 없음) */
   'CODEF_USAGE',
-  /** 관리자 카드 불러오기 권한 목록(resourceId 없음. 부여·회수는 USER + 회원 ID) */
+  /** 관리자 카드 불러오기 권한 목록(ADMIN2, resourceId 없음 — 옛 기록) */
   'CARD_IMPORT_GRANT',
+  /** 관리자 기능 권한 표(ADMIN3, resourceId 없음. 부여·회수는 USER + 회원 ID) */
+  'FEATURE_GRANT',
 ] as const;
 export type AuditResourceType = (typeof AUDIT_RESOURCE_TYPE_VALUES)[number];

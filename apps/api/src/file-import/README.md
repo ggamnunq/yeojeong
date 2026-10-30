@@ -20,8 +20,8 @@ POST /api/wallet/entries/file-import       ──▶ 검사(S7 규칙) → 한 �
 
 | 메서드·경로 | 요청 | 응답 | 에러 |
 |---|---|---|---|
-| `POST /api/wallet/entries/file-import` | `{ provider: 'WECHAT' \| 'ALIPAY', items: [{ txnDigest, occurredAt, amount, currency: 'CNY', merchantName }] }`(1~200) | 201 `{ items[{created, entryId}], created, skipped, linked }`(요청 순서) | 400 `VALIDATION_FAILED`(모르는 공급자 포함), 404(꺼짐 · 켜지지 않은 공급자), 429 `FILE_IMPORT_RATE_LIMITED`·`FILE_IMPORT_DAILY_LIMIT`(`details{retryAfter, retryAfterSec}` + `Retry-After`)·`RATE_LIMITED`(IP), 503 `FX_RATE_UNAVAILABLE` |
-| `POST /api/wallet/entries/file-import/check` | `{ provider, txnDigests: string[] }`(1~500, **대조값만** — 일시·금액·가맹점은 400) | 200 `{ imported: boolean[] }`(요청 순서) | 400, 404(꺼짐 · 켜지지 않은 공급자), 429 |
+| `POST /api/wallet/entries/file-import` | `{ provider: 'WECHAT' \| 'ALIPAY', items: [{ txnDigest, occurredAt, amount, currency: 'CNY', merchantName }] }`(1~200) | 201 `{ items[{created, entryId}], created, skipped, linked }`(요청 순서) | 400 `VALIDATION_FAILED`(모르는 공급자 포함), 404(꺼짐 · 이 회원에게 켜지지 않은 공급자), 429 `FILE_IMPORT_RATE_LIMITED`·`FILE_IMPORT_DAILY_LIMIT`(`details{retryAfter, retryAfterSec}` + `Retry-After`)·`RATE_LIMITED`(IP), 503 `FX_RATE_UNAVAILABLE` |
+| `POST /api/wallet/entries/file-import/check` | `{ provider, txnDigests: string[] }`(1~500, **대조값만** — 일시·금액·가맹점은 400) | 200 `{ imported: boolean[] }`(요청 순서) | 400, 404(꺼짐 · 이 회원에게 켜지지 않은 공급자), 429 |
 | `GET /api/fx/spot-series?base=&from=&to=` | KST 날짜, 최대 400일 | 200 `{ currency, rates[{rate, effectiveAt}] }`(기간 안 고시 + 직전 1건, 오름차순) | 400 |
 
 - 타입: `@yeojeong/shared` `api/file-import.ts`. 계약 밖 필드(상품·결제 수단·가맹점 주문 번호·비고·거래 번호 원문·clientRequestId 등)는 400(전역 ValidationPipe `forbidNonWhitelisted`). 검증 오류는 값을 되돌리지 않는다.
@@ -68,10 +68,10 @@ POST /api/wallet/entries/file-import       ──▶ 검사(S7 규칙) → 한 �
 
 | env | 기본 | 설명 |
 |---|---|---|
-| `FEATURE_FILE_IMPORT` | `off` | `off` · `on`(그 밖이면 부팅 실패). 운영에서는 `IMPORT_KEY_HMAC_KEY`가 없으면 off. 세션 `features.fileImport`. 꺼져 있으면 두 경로 모두 404(`FileImportGuard`) |
-| `FILE_IMPORT_PROVIDERS` | `WECHAT` | 켤 공급자, 쉼표 구분(대소문자 무시, 예 `WECHAT,ALIPAY`). 비면 `WECHAT`(알리페이는 **명시해야 켜진다**). 모르는 값이면 부팅 실패(기능이 꺼져 있어도 검사). 세션 `features.fileImportProviders`(꺼져 있으면 `[]`). 목록에 없는 공급자로 요청하면 404(`FileImportController`). 화면은 HF-65 시트에 목록에 있는 공급자 행만 보인다 |
+| `FEATURE_FILE_IMPORT` | `off` | `off` · `allowlist` · `on`(그 밖이면 부팅 실패). 운영에서는 `IMPORT_KEY_HMAC_KEY`가 없으면 off. `allowlist`면 관리자 페이지 "기능 권한"에서 공급자별 권한(`FILE_IMPORT_WECHAT` · `FILE_IMPORT_ALIPAY`, `feature_grants`)을 받은 회원에게만 그 공급자가 켜진다(env 목록은 없다 — `src/admin/README.md` "기능 권한"). 세션 `features.fileImport`(그 회원에게 켜진 공급자가 하나라도 있으면 true). 그 회원에게 켜진 공급자가 없으면 두 경로 모두 404(`FileImportGuard`) — 화면 숨김만이 아니라 서버가 회원 단위로 막는다 |
+| `FILE_IMPORT_PROVIDERS` | `WECHAT` | 켤 공급자, 쉼표 구분(대소문자 무시, 예 `WECHAT,ALIPAY`). 비면 `WECHAT`(알리페이는 **명시해야 켜진다**). 모르는 값이면 부팅 실패(기능이 꺼져 있어도 검사). 세션 `features.fileImportProviders`(그 회원에게 켜진 공급자 = 이 목록 ∩ (allowlist면) 그 회원의 공급자별 권한, 꺼져 있으면 `[]`). 그 회원에게 켜지지 않은 공급자로 요청하면 확인·저장 모두 404(`FileImportController`). allowlist여도 이 목록에 없는 공급자는 권한이 있어도 꺼져 있다. 화면은 HF-65 시트에 목록에 있는 공급자 행만 보인다 |
 
-Terraform `feature_file_import`(기본 `"off"`) · `file_import_providers`(기본 `"WECHAT"`)(infra/envs/prod).
+Terraform `feature_file_import`(기본 `"off"`, `off`·`allowlist`·`on`) · `file_import_providers`(기본 `"WECHAT"`)(infra/envs/prod). 운영자 계정에만 먼저 켜려면 `feature_file_import = "allowlist"`, `file_import_providers = "WECHAT,ALIPAY"`로 apply한 뒤 관리자 페이지 "기능 권한"에서 그 계정에 공급자 권한을 준다.
 
 ## 화면 파서(`apps/web/src/features/file-import/parsers`)
 

@@ -9,13 +9,13 @@ import { AccountModule } from '../account/account.module.js';
 import { CardImportModule } from '../card-import/card-import.module.js';
 import { AdminAuditLog } from './admin-audit.js';
 import { AdminAuthController } from './admin-auth.controller.js';
-import { AdminCardImportController } from './admin-card-import.controller.js';
-import { AdminCardImportService } from './admin-card-import.service.js';
 import { AdminCodefController } from './admin-codef.controller.js';
 import { AdminCodefService } from './admin-codef.service.js';
 import { AdminConfig } from './admin-config.js';
 import { AdminCredentials } from './admin-credentials.js';
 import { AdminDeviceService } from './admin-device.js';
+import { AdminFeatureGrantsController } from './admin-feature-grants.controller.js';
+import { AdminFeatureGrantsService } from './admin-feature-grants.service.js';
 import { AdminTotpGuard } from './admin-totp-guard.js';
 import { AdminGateMiddleware } from './admin-gate.middleware.js';
 import { AdminLoginThrottle } from './admin-login-throttle.js';
@@ -25,7 +25,7 @@ import { AdminUsersService } from './admin-users.service.js';
 import { AdminSessionGuard } from './admin.guard.js';
 
 /**
- * 운영자 전용 관리자 페이지 API(/api/admin/*): 회원 관리 · CODEF 호출 현황 · 카드 불러오기 권한. 사용법·보안 설계는 src/admin/README.md.
+ * 운영자 전용 관리자 페이지 API(/api/admin/*): 회원 관리 · CODEF 호출 현황 · 회원별 기능 권한. 사용법·보안 설계는 src/admin/README.md.
  * env ADMIN_USERNAME·ADMIN_PASSWORD_HASH·ADMIN_TOTP_SECRET 중 하나라도 없으면 AdminGateMiddleware가 모든 /api/admin/* 를 404로 막는다(운영 기본 꺼짐).
  */
 @Module({
@@ -34,7 +34,7 @@ import { AdminSessionGuard } from './admin.guard.js';
     AdminAuthController,
     AdminUsersController,
     AdminCodefController,
-    AdminCardImportController,
+    AdminFeatureGrantsController,
   ],
   providers: [
     {
@@ -51,7 +51,7 @@ import { AdminSessionGuard } from './admin.guard.js';
     AdminAuditLog,
     AdminUsersService,
     AdminCodefService,
-    AdminCardImportService,
+    AdminFeatureGrantsService,
   ],
 })
 export class AdminModule implements NestModule {

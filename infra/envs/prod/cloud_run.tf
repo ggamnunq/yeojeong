@@ -85,7 +85,7 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.feature_account_link
       }
 
-      # 거래 내역 파일 가져오기(W10). importKey 전용 키(IMPORT_KEY_HMAC_KEY)는 api_secret_env로 늘 붙는다
+      # 거래 내역 파일 가져오기(W10 · W11): off | allowlist(관리자 페이지 기능 권한) | on. importKey 전용 키(IMPORT_KEY_HMAC_KEY)는 api_secret_env로 늘 붙는다
       env {
         name  = "FEATURE_FILE_IMPORT"
         value = var.feature_file_import

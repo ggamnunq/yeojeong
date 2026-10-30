@@ -299,13 +299,13 @@ export const ADMIN_ERRORS = {
   },
   /** 탈퇴 처리 확인용 닉네임이 회원 닉네임과 다르다 */
   ADMIN_CONFIRM_MISMATCH: { status: 400, message: '닉네임이 맞지 않아요' },
-  /** 카드 불러오기 권한을 이미 관리자 페이지에서 준 회원이다 */
-  ADMIN_CARD_IMPORT_GRANT_EXISTS: {
+  /** 이 기능 권한을 이미 관리자 페이지에서 준 회원이다(feature_grants) */
+  ADMIN_FEATURE_GRANT_EXISTS: {
     status: 409,
-    message: '이미 카드 불러오기 권한이 있는 회원이에요',
+    message: '이미 이 기능 권한이 있는 회원이에요',
   },
-  /** env CARD_IMPORT_ALLOWED_USER_IDS로만 준 권한이라 관리자 페이지에서 회수할 수 없다(tfvars에서 빼고 배포한다) */
-  ADMIN_CARD_IMPORT_GRANT_ENV_ONLY: {
+  /** env(CARD_IMPORT_ALLOWED_USER_IDS)로만 준 권한이라 관리자 페이지에서 회수할 수 없다(tfvars에서 빼고 배포한다) */
+  ADMIN_FEATURE_GRANT_ENV_ONLY: {
     status: 409,
     message: '환경 설정(env)으로 준 권한은 여기서 회수할 수 없어요',
   },

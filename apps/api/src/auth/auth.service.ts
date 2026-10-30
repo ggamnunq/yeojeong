@@ -38,7 +38,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { assertNickname } from '../users/nickname.js';
 import { UsersService } from '../users/users.service.js';
-import { CardImportAccess } from '../common/features.js';
+import { FeatureAccess } from '../common/features.js';
 import type { ReconsentDto, SignupDto } from './dto/auth.dto.js';
 import {
   KakaoClient,
@@ -100,7 +100,7 @@ export class AuthService {
     private readonly consents: ConsentsService,
     private readonly checker: ConsentChecker,
     private readonly users: UsersService,
-    private readonly features: CardImportAccess,
+    private readonly features: FeatureAccess,
   ) {}
 
   /** 카카오 인가 페이지 주소. state·returnTo는 서명 쿠키에 담는다(10분) */
@@ -225,7 +225,7 @@ export class AuthService {
     state: SessionState,
     req: Request,
   ): Promise<AuthSessionResponse> {
-    // 관리자 페이지에서 준 카드 불러오기 권한까지 반영(allowlist). 같은 요청의 가드와 조회를 나눠 쓴다
+    // 관리자 페이지에서 준 기능 권한(카드 불러오기·파일 가져오기, allowlist)까지 반영. 같은 요청의 가드와 조회를 나눠 쓴다
     const features = await this.features.view(
       state.status === 'AUTHENTICATED' ? state.user.id : null,
       req,

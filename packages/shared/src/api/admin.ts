@@ -1,4 +1,5 @@
 import { enumObject } from '../enum.js';
+import type { FileImportProvider } from './file-import.js';
 
 // 운영자 전용 관리자 페이지(ADMIN) API 타입. 서버 구현은 apps/api/src/admin(README 참고), 화면은 apps/web/src/features/admin.
 // 사용자(카카오) 세션과 완전히 분리된 관리자 세션(쿠키 __Host-yj_admin)으로만 부른다. 관리자 env가 없으면 /api/admin/* 전체가 404.
@@ -76,7 +77,7 @@ export interface AdminUserListQuery {
 export interface AdminCardImportAccess {
   /** env CARD_IMPORT_ALLOWED_USER_IDS에 있는지 */
   allowlisted: boolean;
-  /** 관리자 페이지에서 준 권한(card_import_grants)이 있는지 */
+  /** 관리자 페이지에서 준 권한(feature_grants CARD_IMPORT)이 있는지 */
   granted: boolean;
   /** 지금 이 회원에게 기능이 켜져 있는지(단계·CODEF 키·env 목록·관리자 권한 반영) */
   enabled: boolean;
@@ -245,57 +246,117 @@ export interface AdminCodefUsage {
   };
 }
 
-/** 카드 불러오기 권한 메모 최대 글자 수(선택). 개인정보를 적지 않는다 */
-export const ADMIN_CARD_IMPORT_GRANT_NOTE_MAX = 100;
+// ─── 회원별 기능 권한(ADMIN3, feature_grants) ───
 
-export const ADMIN_CARD_IMPORT_GRANT_SOURCE_VALUES = ['ADMIN', 'ENV'] as const;
+export const FEATURE_KEY_VALUES = ['CARD_IMPORT', 'FILE_IMPORT_WECHAT', 'FILE_IMPORT_ALIPAY'] as const;
 /**
- * 카드 불러오기 권한 출처: ADMIN = 관리자 페이지에서 준 권한(card_import_grants, 회수 가능) ·
- * ENV = env CARD_IMPORT_ALLOWED_USER_IDS(하위 호환·비상용 — 관리자 페이지에서 회수할 수 없고 tfvars에서 빼야 한다)
+ * 회원 단위로 켜고 끌 수 있는 기능(관리자 페이지 "기능 권한", DB enum feature_key와 같은 값).
+ * 권한은 그 기능의 전역 단계가 allowlist일 때만 쓴다(on은 모두, off는 아무도 — 권한과 무관).
+ * - CARD_IMPORT: 카드 승인내역 불러오기(S8, FEATURE_CARD_IMPORT)
+ * - FILE_IMPORT_WECHAT · FILE_IMPORT_ALIPAY: 거래 내역 파일 가져오기(W10 · W11, FEATURE_FILE_IMPORT + FILE_IMPORT_PROVIDERS)
+ * 키를 더할 때: 이 목록 · Prisma enum FeatureKey(값 추가 마이그레이션) · 서버 판정(FeatureAccess) · 화면 이름표
  */
-export type AdminCardImportGrantSource = (typeof ADMIN_CARD_IMPORT_GRANT_SOURCE_VALUES)[number];
-export const AdminCardImportGrantSource = enumObject(ADMIN_CARD_IMPORT_GRANT_SOURCE_VALUES);
+export type FeatureKey = (typeof FEATURE_KEY_VALUES)[number];
+export const FeatureKey = enumObject(FEATURE_KEY_VALUES);
 
-/** 카드 불러오기 권한 한 줄(회원 한 명). 출처가 둘 다면 한 줄에 둘 다 적는다 */
-export interface AdminCardImportGrant {
-  userId: string;
-  /** env에만 있고 회원이 없으면(탈퇴·잘못 넣은 ID) null */
-  nickname: string | null;
-  /** ADMIN · ENV 중 하나 이상(ADMIN이 앞) */
-  sources: AdminCardImportGrantSource[];
+/** 파일 공급자 → 그 공급자의 기능 권한 키 */
+export const FILE_IMPORT_FEATURE_KEY: Readonly<Record<FileImportProvider, FeatureKey>> = {
+  WECHAT: 'FILE_IMPORT_WECHAT',
+  ALIPAY: 'FILE_IMPORT_ALIPAY',
+};
+
+export const FEATURE_MODE_VALUES = ['off', 'allowlist', 'on'] as const;
+/** 기능 공개 단계: 끔 · 권한 있는 회원만 · 전체 */
+export type FeatureMode = (typeof FEATURE_MODE_VALUES)[number];
+
+/** 기능 권한 메모 최대 글자 수(선택). 개인정보를 적지 않는다 */
+export const ADMIN_FEATURE_GRANT_NOTE_MAX = 100;
+/** 닉네임·사용자 ID로 찾을 때 보여 줄 최대 회원 수 */
+export const ADMIN_FEATURE_GRANT_SEARCH_LIMIT = 20;
+
+export const ADMIN_FEATURE_GRANT_SOURCE_VALUES = ['ADMIN', 'ENV'] as const;
+/**
+ * 권한 출처: ADMIN = 관리자 페이지에서 준 권한(feature_grants, 회수 가능) ·
+ * ENV = env 허용 목록(지금은 카드 불러오기의 CARD_IMPORT_ALLOWED_USER_IDS만 — 하위 호환·비상용, 관리자 페이지에서 회수할 수 없고 tfvars에서 빼야 한다)
+ */
+export type AdminFeatureGrantSource = (typeof ADMIN_FEATURE_GRANT_SOURCE_VALUES)[number];
+export const AdminFeatureGrantSource = enumObject(ADMIN_FEATURE_GRANT_SOURCE_VALUES);
+
+export const ADMIN_FEATURE_OFF_REASON_VALUES = ['CODEF_KEYS_MISSING', 'IMPORT_KEY_MISSING', 'PROVIDER_DISABLED'] as const;
+/**
+ * 설정 단계와 달리 실제로 꺼진 이유: CODEF 키 없음(카드 불러오기) · 운영 importKey 전용 키 없음(파일 가져오기) ·
+ * FILE_IMPORT_PROVIDERS에 그 공급자가 없음
+ */
+export type AdminFeatureOffReason = (typeof ADMIN_FEATURE_OFF_REASON_VALUES)[number];
+
+/** 기능 하나의 전역 상태(읽기 전용 — 단계·env 목록은 Terraform/env로만 바꾼다) */
+export interface AdminFeatureStatus {
+  feature: FeatureKey;
+  /** env 값(FEATURE_CARD_IMPORT · FEATURE_FILE_IMPORT) */
+  configuredMode: FeatureMode;
+  /** 실제로 쓰는 단계. 권한은 allowlist일 때만 의미가 있다 */
+  effectiveMode: FeatureMode;
+  /** effectiveMode가 off인데 configuredMode는 off가 아닐 때 그 이유. 아니면 null */
+  offReason: AdminFeatureOffReason | null;
+  /** env 허용 목록 인원 수(카드 불러오기만, 그 밖은 0) */
+  envUserCount: number;
+}
+
+/** 회원 한 명 × 기능 하나 */
+export interface AdminFeatureGrantCell {
+  feature: FeatureKey;
+  /** 비면 권한 없음. ADMIN이 앞 */
+  sources: AdminFeatureGrantSource[];
   /** 관리자 페이지에서 준 시각(ADMIN일 때만, 아니면 null) */
   grantedAt: string | null;
   /** 준 관리자 행위자 ID(아이디에서 만든 UUID, ADMIN일 때만) */
   grantedBy: string | null;
   /** 운영 메모(ADMIN일 때만) */
   note: string | null;
-  /** 관리자 페이지에서 회수할 수 있는지(= sources에 ADMIN이 있다). ENV만이면 false */
-  revocable: boolean;
-  /** CARD_IMPORT 동의가 지금 유효한지(현재 버전에 동의했고 철회하지 않음) */
-  cardImportConsent: boolean;
-  /** 오늘(KST) 새 조회 수(접근 기록 FETCH_CARD_APPROVALS step START) */
-  todayFetchCount: number;
+  /** 지금 이 회원에게 기능이 켜져 있는지(단계·키·공급자·env 목록·관리자 권한 반영) */
+  enabled: boolean;
 }
 
-/** GET /api/admin/card-import-grants 200 */
-export interface AdminCardImportGrantList {
+/** 표 한 줄(회원 한 명) */
+export interface AdminFeatureGrantRow {
+  userId: string;
+  /** env에만 있고 회원이 없으면(탈퇴·잘못 넣은 ID) null */
+  nickname: string | null;
+  /** FEATURE_KEY_VALUES 순서 */
+  cells: AdminFeatureGrantCell[];
+  /** 카드 불러오기 참고(회원이 없으면 false·0) */
+  cardImport: {
+    /** CARD_IMPORT 동의가 지금 유효한지 */
+    consent: boolean;
+    /** 오늘(KST) 새 조회 수(접근 기록 FETCH_CARD_APPROVALS step START) */
+    todayFetchCount: number;
+  };
+}
+
+/** GET /api/admin/feature-grants 쿼리 */
+export interface AdminFeatureGrantListQuery {
+  /** 비면 권한(관리자·env)이 있는 회원 전부. 닉네임 부분 일치, 사용자 ID(UUID) 모양이면 ID 정확 일치(권한 없어도 보인다) */
+  q?: string;
+}
+
+/** GET /api/admin/feature-grants 200 */
+export interface AdminFeatureGrantList {
   /** 기준 시각 */
   asOf: string;
-  flags: {
-    /** env FEATURE_CARD_IMPORT 값(off·allowlist·on) */
-    featureCardImport: string;
-    /** 실제로 쓰는 단계(CODEF 키가 없으면 off). 권한은 allowlist일 때만 의미가 있다(on은 모두, off는 아무도) */
-    effectiveMode: string;
-  };
-  /** 사용자당 하루 조회 한도(CARD_IMPORT_FETCH_LIMIT.DAILY) */
-  dailyLimit: number;
-  /** 관리자 부여(최근 순) → env에만 있는 항목 순 */
-  items: AdminCardImportGrant[];
+  /** FEATURE_KEY_VALUES 순서 */
+  features: AdminFeatureStatus[];
+  /** 카드 불러오기 사용자당 하루 조회 한도(CARD_IMPORT_FETCH_LIMIT.DAILY) */
+  cardImportDailyLimit: number;
+  /** 검색이 없으면: 최근에 권한을 받은 순 → env에만 있는 항목. 검색이면: 가입 최신 순, 최대 ADMIN_FEATURE_GRANT_SEARCH_LIMIT명 */
+  items: AdminFeatureGrantRow[];
+  /** 검색 결과가 상한보다 많아 잘렸는지 */
+  truncated: boolean;
 }
 
-/** POST /api/admin/card-import-grants 본문 */
-export interface AdminCreateCardImportGrantRequest {
+/** POST /api/admin/feature-grants 본문 */
+export interface AdminCreateFeatureGrantRequest {
   userId: string;
+  feature: FeatureKey;
   /** 선택, 100자까지 */
   note?: string;
 }

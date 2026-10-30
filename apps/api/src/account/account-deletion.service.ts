@@ -33,8 +33,10 @@ export interface DeleteAccountCounts {
   leadersSucceeded: number;
   groupsSoftDeleted: number;
   consentsWithdrawn: number;
-  /** 관리자 페이지에서 준 카드 불러오기 권한(0 또는 1) */
+  /** 옛 카드 불러오기 권한(card_import_grants, ADMIN2 — 새 코드는 쓰지 않지만 남은 행을 지운다) */
   cardImportGrants: number;
+  /** 기능 권한(feature_grants, ADMIN3) */
+  featureGrants: number;
 }
 
 export type DeleteAccountResult =
@@ -172,7 +174,10 @@ export class AccountDeletionService {
     // ① 세션 전부(User CASCADE로도 지워지지만 순서를 드러내려고 먼저 지운다)
     const sessions = await tx.session.deleteMany({ where: { userId } });
     await tx.signupTicket.deleteMany({ where: { kakaoId } });
-    // 관리자 페이지에서 준 카드 불러오기 권한(User CASCADE로도 지워지지만 파기 대상임을 드러내려고 먼저 지운다)
+    // 관리자 페이지에서 준 기능 권한(User CASCADE로도 지워지지만 파기 대상임을 드러내려고 먼저 지운다). 옛 표에 남은 행도 함께
+    const featureGrants = await tx.featureGrant.deleteMany({
+      where: { userId },
+    });
     const cardImportGrants = await tx.cardImportGrant.deleteMany({
       where: { userId },
     });
@@ -214,6 +219,7 @@ export class AccountDeletionService {
         groupsSoftDeleted,
         consentsWithdrawn: consents.count,
         cardImportGrants: cardImportGrants.count,
+        featureGrants: featureGrants.count,
       },
     };
   }

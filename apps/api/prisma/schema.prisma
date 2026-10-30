@@ -144,6 +144,16 @@ enum FileImportProvider {
   @@map("file_import_provider")
 }
 
+/// 회원 단위로 켜고 끌 수 있는 기능(ADMIN3, FeatureGrant.feature). 값은 @yeojeong/shared FEATURE_KEY_VALUES와 같다.
+/// 키를 더할 때는 ALTER TYPE ... ADD VALUE 마이그레이션을 따로 둔다(prisma/README.md)
+enum FeatureKey {
+  CARD_IMPORT
+  FILE_IMPORT_WECHAT
+  FILE_IMPORT_ALIPAY
+
+  @@map("feature_key")
+}
+
 /// docs/legal/consents.md 1절
 enum ConsentId {
   TOS
@@ -235,8 +245,10 @@ model User {
   cardImportLock          CardImportLock?
   cardImportLoginFailures CardImportLoginFailure[]
   cardImportTwoWays       CardImportTwoWaySession[]
-  /// 카드 불러오기 권한(관리자 부여, FEATURE_CARD_IMPORT=allowlist). 탈퇴하면 같이 지운다
+  /// 옛 카드 불러오기 권한(ADMIN2). 읽지 않는다 — feature_grants로 옮겼다(ADMIN3). 탈퇴하면 같이 지운다
   cardImportGrant         CardImportGrant?
+  /// 기능 권한(관리자 부여, 기능별 단계가 allowlist일 때만 쓴다). 탈퇴하면 같이 지운다
+  featureGrants           FeatureGrant[]
 
   @@map("users")
 }
@@ -735,9 +747,9 @@ model CardImportTwoWaySession {
   @@map("card_import_two_way_sessions")
 }
 
-/// 카드 승인내역 불러오기(S8) 권한 — 관리자 페이지에서 준다(FEATURE_CARD_IMPORT=allowlist일 때만 쓴다. on은 모두, off는 아무도).
-/// env CARD_IMPORT_ALLOWED_USER_IDS(하위 호환·비상용)와 합집합이다. 회수하면 행을 지우고, 탈퇴하면 탈퇴 파이프라인이 지운다(FK CASCADE도 건다).
-/// 누가 언제 주고 회수했는지는 접근 기록(ADMIN_GRANT_CARD_IMPORT·ADMIN_REVOKE_CARD_IMPORT, 1년)에 남는다
+/// [사용 중지 — ADMIN3] 옛 카드 승인내역 불러오기(S8) 권한. 행은 20261030100000_create_feature_grants에서 feature_grants(CARD_IMPORT)로 복사했고
+/// 새 코드는 읽지도 쓰지도 않는다. 옛 리비전으로 되돌렸을 때 회수한 권한이 되살아나지 않게 회수·탈퇴 때만 함께 지운다(fail closed).
+/// 옛 리비전이 더는 돌지 않는 것을 확인한 뒤 별도 마이그레이션으로 지운다
 model CardImportGrant {
   userId    String   @id @map("user_id") @db.Uuid
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -750,6 +762,27 @@ model CardImportGrant {
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("card_import_grants")
+}
+
+/// 회원별 기능 권한(ADMIN3) — 관리자 페이지 "기능 권한"에서 주고 회수한다. 회원 × 기능 키마다 한 행.
+/// 그 기능의 전역 단계가 allowlist일 때만 쓴다(on은 모두, off는 아무도 — 행과 무관). 판정은 FeatureAccess(common/features.ts).
+/// 카드 불러오기는 env CARD_IMPORT_ALLOWED_USER_IDS와 합집합이다. 회수하면 행을 지우고, 탈퇴하면 탈퇴 파이프라인이 지운다(FK CASCADE도 건다).
+/// 누가 언제 주고 회수했는지는 접근 기록(ADMIN_GRANT_FEATURE·ADMIN_REVOKE_FEATURE, 1년)에 남는다
+model FeatureGrant {
+  userId    String     @map("user_id") @db.Uuid
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feature   FeatureKey
+  grantedAt DateTime   @default(now()) @map("granted_at") @db.Timestamptz
+  /// 준 관리자 행위자 ID(AdminConfig.actorId — 아이디에서 만든 UUID, users 행 없음)
+  grantedBy String     @map("granted_by") @db.Uuid
+  /// 운영 메모(선택, 100자). 개인정보를 적지 않는다
+  note      String?    @db.VarChar(100)
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@id([userId, feature])
+  @@index([feature, grantedAt])
+  @@map("feature_grants")
 }
 
 /// 서비스 전체 CODEF API 호출 수(KST 날짜별, S8). 일일 예산(CODEF_DAILY_CALL_BUDGET) 확인용. 사용자 정보 없음. 7일 지나면 파기 배치가 지운다

@@ -1,15 +1,18 @@
 import {
-  ADMIN_CARD_IMPORT_GRANT_NOTE_MAX,
+  ADMIN_FEATURE_GRANT_NOTE_MAX,
+  ADMIN_FEATURE_GRANT_SEARCH_LIMIT,
   ADMIN_LOGIN_LIMIT,
   ADMIN_STEP_UP_LIMIT,
   ADMIN_USER_PAGE_SIZE,
   ADMIN_WITHDRAW_REASON_LENGTH,
   CARD_IMPORT_FETCH_LIMIT,
-  type AdminCardImportGrant,
-  type AdminCardImportGrantList,
-  type AdminCardImportGrantSource,
+  FEATURE_KEY_VALUES,
   type AdminCodefUsage,
-  type AdminCreateCardImportGrantRequest,
+  type AdminCreateFeatureGrantRequest,
+  type AdminFeatureGrantList,
+  type AdminFeatureGrantRow,
+  type AdminFeatureGrantSource,
+  type AdminFeatureStatus,
   type AdminLoginRequest,
   type AdminSessionView,
   type AdminUserDetail,
@@ -17,6 +20,7 @@ import {
   type AdminUserListResponse,
   type AdminWithdrawUserRequest,
   type AdminWithdrawUserResponse,
+  type FeatureKey,
 } from '@yeojeong/shared'
 import { HttpResponse, type HttpHandler } from 'msw'
 import { api, mockError, noContent, type NoContent } from '../../mocks/utils'
@@ -25,7 +29,8 @@ import { api, mockError, noContent, type NoContent } from '../../mocks/utils'
 // 개발 서버: VITE_MOCK_API=1에서 /admin/login → 아이디 admin · 비밀번호 admin-password-123 · 인증 코드 246810(목 전용 값).
 // 인증 코드(TOTP)는 한 번 쓰면 다시 받지 않는다(서버와 같이). 로그인 뒤 탈퇴 재인증에는 두 번째 코드 135791을 쓴다.
 // 로그인 여부는 sessionStorage 'yj:mock:admin'에 둬서 새로고침해도 유지된다. 테스트는 afterEach에서 resetAdminMock().
-// 카드 불러오기 권한: 단계 allowlist, env 목록 = 준용 + 탈퇴한 ID 하나, 관리자 권한 = 여행자05(시작 상태). 권한 추가·회수는 이 파일 상태만 바꾼다.
+// 기능 권한(ADMIN3): 카드 불러오기·파일 가져오기 모두 allowlist(파일 공급자 WECHAT·ALIPAY). 카드 env 목록 = 준용 + 탈퇴한 ID 하나,
+// 시작할 때 관리자 권한 = 여행자05 카드 불러오기 · 민지 위챗페이 파일. 부여·회수는 이 파일 상태만 바꾼다.
 
 export const ADMIN_MOCK_CREDENTIALS = { username: 'admin', password: 'admin-password-123' } as const
 /** 목이 받는 인증 코드(목 전용). 각 코드는 한 번만 쓸 수 있다 — 로그인에 [0], 재인증에 [1] */
@@ -44,7 +49,7 @@ export const ADMIN_MOCK_USER = {
 export const ADMIN_MOCK_ACTOR_ID = '6f1c2a9e-0b7d-4c55-9e1a-3d2f8b7c6a10'
 /** env CARD_IMPORT_ALLOWED_USER_IDS 흉내(회수 불가) — 준용 + 탈퇴한 회원 ID */
 const ENV_ALLOWLIST: readonly string[] = [ADMIN_MOCK_USER.junyong, ADMIN_MOCK_USER.withdrawn]
-/** 시작할 때 관리자 권한이 있는 회원(여행자05) */
+/** 시작할 때 카드 불러오기 관리자 권한이 있는 회원(여행자05) */
 export const ADMIN_MOCK_GRANTED_USER = uuid(5)
 
 const BASE = Date.parse('2026-10-29T12:00:00+09:00')
@@ -182,7 +187,11 @@ function fixtureCodefUsage(): AdminCodefUsage {
 }
 
 type MockGrant = { grantedAt: string; note: string | null }
-const fixtureGrants = () => new Map<string, MockGrant>([[ADMIN_MOCK_GRANTED_USER, { grantedAt: kstIso(BASE - 2 * DAY), note: '운영자 실테스트' }]])
+const fixtureGrants = () =>
+  new Map<string, Map<FeatureKey, MockGrant>>([
+    [ADMIN_MOCK_GRANTED_USER, new Map([['CARD_IMPORT', { grantedAt: kstIso(BASE - 2 * DAY), note: '운영자 실테스트' }]])],
+    [ADMIN_MOCK_USER.minji, new Map([['FILE_IMPORT_WECHAT', { grantedAt: kstIso(BASE - DAY), note: null }]])],
+  ])
 
 const state = {
   loggedIn: false,
@@ -193,40 +202,72 @@ const state = {
   grants: fixtureGrants(),
 }
 
+const grantOf = (userId: string, feature: FeatureKey) => state.grants.get(userId)?.get(feature)
+
 /** 회원의 카드 불러오기 상태(단계 allowlist: env 목록 또는 관리자 권한) */
 function withCardImport<T extends AdminUserDetail>(user: T): T {
   const allowlisted = ENV_ALLOWLIST.includes(user.id)
-  const granted = state.grants.has(user.id)
+  const granted = grantOf(user.id, 'CARD_IMPORT') !== undefined
   return { ...user, cardImport: { allowlisted, granted, enabled: allowlisted || granted } }
 }
 
-function grantItem(userId: string): AdminCardImportGrant {
-  const grant = state.grants.get(userId)
+/** 기능별 단계(목: 모두 allowlist) */
+function featureStatuses(): AdminFeatureStatus[] {
+  return FEATURE_KEY_VALUES.map((feature) => ({
+    feature,
+    configuredMode: 'allowlist',
+    effectiveMode: 'allowlist',
+    offReason: null,
+    envUserCount: feature === 'CARD_IMPORT' ? ENV_ALLOWLIST.length : 0,
+  }))
+}
+
+function grantRow(userId: string): AdminFeatureGrantRow {
   const user = state.users.find((u) => u.id === userId)
-  const sources: AdminCardImportGrantSource[] = []
-  if (grant) sources.push('ADMIN')
-  if (ENV_ALLOWLIST.includes(userId)) sources.push('ENV')
   return {
     userId,
     nickname: user?.nickname ?? null,
-    sources,
-    grantedAt: grant?.grantedAt ?? null,
-    grantedBy: grant ? ADMIN_MOCK_ACTOR_ID : null,
-    note: grant?.note ?? null,
-    revocable: grant !== undefined,
-    cardImportConsent: user?.consents.some((c) => c.consentId === 'CARD_IMPORT' && c.agreed && !c.withdrawnAt) ?? false,
-    todayFetchCount: userId === ADMIN_MOCK_USER.junyong ? 6 : 0,
+    cells: FEATURE_KEY_VALUES.map((feature) => {
+      const grant = grantOf(userId, feature)
+      const sources: AdminFeatureGrantSource[] = []
+      if (grant) sources.push('ADMIN')
+      if (feature === 'CARD_IMPORT' && ENV_ALLOWLIST.includes(userId)) sources.push('ENV')
+      return {
+        feature,
+        sources,
+        grantedAt: grant?.grantedAt ?? null,
+        grantedBy: grant ? ADMIN_MOCK_ACTOR_ID : null,
+        note: grant?.note ?? null,
+        enabled: sources.length > 0,
+      }
+    }),
+    cardImport: {
+      consent: user?.consents.some((c) => c.consentId === 'CARD_IMPORT' && c.agreed && !c.withdrawnAt) ?? false,
+      todayFetchCount: userId === ADMIN_MOCK_USER.junyong ? 6 : 0,
+    },
   }
 }
 
-function grantList(): AdminCardImportGrantList {
-  const admin = [...state.grants.entries()].sort((a, b) => b[1].grantedAt.localeCompare(a[1].grantedAt)).map(([id]) => id)
-  const envOnly = ENV_ALLOWLIST.filter((id) => !state.grants.has(id))
+function grantList(q: string): AdminFeatureGrantList {
+  let ids: string[]
+  let truncated = false
+  if (!q) {
+    const latest = (userId: string) => Math.max(...[...(state.grants.get(userId)?.values() ?? [])].map((g) => Date.parse(g.grantedAt)))
+    const admin = [...state.grants.keys()].filter((id) => (state.grants.get(id)?.size ?? 0) > 0).sort((a, b) => latest(b) - latest(a))
+    ids = [...admin, ...ENV_ALLOWLIST.filter((id) => !admin.includes(id))]
+  } else {
+    const matched = state.users
+      .filter((u) => (UUID.test(q) ? u.id === q.toLowerCase() : u.nickname.includes(q)))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    truncated = matched.length > ADMIN_FEATURE_GRANT_SEARCH_LIMIT
+    ids = matched.slice(0, ADMIN_FEATURE_GRANT_SEARCH_LIMIT).map((u) => u.id)
+  }
   return {
     asOf: kstIso(BASE),
-    flags: { featureCardImport: 'allowlist', effectiveMode: 'allowlist' },
-    dailyLimit: CARD_IMPORT_FETCH_LIMIT.DAILY,
-    items: [...admin, ...envOnly].map(grantItem),
+    features: featureStatuses(),
+    cardImportDailyLimit: CARD_IMPORT_FETCH_LIMIT.DAILY,
+    items: ids.map(grantRow),
+    truncated,
   }
 }
 
@@ -373,29 +414,41 @@ export const handlers: HttpHandler[] = [
 
   api.get<AdminCodefUsage>('/api/admin/codef-usage', () => denyUnlessAdmin() ?? HttpResponse.json(fixtureCodefUsage())),
 
-  api.get<AdminCardImportGrantList>('/api/admin/card-import-grants', () => denyUnlessAdmin() ?? HttpResponse.json(grantList())),
+  api.get<AdminFeatureGrantList>('/api/admin/feature-grants', ({ request }) => {
+    const denied = denyUnlessAdmin()
+    if (denied) return denied
+    const q = (new URL(request.url).searchParams.get('q') ?? '').trim()
+    return HttpResponse.json(grantList(q))
+  }),
 
-  api.post<AdminCardImportGrant, AdminCreateCardImportGrantRequest>('/api/admin/card-import-grants', async ({ request }) => {
+  api.post<AdminFeatureGrantRow, AdminCreateFeatureGrantRequest>('/api/admin/feature-grants', async ({ request }) => {
     const denied = denyUnlessAdmin()
     if (denied) return denied
     const body = await request.json()
     const note = typeof body.note === 'string' ? body.note.trim() : ''
-    if (!UUID.test(String(body.userId)) || note.length > ADMIN_CARD_IMPORT_GRANT_NOTE_MAX) {
+    if (
+      !UUID.test(String(body.userId)) ||
+      !(FEATURE_KEY_VALUES as readonly string[]).includes(String(body.feature)) ||
+      note.length > ADMIN_FEATURE_GRANT_NOTE_MAX
+    ) {
       return mockError('VALIDATION_FAILED', 400, { fields: [{ path: 'userId', code: 'isUuid', message: '사용자 ID를 확인해 주세요' }] })
     }
     const user = state.users.find((u) => u.id === body.userId)
     if (!user) return mockError('NOT_FOUND', 404)
-    if (state.grants.has(user.id)) return mockError('ADMIN_CARD_IMPORT_GRANT_EXISTS', 409)
-    state.grants.set(user.id, { grantedAt: kstIso(Date.now()), note: note || null })
-    return HttpResponse.json(grantItem(user.id), { status: 201 })
+    if (grantOf(user.id, body.feature)) return mockError('ADMIN_FEATURE_GRANT_EXISTS', 409)
+    const mine = state.grants.get(user.id) ?? new Map<FeatureKey, MockGrant>()
+    mine.set(body.feature, { grantedAt: kstIso(Date.now()), note: note || null })
+    state.grants.set(user.id, mine)
+    return HttpResponse.json(grantRow(user.id), { status: 201 })
   }),
 
-  api.delete<NoContent>('/api/admin/card-import-grants/:userId', ({ params }) => {
+  api.delete<NoContent>('/api/admin/feature-grants/:userId/:feature', ({ params }) => {
     const denied = denyUnlessAdmin()
     if (denied) return denied
     const userId = String(params.userId)
-    if (state.grants.delete(userId)) return noContent()
-    if (ENV_ALLOWLIST.includes(userId)) return mockError('ADMIN_CARD_IMPORT_GRANT_ENV_ONLY', 409)
+    const feature = String(params.feature) as FeatureKey
+    if (state.grants.get(userId)?.delete(feature)) return noContent()
+    if (feature === 'CARD_IMPORT' && ENV_ALLOWLIST.includes(userId)) return mockError('ADMIN_FEATURE_GRANT_ENV_ONLY', 409)
     return mockError('NOT_FOUND', 404)
   }),
 ]

@@ -97,16 +97,18 @@ export interface FeatureFlags {
   accountLink: boolean;
   /**
    * 카드 승인내역 불러오기(S8, CODEF 일회성 조회). false면 화면이 지갑의 "카드 내역 불러오기" 진입점을 숨긴다.
-   * env FEATURE_CARD_IMPORT(기본 false) + CODEF 키가 모두 있을 때만 true. 서버는 항상 채운다(옛 웹 목 호환을 위해 선택 필드)
+   * env FEATURE_CARD_IMPORT(기본 off) + CODEF 키가 모두 있을 때만 true(allowlist면 env 목록·관리자 권한이 있는 회원만). 서버는 항상 채운다(옛 웹 목 호환을 위해 선택 필드)
    */
   cardImport?: boolean;
   /**
    * 거래 내역 파일 가져오기(W10 위챗페이 · W11 알리페이). false면 화면이 지갑의 파일 가져오기 진입점을 모두 숨긴다.
-   * env FEATURE_FILE_IMPORT(기본 off). 서버는 항상 채운다(옛 웹 목 호환을 위해 선택 필드)
+   * env FEATURE_FILE_IMPORT(기본 off) off | allowlist | on. allowlist면 관리자 페이지에서 공급자별 권한(FILE_IMPORT_WECHAT·FILE_IMPORT_ALIPAY)을
+   * 받은 회원에게만 true(= fileImportProviders가 비지 않음). 서버는 항상 채운다(옛 웹 목 호환을 위해 선택 필드)
    */
   fileImport?: boolean;
   /**
-   * 켜진 파일 공급자(W11). fileImport가 false면 빈 배열. env FILE_IMPORT_PROVIDERS(기본 "WECHAT" — 알리페이는 기본 꺼짐).
+   * 이 회원에게 켜진 파일 공급자(W11). fileImport가 false면 빈 배열. env FILE_IMPORT_PROVIDERS(기본 "WECHAT" — 알리페이는 기본 꺼짐)
+   * ∩ (allowlist면) 이 회원의 공급자별 권한.
    * 화면은 HF-65 시트에 이 공급자 행만 보인다. 없으면(옛 서버) fileImport=true일 때 ["WECHAT"]으로 본다
    */
   fileImportProviders?: FileImportProvider[];

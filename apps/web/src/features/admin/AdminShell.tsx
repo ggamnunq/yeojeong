@@ -12,7 +12,7 @@ import { adminPaths } from './paths'
 const NAV = [
   { to: adminPaths.users(), label: '회원' },
   { to: adminPaths.codef(), label: 'CODEF 현황' },
-  { to: adminPaths.cardImport(), label: '카드 불러오기 권한' },
+  { to: adminPaths.features(), label: '기능 권한' },
 ]
 
 /** 관리자 세션이 있어야 하는 화면의 틀: 헤더(메뉴 · 로그아웃) + 넓은 본문. 세션이 없으면 AdminLayout이 로그인으로 보낸다 */

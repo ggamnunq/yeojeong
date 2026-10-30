@@ -1,13 +1,15 @@
-import { ADMIN_CARD_IMPORT_GRANT_NOTE_MAX, ADMIN_TOTP, ADMIN_WITHDRAW_REASON_LENGTH, type AdminUserDetail } from '@yeojeong/shared'
+import { ADMIN_FEATURE_GRANT_NOTE_MAX, ADMIN_TOTP, ADMIN_WITHDRAW_REASON_LENGTH, type AdminUserDetail } from '@yeojeong/shared'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { isApiError } from '../../../api'
 import { LoadingScreen } from '../../../app/states'
-import { Button, Dialog, Input, Tag } from '../../../ds'
+import { Button, Callout, Dialog, Input, Tag } from '../../../ds'
 import { focusRing } from '../../../ds/styles'
 import { EmptyRow, ErrorText, InfoList, Metric, Section, StatusTag, Table, TableBox, Td, Th } from '../components'
-import { cardImportLabel, cardImportSourceLabel, CONSENT_LABEL, formatCount, formatDate, formatDateTime, formatWait, isTotpComplete, maskedKakaoId, totpDigits, TRIP_STATUS_LABEL } from '../format'
-import { useAdminGrantCardImport, useAdminRevokeCardImport, useAdminUser, useAdminWithdraw } from '../hooks'
+import { FeatureGrantControl } from '../FeatureGrantControl'
+import { useFeatureGrantFlow } from '../featureGrantFlow'
+import { cardImportLabel, CONSENT_LABEL, FEATURE_LABEL, FEATURE_MODE_LABEL, formatCount, formatDate, formatDateTime, formatWait, isTotpComplete, maskedKakaoId, totpDigits, TRIP_STATUS_LABEL } from '../format'
+import { useAdminFeatureGrants, useAdminUser, useAdminWithdraw } from '../hooks'
 import { adminPaths } from '../paths'
 import type { AdminUsersNotice } from './AdminUsersPage'
 
@@ -143,7 +145,7 @@ function UserDetail({ user }: { user: AdminUserDetail }) {
         </TableBox>
       </Section>
 
-      <CardImportGrantSection user={user} />
+      <FeatureGrantSection user={user} />
 
       <WithdrawSection user={user} />
     </>
@@ -151,75 +153,74 @@ function UserDetail({ user }: { user: AdminUserDetail }) {
 }
 
 /**
- * 카드 불러오기 권한(관리자 페이지 권한 추가·회수). 되돌릴 수 있어 재인증은 받지 않고, 회수만 확인 다이얼로그를 띄운다.
- * env 목록(CARD_IMPORT_ALLOWED_USER_IDS)으로 준 권한은 여기서 회수할 수 없다
+ * 기능 권한(ADMIN3): 이 회원의 기능별 권한 토글. 기능 권한 탭과 같은 조각·같은 API(q = 사용자 ID)를 쓴다.
+ * 부여·회수 모두 확인 다이얼로그를 거치고(되돌릴 수 있어 재인증은 없다), env 목록으로 준 권한은 여기서 회수할 수 없다
  */
-function CardImportGrantSection({ user }: { user: AdminUserDetail }) {
-  const { allowlisted, granted, enabled } = user.cardImport
+function FeatureGrantSection({ user }: { user: AdminUserDetail }) {
+  const grants = useAdminFeatureGrants(user.id)
   const [note, setNote] = useState('')
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const grant = useAdminGrantCardImport()
-  const revoke = useAdminRevokeCardImport()
-  const has = allowlisted || granted
-
-  const onGrant = () => {
-    const trimmed = note.trim()
-    revoke.reset()
-    grant.mutate({ userId: user.id, ...(trimmed && { note: trimmed }) }, { onSuccess: () => setNote('') })
-  }
-  const onRevoke = () => {
-    grant.reset()
-    revoke.mutate(user.id, { onSettled: () => setDialogOpen(false) })
-  }
+  const [notice, setNotice] = useState<string | null>(null)
+  const flow = useFeatureGrantFlow({
+    features: grants.data?.features,
+    note,
+    onDone: (message) => {
+      setNotice(message)
+      setNote('')
+    },
+  })
+  const row = grants.data?.items.find((item) => item.userId === user.id)
 
   return (
-    <Section title="카드 불러오기 권한">
+    <Section
+      title="기능 권한"
+      actions={
+        <Link to={adminPaths.features()} className={`rounded-xs text-body-s-strong text-brand underline-offset-2 hover:underline ${focusRing}`}>
+          기능 권한 탭
+        </Link>
+      }
+    >
+      {notice && (
+        <div role="status">
+          <Callout tone="info" style="tone" chevron={false} label={notice} />
+        </div>
+      )}
       <div className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-elevation-1">
-        <p className="text-body-m text-primary">
-          카드 불러오기 권한: <span className="text-body-m-strong">{has ? '있음' : '없음'}</span>
-          <span className="ml-2 text-body-s text-secondary">
-            ({cardImportSourceLabel(user.cardImport)} · 지금 {enabled ? '켜짐' : '꺼짐'})
-          </span>
-        </p>
-        {allowlisted && !granted && <p className="text-body-s text-tertiary">env로 준 권한이라 여기서 회수할 수 없어요(tfvars에서 빼야 해요)</p>}
-        {granted ? (
-          <Button
-            type="secondary"
-            size="m"
-            label="권한 회수"
-            className="self-start"
-            onClick={() => {
-              revoke.reset()
-              setDialogOpen(true)
-            }}
-          />
+        {grants.isPending ? (
+          <p className="text-body-s text-tertiary">불러오는 중…</p>
+        ) : grants.isError || !row ? (
+          <ErrorText error={grants.error ?? new Error('not found')} />
         ) : (
-          <div className="flex flex-wrap items-end gap-2">
-            <Input
-              label="메모(선택)"
-              name="cardImportGrantNote"
-              maxLength={ADMIN_CARD_IMPORT_GRANT_NOTE_MAX}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              className="min-w-0 flex-1 sm:max-w-md"
-            />
-            <Button type="primary" size="m" label="권한 추가" state={grant.isPending ? 'loading' : 'default'} onClick={onGrant} />
-          </div>
+          <ul className="flex flex-col divide-y divide-default">
+            {row.cells.map((cell) => {
+              const mode = grants.data.features.find((f) => f.feature === cell.feature)?.effectiveMode ?? 'off'
+              return (
+                <li key={cell.feature} aria-label={FEATURE_LABEL[cell.feature]} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-body-m-strong text-primary">{FEATURE_LABEL[cell.feature]}</span>
+                    <span className="text-caption text-tertiary">
+                      단계 {FEATURE_MODE_LABEL[mode]}
+                      {cell.sources.includes('ENV') && !cell.sources.includes('ADMIN') && ' · env로 준 권한이라 여기서 회수할 수 없어요(tfvars에서 빼야 해요)'}
+                      {cell.note && ` · 메모: ${cell.note}`}
+                    </span>
+                  </div>
+                  <FeatureGrantControl row={row} cell={cell} onRequest={flow.request} />
+                </li>
+              )
+            })}
+          </ul>
         )}
-        <ErrorText error={grant.error ?? revoke.error} />
+        <Input
+          label="부여 메모(선택)"
+          name="featureGrantNote"
+          maxLength={ADMIN_FEATURE_GRANT_NOTE_MAX}
+          value={note}
+          helper="권한을 줄 때 함께 남겨요. 개인정보를 적지 마세요"
+          onChange={(e) => setNote(e.target.value)}
+          className="sm:max-w-md"
+        />
+        <ErrorText error={flow.error} />
       </div>
-      <Dialog
-        open={dialogOpen}
-        type="danger"
-        title={`${user.nickname} 님의 권한을 회수할까요?`}
-        message={allowlisted ? 'env 목록에도 있어 회수해도 계속 보여요' : '다음 요청부터 카드 불러오기가 보이지 않아요'}
-        confirmLabel="회수"
-        confirmState={revoke.isPending ? 'loading' : 'default'}
-        onCancel={() => {
-          if (!revoke.isPending) setDialogOpen(false)
-        }}
-        onConfirm={onRevoke}
-      />
+      {flow.dialog}
     </Section>
   )
 }

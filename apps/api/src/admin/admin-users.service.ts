@@ -10,7 +10,7 @@ import {
 } from '@yeojeong/shared';
 import { AccountDeletionService } from '../account/account-deletion.service.js';
 import { AppException, NotFoundError } from '../common/errors/index.js';
-import { CardImportAccess, FeatureFlags } from '../common/features.js';
+import { FeatureAccess, FeatureFlags } from '../common/features.js';
 import { toKstIso } from '../expenses/kst.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -87,7 +87,10 @@ const listSelect = () =>
       take: 1,
     },
     // 관리자 페이지에서 준 카드 불러오기 권한(있으면 행 하나)
-    cardImportGrant: { select: { userId: true } },
+    featureGrants: {
+      where: { feature: 'CARD_IMPORT' },
+      select: { feature: true },
+    },
   }) satisfies Prisma.UserSelect;
 
 type ListRow = Prisma.UserGetPayload<{ select: ReturnType<typeof listSelect> }>;
@@ -101,7 +104,7 @@ export class AdminUsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly features: FeatureFlags,
-    private readonly cardImport: CardImportAccess,
+    private readonly access: FeatureAccess,
     private readonly deletion: AccountDeletionService,
   ) {}
 
@@ -303,7 +306,8 @@ export class AdminUsersService {
   private listItem(row: ListRow): AdminUserListItem {
     const pending = row.accountDeletions[0];
     const status: AdminUserStatus = pending ? 'DELETION_REQUESTED' : 'ACTIVE';
-    const granted = row.cardImportGrant !== null;
+    const grants = new Set(row.featureGrants.map((g) => g.feature));
+    const granted = grants.has('CARD_IMPORT');
     return {
       id: row.id,
       nickname: row.nickname,
@@ -317,7 +321,7 @@ export class AdminUsersService {
           row.id.toLowerCase(),
         ),
         granted,
-        enabled: this.cardImport.enabledWithGrant(row.id, granted),
+        enabled: this.access.enabledWithGrants(row.id, 'CARD_IMPORT', grants),
       },
     };
   }
