@@ -1,6 +1,6 @@
 # 관리자 페이지 (`src/admin`, ADMIN)
 
-운영자 한 명이 쓰는 관리자 API. 기능은 세 가지다: **회원 관리**(목록·상세·탈퇴 처리), **CODEF 호출 현황**(읽기 전용), **카드 불러오기 권한**(allowlist 단계에서 회원별 권한 추가·회수). 화면은 `apps/web/src/features/admin`(`/admin/*`).
+운영자 한 명이 쓰는 관리자 API. 기능은 세 가지다: **회원 관리**(목록·상세·탈퇴 처리), **CODEF 호출 현황**(읽기 전용), **기능 권한**(회원 × 기능 — 카드 불러오기 · 위챗페이 파일 · 알리페이 파일 — 을 allowlist 단계에서 부여·회수). 화면은 `apps/web/src/features/admin`(`/admin/*`).
 
 공유 타입은 `@yeojeong/shared`의 `api/admin.ts`, 에러 코드는 `ADMIN_ERRORS`(`errors.ts`).
 
@@ -52,15 +52,15 @@ pnpm --silent --filter @yeojeong/api admin:totp '<관리자 아이디>' | gcloud
 | `GET /api/admin/users/:userId`           | 관리자                 | —                                                      | 200 `AdminUserDetail`                                                                | 401, 404                                                                                                                                                                                              |
 | `POST /api/admin/users/:userId/withdraw` | 관리자                 | `{ reason(2~200자), confirmNickname, password, totp }` | 200 `AdminWithdrawUserResponse { status:'DELETED', accountDeletionId, completedAt }` | 400 `ADMIN_CONFIRM_MISMATCH`·`VALIDATION_FAILED`, 401, 403 `ADMIN_STEP_UP_FAILED`·`CSRF_REJECTED`, 404, 429 `ADMIN_STEP_UP_RATE_LIMITED`                                                              |
 | `GET /api/admin/codef-usage`             | 관리자                 | —                                                      | 200 `AdminCodefUsage`                                                                | 401                                                                                                                                                                                                   |
-| `GET /api/admin/card-import-grants`      | 관리자                 | —                                                      | 200 `AdminCardImportGrantList { asOf, flags, dailyLimit, items[] }`                  | 401                                                                                                                                                                                                   |
-| `POST /api/admin/card-import-grants`     | 관리자                 | `{ userId(UUID), note?(100자) }`                       | 201 `AdminCardImportGrant`                                                           | 400 `VALIDATION_FAILED`, 401, 403 `CSRF_REJECTED`, 404(없는·탈퇴 회원), 409 `ADMIN_CARD_IMPORT_GRANT_EXISTS`                                                                                          |
-| `DELETE /api/admin/card-import-grants/:userId` | 관리자           | —                                                      | 204                                                                                  | 401, 403 `CSRF_REJECTED`, 404(관리자 권한 없음), 409 `ADMIN_CARD_IMPORT_GRANT_ENV_ONLY`(env에만 있음)                                                                                                 |
+| `GET /api/admin/feature-grants`         | 관리자                 | `?q=`(닉네임 부분 · 사용자 ID 정확, 36자)              | 200 `AdminFeatureGrantList { asOf, features[], cardImportDailyLimit, items[], truncated }` | 400(검색어 길이), 401                                                                                                                                                                             |
+| `POST /api/admin/feature-grants`        | 관리자                 | `{ userId(UUID), feature, note?(100자) }`              | 201 `AdminFeatureGrantRow`(그 회원의 줄 전체)                                        | 400 `VALIDATION_FAILED`(모르는 기능 포함), 401, 403 `CSRF_REJECTED`, 404(없는·탈퇴 회원), 409 `ADMIN_FEATURE_GRANT_EXISTS`                                                                            |
+| `DELETE /api/admin/feature-grants/:userId/:feature` | 관리자     | —                                                      | 204                                                                                  | 401, 403 `CSRF_REJECTED`, 404(관리자 권한 없음 · UUID·기능 키가 아님), 409 `ADMIN_FEATURE_GRANT_ENV_ONLY`(env에만 있음)                                                                                |
 
 - 회원 목록 항목: 사용자 ID · 닉네임 · 가입일 · 최근 로그인 · 참여 여정 수(나가지 않았고 삭제되지 않은 그룹) · 지갑 항목 수(`walletEntryWhere` — 내 지갑과 같은 기준) · 상태(`ACTIVE` | `DELETION_REQUESTED` = 처리 전 탈퇴 요청이 남음. 요청 코드 FR-108은 L-1에서 없앴다) · 카드 불러오기(`allowlisted` = env allowlist 포함, `granted` = 관리자 페이지 권한 있음, `enabled` = 지금 켜짐).
 - 검색: `q`가 UUID 모양이면 ID 정확 일치, 아니면 닉네임 부분 일치(대소문자 무시). 커서는 `(정렬 값, id)` 불투명 문자열이라 정렬이 다르면 400.
 - 상세: 위 + 카카오 회원번호 **끝 4자리** · 처리 전 탈퇴 요청 · 동의 이력(종류·버전·동의/철회 일시·철회 경로) · 그룹/여정(이름·단계·기간·역할·나감·삭제) · **건수만**(결제자인 여정 결제, 지갑 항목, 결제수단, 활성 세션). 결제 내용·금액·가맹점은 읽지도 않는다(최소 열람).
 - 탈퇴 처리: 서비스 내 탈퇴와 **같은 파이프라인**(`AccountDeletionService.deleteAccount`, 경로 `SUPPORT` — 고객센터 요청 처리와 같다)을 그대로 부른다. 새 파기 로직은 없다. 탈퇴를 막는 기존 규칙(정산 미완료 등)은 파이프라인에 없어서(그룹장 승계·"탈퇴한 멤버"로 기록 유지) 관리자 처리에도 없다. 처리 전 탈퇴 요청이 있으면 함께 완료된다. 순서: 없는 회원 404 → 닉네임 재입력 비교(서버도) → **재인증(step-up: 관리자 비밀번호 + 지금 TOTP, 로그인 때 쓴 코드는 다시 못 쓴다 — 세션당 15분 5번)** → 탈퇴.
-- 카드 불러오기 권한(아래 "카드 불러오기 권한")은 화면 탭 `/admin/card-import`와 회원 상세의 "카드 불러오기 권한" 칸에서 쓴다.
+- 기능 권한(아래 "기능 권한")은 화면 탭 `/admin/features`(옛 `/admin/card-import`는 여기로 보낸다)와 회원 상세의 "기능 권한" 칸에서 쓴다. 회원 목록·상세의 `cardImport`(`allowlisted`·`granted`·`enabled`)는 그대로 카드 불러오기만 보인다.
 - CODEF 현황: S8 카운터를 **읽기만** 한다(`src/card-import/README.md` "호출 보호"). 값을 바꾸는 API는 없다(예산·플래그는 Terraform/env로만).
 
 | 항목                          | 출처                                                                                                                                                         |
@@ -76,17 +76,52 @@ pnpm --silent --filter @yeojeong/api admin:totp '<관리자 아이디>' | gcloud
 
 성공 = 결과 `OK`(추가 인증 이어가기 포함), 실패 = `OK`·`TWO_WAY_REQUIRED`·`PENDING` 밖의 결과.
 
-### 카드 불러오기 권한
+### 기능 권한(ADMIN3)
 
-`FEATURE_CARD_IMPORT=allowlist`일 때 카드 불러오기가 켜지는 회원 = env `CARD_IMPORT_ALLOWED_USER_IDS` **∪** `card_import_grants`(관리자 페이지에서 준 권한). `on`은 모두, `off`(또는 CODEF 키 없음)는 아무도 — 권한 행과 무관하다. 판정은 `CardImportAccess`(`common/features.ts`): 세션 응답 `features.cardImport`, `CardImportGuard`(카드 불러오기 API·`POST /api/wallet/entries/import`), 동의 API(`stage=CARD_IMPORT`), 회원 목록·상세의 `enabled`가 같은 판정을 쓴다.
+회원 × 기능 키(`FEATURE_KEY_VALUES`: `CARD_IMPORT` · `FILE_IMPORT_WECHAT` · `FILE_IMPORT_ALIPAY`)마다 한 행(`feature_grants`, PK `(user_id, feature)`). 권한은 **그 기능의 실제 단계가 `allowlist`일 때만** 쓴다 — `on`은 모두, `off`는 아무도(권한 행과 무관). 판정은 `FeatureAccess`(`common/features.ts`)가 한 곳에서 하고, 세션 응답 `features`, 서버 가드, 회원 목록·상세의 `enabled`, 이 표의 `enabled`가 같은 판정을 쓴다.
 
-- **즉시 반영**: 인스턴스 캐시 없이 요청마다 권한 행을 읽는다(같은 요청 안에서는 `req`에 묶어 한 번만). 부여하면 다음 요청부터 `features.cardImport = true`·API 허용, 회수하면 다음 요청부터 404.
-- **env 항목**: 목록에 `sources: ['ENV']`(`revocable: false`)로 보이고 회수할 수 없다(409 `ADMIN_CARD_IMPORT_GRANT_ENV_ONLY` — tfvars `card_import_allowed_user_ids`에서 빼고 apply). env에도 있는 회원에게 관리자 권한을 더할 수 있고(한 줄에 `ADMIN`·`ENV`), 회수하면 관리자 권한만 지워져 env로 계속 켜져 있다. env는 하위 호환·비상용(DB 없이도 켤 수 있게)으로 남긴다.
-- **목록 항목**: 회원 ID · 닉네임(env에만 있고 회원이 없으면 `null`) · 출처 · 부여 시각 · 부여자(관리자 행위자 ID) · 메모 · CARD_IMPORT 동의가 지금 유효한지(`ConsentChecker` — 카드 불러오기 가드와 같은 기준) · 오늘 새 조회 수(접근 기록 `FETCH_CARD_APPROVALS` step `START`, CODEF 현황과 같은 기준). 순서: 관리자 권한(최근 순) → env에만 있는 항목. 화면은 현재 단계를 함께 보여 주고, 실제 단계가 `off`면 "기능이 꺼져 있어 권한이 있어도 보이지 않아요"라고 알린다.
-- **부여**: 없는 회원(탈퇴 포함 — 행이 지워진다)은 404, 이미 관리자 권한이 있으면 409 `ADMIN_CARD_IMPORT_GRANT_EXISTS`. 회원 검색은 회원 목록 API(`GET /api/admin/users?q=`)를 그대로 쓴다.
-- 부여·회수는 되돌릴 수 있어 **재인증(step-up)을 받지 않는다**. CSRF(Origin)·관리자 세션은 그대로.
-- **탈퇴**: 탈퇴 파이프라인(`AccountDeletionService`)이 권한 행을 지운다(+ FK `ON DELETE CASCADE`). 처리 건수 `counts.cardImportGrants`.
-- 메모는 100자, 접근 기록에도 남는다 — 개인정보를 적지 않는다.
+| 기능 키 | 단계 env | allowlist에서 켜지는 회원 | 서버가 막는 곳(꺼진 회원은 404) |
+| --- | --- | --- | --- |
+| `CARD_IMPORT` | `FEATURE_CARD_IMPORT`(CODEF 키 없으면 off) | env `CARD_IMPORT_ALLOWED_USER_IDS` **∪** 이 권한 | `CardImportGuard`(카드 불러오기 API·`POST /api/wallet/entries/import`), 동의 API(`stage=CARD_IMPORT`) |
+| `FILE_IMPORT_WECHAT` · `FILE_IMPORT_ALIPAY` | `FEATURE_FILE_IMPORT`(운영 importKey 키 없으면 off) + `FILE_IMPORT_PROVIDERS` | 그 공급자 권한이 있고 **그 공급자가 `FILE_IMPORT_PROVIDERS`에 있을 때만**(env 목록 없음) | `FileImportGuard`(켜진 공급자가 없으면 두 경로 모두) + `FileImportController`(요청 공급자별, 확인·저장 모두) |
+
+- **즉시 반영**: 인스턴스 캐시 없이 요청마다 그 회원의 권한 행을 읽는다(같은 요청 안에서는 `req`에 묶어 한 번만 — 세션·가드·컨트롤러가 나눠 쓴다). 부여하면 다음 요청부터 켜지고, 회수하면 다음 요청부터 404.
+- **표**: 기본은 권한(관리자·env)이 있는 회원 전부(최근에 받은 순 → env에만 있는 항목). `q`가 있으면 권한과 무관하게 닉네임 부분 일치·사용자 ID 정확 일치(가입 최신 순, 최대 `ADMIN_FEATURE_GRANT_SEARCH_LIMIT` = 20명, 넘으면 `truncated`). 칸마다 출처(`ADMIN`·`ENV`)·부여 시각·부여자·메모·지금 켜짐. 카드 불러오기 참고로 CARD_IMPORT 동의(`ConsentChecker`)·오늘 새 조회 수(접근 기록 `FETCH_CARD_APPROVALS` step `START`)를 함께 준다.
+- **기능별 상태(읽기 전용)**: 설정 값(`configuredMode`) · 실제 단계(`effectiveMode`) · 꺼진 이유(`CODEF_KEYS_MISSING` · `IMPORT_KEY_MISSING` · `PROVIDER_DISABLED`) · env 목록 인원(카드만). 단계·env 목록·공급자 목록은 Terraform/env로만 바꾼다.
+- **env 항목**: `sources: ['ENV']`로 보이고 회수할 수 없다(409 `ADMIN_FEATURE_GRANT_ENV_ONLY` — tfvars `card_import_allowed_user_ids`에서 빼고 apply). env에도 있는 회원에게 관리자 권한을 더할 수 있고(`['ADMIN', 'ENV']`), 회수하면 관리자 권한만 지워진다.
+- **부여**: 없는 회원(탈퇴 포함)은 404, 이미 있으면 409 `ADMIN_FEATURE_GRANT_EXISTS`. 단계가 allowlist가 아니어도 줄 수 있다(미리 준비해 두고 allowlist로 바꾸면 바로 켜진다).
+- 부여·회수는 되돌릴 수 있어 **재인증(step-up)을 받지 않는다**. 화면은 둘 다 확인 다이얼로그를 거친다. CSRF(Origin)·관리자 세션은 그대로.
+- **탈퇴**: 탈퇴 파이프라인(`AccountDeletionService`)이 권한 행을 지운다(+ FK `ON DELETE CASCADE`). 처리 건수 `counts.featureGrants`(옛 표 `counts.cardImportGrants`).
+- 메모는 100자, **권한 행에만** 남는다(접근 기록에는 적었는지만 `noteGiven`). 그래도 개인정보를 적지 않는다.
+- 기능 키를 더할 때: `FEATURE_KEY_VALUES`(shared) · Prisma enum `FeatureKey`(`ALTER TYPE feature_key ADD VALUE` 마이그레이션) · `FeatureAccess`의 판정 · 화면 `FEATURE_LABEL`·`FEATURE_ENV_NAME`.
+
+#### 옛 `card_import_grants`(ADMIN2)에서 옮긴 방법
+
+- 마이그레이션 `20261030100000_create_feature_grants`가 새 enum·표를 만들고 옛 행을 `CARD_IMPORT`로 복사한다(`ON CONFLICT DO NOTHING` — 다시 돌려도 안전, `test/feature-grants-migration.e2e-spec.ts`가 같은 문장을 실DB에서 돌려 본다).
+- 배포 워크플로는 마이그레이션을 새 리비전보다 **먼저** 적용한다. 그 사이 옛 리비전은 옛 표만 읽고 쓰므로 새 표가 생겨도 영향이 없다. 그래서 **옛 표는 이번에 지우지 않는다**: 새 코드는 판정에 옛 표를 쓰지 않고, `CARD_IMPORT` 회수·탈퇴 때만 옛 행도 함께 지운다. 새 표에 없고 옛 표에만 있는 권한도 회수 대상이다(지웠으면 204, 둘 다 없을 때만 404).
+- 이렇게 해서 막는 것: **새 화면에서 회수한** 권한은 옛 리비전으로 되돌려도 되살아나지 않는다. 되돌린 동안 새 화면에서 준 권한은 옛 리비전에 보이지 않는다(덜 열리는 쪽).
+- 막지 못하는 틈(운영 규칙으로 막는다):
+  - 마이그레이션이 끝난 뒤 새 리비전이 트래픽을 받기 전(보통 1~2분)이나 옛 리비전으로 되돌린 동안 **옛 화면에서 준** 카드 권한은 새 표로 복사되지 않는다(롤포워드하면 보이지 않는다 — 덜 열리는 쪽).
+  - 같은 때 **옛 화면에서 회수한** 카드 권한은 옛 표에서만 지워지고, 마이그레이션이 복사해 둔 `feature_grants` 행은 남는다. 그래서 새 리비전으로 넘어가면(롤포워드) **그 권한이 다시 켜진다**.
+  - 그러므로 **배포·롤백 중에는 기능 권한을 주거나 회수하지 않는다.** 그때 옛 화면에서 바꿨다면 배포가 끝난 뒤 새 화면("기능 권한")에서 같은 조치를 다시 한다(회수했다면 다시 회수).
+- **롤백 주의(파일 가져오기)**: 이 PR 이전 이미지는 `FEATURE_FILE_IMPORT`를 `off`·`on`만 읽어 `allowlist`면 **부팅에 실패**한다. `feature_file_import = "allowlist"`인 채로 이전 이미지로 되돌리려면 먼저 tfvars를 `"off"`(또는 `"on"`)로 바꿔 apply한다.
+- 옛 접근 기록 값(`ADMIN_*_CARD_IMPORT*`, `CARD_IMPORT_GRANT`)은 1년 보존 중인 행이 있어 목록에 남겨 둔다.
+
+#### 후속 작업: `card_import_grants` 지우기
+
+옛 리비전이 더는 돌지 않는 것(롤백할 일이 없음)을 확인한 뒤 별도 마이그레이션으로 옛 표를 지운다. 그 마이그레이션은 **표를 지우기 전에** 위 틈(배포·롤백 중 옛 화면에서 회수했는데 복사본이 남은 권한)을 정리한다. 마이그레이션이 복사한 행(이번 마이그레이션 적용 시각보다 먼저 준 권한) 가운데 옛 표에 더는 없는 것만 지운다:
+
+```sql
+-- <적용 시각> = _prisma_migrations에서 20261030100000_create_feature_grants의 finished_at
+DELETE FROM feature_grants f
+WHERE f.feature = 'CARD_IMPORT'
+  AND f.granted_at < <적용 시각>
+  AND NOT EXISTS (SELECT 1 FROM card_import_grants c WHERE c.user_id = f.user_id);
+
+DROP TABLE card_import_grants;
+```
+
+함께 지울 것: Prisma 모델 `CardImportGrant`·`User.cardImportGrant`, 회수(`AdminFeatureGrantsService.revoke`)·탈퇴(`AccountDeletionService`)의 옛 표 삭제와 `counts.cardImportGrants`.
 
 ## 보안 설계
 
@@ -129,11 +164,11 @@ pnpm --silent --filter @yeojeong/api admin:totp '<관리자 아이디>' | gcloud
 | `ADMIN_VIEW_USER`        | `USER` + 회원 ID | `result`: `OK` \| `NOT_FOUND`(없는 회원 조회도 남긴다. UUID가 아니면 resourceId NULL)                                                                                                                                                      |
 | `ADMIN_WITHDRAW_USER`    | `USER` + 회원 ID | `reason`(입력한 사유) · `result`(`PENDING` → `DELETED` \| `NOT_FOUND` \| `ADMIN_CONFIRM_MISMATCH` \| `ADMIN_STEP_UP_FAILED:<이유>` \| `ADMIN_STEP_UP_RATE_LIMITED` \| 그 밖의 에러 코드) · `accountDeletionId` — 실패한 시도도 모두 남는다 |
 | `ADMIN_VIEW_CODEF_USAGE` | `CODEF_USAGE`    | —                                                                                                                                                                                                                                          |
-| `ADMIN_VIEW_CARD_IMPORT_GRANTS` | `CARD_IMPORT_GRANT` | `count` · `userIds`(목록에 보인 회원 ID — env 항목 포함)                                                                                                                                                                       |
-| `ADMIN_GRANT_CARD_IMPORT` | `USER` + 회원 ID | `result`(`PENDING` → `GRANTED` \| `NOT_FOUND` \| `ADMIN_CARD_IMPORT_GRANT_EXISTS` \| 그 밖의 에러 코드) · `note`(입력했을 때) — 실패한 시도도 남는다                                                                                      |
-| `ADMIN_REVOKE_CARD_IMPORT` | `USER` + 회원 ID | `result`(`PENDING` → `REVOKED` \| `NOT_FOUND` \| `ADMIN_CARD_IMPORT_GRANT_ENV_ONLY` \| 그 밖의 에러 코드) · `grantedAt`(회수한 권한의 부여 시각, UTC ISO) — 권한 행은 지워지므로 누가 언제 줬는지는 부여 기록에서 본다 |
+| `ADMIN_VIEW_FEATURE_GRANTS` | `FEATURE_GRANT` | `count` · `query`(`NONE`\|`NICKNAME`\|`USER_ID` — 검색어 원문은 남기지 않는다) · `userIds`(표에 보인 회원 ID — env 항목 포함)                                                                                                     |
+| `ADMIN_GRANT_FEATURE` | `USER` + 회원 ID | `feature` · `result`(`PENDING` → `GRANTED` \| `NOT_FOUND` \| `ADMIN_FEATURE_GRANT_EXISTS` \| 그 밖의 에러 코드) · `noteGiven`(`YES`\|`NO` — 메모 내용은 남기지 않는다) — 실패한 시도도 남는다                                       |
+| `ADMIN_REVOKE_FEATURE` | `USER` + 회원 ID | `feature` · `result`(`PENDING` → `REVOKED` \| `NOT_FOUND` \| `ADMIN_FEATURE_GRANT_ENV_ONLY` \| 그 밖의 에러 코드) · `grantedAt`(회수한 권한의 부여 시각, UTC ISO) — 권한 행은 지워지므로 누가 언제 줬는지는 부여 기록에서 본다 |
 
-- 열람 기록은 **응답 전에** 쓰고, 쓰지 못하면 요청을 500으로 실패시킨다(fail closed — 기록 없는 열람이 없다). 탈퇴 처리·카드 불러오기 권한 부여·회수는 시도(`PENDING`)를 먼저 기록하고(실패하면 처리하지 않는다) 끝나면 결과를 같은 행에 채운다. 로그인 실패 기록만 응답을 바꾸지 않는다(오류 로그).
+- 열람 기록은 **응답 전에** 쓰고, 쓰지 못하면 요청을 500으로 실패시킨다(fail closed — 기록 없는 열람이 없다). 탈퇴 처리·기능 권한 부여·회수는 시도(`PENDING`)를 먼저 기록하고(실패하면 처리하지 않는다) 끝나면 결과를 같은 행에 채운다. 로그인 실패 기록만 응답을 바꾸지 않는다(오류 로그).
 - 애플리케이션 로그(Cloud Logging)에는 행위·대상만 남기고 `details`(탈퇴 사유)는 남기지 않는다.
 - 로거 마스킹에 `username`·`passwordHash`·`totp`·`totpSecret`을 더했다(`password`는 원래 있다 — `common/logging/mask.ts`, `logger.ts`). 요청 본문은 원래 로그에 남지 않는다.
 
@@ -146,5 +181,6 @@ pnpm --silent --filter @yeojeong/api admin:totp '<관리자 아이디>' | gcloud
 
 - 단위: `password-hash.spec.ts`(형식·솔트·비용 범위·N = 2^17 기본·예전 해시 호환), `totp.spec.ts`(RFC 6238 벡터·±1창·base32·URI), `admin-login-throttle.spec.ts`(IPv6 /64), `admin-config.spec.ts`(셋 다 있어야 켜짐·형식 오류·확인·scrypt 동시 실행 1개·지문), `common/logging/logger.spec.ts`(관리자 자격 증명 마스킹).
 - e2e `test/admin.e2e-spec.ts`(실DB): 미설정 404(없는 라우트와 같은 본문·헤더, CSRF 403 아님) · 일반 실패 문구(아이디·비밀번호·코드) · TOTP 필수·재사용 금지(동시 요청 포함) · 새 로그인이 기존 세션 폐기 · IP당 429 + `Retry-After` + 기록 1회 · IPv6 /64 · 전체 잠금 · 장치 쿠키(전체 잠금 제외·장치 한도·위조·자격 증명 교체) · 재인증(비밀번호·코드·재사용·세션당 한도) · 실패한 탈퇴·없는 회원 조회 기록 · 쿠키 속성 · 세션 분리(양방향) · 유휴·절대 만료 · 로그아웃 폐기 · CSRF · 자격 증명 교체 무효 · 목록 검색·정렬·커서 · 상세에 결제 내용 없음 · 탈퇴(닉네임 불일치·사유·CSRF·파이프라인·기록) · 기록 실패 시 500 · CODEF 집계 · 파기 배치 · 로그에 아이디·비밀번호·토큰·사유 없음.
-- e2e `test/admin-card-import.e2e-spec.ts`(실DB, 실제 기능 플래그 allowlist + CODEF 키): 부여 즉시 세션 `features.cardImport = true`·`GET /api/card-import/config` 200 · 회수 즉시 404 · 회원 목록·상세 `granted`·`enabled` · 409(이미 있음)·404(없는·탈퇴 회원)·400(UUID 아님·메모 길이) · env 항목 표시·회수 409·env + 관리자 동시 · 탈퇴하면 권한 행 삭제 · 접근 기록(대상 회원·`client_ip`) · 일반 세션으로 401 `ADMIN_UNAUTHENTICATED` · CSRF 403.
-- 단위 `common/features.spec.ts`: `CardImportAccess`(env·권한 합집합, off·on은 DB를 보지 않음, 요청당 한 번 조회, 다음 요청은 다시 읽음) · `CardImportGuard`.
+- e2e `test/admin-feature-grants.e2e-spec.ts`(실DB, 실제 기능 플래그 카드 allowlist + CODEF 키 · 파일 allowlist + WECHAT·ALIPAY): 카드 권한 부여 즉시 세션 `features.cardImport`·`GET /api/card-import/config` 200 · 회수 즉시 404(옛 `card_import_grants` 행도 삭제) · 위챗 권한이면 위챗 확인 200·알리페이 확인·저장 404 · 권한 없는 회원은 확인·저장 모두 404 · 회원 목록·상세 `granted`·`enabled` · 표(기능별 단계·env 인원·기본 목록·닉네임·ID 검색) · 409·404·400 · env 항목 표시·회수 409·env + 관리자 동시 · 탈퇴하면 권한 행 삭제 · 접근 기록(기능 키·결과, 메모·검색어 원문 없음, `client_ip`) · 일반 세션으로 401 `ADMIN_UNAUTHENTICATED` · CSRF 403.
+- e2e `test/feature-grants-migration.e2e-spec.ts`(실DB): 마이그레이션의 복사 문장 — 옛 행이 그대로 옮겨지고, 이미 있는 행은 덮어쓰지 않고, 다시 돌려도 안전.
+- 단위 `common/features.spec.ts`: `FeatureAccess`(카드 env·권한 합집합, 파일 공급자별 권한 ∩ `FILE_IMPORT_PROVIDERS`, off·on은 DB를 보지 않음, 요청당 한 번 조회, 다음 요청은 다시 읽음) · `CardImportGuard` · `FileImportGuard` · `FEATURE_FILE_IMPORT` off·allowlist·on.

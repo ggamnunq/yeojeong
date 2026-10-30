@@ -59,26 +59,16 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
   let app: NestExpressApplication;
   let auth: ReturnType<typeof createTestAuth>;
   let logOutput = '';
+  // FeatureFlags 가짜(FeatureAccess는 진짜 — allowlist면 실제 feature_grants 행을 읽는다)
   const flags = {
     accountLink: false,
     cardImportMode: 'off' as const,
-    fileImport: true,
-    /** FILE_IMPORT_PROVIDERS(W11). fileImport가 false면 실제 FeatureFlags처럼 빈 목록으로 본다 */
+    fileImportMode: 'on' as 'off' | 'allowlist' | 'on',
+    /** FILE_IMPORT_PROVIDERS(W11). fileImportMode가 off면 실제 FeatureFlags처럼 빈 목록으로 본다 */
     providers: ['WECHAT'] as FileImportProvider[],
     cardImportFor: () => false,
     get fileImportProviders(): FileImportProvider[] {
-      return this.fileImport ? this.providers : [];
-    },
-    fileImportEnabledFor(provider: FileImportProvider) {
-      return this.fileImportProviders.includes(provider);
-    },
-    view() {
-      return {
-        accountLink: false,
-        cardImport: false,
-        fileImport: this.fileImport,
-        fileImportProviders: [...this.fileImportProviders],
-      };
+      return this.fileImportMode === 'off' ? [] : this.providers;
     },
   };
 
@@ -129,7 +119,7 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
   });
 
   beforeEach(() => {
-    flags.fileImport = true;
+    flags.fileImportMode = 'on';
     flags.providers = ['WECHAT'];
   });
 
@@ -174,7 +164,7 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
 
   it('hides both routes with 404 while the flag is off, and reports the flag in the session', async () => {
     const seed = await seedOngoing();
-    flags.fileImport = false;
+    flags.fileImportMode = 'off';
     await importAs(seed, '준용', {
       provider: 'WECHAT',
       items: [item()],
@@ -189,7 +179,7 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
       .set(as(seed, '준용'))
       .expect(200);
     expect(session.body.features).toMatchObject({ fileImport: false });
-    flags.fileImport = true;
+    flags.fileImportMode = 'on';
     const on = await request(server())
       .get('/api/auth/session')
       .set(as(seed, '준용'))
@@ -713,5 +703,76 @@ describe.skipIf(!databaseUrl)('File import (W10 e2e, real DB)', () => {
       items: [item({ txnDigest: digestOf('X-2', 'ALIPAY'), currency: 'JPY' })],
     }).expect(400);
     expect(await fileRows(userId)).toHaveLength(1);
+  });
+
+  it('allowlist (ADMIN3): only members with the provider grant can check and save; revoking turns it off on the next request', async () => {
+    const seed = await seedOngoing();
+    const granted = seed.members['준용'].userId;
+    const other = seed.members['민지'].userId;
+    flags.fileImportMode = 'allowlist';
+    flags.providers = ['WECHAT', 'ALIPAY'];
+    const session = async (name: string) =>
+      (
+        await request(server())
+          .get('/api/auth/session')
+          .set(as(seed, name))
+          .expect(200)
+      ).body.features as { fileImport: boolean; fileImportProviders: string[] };
+
+    // 권한이 없으면 세션에서 숨기고, 확인·저장 모두 404(본문이 맞아도)
+    expect(await session('준용')).toMatchObject({
+      fileImport: false,
+      fileImportProviders: [],
+    });
+    await checkAs(seed, '준용', {
+      provider: 'WECHAT',
+      txnDigests: [digestOf(TXN_A)],
+    }).expect(404);
+    await importAs(seed, '준용', {
+      provider: 'WECHAT',
+      items: [item()],
+    }).expect(404);
+
+    await prisma.featureGrant.create({
+      data: {
+        userId: granted,
+        feature: 'FILE_IMPORT_WECHAT',
+        grantedBy: granted,
+      },
+    });
+    expect(await session('준용')).toMatchObject({
+      fileImport: true,
+      fileImportProviders: ['WECHAT'],
+    });
+    await checkAs(seed, '준용', {
+      provider: 'WECHAT',
+      txnDigests: [digestOf(TXN_A)],
+    }).expect(200);
+    await importAs(seed, '준용', {
+      provider: 'WECHAT',
+      items: [item()],
+    })
+      .expect(201)
+      .expect((res) => expect(res.body).toMatchObject({ created: 1 }));
+    // 위챗 권한으로 알리페이는 404
+    await importAs(seed, '준용', {
+      provider: 'ALIPAY',
+      items: [item({ txnDigest: digestOf(TXN_B, 'ALIPAY') })],
+    }).expect(404);
+    // 같은 여정의 다른 회원은 여전히 404
+    expect(await session('민지')).toMatchObject({ fileImport: false });
+    await checkAs(seed, '민지', {
+      provider: 'WECHAT',
+      txnDigests: [digestOf(TXN_A)],
+    }).expect(404);
+    expect(await fileRows(other)).toHaveLength(0);
+
+    // 회수하면 다음 요청부터 404
+    await prisma.featureGrant.deleteMany({ where: { userId: granted } });
+    await checkAs(seed, '준용', {
+      provider: 'WECHAT',
+      txnDigests: [digestOf(TXN_A)],
+    }).expect(404);
+    expect(await fileRows(granted)).toHaveLength(1);
   });
 });

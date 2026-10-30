@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AdminCreateCardImportGrantRequest, AdminLoginRequest, AdminUserSort, AdminWithdrawUserRequest } from '@yeojeong/shared'
+import type { AdminCreateFeatureGrantRequest, AdminLoginRequest, AdminUserSort, AdminWithdrawUserRequest, FeatureKey } from '@yeojeong/shared'
 import { adminApi, adminKeys } from './api'
 
 // 관리자 화면 훅. AdminLayout의 전용 QueryClient 안에서만 쓴다.
@@ -51,33 +51,34 @@ export function useAdminWithdraw(userId: string) {
   })
 }
 
-export function useAdminCardImportGrants() {
-  return useQuery({ queryKey: adminKeys.cardImportGrants, queryFn: ({ signal }) => adminApi.cardImportGrants(signal) })
+/** 기능 권한 표. q가 비면 권한 있는 회원 전부, 닉네임·사용자 ID면 검색 */
+export function useAdminFeatureGrants(q: string) {
+  return useQuery({ queryKey: adminKeys.featureGrants(q), queryFn: ({ signal }) => adminApi.featureGrants(q, signal) })
 }
 
-/** 권한이 바뀌면 권한 목록·회원 목록·그 회원 상세를 다시 읽는다 */
-function useCardImportGrantRefresh() {
+/** 권한이 바뀌면 권한 표(모든 검색)·회원 목록·그 회원 상세를 다시 읽는다 */
+function useFeatureGrantRefresh() {
   const client = useQueryClient()
   return (userId: string) => {
-    void client.invalidateQueries({ queryKey: adminKeys.cardImportGrants })
+    void client.invalidateQueries({ queryKey: adminKeys.featureGrantsAll })
     void client.invalidateQueries({ queryKey: adminKeys.usersAll })
     void client.invalidateQueries({ queryKey: adminKeys.user(userId) })
   }
 }
 
-export function useAdminGrantCardImport() {
-  const refresh = useCardImportGrantRefresh()
+export function useAdminGrantFeature() {
+  const refresh = useFeatureGrantRefresh()
   return useMutation({
-    mutationFn: (body: AdminCreateCardImportGrantRequest) => adminApi.grantCardImport(body),
+    mutationFn: (body: AdminCreateFeatureGrantRequest) => adminApi.grantFeature(body),
     onSettled: (_data, _error, body) => refresh(body.userId),
   })
 }
 
-export function useAdminRevokeCardImport() {
-  const refresh = useCardImportGrantRefresh()
+export function useAdminRevokeFeature() {
+  const refresh = useFeatureGrantRefresh()
   return useMutation({
-    mutationFn: (userId: string) => adminApi.revokeCardImport(userId),
-    onSettled: (_data, _error, userId) => refresh(userId),
+    mutationFn: (target: { userId: string; feature: FeatureKey }) => adminApi.revokeFeature(target),
+    onSettled: (_data, _error, target) => refresh(target.userId),
   })
 }
 

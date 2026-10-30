@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import type { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -97,9 +98,15 @@ export async function createDbTestApp(
   });
   if (options.features) {
     const flags = options.features;
-    builder = builder
-      .overrideProvider(FeatureFlags)
-      .useValue({ accountLink: flags.accountLink, view: () => ({ ...flags }) });
+    // 진짜 FeatureFlags(그 밖의 기능은 꺼짐) — 회원별 판정(FeatureAccess)이 그대로 돈다
+    builder = builder.overrideProvider(FeatureFlags).useValue(
+      new FeatureFlags({
+        get: (name: string) =>
+          name === 'FEATURE_ACCOUNT_LINK'
+            ? String(flags.accountLink)
+            : undefined,
+      } as unknown as ConfigService),
+    );
   }
   const moduleFixture = await builder
     .overrideProvider(SessionResolver)

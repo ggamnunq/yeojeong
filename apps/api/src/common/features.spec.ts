@@ -1,10 +1,11 @@
 import type { ConfigService } from '@nestjs/config';
+import type { FeatureKey } from '@yeojeong/shared';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import { NotFoundError } from './errors/app-exception.js';
 import {
   AccountLinkGuard,
-  CardImportAccess,
   CardImportGuard,
+  FeatureAccess,
   FeatureFlags,
   FileImportGuard,
   parseBooleanEnv,
@@ -113,7 +114,7 @@ describe('기능 플래그(FR-006)', () => {
   });
 });
 
-describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 권한)', () => {
+describe('회원별 기능 판정(FeatureAccess = env + 관리자 권한 feature_grants)', () => {
   const keys = {
     CODEF_CLIENT_ID: 'id',
     CODEF_CLIENT_SECRET: 'secret',
@@ -122,26 +123,33 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
   const envUser = '11111111-1111-4111-8111-111111111111';
   const granted = '22222222-2222-4222-8222-222222222222';
   const nobody = '33333333-3333-4333-8333-333333333333';
+  const set = (features: FeatureKey[]): ReadonlySet<FeatureKey> =>
+    new Set(features);
 
-  /** card_import_grants 가짜: granted 한 명만 있고, 조회 수를 센다 */
-  function setup(mode: string, grants = new Set([granted])) {
+  /** feature_grants 가짜: 회원별 기능 키 목록, 조회 수를 센다 */
+  function setup(
+    mode: string,
+    grants = new Map<string, FeatureKey[]>([[granted, ['CARD_IMPORT']]]),
+    env: Record<string, string> = {},
+  ) {
     const flags = new FeatureFlags({
       get: (name: string) =>
         ({
           FEATURE_CARD_IMPORT: mode,
           CARD_IMPORT_ALLOWED_USER_IDS: envUser,
           ...keys,
+          ...env,
         })[name],
     } as unknown as ConfigService);
-    const findUnique = vi.fn(({ where }: { where: { userId: string } }) =>
+    const findMany = vi.fn(({ where }: { where: { userId: string } }) =>
       Promise.resolve(
-        grants.has(where.userId) ? { userId: where.userId } : null,
+        (grants.get(where.userId) ?? []).map((feature) => ({ feature })),
       ),
     );
     const prisma = {
-      cardImportGrant: { findUnique },
+      featureGrant: { findMany },
     } as unknown as PrismaService;
-    return { access: new CardImportAccess(flags, prisma), findUnique, grants };
+    return { access: new FeatureAccess(flags, prisma), findMany, grants };
   }
 
   const ctx = (userId?: string, req: object = {}) =>
@@ -154,16 +162,16 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
       }),
     }) as never;
 
-  it('allowlist: env 목록 또는 관리자 권한이 있으면 켜진다(env는 DB를 보지 않는다)', async () => {
-    const { access, findUnique } = setup('allowlist');
-    expect(await access.enabledFor(envUser)).toBe(true);
-    expect(findUnique).not.toHaveBeenCalled();
-    expect(await access.enabledFor(granted)).toBe(true);
-    expect(await access.enabledFor(nobody)).toBe(false);
-    expect(await access.enabledFor(null)).toBe(false);
+  it('카드 allowlist: env 목록 또는 관리자 권한이 있으면 켜진다(env는 DB를 보지 않는다)', async () => {
+    const { access, findMany } = setup('allowlist');
+    expect(await access.cardImportFor(envUser)).toBe(true);
+    expect(findMany).not.toHaveBeenCalled();
+    expect(await access.cardImportFor(granted)).toBe(true);
+    expect(await access.cardImportFor(nobody)).toBe(false);
+    expect(await access.cardImportFor(null)).toBe(false);
     // UUID가 아니면 DB를 보지 않는다
-    expect(await access.enabledFor('not-a-uuid')).toBe(false);
-    expect(findUnique).toHaveBeenCalledTimes(2);
+    expect(await access.cardImportFor('not-a-uuid')).toBe(false);
+    expect(findMany).toHaveBeenCalledTimes(2);
     expect(await access.view(granted)).toEqual({
       accountLink: false,
       cardImport: true,
@@ -176,33 +184,56 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
       fileImport: false,
       fileImportProviders: [],
     });
-    expect(access.enabledWithGrant(nobody, true)).toBe(true);
-    expect(access.enabledWithGrant(nobody, false)).toBe(false);
-    expect(access.enabledWithGrant(envUser, false)).toBe(true);
+    expect(
+      access.enabledWithGrants(nobody, 'CARD_IMPORT', set(['CARD_IMPORT'])),
+    ).toBe(true);
+    expect(access.enabledWithGrants(nobody, 'CARD_IMPORT', set([]))).toBe(
+      false,
+    );
+    expect(access.enabledWithGrants(envUser, 'CARD_IMPORT', set([]))).toBe(
+      true,
+    );
   });
 
-  it('off·on은 권한 행과 무관하다(DB를 보지 않는다)', async () => {
+  it('카드 off·on은 권한 행과 무관하다(DB를 보지 않는다)', async () => {
     const off = setup('off');
-    expect(await off.access.enabledFor(granted)).toBe(false);
-    expect(await off.access.enabledFor(envUser)).toBe(false);
+    expect(await off.access.cardImportFor(granted)).toBe(false);
+    expect(await off.access.cardImportFor(envUser)).toBe(false);
     expect((await off.access.view(granted)).cardImport).toBe(false);
-    expect(off.access.enabledWithGrant(granted, true)).toBe(false);
+    expect(
+      off.access.enabledWithGrants(
+        granted,
+        'CARD_IMPORT',
+        set(['CARD_IMPORT']),
+      ),
+    ).toBe(false);
     const on = setup('on');
-    expect(await on.access.enabledFor(nobody)).toBe(true);
-    expect(await on.access.enabledFor(undefined)).toBe(true);
-    expect(off.findUnique).not.toHaveBeenCalled();
-    expect(on.findUnique).not.toHaveBeenCalled();
+    expect(await on.access.cardImportFor(nobody)).toBe(true);
+    expect(await on.access.cardImportFor(undefined)).toBe(true);
+    expect(off.findMany).not.toHaveBeenCalled();
+    expect(on.findMany).not.toHaveBeenCalled();
   });
 
-  it('같은 요청 안에서는 한 번만 읽고, 다음 요청은 다시 읽는다(회수가 바로 반영된다)', async () => {
-    const { access, findUnique, grants } = setup('allowlist');
+  it('같은 요청 안에서는 한 번만 읽고(카드·파일 판정 함께), 다음 요청은 다시 읽는다(회수가 바로 반영된다)', async () => {
+    const { access, findMany, grants } = setup(
+      'allowlist',
+      new Map<string, FeatureKey[]>([
+        [granted, ['CARD_IMPORT', 'FILE_IMPORT_WECHAT']],
+      ]),
+      { FEATURE_FILE_IMPORT: 'allowlist' },
+    );
     const req = {};
-    expect((await access.view(granted, req)).cardImport).toBe(true);
-    expect(await access.enabledFor(granted, req)).toBe(true);
-    expect(findUnique).toHaveBeenCalledTimes(1);
+    expect(await access.view(granted, req)).toMatchObject({
+      cardImport: true,
+      fileImport: true,
+      fileImportProviders: ['WECHAT'],
+    });
+    expect(await access.cardImportFor(granted, req)).toBe(true);
+    expect(await access.fileImportFor(granted, 'WECHAT', req)).toBe(true);
+    expect(findMany).toHaveBeenCalledTimes(1);
     grants.delete(granted);
-    expect(await access.enabledFor(granted, {})).toBe(false);
-    expect(findUnique).toHaveBeenCalledTimes(2);
+    expect(await access.cardImportFor(granted, {})).toBe(false);
+    expect(findMany).toHaveBeenCalledTimes(2);
   });
 
   it('CardImportGuard: 꺼진 사용자는 404, env·관리자 권한이면 통과', async () => {
@@ -225,44 +256,140 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
     ).rejects.toThrow(NotFoundError);
   });
 
-  it('turns fileImport on only with FEATURE_FILE_IMPORT=on, and in production only with IMPORT_KEY_HMAC_KEY (W10)', () => {
+  it('파일 allowlist: 공급자별 권한 ∩ FILE_IMPORT_PROVIDERS인 공급자만 켜진다(카드 env 목록은 파일과 무관)', async () => {
+    const wechatOnly = '44444444-4444-4444-8444-444444444444';
+    const both = '55555555-5555-4555-8555-555555555555';
+    const grants = new Map<string, FeatureKey[]>([
+      [wechatOnly, ['FILE_IMPORT_WECHAT']],
+      [both, ['FILE_IMPORT_WECHAT', 'FILE_IMPORT_ALIPAY']],
+      [granted, ['FILE_IMPORT_ALIPAY']],
+    ]);
+    // 공급자 목록에 알리페이가 없으면 알리페이 권한이 있어도 꺼져 있다
+    const wechatListed = setup('off', grants, {
+      FEATURE_FILE_IMPORT: 'allowlist',
+    });
+    expect(await wechatListed.access.fileImportProvidersFor(both)).toEqual([
+      'WECHAT',
+    ]);
+    expect(await wechatListed.access.fileImportProvidersFor(granted)).toEqual(
+      [],
+    );
+    expect(await wechatListed.access.fileImportFor(granted, 'ALIPAY')).toBe(
+      false,
+    );
+
+    const { access } = setup('off', grants, {
+      FEATURE_FILE_IMPORT: 'allowlist',
+      FILE_IMPORT_PROVIDERS: 'WECHAT,ALIPAY',
+    });
+    expect(await access.fileImportProvidersFor(wechatOnly)).toEqual(['WECHAT']);
+    expect(await access.fileImportProvidersFor(both)).toEqual([
+      'WECHAT',
+      'ALIPAY',
+    ]);
+    expect(await access.fileImportProvidersFor(granted)).toEqual(['ALIPAY']);
+    expect(await access.fileImportProvidersFor(nobody)).toEqual([]);
+    // 카드 env 목록에 있어도 파일 권한은 없다
+    expect(await access.fileImportProvidersFor(envUser)).toEqual([]);
+    expect(await access.fileImportProvidersFor(null)).toEqual([]);
+    expect(await access.view(granted)).toEqual({
+      accountLink: false,
+      cardImport: false,
+      fileImport: true,
+      fileImportProviders: ['ALIPAY'],
+    });
+    expect(await access.view(nobody)).toMatchObject({
+      fileImport: false,
+      fileImportProviders: [],
+    });
+    expect(
+      access.enabledWithGrants(
+        nobody,
+        'FILE_IMPORT_ALIPAY',
+        set(['FILE_IMPORT_ALIPAY']),
+      ),
+    ).toBe(true);
+    expect(
+      access.enabledWithGrants(
+        nobody,
+        'FILE_IMPORT_WECHAT',
+        set(['FILE_IMPORT_ALIPAY']),
+      ),
+    ).toBe(false);
+
+    // FileImportGuard: 켜진 공급자가 하나도 없으면 404
+    await expect(
+      new FileImportGuard(access).canActivate(ctx(nobody)),
+    ).rejects.toThrow(NotFoundError);
+    await expect(
+      new FileImportGuard(access).canActivate(ctx(undefined)),
+    ).rejects.toThrow(NotFoundError);
+    expect(await new FileImportGuard(access).canActivate(ctx(granted))).toBe(
+      true,
+    );
+  });
+
+  it('파일 on은 모두(DB를 보지 않는다), off는 권한이 있어도 아무도', async () => {
+    const grants = new Map<string, FeatureKey[]>([
+      [granted, ['FILE_IMPORT_WECHAT']],
+    ]);
+    const on = setup('off', grants, { FEATURE_FILE_IMPORT: 'on' });
+    expect(await on.access.fileImportProvidersFor(nobody)).toEqual(['WECHAT']);
+    expect(await on.access.fileImportProvidersFor(undefined)).toEqual([
+      'WECHAT',
+    ]);
+    expect(await new FileImportGuard(on.access).canActivate(ctx(nobody))).toBe(
+      true,
+    );
+    expect(on.findMany).not.toHaveBeenCalled();
+    const off = setup('off', grants, { FEATURE_FILE_IMPORT: 'off' });
+    expect(await off.access.fileImportProvidersFor(granted)).toEqual([]);
+    await expect(
+      new FileImportGuard(off.access).canActivate(ctx(granted)),
+    ).rejects.toThrow(NotFoundError);
+    expect(off.findMany).not.toHaveBeenCalled();
+  });
+
+  it('FEATURE_FILE_IMPORT is off | allowlist | on, and in production only with IMPORT_KEY_HMAC_KEY (W10 · ADMIN3)', () => {
     const flags = (env: Record<string, string>) =>
       new FeatureFlags({
         get: (name: string) => env[name],
       } as unknown as ConfigService);
-    expect(flags({}).fileImport).toBe(false);
-    expect(flags({ FEATURE_FILE_IMPORT: 'off' }).fileImport).toBe(false);
-    expect(flags({ FEATURE_FILE_IMPORT: ' ON ' }).fileImport).toBe(true);
+    expect(flags({}).fileImportMode).toBe('off');
+    expect(flags({ FEATURE_FILE_IMPORT: 'off' }).fileImportMode).toBe('off');
+    expect(flags({ FEATURE_FILE_IMPORT: ' ON ' }).fileImportMode).toBe('on');
+    expect(flags({ FEATURE_FILE_IMPORT: 'Allowlist' }).fileImportMode).toBe(
+      'allowlist',
+    );
     expect(flags({ FEATURE_FILE_IMPORT: 'on' }).view()).toEqual({
       accountLink: false,
       cardImport: false,
       fileImport: true,
       fileImportProviders: ['WECHAT'],
     });
+    // allowlist는 env만으로는 아무에게도 켜지지 않는다(회원별 판정은 FeatureAccess)
+    const allow = flags({ FEATURE_FILE_IMPORT: 'allowlist' });
+    expect(allow.view('11111111-1111-4111-8111-111111111111')).toMatchObject({
+      fileImport: false,
+      fileImportProviders: [],
+    });
+    expect(allow.fileImportProviderEnabled('WECHAT')).toBe(true);
     expect(parseFileImportMode(undefined)).toBe('off');
-    expect(() => flags({ FEATURE_FILE_IMPORT: 'true' })).toThrow(/off·on/);
-    expect(() => parseFileImportMode('allowlist')).toThrow(/off·on/);
-    // 운영: importKey 전용 키가 없으면 꺼진다
-    expect(
-      flags({ NODE_ENV: 'production', FEATURE_FILE_IMPORT: 'on' }).fileImport,
-    ).toBe(false);
+    expect(() => flags({ FEATURE_FILE_IMPORT: 'true' })).toThrow(
+      /off·allowlist·on/,
+    );
+    // 운영: importKey 전용 키가 없으면 꺼진다(설정 값은 그대로 보인다)
+    const noKey = flags({ NODE_ENV: 'production', FEATURE_FILE_IMPORT: 'on' });
+    expect(noKey.fileImportMode).toBe('off');
+    expect(noKey.fileImportConfiguredMode).toBe('on');
+    expect(noKey.fileImportProviders).toEqual([]);
     expect(
       flags({
         NODE_ENV: 'production',
-        FEATURE_FILE_IMPORT: 'on',
+        FEATURE_FILE_IMPORT: 'allowlist',
         IMPORT_KEY_HMAC_KEY: 'k'.repeat(64),
-      }).fileImport,
-    ).toBe(true);
-
-    const ctx = {} as never;
-    expect(() => new FileImportGuard(flags({})).canActivate(ctx)).toThrow(
-      NotFoundError,
-    );
-    expect(
-      new FileImportGuard(flags({ FEATURE_FILE_IMPORT: 'on' })).canActivate(
-        ctx,
-      ),
-    ).toBe(true);
+      }).fileImportMode,
+    ).toBe('allowlist');
   });
 
   it('FILE_IMPORT_PROVIDERS picks providers (default WECHAT only — ALIPAY off unless listed), unknown values stop boot (W11)', () => {
@@ -286,17 +413,17 @@ describe('카드 불러오기 권한 판정(CardImportAccess = env + 관리자 �
     );
 
     const on = flags({ FEATURE_FILE_IMPORT: 'on' });
-    expect(on.fileImportEnabledFor('WECHAT')).toBe(true);
-    expect(on.fileImportEnabledFor('ALIPAY')).toBe(false);
+    expect(on.fileImportProviderEnabled('WECHAT')).toBe(true);
+    expect(on.fileImportProviderEnabled('ALIPAY')).toBe(false);
     const both = flags({
       FEATURE_FILE_IMPORT: 'on',
       FILE_IMPORT_PROVIDERS: 'WECHAT,ALIPAY',
     });
-    expect(both.fileImportEnabledFor('ALIPAY')).toBe(true);
+    expect(both.fileImportProviderEnabled('ALIPAY')).toBe(true);
     expect(both.view().fileImportProviders).toEqual(['WECHAT', 'ALIPAY']);
     // 전체 플래그가 꺼져 있으면 공급자 목록과 무관하게 아무것도 켜지지 않는다
     const off = flags({ FILE_IMPORT_PROVIDERS: 'WECHAT,ALIPAY' });
-    expect(off.fileImportEnabledFor('ALIPAY')).toBe(false);
+    expect(off.fileImportProviderEnabled('ALIPAY')).toBe(false);
     expect(off.view()).toMatchObject({
       fileImport: false,
       fileImportProviders: [],

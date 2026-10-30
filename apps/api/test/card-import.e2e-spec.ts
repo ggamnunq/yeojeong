@@ -116,9 +116,9 @@ describe.skipIf(!databaseUrl)(
           this.allowed.has(userId)
         );
       },
-      view(userId?: string | null) {
-        return { accountLink: false, cardImport: this.cardImportFor(userId) };
-      },
+      // 파일 가져오기는 꺼짐(FeatureAccess가 읽는다)
+      fileImportMode: 'off' as const,
+      fileImportProviders: [],
     };
     const http = codefHttpMock(
       new Proxy({} as Record<string, CodefRoute>, {
@@ -300,6 +300,8 @@ describe.skipIf(!databaseUrl)(
       expect(session.body.features).toEqual({
         accountLink: false,
         cardImport: false,
+        fileImport: false,
+        fileImportProviders: [],
       });
 
       flags.cardImportMode = 'allowlist';

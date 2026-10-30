@@ -27,7 +27,8 @@ card_import_allowed_user_ids = []
 # 현대·하나 카드번호 로그인. 약관 0.2(카드번호 처리) 게시 전에는 false
 card_number_login            = false
 codef_daily_call_budget      = 100
-# 거래 내역 파일 가져오기(W10, 위챗페이). 처리방침에 수집 항목·방법을 반영한 뒤 on
+# 거래 내역 파일 가져오기(W10 위챗페이 · W11 알리페이): off | allowlist | on.
+# allowlist = 관리자 페이지 "기능 권한"에서 공급자별 권한을 준 회원만(운영자 실파일 검증). 처리방침에 수집 항목·방법을 반영한 뒤 on
 feature_file_import = "off"
 # 켤 공급자(기본 위챗페이만). 알리페이(W11)는 처리방침 반영 뒤 "WECHAT,ALIPAY"
 file_import_providers = "WECHAT"

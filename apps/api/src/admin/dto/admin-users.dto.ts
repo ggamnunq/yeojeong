@@ -108,7 +108,7 @@ class AdminCardImportAccessDto implements AdminCardImportAccess {
   @ApiProperty({ description: 'CARD_IMPORT_ALLOWED_USER_IDS에 있는지' })
   allowlisted: boolean;
   @ApiProperty({
-    description: '관리자 페이지에서 준 권한(card_import_grants)이 있는지',
+    description: '관리자 페이지에서 준 권한(feature_grants CARD_IMPORT)이 있는지',
   })
   granted: boolean;
   @ApiProperty({ description: '지금 이 회원에게 기능이 켜져 있는지' })

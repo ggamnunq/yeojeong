@@ -39,7 +39,7 @@ import {
   NotFoundError,
   ValidationFailedError,
 } from '../common/errors/app-exception.js';
-import { CardImportAccess, FeatureFlags } from '../common/features.js';
+import { FeatureAccess, FeatureFlags } from '../common/features.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ConsentsService, consentEvidence } from './consents.service.js';
 import {
@@ -77,7 +77,7 @@ export class ConsentsController {
     private readonly checker: ConsentChecker,
     private readonly prisma: PrismaService,
     private readonly features: FeatureFlags,
-    private readonly cardImport: CardImportAccess,
+    private readonly cardImport: FeatureAccess,
   ) {}
 
   /**
@@ -93,7 +93,7 @@ export class ConsentsController {
       stage === 'CARD_IMPORT' &&
       (userId === undefined
         ? this.features.cardImportMode === 'off'
-        : !(await this.cardImport.enabledFor(userId)))
+        : !(await this.cardImport.cardImportFor(userId)))
     ) {
       throw new NotFoundError();
     }

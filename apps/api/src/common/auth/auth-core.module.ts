@@ -11,7 +11,7 @@ import { SessionResolver, SessionService } from './session-resolver.js';
 import { WebConfig } from './web-config.js';
 import {
   AccountLinkGuard,
-  CardImportAccess,
+  FeatureAccess,
   FeatureFlags,
 } from '../features.js';
 
@@ -35,12 +35,12 @@ import {
     { provide: ConsentChecker, useClass: PrismaConsentChecker },
     { provide: MembershipLookup, useClass: PrismaMembershipLookup },
     FeatureFlags,
-    CardImportAccess,
+    FeatureAccess,
     AccountLinkGuard,
   ],
   exports: [
     FeatureFlags,
-    CardImportAccess,
+    FeatureAccess,
     AccountLinkGuard,
     WebConfig,
     AuthConfig,

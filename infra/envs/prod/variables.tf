@@ -172,7 +172,7 @@ variable "codef_env" {
 }
 
 variable "feature_card_import" {
-  description = "카드 승인내역 불러오기 공개 단계(FEATURE_CARD_IMPORT): off(기본) · allowlist(card_import_allowed_user_ids 사용자만, 운영자 실테스트) · on(전체 공개 — 법률 자문 L-25 뒤에만)"
+  description = "카드 승인내역 불러오기 공개 단계(FEATURE_CARD_IMPORT): off(기본) · allowlist(card_import_allowed_user_ids 또는 관리자 페이지 \"기능 권한\"에서 CARD_IMPORT 권한을 준 사용자만, 운영자 실테스트) · on(전체 공개 — 법률 자문 L-25 뒤에만)"
   type        = string
   default     = "off"
 
@@ -213,21 +213,21 @@ variable "codef_daily_call_budget" {
   }
 }
 
-# ── 거래 내역 파일 가져오기(W10, 위챗페이) ──
+# ── 거래 내역 파일 가져오기(W10 위챗페이 · W11 알리페이) ──
 
 variable "feature_file_import" {
-  description = "거래 내역 파일 가져오기(FEATURE_FILE_IMPORT): off(기본) · on. 파일은 브라우저에서만 읽고 고른 결제만 저장한다. importKey 전용 키(Secret Manager yeojeong-import-key-hmac-key)가 있어야 켜진다"
+  description = "거래 내역 파일 가져오기(FEATURE_FILE_IMPORT): off(기본) · allowlist(관리자 페이지 \"기능 권한\"에서 공급자별 권한 FILE_IMPORT_WECHAT·FILE_IMPORT_ALIPAY를 준 회원만, 운영자 실파일 검증) · on(전체 공개). 파일은 브라우저에서만 읽고 고른 결제만 저장한다. importKey 전용 키(Secret Manager yeojeong-import-key-hmac-key)가 있어야 켜진다"
   type        = string
   default     = "off"
 
   validation {
-    condition     = contains(["off", "on"], var.feature_file_import)
-    error_message = "feature_file_import는 off 또는 on이어야 합니다."
+    condition     = contains(["off", "allowlist", "on"], var.feature_file_import)
+    error_message = "feature_file_import는 off, allowlist, on 중 하나여야 합니다."
   }
 }
 
 variable "file_import_providers" {
-  description = "켤 파일 공급자(FILE_IMPORT_PROVIDERS): 쉼표로 구분, 기본 \"WECHAT\"(알리페이 W11은 \"WECHAT,ALIPAY\"로 더해야 켜진다). feature_file_import = on일 때만 의미가 있다"
+  description = "켤 파일 공급자(FILE_IMPORT_PROVIDERS): 쉼표로 구분, 기본 \"WECHAT\"(알리페이 W11은 \"WECHAT,ALIPAY\"로 더해야 켜진다). feature_file_import가 off가 아닐 때만 의미가 있다. allowlist여도 이 목록에 없는 공급자는 권한이 있어도 꺼져 있다"
   type        = string
   default     = "WECHAT"
 

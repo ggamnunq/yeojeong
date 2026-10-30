@@ -1,8 +1,8 @@
 import type {
-  AdminCardImportGrant,
-  AdminCardImportGrantList,
   AdminCodefUsage,
-  AdminCreateCardImportGrantRequest,
+  AdminCreateFeatureGrantRequest,
+  AdminFeatureGrantList,
+  AdminFeatureGrantRow,
   AdminLoginRequest,
   AdminSessionView,
   AdminUserDetail,
@@ -10,6 +10,7 @@ import type {
   AdminUserSort,
   AdminWithdrawUserRequest,
   AdminWithdrawUserResponse,
+  FeatureKey,
 } from '@yeojeong/shared'
 import { apiFetch, isApiError } from '../../api'
 
@@ -36,11 +37,10 @@ export const adminApi = {
   withdraw: (userId: string, body: AdminWithdrawUserRequest) =>
     apiFetch<AdminWithdrawUserResponse>(`/admin/users/${encodeURIComponent(userId)}/withdraw`, { method: 'POST', body }),
   codefUsage: (signal?: AbortSignal) => apiFetch<AdminCodefUsage>('/admin/codef-usage', { signal }),
-  cardImportGrants: (signal?: AbortSignal) => apiFetch<AdminCardImportGrantList>('/admin/card-import-grants', { signal }),
-  grantCardImport: (body: AdminCreateCardImportGrantRequest) =>
-    apiFetch<AdminCardImportGrant>('/admin/card-import-grants', { method: 'POST', body }),
-  revokeCardImport: (userId: string) =>
-    apiFetch<undefined>(`/admin/card-import-grants/${encodeURIComponent(userId)}`, { method: 'DELETE' }),
+  featureGrants: (q: string, signal?: AbortSignal) => apiFetch<AdminFeatureGrantList>(`/admin/feature-grants${query({ q })}`, { signal }),
+  grantFeature: (body: AdminCreateFeatureGrantRequest) => apiFetch<AdminFeatureGrantRow>('/admin/feature-grants', { method: 'POST', body }),
+  revokeFeature: ({ userId, feature }: { userId: string; feature: FeatureKey }) =>
+    apiFetch<undefined>(`/admin/feature-grants/${encodeURIComponent(userId)}/${encodeURIComponent(feature)}`, { method: 'DELETE' }),
 }
 
 /** 관리자 쿼리 키. 모두 ['admin']으로 시작한다(로그아웃 때 전용 클라이언트를 통째로 비운다) */
@@ -51,7 +51,9 @@ export const adminKeys = {
   usersAll: ['admin', 'users'] as const,
   user: (userId: string) => ['admin', 'user', userId] as const,
   codef: ['admin', 'codef'] as const,
-  cardImportGrants: ['admin', 'card-import-grants'] as const,
+  /** q = 검색어(빈 문자열이면 권한 있는 회원 전부, 회원 상세는 사용자 ID) */
+  featureGrants: (q: string) => ['admin', 'feature-grants', { q }] as const,
+  featureGrantsAll: ['admin', 'feature-grants'] as const,
 }
 
 /** 관리자 세션이 없거나 만료됐다(서버 401 ADMIN_UNAUTHENTICATED) */

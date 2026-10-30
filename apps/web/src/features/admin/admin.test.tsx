@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import type { AdminCardImportGrantList } from '@yeojeong/shared'
+import type { AdminFeatureGrantList } from '@yeojeong/shared'
 import { HttpResponse } from 'msw'
 import { afterEach, describe, expect, it } from 'vitest'
 import { server } from '../../mocks/server'
@@ -305,121 +305,161 @@ describe('CODEF 현황 /admin/codef', () => {
   })
 })
 
-describe('카드 불러오기 권한 /admin/card-import', () => {
-  const grantRows = () => within(screen.getByRole('region', { name: '카드 불러오기 권한 표' })).getAllByRole('row').slice(1)
-  const rowOf = (name: string) => grantRows().find((row) => within(row).queryByText(name)) as HTMLElement
+describe('기능 권한 /admin/features', () => {
+  const matrix = () => screen.getByRole('region', { name: '기능 권한 표' })
+  const grantRows = () => within(matrix()).getAllByRole('row').slice(1)
+  const toggle = (name: string, feature: string) => screen.getByRole('switch', { name: `${name} ${feature} 권한` }) as HTMLButtonElement
 
-  it('메뉴에서 들어가고, 단계 안내 · 관리자 권한(회수 가능) · env 항목(회수 불가) · 동의 · 오늘 조회를 보여 준다', async () => {
+  it('메뉴에서 들어가고, 기능별 단계 · 권한 있는 회원(관리자·env) · 출처 · 지금 켜짐 · 카드 동의·오늘 조회를 보여 준다', async () => {
     signInAdminMock()
     const { router } = renderApp('/admin/users')
     await screen.findByRole('heading', { level: 1, name: '회원' })
-    fireEvent.click(within(screen.getByRole('navigation', { name: '관리자 메뉴' })).getByRole('link', { name: '카드 불러오기 권한' }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/admin/card-import'))
-    expect(await screen.findByText('허용 목록 단계예요. 아래 회원에게만 카드 불러오기가 보여요')).toBeTruthy()
-    expect(grantRows()).toHaveLength(3)
-    // 관리자 권한(최근 순 먼저) → env 항목
-    const granted = rowOf('여행자05')
-    expect(within(granted).getByText('관리자')).toBeTruthy()
-    expect(within(granted).getByText('운영자 실테스트')).toBeTruthy()
-    expect(within(granted).getByRole('button', { name: '여행자05 권한 회수' })).toBeTruthy()
-    const env = rowOf('준용')
-    expect(within(env).getByText('env')).toBeTruthy()
-    expect(within(env).getByText('6 / 10')).toBeTruthy()
-    expect(within(env).getByText('미동의')).toBeTruthy()
-    expect(within(env).queryByRole('button')).toBeNull()
-    expect(within(env).getByText('env — tfvars에서 빼야 해요')).toBeTruthy()
-    expect(within(rowOf(ADMIN_MOCK_USER.withdrawn)).getByText('없는 회원')).toBeTruthy()
+    fireEvent.click(within(screen.getByRole('navigation', { name: '관리자 메뉴' })).getByRole('link', { name: '기능 권한' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/admin/features'))
+    await screen.findByRole('region', { name: '기능 권한 표' })
+    // 기능별 단계(읽기 전용)
+    const card = screen.getByRole('group', { name: '카드 불러오기 단계' })
+    expect(within(card).getByText('허용 목록')).toBeTruthy()
+    expect(within(card).getByText('FEATURE_CARD_IMPORT=allowlist')).toBeTruthy()
+    expect(within(card).getByText(/env 목록 2명/)).toBeTruthy()
+    expect(within(screen.getByRole('group', { name: '알리페이 파일 단계' })).getByText('FEATURE_FILE_IMPORT=allowlist')).toBeTruthy()
+    // 관리자 권한(최근 순) → env 항목
+    expect(grantRows()).toHaveLength(4)
+    expect(toggle('여행자05', '카드 불러오기').getAttribute('aria-checked')).toBe('true')
+    expect(toggle('여행자05', '위챗페이 파일').getAttribute('aria-checked')).toBe('false')
+    expect(toggle('민지', '위챗페이 파일').getAttribute('aria-checked')).toBe('true')
+    // env 항목: 토글은 꺼짐(관리자 권한 없음) + env 태그 + 지금 켜짐 + 동의·오늘 조회
+    const junyong = grantRows().find((row) => within(row).queryByText('준용')) as HTMLElement
+    expect(toggle('준용', '카드 불러오기').getAttribute('aria-checked')).toBe('false')
+    expect(within(junyong).getByText('env')).toBeTruthy()
+    expect(within(junyong).getByText('켜짐 · 미동의 · 오늘 6/10')).toBeTruthy()
+    // 회원이 없는 env 항목에는 줄 수 없다
+    expect(toggle(ADMIN_MOCK_USER.withdrawn, '카드 불러오기').disabled).toBe(true)
+    expect(within(matrix()).getByText('없는 회원')).toBeTruthy()
   })
 
-  it('기능이 꺼져 있으면 권한이 있어도 보이지 않는다고 알린다', async () => {
+  it('옛 주소 /admin/card-import는 기능 권한으로 간다', async () => {
+    signInAdminMock()
+    const { router } = renderApp('/admin/card-import')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/admin/features'))
+    expect(await screen.findByRole('heading', { level: 1, name: '기능 권한' })).toBeTruthy()
+  })
+
+  it('기능이 꺼져 있으면 단계와 이유를 보여 준다', async () => {
     signInAdminMock()
     server.use(
-      api.get<AdminCardImportGrantList>('/api/admin/card-import-grants', () =>
+      api.get<AdminFeatureGrantList>('/api/admin/feature-grants', () =>
         HttpResponse.json({
           asOf: '2026-10-29T12:00:00+09:00',
-          flags: { featureCardImport: 'allowlist', effectiveMode: 'off' },
-          dailyLimit: 10,
+          features: [
+            { feature: 'CARD_IMPORT', configuredMode: 'allowlist', effectiveMode: 'off', offReason: 'CODEF_KEYS_MISSING', envUserCount: 0 },
+            { feature: 'FILE_IMPORT_WECHAT', configuredMode: 'on', effectiveMode: 'on', offReason: null, envUserCount: 0 },
+            { feature: 'FILE_IMPORT_ALIPAY', configuredMode: 'on', effectiveMode: 'off', offReason: 'PROVIDER_DISABLED', envUserCount: 0 },
+          ],
+          cardImportDailyLimit: 10,
           items: [],
+          truncated: false,
         }),
       ),
     )
-    renderApp('/admin/card-import')
-    expect(await screen.findByText('기능이 꺼져 있어 권한이 있어도 보이지 않아요')).toBeTruthy()
-    expect(screen.getByText(/CODEF 키가 없어 꺼짐/)).toBeTruthy()
+    renderApp('/admin/features')
+    const card = await screen.findByRole('group', { name: '카드 불러오기 단계' })
+    expect(within(card).getByText('꺼짐')).toBeTruthy()
+    expect(within(card).getByText('꺼져 있어 권한이 있어도 보이지 않아요')).toBeTruthy()
+    expect(within(card).getByText(/CODEF 키가 없어 꺼짐/)).toBeTruthy()
+    expect(within(screen.getByRole('group', { name: '위챗페이 파일 단계' })).getByText('전체 공개')).toBeTruthy()
+    expect(within(screen.getByRole('group', { name: '알리페이 파일 단계' })).getByText(/FILE_IMPORT_PROVIDERS에 없어 꺼짐/)).toBeTruthy()
     expect(screen.getByText('권한을 준 회원이 없어요')).toBeTruthy()
   })
 
-  it('권한 추가: 회원 검색 → 선택 → 메모 → 추가하면 목록에 관리자 권한으로 보인다', async () => {
+  it('부여: 회원 검색 → 토글 → 확인 다이얼로그 → 켜지고 권한 있는 회원 목록에 보인다', async () => {
     signInAdminMock()
-    renderApp('/admin/card-import')
-    await screen.findByRole('region', { name: '카드 불러오기 권한 표' })
-    expect(screen.queryByRole('button', { name: '권한 추가' })).toBeNull()
+    renderApp('/admin/features')
+    await screen.findByRole('region', { name: '기능 권한 표' })
     fireEvent.change(screen.getByLabelText('회원 검색'), { target: { value: '태현' } })
     fireEvent.click(screen.getByRole('button', { name: '회원 찾기' }))
-    const results = await screen.findByRole('region', { name: '회원 검색 결과 표' })
-    fireEvent.click(await within(results).findByRole('button', { name: '태현 선택' }))
-    fireEvent.change(screen.getByLabelText('메모(선택)'), { target: { value: '베타 테스트' } })
-    fireEvent.click(screen.getByRole('button', { name: '권한 추가' }))
-    expect(await screen.findByText('태현 님에게 카드 불러오기 권한을 줬어요')).toBeTruthy()
-    await waitFor(() => expect(grantRows()).toHaveLength(4))
-    const row = rowOf('태현')
-    expect(within(row).getByText('관리자')).toBeTruthy()
-    expect(within(row).getByText('베타 테스트')).toBeTruthy()
-    // 이미 권한이 있는 회원은 다시 고를 수 없다
-    fireEvent.change(screen.getByLabelText('회원 검색'), { target: { value: '여행자05' } })
-    fireEvent.click(screen.getByRole('button', { name: '회원 찾기' }))
-    const again = await screen.findByRole('region', { name: '회원 검색 결과 표' })
-    expect(await within(again).findByText('이미 권한 있음')).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('heading', { name: '검색 결과 (1명)' })).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('부여 메모(선택)'), { target: { value: '위챗 실파일 검증' } })
+    fireEvent.click(toggle('태현', '위챗페이 파일'))
+    const dialog = await screen.findByRole('alertdialog', { name: '태현 님에게 위챗페이 파일 권한을 줄까요?' })
+    expect(within(dialog).getByText('다음 요청부터 바로 보여요')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: '권한 주기' }))
+    expect(await screen.findByText('태현 님에게 위챗페이 파일 권한을 줬어요')).toBeTruthy()
+    await waitFor(() => expect(toggle('태현', '위챗페이 파일').getAttribute('aria-checked')).toBe('true'))
+    expect((screen.getByLabelText('부여 메모(선택)') as HTMLInputElement).value).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: '권한 있는 회원 보기' }))
+    await waitFor(() => expect(grantRows()).toHaveLength(5))
   })
 
-  it('이미 있으면 서버 409 문구를 보여 준다', async () => {
+  it('취소하면 아무것도 바뀌지 않는다', async () => {
     signInAdminMock()
-    server.use(api.post<never>('/api/admin/card-import-grants', () => mockError('ADMIN_CARD_IMPORT_GRANT_EXISTS', 409)))
-    renderApp('/admin/card-import')
-    await screen.findByRole('region', { name: '카드 불러오기 권한 표' })
-    fireEvent.change(screen.getByLabelText('회원 검색'), { target: { value: '태현' } })
-    fireEvent.click(screen.getByRole('button', { name: '회원 찾기' }))
-    fireEvent.click(await screen.findByRole('button', { name: '태현 선택' }))
-    fireEvent.click(screen.getByRole('button', { name: '권한 추가' }))
-    expect(await screen.findByText('이미 카드 불러오기 권한이 있는 회원이에요')).toBeTruthy()
+    renderApp('/admin/features')
+    await screen.findByRole('region', { name: '기능 권한 표' })
+    fireEvent.click(toggle('여행자05', '알리페이 파일'))
+    const dialog = await screen.findByRole('alertdialog', { name: '여행자05 님에게 알리페이 파일 권한을 줄까요?' })
+    fireEvent.click(within(dialog).getByRole('button', { name: '취소' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(toggle('여행자05', '알리페이 파일').getAttribute('aria-checked')).toBe('false')
   })
 
-  it('회수: 확인 다이얼로그 → 목록에서 빠진다', async () => {
+  it('회수: 확인 다이얼로그(Danger) → 목록에서 빠진다', async () => {
     signInAdminMock()
-    renderApp('/admin/card-import')
-    await screen.findByRole('region', { name: '카드 불러오기 권한 표' })
-    fireEvent.click(screen.getByRole('button', { name: '여행자05 권한 회수' }))
-    const dialog = await screen.findByRole('alertdialog', { name: '여행자05 님의 권한을 회수할까요?' })
-    expect(within(dialog).getByText('다음 요청부터 카드 불러오기가 보이지 않아요')).toBeTruthy()
+    renderApp('/admin/features')
+    await screen.findByRole('region', { name: '기능 권한 표' })
+    fireEvent.click(toggle('여행자05', '카드 불러오기'))
+    const dialog = await screen.findByRole('alertdialog', { name: '여행자05 님의 카드 불러오기 권한을 회수할까요?' })
+    expect(within(dialog).getByText('다음 요청부터 보이지 않아요')).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: '회수' }))
     expect(await screen.findByText('여행자05 님의 카드 불러오기 권한을 회수했어요')).toBeTruthy()
-    await waitFor(() => expect(grantRows()).toHaveLength(2))
+    await waitFor(() => expect(grantRows()).toHaveLength(3))
     expect(screen.queryByRole('link', { name: '여행자05' })).toBeNull()
   })
 
-  it('회원 상세: 권한 없음 → 추가 → 있음 → 회수(확인) → 없음', async () => {
+  it('env 회원에게 관리자 권한을 더하면 회수 안내가 "env로 계속 보여요"가 된다', async () => {
+    signInAdminMock()
+    renderApp('/admin/features')
+    await screen.findByRole('region', { name: '기능 권한 표' })
+    fireEvent.click(toggle('준용', '카드 불러오기'))
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: '권한 주기' }))
+    await waitFor(() => expect(toggle('준용', '카드 불러오기').getAttribute('aria-checked')).toBe('true'))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    fireEvent.click(toggle('준용', '카드 불러오기'))
+    const dialog = await screen.findByRole('alertdialog', { name: '준용 님의 카드 불러오기 권한을 회수할까요?' })
+    expect(within(dialog).getByText('env 목록에도 있어 회수해도 계속 보여요')).toBeTruthy()
+  })
+
+  it('서버가 거절하면(409) 문구를 보여 준다', async () => {
+    signInAdminMock()
+    server.use(api.post<never>('/api/admin/feature-grants', () => mockError('ADMIN_FEATURE_GRANT_EXISTS', 409)))
+    renderApp('/admin/features')
+    await screen.findByRole('region', { name: '기능 권한 표' })
+    fireEvent.click(toggle('민지', '알리페이 파일'))
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: '권한 주기' }))
+    expect(await screen.findByText('이미 이 기능 권한이 있는 회원이에요')).toBeTruthy()
+  })
+
+  it('회원 상세: 기능별 토글로 부여 → 확인 → 켜짐 → 회수(확인) → 꺼짐', async () => {
     signInAdminMock()
     renderApp(`/admin/users/${ADMIN_MOCK_USER.taehyeon}`)
     await screen.findByRole('heading', { level: 1, name: '태현' })
-    const section = () => screen.getByRole('region', { name: '카드 불러오기 권한' })
-    expect(within(section()).getByText('없음')).toBeTruthy()
-    fireEvent.click(within(section()).getByRole('button', { name: '권한 추가' }))
-    await waitFor(() => expect(within(section()).getByText('있음')).toBeTruthy())
-    expect(within(section()).getByText(/관리자 권한 · 지금 켜짐/)).toBeTruthy()
-    fireEvent.click(within(section()).getByRole('button', { name: '권한 회수' }))
-    const dialog = await screen.findByRole('alertdialog', { name: '태현 님의 권한을 회수할까요?' })
-    fireEvent.click(within(dialog).getByRole('button', { name: '회수' }))
-    await waitFor(() => expect(within(section()).getByText('없음')).toBeTruthy())
-    expect(within(section()).getByRole('button', { name: '권한 추가' })).toBeTruthy()
+    const section = () => screen.getByRole('region', { name: '기능 권한' })
+    const alipay = () => within(section()).getByRole('switch', { name: '태현 알리페이 파일 권한' })
+    await waitFor(() => expect(alipay().getAttribute('aria-checked')).toBe('false'))
+    fireEvent.click(alipay())
+    fireEvent.click(within(await screen.findByRole('alertdialog', { name: '태현 님에게 알리페이 파일 권한을 줄까요?' })).getByRole('button', { name: '권한 주기' }))
+    await waitFor(() => expect(alipay().getAttribute('aria-checked')).toBe('true'))
+    expect(within(section()).getByText('태현 님에게 알리페이 파일 권한을 줬어요')).toBeTruthy()
+    fireEvent.click(alipay())
+    fireEvent.click(within(await screen.findByRole('alertdialog', { name: '태현 님의 알리페이 파일 권한을 회수할까요?' })).getByRole('button', { name: '회수' }))
+    await waitFor(() => expect(alipay().getAttribute('aria-checked')).toBe('false'))
   })
 
-  it('회원 상세: env로 준 권한은 회수 버튼 없이 안내만', async () => {
+  it('회원 상세: env로 준 카드 권한은 회수할 수 없다고 안내한다', async () => {
     signInAdminMock()
     renderApp(`/admin/users/${ADMIN_MOCK_USER.junyong}`)
     await screen.findByRole('heading', { level: 1, name: '준용' })
-    const section = screen.getByRole('region', { name: '카드 불러오기 권한' })
-    expect(within(section).getByText('있음')).toBeTruthy()
-    expect(within(section).getByText(/env로 준 권한이라 여기서 회수할 수 없어요/)).toBeTruthy()
-    expect(within(section).queryByRole('button', { name: '권한 회수' })).toBeNull()
+    const section = screen.getByRole('region', { name: '기능 권한' })
+    expect(await within(section).findByText(/env로 준 권한이라 여기서 회수할 수 없어요/)).toBeTruthy()
+    expect(within(section).getByRole('switch', { name: '준용 카드 불러오기 권한' }).getAttribute('aria-checked')).toBe('false')
   })
 })
